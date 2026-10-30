@@ -38,21 +38,37 @@ jobs:
         run: |
           ./gradlew assembleDebug -PGITHUB_RUN_NUMBER=${{ github.run_number }} -PGITHUB_REPOSITORY=${{ github.repository }} --no-daemon
 
-      - name: Çıktı Dosyalarını Hazırla
+      - name: Çıktı Dosyalarını ve Sürüm Bilgilerini Hazırla
         run: |
           mkdir -p release-output
           cp app/build/outputs/apk/debug/app-debug.apk release-output/Biriz.apk
           cp app/build/outputs/apk/debug/app-debug.apk "release-output/Biriz-v1.0.${{ github.run_number }}.apk"
-          
+
+          RUN_NUM="${{ github.run_number }}"
+          REPO="${{ github.repository }}"
+          VERSION_CODE=$((1000 + RUN_NUM))
+
           cat <<EOF > release-output/version.json
           {
-            "versionCode": ${{ 1000 + github.run_number }},
-            "versionName": "1.0.${{ github.run_number }}",
-            "tag": "v1.0.${{ github.run_number }}",
-            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/Biriz.apk",
+            "versionCode": ${VERSION_CODE},
+            "versionName": "1.0.${RUN_NUM}",
+            "tag": "v1.0.${RUN_NUM}",
+            "apkUrl": "https://github.com/${REPO}/releases/download/v1.0.${RUN_NUM}/Biriz.apk",
             "appName": "BİRİZ",
-            "releaseNotes": "BİRİZ v1.0.${{ github.run_number }} otomatik derlemesi oluşturuldu."
+            "releaseNotes": "BİRİZ v1.0.${RUN_NUM} otomatik derlemesi oluşturuldu."
           }
+          EOF
+
+          cat <<EOF > release-notes.md
+          ### 🚀 BİRİZ Android Uygulaması (v1.0.${RUN_NUM})
+
+          Bu sürüm GitHub senkronizasyonu ile otomatik olarak derlenmiştir.
+
+          #### 📲 İndirme Seçenekleri:
+          - **Doğrudan APK İndir:** [Biriz.apk](https://github.com/${REPO}/releases/download/v1.0.${RUN_NUM}/Biriz.apk)
+          - **Sürümlü APK:** [Biriz-v1.0.${RUN_NUM}.apk](https://github.com/${REPO}/releases/download/v1.0.${RUN_NUM}/Biriz-v1.0.${RUN_NUM}.apk)
+
+          *Uygulamayı açtığınızda otomatik olarak yeni sürüm uyarısı verilecek veya Ayarlar > Güncellemeleri Denetle butonuyla da tek tıkla güncelleyebilirsiniz.*
           EOF
 
       - name: GitHub Sürümü (Release) Oluştur ve APK'yı Yükle
@@ -64,15 +80,7 @@ jobs:
             "release-output/Biriz-v1.0.${{ github.run_number }}.apk" \
             release-output/version.json \
             --title "BİRİZ v1.0.${{ github.run_number }}" \
-            --notes "### 🚀 BİRİZ Android Uygulaması (v1.0.${{ github.run_number }})
-
-Bu sürüm GitHub senkronizasyonu ile otomatik olarak derlenmiştir.
-
-#### 📲 İndirme Seçenekleri:
-- **Doğrudan APK İndir:** [Biriz.apk](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/Biriz.apk)
-- **Sürümlü APK:** [Biriz-v1.0.${{ github.run_number }}.apk](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/Biriz-v1.0.${{ github.run_number }}.apk)
-
-*Uygulamayı açtığınızda otomatik olarak yeni sürüm uyarısı verilecek veya Ayarlar > Güncellemeleri Denetle butonuyla da tek tıkla güncelleyebilirsiniz.*"
+            --notes-file release-notes.md
 
       - name: APK Dosyasını Artifact Olarak Sakla
         uses: actions/upload-artifact@v4
