@@ -22,6 +22,22 @@ import kotlinx.coroutines.tasks.await
 
 object GoogleAuthHelper {
 
+    private const val FALLBACK_WEB_CLIENT_ID = "1053897004873-s0gplmvfrfmsdqajb076el3chkmf3ltk.apps.googleusercontent.com"
+
+    fun getServerClientId(context: Context): String {
+        return try {
+            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (resId != 0) {
+                val value = context.getString(resId)
+                if (value.isNotBlank()) value else FALLBACK_WEB_CLIENT_ID
+            } else {
+                FALLBACK_WEB_CLIENT_ID
+            }
+        } catch (_: Exception) {
+            FALLBACK_WEB_CLIENT_ID
+        }
+    }
+
     fun attemptAutoSignIn(
         context: Context,
         credentialManager: CredentialManager,
@@ -34,9 +50,8 @@ object GoogleAuthHelper {
             return
         }
 
-        val clientId = try {
-            context.getString(R.string.default_web_client_id)
-        } catch (e: Exception) {
+        val clientId = getServerClientId(context)
+        if (clientId.isBlank()) {
             onUnauthenticated()
             return
         }
@@ -87,10 +102,9 @@ object GoogleAuthHelper {
         scope: CoroutineScope,
         onAuthCancelled: () -> Unit = {}
     ) {
-        val clientId = try {
-            context.getString(R.string.default_web_client_id)
-        } catch (e: Exception) {
-            onAuthError("Google Sign-In yapılandırması eksik: default_web_client_id bulunamadı")
+        val clientId = getServerClientId(context)
+        if (clientId.isBlank()) {
+            onAuthError("Google Sign-In yapılandırması eksik.")
             return
         }
 

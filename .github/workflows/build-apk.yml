@@ -48,9 +48,40 @@ jobs:
       - name: Google Services Yapılandırmasını Doğrula
         run: |
           if [ ! -f app/google-services.json ]; then
-            echo "google-services.json bulunamadı, derleme için yer tutucu oluşturuluyor..."
+            echo "google-services.json bulunamadı, derleme için yapılandırma oluşturuluyor..."
             mkdir -p app
-            echo '{"project_info":{"project_number":"1053897004873","project_id":"gen-lang-client-0343498023","storage_bucket":"gen-lang-client-0343498023.firebasestorage.app"},"client":[{"client_info":{"mobilesdk_app_id":"1:1053897004873:android:a5488f645553ac684a6c98","android_client_info":{"package_name":"com.aistudio.biriz.sclvpk"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyMockKeyForBuild"}],"services":{}}],"configuration_version":"1"}' > app/google-services.json
+            cat << 'EOF' > app/google-services.json
+            {
+              "project_info": {
+                "project_number": "1053897004873",
+                "project_id": "gen-lang-client-0343498023",
+                "storage_bucket": "gen-lang-client-0343498023.firebasestorage.app"
+              },
+              "client": [
+                {
+                  "client_info": {
+                    "mobilesdk_app_id": "1:1053897004873:android:a5488f645553ac684a6c98",
+                    "android_client_info": {
+                      "package_name": "com.aistudio.biriz.sclvpk"
+                    }
+                  },
+                  "oauth_client": [
+                    {
+                      "client_id": "1053897004873-s0gplmvfrfmsdqajb076el3chkmf3ltk.apps.googleusercontent.com",
+                      "client_type": 3
+                    }
+                  ],
+                  "api_key": [
+                    {
+                      "current_key": "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw"
+                    }
+                  ],
+                  "services": {}
+                }
+              ],
+              "configuration_version": "1"
+            }
+          EOF
           fi
 
       - name: Android APK'sını Derle (Biriz.apk)
