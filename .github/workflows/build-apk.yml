@@ -31,9 +31,12 @@ jobs:
       - name: Gradle Kurulumu
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Gradlew Çalıştırma İzni Ver
+        run: chmod +x gradlew
+
       - name: Android APK'sını Derle (Biriz.apk)
         run: |
-          gradle assembleDebug -PGITHUB_RUN_NUMBER=${{ github.run_number }} -PGITHUB_REPOSITORY=${{ github.repository }} --no-daemon
+          ./gradlew assembleDebug -PGITHUB_RUN_NUMBER=${{ github.run_number }} -PGITHUB_REPOSITORY=${{ github.repository }} --no-daemon
 
       - name: Çıktı Dosyalarını Hazırla
         run: |
