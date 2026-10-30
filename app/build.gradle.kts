@@ -17,8 +17,15 @@ android {
     applicationId = "com.aistudio.biriz.sclvpk"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+
+    val runNumber = (project.findProperty("GITHUB_RUN_NUMBER") as? String)?.toIntOrNull()
+      ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+    versionCode = 1000 + runNumber
+    versionName = "1.0.$runNumber"
+
+    val repo = (project.findProperty("GITHUB_REPOSITORY") as? String)
+      ?: System.getenv("GITHUB_REPOSITORY") ?: ""
+    buildConfigField("String", "GITHUB_REPOSITORY", "\"$repo\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

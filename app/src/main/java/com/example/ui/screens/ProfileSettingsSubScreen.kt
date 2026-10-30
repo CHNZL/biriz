@@ -26,21 +26,30 @@ import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.data.model.ClassRoom
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
+import com.example.util.AppUpdateManager
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -65,6 +74,8 @@ fun ProfileSettingsSubScreen(
     onBackToClassList: () -> Unit,
     onCopyCode: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    var showUpdateDialog by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -221,7 +232,89 @@ fun ProfileSettingsSubScreen(
             }
         }
 
-        // 3. TEHLİKELİ ALAN & CASCADE VERİ SİLME BENTO KARTLARI
+        // 3. UYGULAMA SÜRÜMÜ VE OTOMATİK GÜNCELLEME (APK & GITHUB) BENTO KARTI
+        BentoCard(
+            isDark = isDarkTheme,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = BirizTurquoise,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Uygulama Sürümü & Güncelleme",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = BirizTurquoise.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = "v${BuildConfig.VERSION_NAME}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BirizTurquoise,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            ProfileDetailRow(label = "Uygulama Adı", value = "BİRİZ", isDark = isDarkTheme)
+            ProfileDetailRow(label = "Kurulu Sürüm", value = "v${BuildConfig.VERSION_NAME} (#${BuildConfig.VERSION_CODE})", isDark = isDarkTheme)
+            
+            val currentRepo = AppUpdateManager.getGitHubRepo(context).ifEmpty { "Otomatik / Yapılandırılmadı" }
+            ProfileDetailRow(label = "GitHub Deposu", value = currentRepo, isDark = isDarkTheme)
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "GitHub'a her kod senkronizasyonu yaptığınızda otomatik olarak yeni bir Biriz.apk derlenir. Aşağıdaki butona dokunarak veya uygulamayı açtığınızda en yeni sürüme tek tıkla doğrudan güncelleyebilirsiniz.",
+                fontSize = 11.5.sp,
+                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Button(
+                onClick = { showUpdateDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .testTag("check_updates_button"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BirizTurquoise,
+                    contentColor = Color.White
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("🚀 Güncellemeleri Denetle", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+
+        // 4. TEHLİKELİ ALAN & CASCADE VERİ SİLME BENTO KARTLARI
         BentoCard(
             isDark = isDarkTheme,
             glowColor = BirizAmber.copy(alpha = 0.7f),
@@ -334,6 +427,13 @@ fun ProfileSettingsSubScreen(
         }
 
         Spacer(modifier = Modifier.height(80.dp)) // Floating dock payı
+    }
+
+    if (showUpdateDialog) {
+        AppUpdateDialog(
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showUpdateDialog = false }
+        )
     }
 }
 
