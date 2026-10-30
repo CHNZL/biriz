@@ -117,4 +117,15 @@ class ExampleRobolectricTest {
         val loadedDay = com.example.util.SchedulePersistenceHelper.loadActiveDay(context, classId)
         assertEquals("ÇAR", loadedDay)
     }
+
+    @Test
+    fun `test qr code bitmap generation`() {
+        val bitmap = com.example.util.QrCodeHelper.generateQrBitmap(
+            content = com.example.util.QrCodeHelper.LATEST_APK_DOWNLOAD_URL,
+            size = 200
+        )
+        assertNotNull(bitmap)
+        assertEquals(200, bitmap?.width)
+        assertEquals(200, bitmap?.height)
+    }
 }

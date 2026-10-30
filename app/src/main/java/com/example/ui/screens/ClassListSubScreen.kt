@@ -98,6 +98,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.model.ClassRoom
 import com.example.data.model.Student
 import com.example.ui.components.BentoCard
+import com.example.ui.components.ParentDownloadQrDialog
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -226,6 +227,8 @@ fun ClassListSubScreen(
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
     // Paylaşım Menüsü State'i
     var isShareMenuOpen by remember { mutableStateOf(false) }
+    // Veli İndirme Karekodu Diyaloğu State'i
+    var showParentQrDialog by remember { mutableStateOf(false) }
 
     // Kayıt Alanı Açılır/Kapanır (Akordiyon) Tercihi: Tercih yerel hafızada hatırlanır
     val sharedPrefs = remember { context.getSharedPreferences("biriz_ui_preferences", Context.MODE_PRIVATE) }
@@ -925,6 +928,13 @@ fun ClassListSubScreen(
                                             }
                                         }
                                     )
+                                    DropdownMenuItem(
+                                        text = { Text("📲 Veli İndirme Karekodu (QR)", fontSize = 12.sp) },
+                                        onClick = {
+                                            isShareMenuOpen = false
+                                            showParentQrDialog = true
+                                        }
+                                    )
                                 }
                             }
 
@@ -1434,6 +1444,31 @@ fun ClassListSubScreen(
                 onEditStudent(student.id, newNo, newName, newGender)
                 editingStudent = null
                 Toast.makeText(context, "Öğrenci bilgileri güncellendi.", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    // --- 4. VELİ UYGULAMA İNDİRME KAREKODU DİYALOĞU (QR MODAL) ---
+    if (showParentQrDialog) {
+        ParentDownloadQrDialog(
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showParentQrDialog = false },
+            onPrintParentCards = {
+                if (students.isNotEmpty()) {
+                    try {
+                        val cardsUri = ExcelPdfHelper.exportParentInviteCardsPdf(context, classRoom, students)
+                        ExcelPdfHelper.shareFile(
+                            context = context,
+                            uri = cardsUri,
+                            mimeType = "application/pdf",
+                            chooserTitle = "Veli Katılım Kartlarını (PDF) Aç / Yazdır / Paylaş"
+                        )
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "Kupon oluşturmak için listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                }
             }
         )
     }

@@ -654,6 +654,11 @@ object ExcelPdfHelper {
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val emblemBitmap = renderEmblemBitmap(context, 120)
+        val qrBitmap = QrCodeHelper.generateQrBitmap(
+            content = QrCodeHelper.LATEST_APK_DOWNLOAD_URL,
+            size = 250,
+            foregroundColor = Color.parseColor("#13294B")
+        )
         val dashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 1f
@@ -779,8 +784,12 @@ object ExcelPdfHelper {
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 canvas.drawText("Okul No: ${student.studentNumber}   •   Cinsiyet: ${student.gender}", cX + 14f, cY + 91f, paint)
 
-                // 6. Veli Katılım Kodu Rozeti (Büyük ve Belirgin Kehribar Kutu)
-                val codeBoxRect = RectF(cX + 8f, cY + 104f, cX + cardWidth - 8f, cY + 148f)
+                // 6. Veli Katılım Kodu Rozeti (Sol Taraf)
+                val qrBoxWidth = 56f
+                val qrBoxMargin = 6f
+                val codeBoxWidth = cardWidth - 16f - qrBoxWidth - qrBoxMargin
+                val codeBoxRect = RectF(cX + 8f, cY + 102f, cX + 8f + codeBoxWidth, cY + 152f)
+
                 paint.color = amberBg
                 canvas.drawRoundRect(codeBoxRect, 8f, 8f, paint)
 
@@ -791,28 +800,61 @@ object ExcelPdfHelper {
                 paint.style = Paint.Style.FILL
 
                 paint.color = Color.parseColor("#B45309")
-                paint.textSize = 7f
+                paint.textSize = 6.8f
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                canvas.drawText("VELİ KATILIM KODU (8 HANELİ)", cX + 14f, cY + 117f, paint)
+                canvas.drawText("VELİ KATILIM KODU (8 HANELİ)", cX + 13f, cY + 115f, paint)
 
                 // 8 Haneli Kod (Aralıklı ve Büyük)
                 val spacedCode = student.parentInviteCode.map { "$it " }.joinToString("").trim()
                 paint.color = amberText
-                paint.textSize = 14f
+                paint.textSize = 13.5f
                 paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-                canvas.drawText(spacedCode, cX + 16f, cY + 138f, paint)
+                canvas.drawText(spacedCode, cX + 13f, cY + 135f, paint)
 
-                // 7. Veli Yönergesi
-                paint.color = mutedText
-                paint.textSize = 6.2f
+                paint.color = Color.parseColor("#B45309")
+                paint.textSize = 5.2f
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                canvas.drawText("Sayın Velimiz, BİRİZ Veli Uygulamasını indirerek yukarıdaki", cX + 8f, cY + 160f, paint)
-                canvas.drawText("öğrenciye özel katılım kodu ile sınıfınıza anında bağlanabilirsiniz.", cX + 8f, cY + 169f, paint)
+                canvas.drawText("Girişte bu kodu yazarak bağlanınız", cX + 13f, cY + 146f, paint)
+
+                // 7. QR Kod Kutusu (Sağ Taraf - BİRİZ APK İndir)
+                val qrBoxLeft = cX + 8f + codeBoxWidth + qrBoxMargin
+                val qrBoxRect = RectF(qrBoxLeft, cY + 102f, cX + cardWidth - 8f, cY + 152f)
+
+                paint.color = Color.parseColor("#F8FAFC")
+                canvas.drawRoundRect(qrBoxRect, 8f, 8f, paint)
+
+                paint.style = Paint.Style.STROKE
+                paint.color = Color.parseColor("#CBD5E1")
+                paint.strokeWidth = 0.8f
+                canvas.drawRoundRect(qrBoxRect, 8f, 8f, paint)
+                paint.style = Paint.Style.FILL
+
+                if (qrBitmap != null) {
+                    val qrSize = 36f
+                    val qrLeft = qrBoxLeft + (qrBoxWidth - qrSize) / 2f
+                    val qrTop = cY + 104f
+                    val qrRect = RectF(qrLeft, qrTop, qrLeft + qrSize, qrTop + qrSize)
+                    canvas.drawBitmap(qrBitmap, null, qrRect, paint)
+                }
+
+                paint.color = navyPrimary
+                paint.textSize = 4.8f
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                val qrTitle = "📲 APK İNDİR"
+                val qrTitleW = paint.measureText(qrTitle)
+                canvas.drawText(qrTitle, qrBoxLeft + (qrBoxWidth - qrTitleW) / 2f, cY + 148f, paint)
+
+                // 8. Veli Yönergesi
+                paint.color = mutedText
+                paint.textSize = 6.0f
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                canvas.drawText("Sayın Velimiz, yandaki karekodu telefonunuzla okutarak BİRİZ uygulamasını indirebilir,", cX + 8f, cY + 162f, paint)
+                canvas.drawText("öğrenciye özel katılım kodunu girerek sınıfınıza anında bağlanabilirsiniz.", cX + 8f, cY + 171f, paint)
 
                 paint.color = Color.parseColor("#94A3B8")
-                paint.textSize = 5.8f
+                paint.textSize = 5.6f
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
-                canvas.drawText("✂ Bu kartı keserek öğrencinin velisine teslim ediniz.", cX + 8f, cY + 180f, paint)
+                canvas.drawText("✂ Bu kartı keserek öğrencinin velisine teslim ediniz.", cX + 8f, cY + 181f, paint)
             }
 
             pdfDocument.finishPage(page)

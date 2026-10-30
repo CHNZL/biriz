@@ -27,9 +27,11 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +51,7 @@ import com.example.BuildConfig
 import com.example.data.model.ClassRoom
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
+import com.example.ui.components.ParentDownloadQrDialog
 import com.example.util.AppUpdateManager
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
@@ -76,6 +79,7 @@ fun ProfileSettingsSubScreen(
 ) {
     val context = LocalContext.current
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var showParentQrDialog by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -291,26 +295,55 @@ fun ProfileSettingsSubScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Button(
-                onClick = { showUpdateDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp)
-                    .testTag("check_updates_button"),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BirizTurquoise,
-                    contentColor = Color.White
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.SystemUpdate,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("🚀 Güncellemeleri Denetle", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Button(
+                    onClick = { showUpdateDialog = true },
+                    modifier = Modifier
+                        .weight(1.1f)
+                        .height(46.dp)
+                        .testTag("check_updates_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BirizTurquoise,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("🚀 Güncelleme", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                }
+
+                OutlinedButton(
+                    onClick = { showParentQrDialog = true },
+                    modifier = Modifier
+                        .weight(1.1f)
+                        .height(46.dp)
+                        .testTag("show_parent_qr_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCode2,
+                        contentDescription = null,
+                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "📲 Veli Karekodu",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                }
             }
         }
 
@@ -433,6 +466,13 @@ fun ProfileSettingsSubScreen(
         AppUpdateDialog(
             isDarkTheme = isDarkTheme,
             onDismiss = { showUpdateDialog = false }
+        )
+    }
+
+    if (showParentQrDialog) {
+        ParentDownloadQrDialog(
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showParentQrDialog = false }
         )
     }
 }
