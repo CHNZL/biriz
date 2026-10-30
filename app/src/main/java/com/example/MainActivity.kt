@@ -1,0 +1,275 @@
+package com.example
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.repository.ClassRegistryRepository
+import com.example.ui.screens.GoogleSignInScreen
+import com.example.ui.screens.RoleSelectionScreen
+import com.example.ui.screens.SetupSuccessScreen
+import com.example.ui.screens.TeacherDashboardScreen
+import com.example.ui.screens.TeacherSetupWizardScreen
+import com.example.ui.theme.BirizTheme
+import com.example.ui.viewmodel.BirizViewModel
+import com.example.ui.viewmodel.BirizViewModelFactory
+import com.example.ui.viewmodel.ScreenState
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
+
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: BirizViewModel by viewModels {
+        BirizViewModelFactory(ClassRegistryRepository(applicationContext), applicationContext)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            BirizTheme(darkTheme = uiState.isDarkTheme) {
+                BirizApp(viewModel = viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun BirizApp(viewModel: BirizViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val matchingSchools by viewModel.matchingSchools.collectAsStateWithLifecycle()
+    val branchStatuses by viewModel.branchStatuses.collectAsStateWithLifecycle()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    DisposableEffect(Unit) {
+        val listener = FirebaseAuth.AuthStateListener { _ ->
+            viewModel.refreshCurrentUser()
+        }
+        Firebase.auth.addAuthStateListener(listener)
+        onDispose {
+            Firebase.auth.removeAuthStateListener(listener)
+        }
+    }
+
+    LaunchedEffect(uiState.snackbarMessage) {
+        val msg = uiState.snackbarMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearSnackbar()
+        }
+    }
+
+    // Geri tuşu yönetimi (BackHandler)
+    val canGoBack = uiState.currentScreen != ScreenState.GOOGLE_SIGN_IN &&
+                    uiState.currentScreen != ScreenState.ROLE_AND_KVKK
+    BackHandler(enabled = canGoBack) {
+        when (uiState.currentScreen) {
+            ScreenState.TEACHER_SETUP -> viewModel.resetToRoleSelection()
+            ScreenState.SETUP_SUCCESS -> viewModel.navigateToTeacherDashboard()
+            ScreenState.TEACHER_DASHBOARD -> {
+                if (uiState.currentSubPage != com.example.ui.viewmodel.DashboardSubPage.SINIF_LISTESI) {
+                    viewModel.selectSubPage(com.example.ui.viewmodel.DashboardSubPage.SINIF_LISTESI)
+                }
+            }
+            else -> {}
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            when (uiState.currentScreen) {
+                ScreenState.GOOGLE_SIGN_IN -> {
+                    GoogleSignInScreen(
+                        onSignInSuccess = {
+                            viewModel.refreshCurrentUser()
+                        },
+                        onTestSignIn = {
+                            viewModel.launchTestSignIn()
+                        },
+                        isDarkTheme = uiState.isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() }
+                    )
+                }
+
+                ScreenState.ROLE_AND_KVKK -> {
+                    RoleSelectionScreen(
+                        currentRole = uiState.currentRole,
+                        isKvkkAccepted = uiState.isKvkkAccepted,
+                        isKvkkDialogVisible = uiState.isKvkkDialogVisible,
+                        onKvkkCheckedChanged = { viewModel.onKvkkCheckedChanged(it) },
+                        onOpenKvkkDialog = { viewModel.openKvkkDialog() },
+                        onCloseKvkkDialog = { viewModel.dismissKvkkDialog() },
+                        onSelectTeacher = { viewModel.selectTeacherRole() },
+                        onSelectParentAttempt = { viewModel.onParentRoleAttempt() },
+                        currentUser = uiState.currentUser,
+                        onLogout = { viewModel.signOut(context) },
+                        isDarkTheme = uiState.isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() }
+                    )
+                }
+
+                ScreenState.TEACHER_SETUP -> {
+                    TeacherSetupWizardScreen(
+                        cities = viewModel.cities,
+                        selectedCity = uiState.selectedCity,
+                        selectedDistrict = uiState.selectedDistrict,
+                        rawSchoolInput = uiState.rawSchoolInput,
+                        selectedSchool = uiState.selectedSchool,
+                        matchingSchools = matchingSchools,
+                        selectedGradeLevel = uiState.selectedGradeLevel,
+                        selectedSection = uiState.selectedSection,
+                        branchStatuses = branchStatuses,
+                        currentUser = uiState.currentUser,
+                        conflictError = uiState.conflictError,
+                        occupiedClassRoom = uiState.occupiedClassRoom,
+                        onCitySelected = { viewModel.onCitySelected(it) },
+                        onDistrictSelected = { viewModel.onDistrictSelected(it) },
+                        onSchoolInputChanged = { viewModel.onSchoolInputChanged(it) },
+                        onSchoolSelectedFromList = { viewModel.onSchoolSelected(it) },
+                        onAddNewSchool = { viewModel.onSchoolInputChanged(it) },
+                        onGradeLevelSelected = { viewModel.onGradeLevelSelected(it) },
+                        onSectionSelected = { viewModel.onSectionSelected(it) },
+                        onSubmit = { viewModel.submitTeacherRegistration() },
+                        onBackToRoles = { viewModel.resetToRoleSelection() },
+                        isDarkTheme = uiState.isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() }
+                    )
+                }
+
+                ScreenState.SETUP_SUCCESS -> {
+                    val classRoom = uiState.activeClassRoom
+                    if (classRoom != null) {
+                        SetupSuccessScreen(
+                            classRoom = classRoom,
+                            onNavigateToDashboard = { viewModel.navigateToTeacherDashboard() },
+                            onTestAnotherClass = { viewModel.testAnotherClass() },
+                            isDarkTheme = uiState.isDarkTheme,
+                            onToggleTheme = { viewModel.toggleTheme() }
+                        )
+                    } else {
+                        viewModel.resetToRoleSelection()
+                    }
+                }
+
+                ScreenState.TEACHER_DASHBOARD -> {
+                    val classRoom = uiState.activeClassRoom
+                    val students by viewModel.students.collectAsStateWithLifecycle()
+                    if (classRoom != null) {
+                        TeacherDashboardScreen(
+                            classRoom = classRoom,
+                            students = students,
+                            currentSubPage = uiState.currentSubPage,
+                            isAddStudentDialogOpen = uiState.isAddStudentDialogOpen,
+                            isDeleting = uiState.isDeleting,
+                            isDarkTheme = uiState.isDarkTheme,
+                            scheduleConfig = uiState.scheduleConfig,
+                            scheduleLessons = uiState.scheduleLessons,
+                            isScheduleSettingsActive = uiState.isScheduleSettingsStepActive,
+                            activeScheduleDay = uiState.activeScheduleDay,
+                            seatingPlanState = uiState.seatingPlanState,
+                            isSeatingConfigOpen = uiState.isSeatingConfigOpen,
+                            groupMakerState = uiState.groupMakerState,
+                            onToggleTheme = { viewModel.toggleTheme() },
+                            onSelectSubPage = { viewModel.selectSubPage(it) },
+                            onOpenAddStudentDialog = { viewModel.openAddStudentDialog() },
+                            onDismissAddStudentDialog = { viewModel.dismissAddStudentDialog() },
+                            onAddStudent = { no, name, gender -> viewModel.addStudent(no, name, gender) },
+                            onEditStudent = { id, no, name, gender -> viewModel.editStudent(id, no, name, gender) },
+                            onImportStudents = { list -> viewModel.importStudents(list) },
+                            onUpdateStudentParent = { id, name, email, linkedAt, lastLoginAt -> viewModel.updateStudentParent(id, name, email, linkedAt, lastLoginAt) },
+                            onSaveScheduleConfig = { viewModel.updateScheduleConfig(it) },
+                            onSaveScheduleLesson = { viewModel.updateScheduleLesson(it) },
+                            onToggleScheduleSettings = { viewModel.setScheduleSettingsStepActive(it) },
+                            onSelectScheduleDay = { viewModel.setActiveScheduleDay(it) },
+                            onOpenSeatingConfig = { viewModel.setSeatingConfigDialogOpen(true) },
+                            onCloseSeatingConfig = { viewModel.setSeatingConfigDialogOpen(false) },
+                            onSaveSeatingConfig = { viewModel.updateSeatingConfig(it) },
+                            onAutoAssignSeating = { viewModel.autoAssignSeating(it) },
+                            onApplyPlannedSeating = { viewModel.applyPlannedSeating(it) },
+                            onApplyArchivedPlan = { viewModel.applyArchivedPlan(it) },
+                            onAssignStudentToSeat = { seatId, studentId -> viewModel.assignStudentToSeat(seatId, studentId) },
+                            onSwapSeats = { s1, s2 -> viewModel.swapSeats(s1, s2) },
+                            onTogglePinStudent = { viewModel.togglePinStudent(it) },
+                            onTogglePriorityStudent = { viewModel.togglePriorityStudent(it) },
+                            onClearSeatingPlan = { viewModel.clearSeatingPlan(it) },
+                            onOpenGroupWizard = { viewModel.openGroupWizard() },
+                            onCloseGroupWizard = { viewModel.closeGroupWizard() },
+                            onSaveGroupConfig = { viewModel.saveGroupConfig(it) },
+                            onDistributeGroups = { viewModel.distributeGroups(it) },
+                            onReshuffleGroups = { viewModel.reshuffleGroups() },
+                            onDistributeUnassignedGroups = { viewModel.distributeUnassignedGroups() },
+                            onPickRandomLeadersForAllGroups = { viewModel.pickRandomLeadersForAllGroups() },
+                            onPickRandomLeaderForGroup = { viewModel.pickRandomLeaderForSingleGroup(it) },
+                            onToggleGroupLeader = { gId, sId -> viewModel.toggleStudentLeader(gId, sId) },
+                            onRenameGroup = { gId, name -> viewModel.renameGroup(gId, name) },
+                            onChangeGroupColor = { gId, theme -> viewModel.changeGroupColorTheme(gId, theme) },
+                            onAddNewGroup = { viewModel.addNewGroup() },
+                            onDeleteGroup = { viewModel.deleteGroup(it) },
+                            onOpenGroupSwapModal = { viewModel.openSwapModal(it) },
+                            onCloseGroupSwapModal = { viewModel.closeSwapModal() },
+                            onSwapGroupStudents = { s1, s2 -> viewModel.swapStudents(s1, s2) },
+                            onMoveGroupStudent = { sId, gId -> viewModel.moveStudentToGroup(sId, gId) },
+                            onRemoveGroupStudent = { viewModel.removeStudentFromGroup(it) },
+                            onToggleGroupPresenterMode = { viewModel.togglePresenterMode() },
+                            announcements = uiState.announcements,
+                            chatMessages = uiState.chatMessages,
+                            notifications = uiState.notifications,
+                            activeChatStudentId = uiState.activeChatStudentId,
+                            isNotificationCenterOpen = uiState.isNotificationCenterOpen,
+                            onSaveAnnouncement = { viewModel.saveAnnouncement(it) },
+                            onEditAnnouncement = { id, title, content, poll, type, sIds, sNames ->
+                                viewModel.editAnnouncement(id, title, content, poll, type, sIds, sNames)
+                            },
+                            onDeleteAnnouncement = { viewModel.deleteAnnouncement(it) },
+                            onVotePollOption = { aId, oId, voter -> viewModel.votePollOption(aId, oId, voter) },
+                            onSendChatMessage = { sId, text, isTeacher -> viewModel.sendChatMessage(sId, text, isTeacher) },
+                            onSimulateParentReply = { sId, text -> viewModel.simulateParentReply(sId, text) },
+                            onMarkChatAsRead = { viewModel.markChatMessagesAsRead(it) },
+                            onOpenNotificationCenter = { viewModel.setNotificationCenterOpen(true) },
+                            onCloseNotificationCenter = { viewModel.setNotificationCenterOpen(false) },
+                            onMarkNotificationAsRead = { viewModel.markNotificationAsRead(it) },
+                            onMarkAllNotificationsAsRead = { viewModel.markAllNotificationsAsRead() },
+                            onSetActiveChatStudent = { viewModel.setActiveChatStudent(it) },
+                            onDeleteStudent = { viewModel.deleteStudent(it) },
+                            onDeleteTeacherRoleAndClass = { viewModel.deleteTeacherRoleAndClassroom() },
+                            onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
+                            onLogout = { viewModel.signOut(context) }
+                        )
+                    } else {
+                        viewModel.resetToRoleSelection()
+                    }
+                }
+            }
+        }
+    }
+}

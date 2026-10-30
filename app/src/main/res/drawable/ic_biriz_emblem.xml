@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="300"
+    android:viewportHeight="310">
+
+    <group
+        android:translateX="-150"
+        android:translateY="-95">
+
+        <!-- Merkezdeki Sıcak Işık Halesi -->
+        <path android:pathData="M305,160 a95,95 0 1,0 0.1,0 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:centerX="310"
+                    android:centerY="250"
+                    android:gradientRadius="95"
+                    android:type="radial">
+                    <item android:color="#FFFFFFFF" android:offset="0.0" />
+                    <item android:color="#DDFDEBD0" android:offset="0.55" />
+                    <item android:color="#00F5B041" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- VELİ İÇ SARMALI (Çocuğu İçeriden Saran Sıcak Turuncu Kucak) -->
+        <path android:pathData="M 345,176 C 282,162 225,205 225,268 C 225,315 268,342 315,320 C 278,318 258,288 265,252 C 272,212 318,192 358,215 C 375,225 385,248 380,275 C 398,238 385,188 345,176 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="390"
+                    android:startY="185"
+                    android:endX="230"
+                    android:endY="315"
+                    android:type="linear">
+                    <item android:color="#FAD7A0" android:offset="0.0" />
+                    <item android:color="#EB984E" android:offset="0.45" />
+                    <item android:color="#E67E22" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- VELİ DIŞ GÖVDE (Sağdan Kucaklayan Turuncu Kanat) -->
+        <path android:pathData="M 342,175 C 402,182 432,242 405,318 C 428,272 425,212 385,182 C 372,174 356,172 342,175 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="345"
+                    android:startY="175"
+                    android:endX="425"
+                    android:endY="315"
+                    android:type="linear">
+                    <item android:color="#F5B041" android:offset="0.0" />
+                    <item android:color="#EB984E" android:offset="0.5" />
+                    <item android:color="#CA6F1E" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- VELİ BAŞ FİGÜRÜ (Sağ Üst) -->
+        <path android:pathData="M 364,120 a 24,24 0 1,0 0.1,0 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="340"
+                    android:startY="120"
+                    android:endX="388"
+                    android:endY="168"
+                    android:type="linear">
+                    <item android:color="#F8C471" android:offset="0.0" />
+                    <item android:color="#E67E22" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- ÖĞRENCİ DIŞ DESTEK KANADI (Sağ Alttan Sarılan Turkuaz Kavis) -->
+        <path android:pathData="M 315,388 C 378,378 422,315 408,242 C 405,295 372,348 315,388 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="315"
+                    android:startY="388"
+                    android:endX="422"
+                    android:endY="242"
+                    android:type="linear">
+                    <item android:color="#117864" android:offset="0.0" />
+                    <item android:color="#45B39D" android:offset="0.6" />
+                    <item android:color="#A3E4D7" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- ÖĞRENCİ ANA GÖVDE VE KOLLAR (Merkezde Korunan Çocuk Figürü) -->
+        <path android:pathData="M 218,288 C 245,342 312,358 358,315 C 385,288 392,242 378,204 C 378,245 352,282 312,296 C 275,308 242,302 218,288 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="220"
+                    android:startY="345"
+                    android:endX="385"
+                    android:endY="210"
+                    android:type="linear">
+                    <item android:color="#148F77" android:offset="0.0" />
+                    <item android:color="#48C9B0" android:offset="0.55" />
+                    <item android:color="#76D7C4" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- ÖĞRENCİ BAŞ FİGÜRÜ (Tam Merkezde Işığın İçinde) -->
+        <path android:pathData="M 326,238 a 20,20 0 1,0 0.1,0 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="306"
+                    android:startY="238"
+                    android:endX="346"
+                    android:endY="278"
+                    android:type="linear">
+                    <item android:color="#148F77" android:offset="0.0" />
+                    <item android:color="#48C9B0" android:offset="0.55" />
+                    <item android:color="#76D7C4" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- ÖĞRETMEN ANA GÖVDE (Soldan ve Alttan Tüm Aileyi Kucaklayan Lacivert Gövde) -->
+        <path android:pathData="M 342,162 C 275,132 185,168 175,258 C 165,335 232,392 308,382 C 358,375 392,332 396,272 C 382,328 335,362 282,356 C 225,348 192,298 205,242 C 218,188 278,158 342,162 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="185"
+                    android:startY="150"
+                    android:endX="395"
+                    android:endY="385"
+                    android:type="linear">
+                    <item android:color="#2471A3" android:offset="0.0" />
+                    <item android:color="#154360" android:offset="0.45" />
+                    <item android:color="#0B233A" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- ÖĞRETMEN BAŞ FİGÜRÜ (Sol Üst) -->
+        <path android:pathData="M 226,108 a 30,30 0 1,0 0.1,0 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="196"
+                    android:startY="108"
+                    android:endX="256"
+                    android:endY="168"
+                    android:type="linear">
+                    <item android:color="#2980B9" android:offset="0.0" />
+                    <item android:color="#154360" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

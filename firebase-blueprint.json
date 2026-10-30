@@ -1,0 +1,174 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role, KVKK consent status, and contact information.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full name of the user retrieved from Google profile."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["MEMBER", "TEACHER", "PARENT"],
+          "description": "Assigned user role in BİRİZ."
+        },
+        "kvkkAccepted": {
+          "type": "boolean",
+          "description": "Explicit KVKK legal consent flag."
+        },
+        "assignedSchoolId": {
+          "type": "string",
+          "description": "Optional assigned school identifier."
+        },
+        "assignedClassId": {
+          "type": "string",
+          "description": "Optional assigned classroom identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last updated timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "fullName", "email", "role", "kvkkAccepted", "createdAt", "updatedAt"]
+    },
+    "ClassRoom": {
+      "title": "ClassRoom",
+      "description": "Primary school classroom allocated to a single class teacher.",
+      "type": "object",
+      "properties": {
+        "cityId": {
+          "type": "string",
+          "description": "City plate or ID code."
+        },
+        "cityName": {
+          "type": "string",
+          "description": "City name in Turkish uppercase."
+        },
+        "districtName": {
+          "type": "string",
+          "description": "District name in Turkish uppercase."
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "School name in Turkish uppercase."
+        },
+        "gradeLevel": {
+          "type": "integer",
+          "description": "Primary school grade level between 1 and 4."
+        },
+        "section": {
+          "type": "string",
+          "description": "Single letter branch code (A-Z)."
+        },
+        "teacherId": {
+          "type": "string",
+          "description": "Auth UID of the class teacher administrator."
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Full name of the managing class teacher."
+        },
+        "teacherEmail": {
+          "type": "string",
+          "description": "Contact email of the teacher."
+        },
+        "inviteCode": {
+          "type": "string",
+          "description": "Unique parent invite code for this class."
+        },
+        "studentCount": {
+          "type": "integer",
+          "description": "Current registered student count."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "cityId",
+        "cityName",
+        "districtName",
+        "schoolName",
+        "gradeLevel",
+        "section",
+        "teacherId",
+        "teacherName",
+        "teacherEmail",
+        "inviteCode",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "School": {
+      "title": "School",
+      "description": "School record registered in a specific district.",
+      "type": "object",
+      "properties": {
+        "cityId": {
+          "type": "string",
+          "description": "City code."
+        },
+        "districtName": {
+          "type": "string",
+          "description": "District name in Turkish uppercase."
+        },
+        "name": {
+          "type": "string",
+          "description": "School name in Turkish uppercase."
+        },
+        "creatorId": {
+          "type": "string",
+          "description": "User who registered the school."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["cityId", "districtName", "name", "creatorId", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User personal profiles and role assignments."
+    },
+    "/classrooms/{classroomId}": {
+      "schema": "ClassRoom",
+      "description": "Registered primary school classrooms with exclusive class teacher ownership."
+    },
+    "/schools/{schoolId}": {
+      "schema": "School",
+      "description": "Registered primary schools per district."
+    }
+  }
+}

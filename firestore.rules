@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 3. Entity Validators
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100 &&
+             data.email is string && data.email.size() >= 5 && data.email.size() <= 150 &&
+             data.role in ['MEMBER', 'TEACHER', 'PARENT', 'UYE', 'OGRETMEN', 'VELI'] &&
+             data.kvkkAccepted is bool &&
+             (!('assignedSchoolId' in data) || data.assignedSchoolId is string || data.assignedSchoolId == null) &&
+             (!('assignedClassId' in data) || data.assignedClassId is string || data.assignedClassId == null) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidStudent(data) {
+      return data.studentNo is int && data.studentNo >= 1 && data.studentNo <= 9999 &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100 &&
+             data.gender in ['Erkek', 'Kız'] &&
+             data.parentCode is string && data.parentCode.size() >= 4 && data.parentCode.size() <= 50 &&
+             data.classroomId is string && data.classroomId.size() > 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidClassRoom(data) {
+      return data.cityId is string && data.cityId.size() > 0 && data.cityId.size() <= 30 &&
+             data.cityName is string && data.cityName.size() >= 2 && data.cityName.size() <= 50 &&
+             data.districtName is string && data.districtName.size() >= 2 && data.districtName.size() <= 50 &&
+             data.schoolName is string && data.schoolName.size() >= 2 && data.schoolName.size() <= 150 &&
+             data.gradeLevel is int && data.gradeLevel >= 1 && data.gradeLevel <= 4 &&
+             data.section is string && data.section.size() >= 1 && data.section.size() <= 5 &&
+             data.teacherId is string && data.teacherId.size() > 0 && data.teacherId.size() <= 128 &&
+             data.teacherName is string && data.teacherName.size() >= 2 && data.teacherName.size() <= 100 &&
+             data.teacherEmail is string && data.teacherEmail.size() >= 5 && data.teacherEmail.size() <= 150 &&
+             data.inviteCode is string && data.inviteCode.size() >= 4 && data.inviteCode.size() <= 30 &&
+             (!('studentCount' in data) || (data.studentCount is int && data.studentCount >= 0)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSchool(data) {
+      return data.cityId is string && data.cityId.size() > 0 && data.cityId.size() <= 30 &&
+             data.districtName is string && data.districtName.size() >= 2 && data.districtName.size() <= 50 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 150 &&
+             data.creatorId is string && data.creatorId.size() > 0 && data.creatorId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 4. Collections
+
+    // Users Collection (Strict User Isolation)
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'fullName', 'email', 'role', 'kvkkAccepted', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'email', 'role', 'kvkkAccepted', 'assignedSchoolId', 'assignedClassId', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Classrooms Collection
+    // Authenticated users can read classrooms to search/check branch occupancy
+    match /classrooms/{classroomId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == incoming().teacherId &&
+                       incoming().keys().hasAll(['cityId', 'cityName', 'districtName', 'schoolName', 'gradeLevel', 'section', 'teacherId', 'teacherName', 'teacherEmail', 'inviteCode', 'createdAt', 'updatedAt']) &&
+                       isValidClassRoom(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == existing().teacherId &&
+                       incoming().teacherId == existing().teacherId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['studentCount', 'inviteCode', 'updatedAt']) &&
+                       isValidClassRoom(incoming());
+
+      allow delete: if isSignedIn() && request.auth.uid == existing().teacherId;
+
+      // Students Subcollection under Classroom
+      match /students/{studentId} {
+        allow read: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId &&
+                         incoming().classroomId == classroomId &&
+                         incoming().keys().hasAll(['studentNo', 'fullName', 'gender', 'parentCode', 'classroomId', 'createdAt', 'updatedAt']) &&
+                         isValidStudent(incoming());
+
+        allow update: if isSignedIn() &&
+                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId &&
+                         incoming().classroomId == classroomId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidStudent(incoming());
+
+        allow delete: if isSignedIn() &&
+                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId;
+      }
+    }
+
+    // Schools Collection
+    match /schools/{schoolId} {
+      allow read: if true;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == incoming().creatorId &&
+                       incoming().keys().hasAll(['cityId', 'districtName', 'name', 'creatorId', 'createdAt', 'updatedAt']) &&
+                       isValidSchool(incoming());
+
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

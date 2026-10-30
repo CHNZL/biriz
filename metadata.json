@@ -1,0 +1,6 @@
+{
+  "name": "BİRİZ",
+  "description": "İlkokul düzeyinde öğretmen ve veliyi öğrencinin gelişimi etrafında birleştiren, yüksek güvenlikli ve KVKK uyumlu dijital sınıf ve veli asistanı.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

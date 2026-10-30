@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 640" width="100%" height="100%">
+  <defs>
+    <!-- Arka Plan Yumuşak Işık -->
+    <radialGradient id="bgGrad" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F5F7FA" />
+    </radialGradient>
+
+    <!-- Merkezdeki Sıcak Aydınlanma Halesi (İlk Logodaki İç Işık) -->
+    <radialGradient id="innerGlow" cx="52%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1" />
+      <stop offset="55%" stop-color="#FDEBD0" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#F5B041" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- 1. Öğretmen (Sol Figür - Derin Lacivertten Mavimsi Geçiş) -->
+    <linearGradient id="teacherBodyGrad" x1="15%" y1="10%" x2="75%" y2="95%">
+      <stop offset="0%" stop-color="#2471A3" />
+      <stop offset="45%" stop-color="#154360" />
+      <stop offset="100%" stop-color="#0B233A" />
+    </linearGradient>
+
+    <linearGradient id="teacherHeadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2980B9" />
+      <stop offset="100%" stop-color="#154360" />
+    </linearGradient>
+
+    <!-- 2. Veli (Sağ Figür ve İç Kucaklama - Sıcak Turuncu / Kehribar Geçiş) -->
+    <linearGradient id="parentOuterGrad" x1="20%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#F5B041" />
+      <stop offset="50%" stop-color="#EB984E" />
+      <stop offset="100%" stop-color="#CA6F1E" />
+    </linearGradient>
+
+    <linearGradient id="parentInnerSwirl" x1="85%" y1="20%" x2="15%" y2="85%">
+      <stop offset="0%" stop-color="#FAD7A0" />
+      <stop offset="45%" stop-color="#EB984E" />
+      <stop offset="100%" stop-color="#E67E22" />
+    </linearGradient>
+
+    <linearGradient id="parentHeadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8C471" />
+      <stop offset="100%" stop-color="#E67E22" />
+    </linearGradient>
+
+    <!-- 3. Öğrenci (Merkezdeki Çocuk Figürü - Yumuşak Turkuaz / Su Yeşili Geçiş) -->
+    <linearGradient id="studentGrad" x1="10%" y1="80%" x2="90%" y2="20%">
+      <stop offset="0%" stop-color="#148F77" />
+      <stop offset="55%" stop-color="#48C9B0" />
+      <stop offset="100%" stop-color="#76D7C4" />
+    </linearGradient>
+
+    <linearGradient id="studentOuterWing" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#117864" />
+      <stop offset="60%" stop-color="#45B39D" />
+      <stop offset="100%" stop-color="#A3E4D7" />
+    </linearGradient>
+
+    <!-- Yumuşak Derinlik Gölgesi -->
+    <filter id="softShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0B233A" flood-opacity="0.1" />
+    </filter>
+  </defs>
+
+  <!-- Arka Plan -->
+  <rect width="600" height="640" fill="url(#bgGrad)" />
+
+  <!-- AMBLEM: İLK LOGODAKİ ANLAMLI ÜÇLÜ KUCAKLAŞMA KOMPOZİSYONU -->
+  <g filter="url(#softShadow)" transform="translate(0, 5)">
+    
+    <!-- Merkezdeki Sıcak Işık Halesi -->
+    <circle cx="305" cy="255" r="95" fill="url(#innerGlow)" />
+
+    <!-- VELİ İÇ SARMALI (Çocuğu İçeriden Saran Sıcak Turuncu Kucak) -->
+    <path d="M 345,176
+             C 282,162 225,205 225,268
+             C 225,315 268,342 315,320
+             C 278,318 258,288 265,252
+             C 272,212 318,192 358,215
+             C 375,225 385,248 380,275
+             C 398,238 385,188 345,176 Z" fill="url(#parentInnerSwirl)" />
+
+    <!-- VELİ DIŞ GÖVDE (Sağdan Kucaklayan Turuncu Kanat) -->
+    <path d="M 342,175
+             C 402,182 432,242 405,318
+             C 428,272 425,212 385,182
+             C 372,174 356,172 342,175 Z" fill="url(#parentOuterGrad)" />
+
+    <!-- VELİ BAŞ FİGÜRÜ (Sağ Üst) -->
+    <circle cx="364" cy="144" r="24" fill="url(#parentHeadGrad)" />
+
+    <!-- ÖĞRENCİ DIŞ DESTEK KANADI (Sağ Alttan Sarılan Turkuaz Kavis) -->
+    <path d="M 315,388
+             C 378,378 422,315 408,242
+             C 405,295 372,348 315,388 Z" fill="url(#studentOuterWing)" />
+
+    <!-- ÖĞRENCİ ANA GÖVDE VE KOLLAR (Merkezde Korunan Çocuk Figürü) -->
+    <path d="M 218,288
+             C 245,342 312,358 358,315
+             C 385,288 392,242 378,204
+             C 378,245 352,282 312,296
+             C 275,308 242,302 218,288 Z" fill="url(#studentGrad)" />
+
+    <!-- ÖĞRENCİ BAŞ FİGÜRÜ (Tam Merkezde Işığın İçinde) -->
+    <circle cx="326" cy="258" r="20" fill="url(#studentGrad)" />
+
+    <!-- ÖĞRETMEN ANA GÖVDE (Soldan ve Alttan Tüm Aileyi Kucaklayan Lacivert Gövde) -->
+    <path d="M 342,162
+             C 275,132 185,168 175,258
+             C 165,335 232,392 308,382
+             C 358,375 392,332 396,272
+             C 382,328 335,362 282,356
+             C 225,348 192,298 205,242
+             C 218,188 278,158 342,162 Z" fill="url(#teacherBodyGrad)" />
+
+    <!-- ÖĞRETMEN BAŞ FİGÜRÜ (Sol Üst) -->
+    <circle cx="226" cy="138" r="30" fill="url(#teacherHeadGrad)" />
+
+  </g>
+
+  <!-- TİPOGRAFİ: SON LOGODAKİ YUVARLATILMIŞ (ROUNDED) VE UYUMLU "BİRİZ" FONTU -->
+  <g transform="translate(0, 22)">
+    
+    <!-- 'B' Harfi (Yumuşak Köşeli) -->
+    <path d="M 142,462 L 142,542 
+             M 142,462 L 178,462 C 194,462 203,471 203,482 C 203,493 194,501 178,501 L 142,501
+             M 178,501 L 183,501 C 200,501 209,510 209,522 C 209,534 199,542 182,542 L 142,542" fill="none" stroke="#13294B" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- 1. 'İ' Harfi (Yuvarlatılmış Uçlu) -->
+    <line x1="244" y1="462" x2="244" y2="542" stroke="#13294B" stroke-width="16" stroke-linecap="round" />
+    <circle cx="244" cy="432" r="9.5" fill="#13294B" />
+
+    <!-- 'R' Harfi (Yuvarlatılmış Köşeli) -->
+    <path d="M 284,462 L 284,542 
+             M 284,462 L 320,462 C 338,462 348,472 348,485 C 348,498 338,508 320,508 L 284,508
+             M 318,508 L 346,542" fill="none" stroke="#13294B" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- 2. 'İ' Harfi (Yuvarlatılmış Uçlu) -->
+    <line x1="384" y1="462" x2="384" y2="542" stroke="#13294B" stroke-width="16" stroke-linecap="round" />
+    <circle cx="384" cy="432" r="9.5" fill="#13294B" />
+
+    <!-- 'Z' Harfi (Yumuşak Dönüşlü) -->
+    <path d="M 422,462 L 478,462 L 422,542 L 478,542" fill="none" stroke="#13294B" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+  </g>
+</svg>
