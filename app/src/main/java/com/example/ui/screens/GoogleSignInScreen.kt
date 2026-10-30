@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,11 +61,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.credentials.CredentialManager
+import com.example.BuildConfig
 import com.example.R
 import com.example.auth.GoogleAuthHelper
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
 import com.example.ui.components.BirizOfficialLogo
 import com.example.ui.components.ThemeToggleIconButton
+import com.example.util.AppUpdateManager
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizAmberLight
 import com.example.ui.theme.BirizBorder
@@ -101,6 +105,18 @@ fun GoogleSignInScreen(
     var isTestLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var hasUpdateAvailable by remember { mutableStateOf(false) }
+
+    // Giriş yapmadan önce arka planda yeni sürüm kontrolü
+    LaunchedEffect(Unit) {
+        try {
+            val info = AppUpdateManager.checkForUpdates(context)
+            if (info?.isUpdateAvailable == true) {
+                hasUpdateAvailable = true
+            }
+        } catch (_: Exception) {}
+    }
 
     val backgroundBrush = if (isDarkTheme) {
         Brush.verticalGradient(
@@ -129,7 +145,7 @@ fun GoogleSignInScreen(
             .fillMaxSize()
             .background(backgroundBrush)
     ) {
-        // Üst Bar & Tema Değiştirici (Sabit, dokunma engellenemez)
+        // Üst Bar: Sürüm Rozeti & Güncelle Butonu + Tema Değiştirici
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -137,19 +153,44 @@ fun GoogleSignInScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Sürüm Rozeti ve Doğrudan Güncelleme Tuşu
             Surface(
+                onClick = { showUpdateDialog = true },
                 shape = RoundedCornerShape(12.dp),
-                color = if (isDarkTheme) Color(0x3028B8C2) else Color(0x1513294B),
-                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5028B8C2) else Color(0x2013294B))
+                color = if (hasUpdateAvailable) {
+                    BirizAmber.copy(alpha = 0.2f)
+                } else if (isDarkTheme) {
+                    Color(0x3028B8C2)
+                } else {
+                    Color(0x1513294B)
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (hasUpdateAvailable) BirizAmber
+                    else if (isDarkTheme) Color(0x5028B8C2)
+                    else Color(0x2013294B)
+                ),
+                modifier = Modifier.testTag("login_version_update_badge")
             ) {
-                Text(
-                    text = "FAZ 1 • CANLI",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    letterSpacing = 1.sp
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = "Uygulama Güncelle",
+                        tint = if (hasUpdateAvailable) BirizAmber else if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "v${BuildConfig.VERSION_NAME}${if (hasUpdateAvailable) " • Güncelleme Var!" else " • Güncelle"}",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (hasUpdateAvailable) BirizAmber else if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        letterSpacing = 0.5.sp
+                    )
+                }
             }
 
             ThemeToggleIconButton(
@@ -558,6 +599,13 @@ fun GoogleSignInScreen(
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    if (showUpdateDialog) {
+        AppUpdateDialog(
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showUpdateDialog = false }
         )
     }
 }

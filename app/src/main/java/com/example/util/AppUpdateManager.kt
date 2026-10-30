@@ -210,7 +210,38 @@ object AppUpdateManager {
     }
 
     /**
+     * Cihaz hafızasında birikmemesi için eski indirilen APK artıklarını temizler.
+     * context.cacheDir ve harici indirme dizinindeki eski APK dosyalarını siler.
+     */
+    fun cleanOldApkFiles(context: Context, keepFile: File? = null) {
+        try {
+            val directories = listOfNotNull(
+                context.cacheDir,
+                context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS),
+                context.filesDir
+            )
+            for (dir in directories) {
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles { file ->
+                        file.isFile && file.name.endsWith(".apk", ignoreCase = true)
+                    }
+                    files?.forEach { apk ->
+                        if (keepFile == null || apk.absolutePath != keepFile.absolutePath) {
+                            try {
+                                apk.delete()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
      * APK'yı arka planda indirir ve indirme ilerlemesini bildirir (0f..1f).
+     * İndirmeye başlamadan önce cihazdaki tüm eski APK artıklarını otomatik temizler.
      */
     suspend fun downloadApk(
         context: Context,
@@ -218,6 +249,9 @@ object AppUpdateManager {
         onProgress: (Float) -> Unit
     ): File? = withContext(Dispatchers.IO) {
         try {
+            // Önceki eski APK dosyalarını silerek hafızada yer aç
+            cleanOldApkFiles(context)
+
             var currentUrl = downloadUrl
             var connection: HttpURLConnection
             var redirects = 0

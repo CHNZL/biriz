@@ -45,6 +45,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Cihaz hafızasında eski APK kalıntılarının birikmesini önlemek için temizle
+        com.example.util.AppUpdateManager.cleanOldApkFiles(applicationContext)
+
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             BirizTheme(darkTheme = uiState.isDarkTheme) {

@@ -195,45 +195,6 @@ fun ProfileSettingsSubScreen(
             ProfileDetailRow("İl / İlçe", "${classRoom.cityName} / ${classRoom.districtName}", isDark = isDarkTheme)
             ProfileDetailRow("Sınıf ve Şube", "${classRoom.gradeLevel}/${classRoom.section} Şubesi", isDark = isDarkTheme)
             ProfileDetailRow("Kayıtlı Öğrenci", "$studentCount Öğrenci", isDark = isDarkTheme)
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Genel Veli Katılım Kodu Kartı
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (isDarkTheme) Color(0x30E67E22) else Color(0xFFFEF3C7),
-                border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onCopyCode(classRoom.inviteCode) }
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "Genel Sınıf Veli Kodu:",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFF92400E)
-                        )
-                        Text(
-                            text = classRoom.inviteCode,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isDarkTheme) BirizAmber else Color(0xFF92400E)
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Kopyala",
-                        tint = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFF92400E),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
         }
 
         // 3. UYGULAMA SÜRÜMÜ VE OTOMATİK GÜNCELLEME (APK & GITHUB) BENTO KARTI
@@ -295,15 +256,15 @@ fun ProfileSettingsSubScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
                     onClick = { showUpdateDialog = true },
                     modifier = Modifier
-                        .weight(1.1f)
-                        .height(46.dp)
+                        .fillMaxWidth()
+                        .height(48.dp)
                         .testTag("check_updates_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -315,32 +276,36 @@ fun ProfileSettingsSubScreen(
                         imageVector = Icons.Default.SystemUpdate,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("🚀 Güncelleme", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "🚀 Sürümü ve Güncellemeleri Denetle",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.5.sp
+                    )
                 }
 
                 OutlinedButton(
                     onClick = { showParentQrDialog = true },
                     modifier = Modifier
-                        .weight(1.1f)
-                        .height(46.dp)
+                        .fillMaxWidth()
+                        .height(48.dp)
                         .testTag("show_parent_qr_button"),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                    border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
                 ) {
                     Icon(
                         imageVector = Icons.Default.QrCode2,
                         contentDescription = null,
                         tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "📲 Veli Karekodu",
+                        "📲 Veli İndirme Karekodu ve Bağlantısı",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
                     )
                 }
