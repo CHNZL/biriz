@@ -126,8 +126,8 @@ object GoogleAuthHelper {
             val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
 
             val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
                 .addCredentialOption(signInOption)
+                .addCredentialOption(googleIdOption)
                 .build()
 
             try {
@@ -135,17 +135,24 @@ object GoogleAuthHelper {
                     ?: throw IllegalStateException("Context must be an Activity for CredentialManager")
                 val result = credentialManager.getCredential(activity, request)
                 val credential = result.credential
-                if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                    val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
-                    val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
-                    Firebase.auth.signInWithCredential(authCredential).await()
-                    onAuthSuccess()
-                } else {
-                    onAuthError("Beklenmeyen kimlik doğrulama yanıtı alındı")
+                val googleIdToken = try {
+                    GoogleIdTokenCredential.createFrom(credential.data).idToken
+                } catch (parseEx: Exception) {
+                    if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                        GoogleIdTokenCredential.createFrom(credential.data).idToken
+                    } else {
+                        throw parseEx
+                    }
                 }
+                val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+                Firebase.auth.signInWithCredential(authCredential).await()
+                onAuthSuccess()
             } catch (e: GetCredentialCancellationException) {
-                Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
+                Log.w("Auth", "Google Sign-In flow cancelled: ${e.message}")
                 onAuthCancelled()
+            } catch (e: androidx.credentials.exceptions.NoCredentialException) {
+                Log.e("Auth", "No credential available", e)
+                onAuthError("Google hesabı doğrulanamadı. Uygulamanın imza sertifikası kontrol ediliyor...")
             } catch (e: Exception) {
                 Log.e("Auth", "Google Sign-In failed", e)
                 onAuthError(e.localizedMessage ?: "Giriş işlemi başarısız oldu")

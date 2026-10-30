@@ -34,15 +34,9 @@ jobs:
       - name: Gradlew Çalıştırma İzni Ver
         run: chmod +x gradlew
 
-      - name: Debug Keystore Hazırla
+      - name: Debug Keystore Hazırla (Resmi Firebase Onaylı SHA-1)
         run: |
-          if [ -f debug.keystore.base64 ]; then
-            echo "debug.keystore.base64 dosyasından debug.keystore çözümleniyor..."
-            base64 -d debug.keystore.base64 > debug.keystore
-          else
-            echo "Yeni debug.keystore oluşturuluyor..."
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          python3 scripts/setup_keystore.py
           ls -lh debug.keystore
 
       - name: Google Services Yapılandırmasını Doğrula
