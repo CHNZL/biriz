@@ -186,8 +186,14 @@ class BirizViewModel(
     fun loadSeatingPlanFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
         val ctx = appContext ?: return
         val savedPlan = SeatingPlanPersistenceHelper.loadActivePlan(ctx, classId)
+        val savedConfig = SeatingPlanPersistenceHelper.loadSeatingConfig(ctx, classId)
         if (savedPlan != null) {
-            _uiState.value = _uiState.value.copy(seatingPlanState = savedPlan)
+            val finalPlan = if (savedConfig != null) savedPlan.copy(config = savedConfig) else savedPlan
+            _uiState.value = _uiState.value.copy(seatingPlanState = finalPlan)
+        } else if (savedConfig != null) {
+            _uiState.value = _uiState.value.copy(
+                seatingPlanState = _uiState.value.seatingPlanState.copy(config = savedConfig)
+            )
         }
     }
 
@@ -448,6 +454,8 @@ class BirizViewModel(
                     if (assignedClass != null) {
                         repository.observeStudents(assignedClass.id)
                         loadScheduleFromStorage(assignedClass.id)
+                        loadSeatingPlanFromStorage(assignedClass.id)
+                        loadCommunicationFromStorage(assignedClass.id)
                         _uiState.value = _uiState.value.copy(
                             activeClassRoom = assignedClass,
                             currentRole = UserRole.TEACHER,
@@ -987,6 +995,10 @@ class BirizViewModel(
             config = newConfig,
             assignments = filteredAssignments
         )
+        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        appContext?.let { ctx ->
+            SeatingPlanPersistenceHelper.saveSeatingConfig(ctx, classId, newConfig)
+        }
         persistActiveSeatingPlan(updated)
         _uiState.value = _uiState.value.copy(
             seatingPlanState = updated,
@@ -1129,20 +1141,43 @@ class BirizViewModel(
     fun ensureSeatingPlanInitialized() {
         val currentPlan = _uiState.value.seatingPlanState
         val currentStudents = repository.students.value
-        if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
-            val classId = _uiState.value.activeClassRoom?.id ?: "default"
-            val saved = appContext?.let { SeatingPlanPersistenceHelper.loadActivePlan(it, classId) }
-            if (saved != null && saved.assignments.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(seatingPlanState = saved)
-            } else {
-                val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, currentPlan.config)
-                val initialPlan = currentPlan.copy(
-                    assignments = initial,
-                    activePlanName = "1. Başlangıç Planı"
+        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val saved = appContext?.let { SeatingPlanPersistenceHelper.loadActivePlan(it, classId) }
+        val savedConfig = appContext?.let { SeatingPlanPersistenceHelper.loadSeatingConfig(it, classId) }
+        val effectiveConfig = savedConfig ?: saved?.config ?: currentPlan.config
+
+        if (saved != null) {
+            if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
+                if (saved.assignments.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(seatingPlanState = saved.copy(config = effectiveConfig))
+                } else {
+                    val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, effectiveConfig)
+                    val initialPlan = saved.copy(
+                        config = effectiveConfig,
+                        assignments = initial,
+                        activePlanName = "1. Başlangıç Planı"
+                    )
+                    persistActiveSeatingPlan(initialPlan)
+                    _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
+                }
+            } else if (currentPlan.config != effectiveConfig) {
+                _uiState.value = _uiState.value.copy(
+                    seatingPlanState = currentPlan.copy(config = effectiveConfig)
                 )
-                persistActiveSeatingPlan(initialPlan)
-                _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
             }
+        } else if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
+            val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, effectiveConfig)
+            val initialPlan = currentPlan.copy(
+                config = effectiveConfig,
+                assignments = initial,
+                activePlanName = "1. Başlangıç Planı"
+            )
+            persistActiveSeatingPlan(initialPlan)
+            _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
+        } else if (currentPlan.config != effectiveConfig) {
+            _uiState.value = _uiState.value.copy(
+                seatingPlanState = currentPlan.copy(config = effectiveConfig)
+            )
         }
     }
 

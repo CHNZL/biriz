@@ -63,50 +63,89 @@ object SeatingPlanPersistenceHelper {
         }
     }
 
+    fun deserializeConfig(configObj: JSONObject?): SeatingConfig {
+        if (configObj == null) return SeatingConfig()
+        val groupCount = configObj.optInt("groupCount", 3)
+        val peoplePerRow = configObj.optInt("peoplePerRow", 2)
+        val rowsArray = configObj.optJSONArray("rowsPerGroup")
+        val rowsList = mutableListOf<Int>()
+        if (rowsArray != null) {
+            for (i in 0 until rowsArray.length()) {
+                rowsList.add(rowsArray.getInt(i))
+            }
+        } else {
+            rowsList.addAll(listOf(5, 5, 5))
+        }
+
+        val winPos = try {
+            WindowPosition.valueOf(configObj.optString("windowPosition", WindowPosition.LEFT.name))
+        } catch (e: Exception) {
+            WindowPosition.LEFT
+        }
+        val doorPos = try {
+            DoorPosition.valueOf(configObj.optString("doorPosition", DoorPosition.SAG_ON.name))
+        } catch (e: Exception) {
+            DoorPosition.SAG_ON
+        }
+        val deskPos = try {
+            DeskPosition.valueOf(configObj.optString("deskPosition", DeskPosition.LEFT.name))
+        } catch (e: Exception) {
+            DeskPosition.LEFT
+        }
+
+        return SeatingConfig(
+            groupCount = groupCount,
+            peoplePerRow = peoplePerRow,
+            rowsPerGroup = rowsList,
+            windowPosition = winPos,
+            doorPosition = doorPos,
+            deskPosition = deskPos
+        )
+    }
+
+    private fun serializeConfig(config: SeatingConfig): JSONObject {
+        return JSONObject().apply {
+            put("groupCount", config.groupCount)
+            put("peoplePerRow", config.peoplePerRow)
+            val rowsArray = JSONArray()
+            config.rowsPerGroup.forEach { rowsArray.put(it) }
+            put("rowsPerGroup", rowsArray)
+            put("windowPosition", config.windowPosition.name)
+            put("doorPosition", config.doorPosition.name)
+            put("deskPosition", config.deskPosition.name)
+        }
+    }
+
+    fun saveSeatingConfig(context: Context, classId: String, config: SeatingConfig) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonStr = serializeConfig(config).toString()
+            val editor = prefs.edit()
+            if (classId.isNotBlank()) {
+                editor.putString("config_" + classId, jsonStr)
+            }
+            editor.putString("config_default", jsonStr)
+            editor.apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun loadSeatingConfig(context: Context, classId: String): SeatingConfig? {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonStr = (if (classId.isNotBlank()) prefs.getString("config_" + classId, null) else null)
+                ?: prefs.getString("config_default", null)
+                ?: return null
+            return deserializeConfig(JSONObject(jsonStr))
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
     private fun deserializePlanState(json: JSONObject): SeatingPlanState {
         val activeName = json.optString("activePlanName", "Varsayılan Plan")
-
-        val configObj = json.optJSONObject("config")
-        val config = if (configObj != null) {
-            val groupCount = configObj.optInt("groupCount", 3)
-            val peoplePerRow = configObj.optInt("peoplePerRow", 2)
-            val rowsArray = configObj.optJSONArray("rowsPerGroup")
-            val rowsList = mutableListOf<Int>()
-            if (rowsArray != null) {
-                for (i in 0 until rowsArray.length()) {
-                    rowsList.add(rowsArray.getInt(i))
-                }
-            } else {
-                rowsList.addAll(listOf(5, 5, 5))
-            }
-
-            val winPos = try {
-                WindowPosition.valueOf(configObj.optString("windowPosition", WindowPosition.LEFT.name))
-            } catch (e: Exception) {
-                WindowPosition.LEFT
-            }
-            val doorPos = try {
-                DoorPosition.valueOf(configObj.optString("doorPosition", DoorPosition.SAG_ON.name))
-            } catch (e: Exception) {
-                DoorPosition.SAG_ON
-            }
-            val deskPos = try {
-                DeskPosition.valueOf(configObj.optString("deskPosition", DeskPosition.LEFT.name))
-            } catch (e: Exception) {
-                DeskPosition.LEFT
-            }
-
-            SeatingConfig(
-                groupCount = groupCount,
-                peoplePerRow = peoplePerRow,
-                rowsPerGroup = rowsList,
-                windowPosition = winPos,
-                doorPosition = doorPos,
-                deskPosition = deskPos
-            )
-        } else {
-            SeatingConfig()
-        }
+        val config = deserializeConfig(json.optJSONObject("config"))
 
         val assignObj = json.optJSONObject("assignments")
         val assignments = mutableMapOf<String, String>()

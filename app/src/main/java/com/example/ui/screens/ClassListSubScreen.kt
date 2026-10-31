@@ -2207,8 +2207,8 @@ fun StudentDetailDialog(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Kodu Kopyala & Veliye Paylaş (WhatsApp vb.)",
-                                    fontSize = 12.5.sp,
+                                    text = "Kodu Kopyala & Veliye Paylaş",
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
