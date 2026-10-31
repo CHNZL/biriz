@@ -25,9 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
@@ -63,6 +63,8 @@ import com.example.auth.GoogleAuthHelper
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
 import com.example.ui.components.BirizOfficialLogo
+import com.example.ui.components.KvkkDialog
+import com.example.ui.components.TermsOfServiceDialog
 import com.example.ui.components.ThemeToggleIconButton
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
@@ -78,6 +80,7 @@ import com.example.ui.theme.BirizNavyDark
 import com.example.ui.theme.BirizNavyLight
 import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizSurface
+import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
@@ -100,6 +103,8 @@ fun GoogleSignInScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var hasUpdateAvailable by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var showKvkkDialog by remember { mutableStateOf(false) }
 
     // Giriş yapmadan önce arka planda yeni GitHub sürümünü kontrol et
     LaunchedEffect(Unit) {
@@ -283,142 +288,7 @@ fun GoogleSignInScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // 2. ROL ÖNİZLEME KARTLARI (Öğretmen & Veli)
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 2.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Kullanıcı Rolü",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textColorPrimary
-                        )
-                        Text(
-                            text = "Öğretmen Modülü Aktif",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = BirizTurquoise
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Öğretmen Bento Kartı (Aktif & Vurgulu)
-                        BentoCard(
-                            modifier = Modifier.weight(1f),
-                            isDark = isDarkTheme,
-                            glowColor = BirizTurquoise,
-                            shape = RoundedCornerShape(22.dp)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isDarkTheme) Color(0x3528B8C2) else BirizTurquoiseSoft,
-                                    modifier = Modifier.size(48.dp),
-                                    border = BorderStroke(1.2.dp, BirizTurquoise)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.School,
-                                            contentDescription = null,
-                                            tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "Öğretmen",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = textColorPrimary
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = BirizTurquoise
-                                ) {
-                                    Text(
-                                        text = "GİRİŞE HAZIR",
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = BirizNavyDark,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp),
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                            }
-                        }
-
-                        // Veli Bento Kartı (Karekod Katılımı Vurgulu)
-                        BentoCard(
-                            modifier = Modifier.weight(1f),
-                            isDark = isDarkTheme,
-                            glowColor = if (isDarkTheme) Color(0x2064748B) else Color(0x1013294B),
-                            shape = RoundedCornerShape(22.dp)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isDarkTheme) Color(0x20E67E22) else Color(0xFFFFF3E0),
-                                    modifier = Modifier.size(48.dp),
-                                    border = BorderStroke(1.2.dp, BirizAmber.copy(alpha = 0.6f))
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = BirizAmber,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "Veli Portalı",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = textColorSecondary
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (isDarkTheme) Color(0x3564748B) else Color(0xFFE2E8F0)
-                                ) {
-                                    Text(
-                                        text = "KART İLE KATILIM",
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp),
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(36.dp))
 
                 // Hata Bildirimi (Varsa)
                 AnimatedVisibility(
@@ -529,32 +399,127 @@ fun GoogleSignInScreen(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // GÜVENLİK VE YASAL BİLGİLENDİRME
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                // GÜVENLİK VE YASAL BİLGİLENDİRME (ERİŞİLEBİLİR SÖZLEŞMELER)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Giriş yaparak BİRİZ Kullanım Şartları ve KVKK Sözleşmesini onaylamış olursunuz.",
-                        fontSize = 11.sp,
-                        color = textColorSecondary,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 15.sp
-                    )
+                    // Tıklanabilir Sözleşme Rozetleri / Butonları
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Kullanım Şartları Butonu
+                        Surface(
+                            onClick = { showTermsDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isDarkTheme) Color(0x3013294B) else Color(0xFFF1F5F9),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            ),
+                            modifier = Modifier.testTag("btn_open_terms_dialog")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Kullanım Şartları",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // 2. KVKK Sözleşmesi Butonu
+                        Surface(
+                            onClick = { showKvkkDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isDarkTheme) Color(0x3013294B) else Color(0xFFF1F5F9),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            ),
+                            modifier = Modifier.testTag("btn_open_kvkk_dialog")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "KVKK Sözleşmesi",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = if (isDarkTheme) BirizDarkTextSecondary else BirizTextMuted,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Giriş yaparak BİRİZ Kullanım Şartları ve KVKK Aydınlatma Metnini onaylamış sayılırsınız.",
+                            fontSize = 10.5.sp,
+                            color = textColorSecondary,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 14.sp
+                        )
+                    }
                 }
             }
 
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        if (showTermsDialog) {
+            TermsOfServiceDialog(
+                onDismissRequest = { showTermsDialog = false },
+                isDarkTheme = isDarkTheme
+            )
+        }
+
+        if (showKvkkDialog) {
+            KvkkDialog(
+                onDismissRequest = { showKvkkDialog = false },
+                isDarkTheme = isDarkTheme,
+                isReadOnly = true
             )
         }
 

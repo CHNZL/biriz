@@ -50,8 +50,9 @@ import com.example.ui.theme.BirizTurquoiseSoft
 @Composable
 fun KvkkDialog(
     onDismissRequest: () -> Unit,
-    onAcceptAndClose: () -> Unit,
-    isDarkTheme: Boolean = false
+    onAcceptAndClose: () -> Unit = onDismissRequest,
+    isDarkTheme: Boolean = false,
+    isReadOnly: Boolean = false
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -174,47 +175,67 @@ fun KvkkDialog(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Butonlar
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (isDarkTheme) Color(0xFF334E68) else Color(0xFFCBD5E1)
-                        )
-                    ) {
-                        Text(
-                            "Vazgeç",
-                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
+                if (isReadOnly) {
                     Button(
-                        onClick = onAcceptAndClose,
+                        onClick = onDismissRequest,
                         modifier = Modifier
-                            .weight(1.4f)
-                            .testTag("kvkk_accept_button"),
+                            .fillMaxWidth()
+                            .testTag("kvkk_close_readonly_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                             contentColor = if (isDarkTheme) BirizNavyDark else Color.White
                         ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = if (isDarkTheme) BirizNavyDark else BirizTurquoise,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Okudum & Onayla",
+                            "Anladım ve Kapat",
                             fontWeight = FontWeight.Bold,
                             color = if (isDarkTheme) BirizNavyDark else Color.White
                         )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isDarkTheme) Color(0xFF334E68) else Color(0xFFCBD5E1)
+                            )
+                        ) {
+                            Text(
+                                "Vazgeç",
+                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Button(
+                            onClick = onAcceptAndClose,
+                            modifier = Modifier
+                                .weight(1.4f)
+                                .testTag("kvkk_accept_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                contentColor = if (isDarkTheme) BirizNavyDark else Color.White
+                            ),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (isDarkTheme) BirizNavyDark else BirizTurquoise,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Okudum & Onayla",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizNavyDark else Color.White
+                            )
+                        }
                     }
                 }
             }
