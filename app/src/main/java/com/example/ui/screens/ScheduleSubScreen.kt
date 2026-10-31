@@ -82,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -954,140 +955,7 @@ fun ScheduleTableScreen(
             .padding(horizontal = 14.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // --- 1. ÜST BAŞLIK, "PDF İNDİR" VE "AYARLAR ⚙️" BUTONLARI ---
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Ders Programı",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
-                    )
-                    Text(
-                        text = "${classRoom.gradeLevel}/${classRoom.section} • ${classRoom.schoolName}",
-                        fontSize = 11.sp,
-                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // "Ayarlar ⚙️" Butonu
-                    Surface(
-                        onClick = onOpenSettings,
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
-                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                        modifier = Modifier.testTag("btn_schedule_settings_top")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Ayarlar",
-                                tint = BirizTurquoise,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Ayarlar",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                        }
-                    }
-
-                    // Standart Paylaş Butonu ve Menüsü
-                    Box {
-                        Button(
-                            onClick = { isShareMenuOpen = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("schedule_share_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Paylaş",
-                                modifier = Modifier.size(15.dp),
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Paylaş", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        DropdownMenu(
-                            expanded = isShareMenuOpen,
-                            onDismissRequest = { isShareMenuOpen = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
-                                onClick = {
-                                    isShareMenuOpen = false
-                                    val shareText = ExcelPdfHelper.generateWeeklyScheduleShareText(classRoom, config, lessons)
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Haftalık Ders Programı", shareText))
-                                    Toast.makeText(context, "Ders programı panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
-                                onClick = {
-                                    isShareMenuOpen = false
-                                    try {
-                                        val uri = ExcelPdfHelper.exportWeeklyScheduleExcel(context, classRoom, config, lessons)
-                                        ExcelPdfHelper.shareFile(
-                                            context = context,
-                                            uri = uri,
-                                            mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                            chooserTitle = "Haftalık Ders Programı Excel Dosyasını Paylaş"
-                                        )
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("🖨️ PDF (A4) İndir / Yazdır", fontSize = 12.sp) },
-                                onClick = {
-                                    isShareMenuOpen = false
-                                    try {
-                                        val uri = ExcelPdfHelper.exportWeeklySchedulePdf(
-                                            context = context,
-                                            classRoom = classRoom,
-                                            config = config,
-                                            lessons = lessons
-                                        )
-                                        ExcelPdfHelper.shareFile(
-                                            context = context,
-                                            uri = uri,
-                                            mimeType = "application/pdf",
-                                            chooserTitle = "Haftalık Ders Programı PDF Dosyasını Paylaş"
-                                        )
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- 1.5. CANLI "ŞU ANKİ DERS" & TENEFFÜS GÖSTERGE BANDI ---
+        // --- 1. KOMPAKT BİLGİ & CANLI DURUM BANDI (AYARLAR VE PAYLAŞ BUTONLARIYLA AYNI SATIRDA) ---
         item {
             val liveBgColor = when (liveStatus.iconType) {
                 "LESSON" -> if (isDarkTheme) Color(0x3028B8C2) else Color(0xFFF0FDF4)
@@ -1108,58 +976,155 @@ fun ScheduleTableScreen(
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = liveBgColor,
-                border = BorderStroke(1.2.dp, liveBorderColor),
+                border = BorderStroke(1.dp, liveBorderColor),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = 2.dp)
                     .testTag("schedule_live_status_banner")
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (liveStatus.isLive) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(if (liveStatus.iconType == "LESSON") Color(0xFF22C55E) else Color(0xFFF59E0B))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
+                    // Sol: Bilgi / Canlı Durum Metinleri (Daraltılmış & Ferah)
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (liveStatus.isLive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (liveStatus.iconType == "LESSON") Color(0xFF22C55E) else Color(0xFFF59E0B))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
                             Text(
                                 text = liveStatus.title,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = liveTitleColor
+                                color = liveTitleColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = liveStatus.subtitle,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = liveStatus.subtitle,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                        )
                     }
 
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isDarkTheme) Color(0x40000000) else Color.White.copy(alpha = 0.8f),
-                        border = BorderStroke(0.5.dp, liveBorderColor)
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Sağ: Ayarlar ve Paylaş İkon Butonları
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = if (liveStatus.isLive) "CANLI" else "BİLGİ",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Black,
-                            color = liveTitleColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
+                        // "Ayarlar ⚙️" Butonu
+                        Surface(
+                            onClick = onOpenSettings,
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDarkTheme) Color(0x40000000) else Color.White,
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("btn_schedule_settings_top")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Program Ayarları",
+                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+
+                        // "Paylaş" Butonu ve Açılır Menüsü
+                        Box {
+                            Surface(
+                                onClick = { isShareMenuOpen = true },
+                                shape = RoundedCornerShape(8.dp),
+                                color = BirizNavyPrimary,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .testTag("schedule_share_button")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Paylaş",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = isShareMenuOpen,
+                                onDismissRequest = { isShareMenuOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
+                                    onClick = {
+                                        isShareMenuOpen = false
+                                        val shareText = ExcelPdfHelper.generateWeeklyScheduleShareText(classRoom, config, lessons)
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Haftalık Ders Programı", shareText))
+                                        Toast.makeText(context, "Ders programı panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
+                                    onClick = {
+                                        isShareMenuOpen = false
+                                        try {
+                                            val uri = ExcelPdfHelper.exportWeeklyScheduleExcel(context, classRoom, config, lessons)
+                                            ExcelPdfHelper.shareFile(
+                                                context = context,
+                                                uri = uri,
+                                                mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                chooserTitle = "Haftalık Ders Programı Excel Dosyasını Paylaş"
+                                            )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🖨️ PDF (A4) İndir / Yazdır", fontSize = 12.sp) },
+                                    onClick = {
+                                        isShareMenuOpen = false
+                                        try {
+                                            val uri = ExcelPdfHelper.exportWeeklySchedulePdf(
+                                                context = context,
+                                                classRoom = classRoom,
+                                                config = config,
+                                                lessons = lessons
+                                            )
+                                            ExcelPdfHelper.shareFile(
+                                                context = context,
+                                                uri = uri,
+                                                mimeType = "application/pdf",
+                                                chooserTitle = "Haftalık Ders Programı PDF Dosyasını Paylaş"
+                                            )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }

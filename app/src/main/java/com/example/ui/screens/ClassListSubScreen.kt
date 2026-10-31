@@ -2200,39 +2200,6 @@ fun StudentDetailDialog(
                                 textAlign = TextAlign.Center,
                                 lineHeight = 14.5.sp
                             )
-
-                            // Hızlı Test / Örnek Veli Simülasyonu
-                            if (onSimulateOrUpdateParent != null) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Surface(
-                                    onClick = {
-                                        val lastName = student.fullName.split(" ").lastOrNull() ?: "YILMAZ"
-                                        onSimulateOrUpdateParent("Fatma $lastName (Annesi)", "veli.${student.studentNumber}@biriz.meb.k12.tr")
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isDarkTheme) Color(0x2038BDF8) else Color(0xFFE0F2FE),
-                                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF0284C7) else Color(0xFFBAE6FD))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0284C7),
-                                            modifier = Modifier.size(13.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(5.dp))
-                                        Text(
-                                            text = "Örnek Veli Bağla (Test)",
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0284C7)
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
