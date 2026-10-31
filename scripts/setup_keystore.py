@@ -21,7 +21,18 @@ def main():
         print("Base64 dosyası bulunamadı, gömülü resmi BİRİZ anahtarı kullanılıyor...")
         b64_content = OFFICIAL_KEYSTORE_B64
 
-    keystore_bytes = base64.b64decode(b64_content)
+    # Whitespace ve satır sonlarını temizle
+    b64_clean = "".join(b64_content.split())
+    rem = len(b64_clean) % 4
+    if rem != 0:
+        b64_clean += "=" * (4 - rem)
+
+    try:
+        keystore_bytes = base64.b64decode(b64_clean)
+    except Exception as e:
+        print(f"Base64 çözme uyarısı ({e}), gömülü resmi BİRİZ anahtarı kullanılıyor...")
+        keystore_bytes = base64.b64decode(OFFICIAL_KEYSTORE_B64)
+
     with open("debug.keystore", "wb") as f:
         f.write(keystore_bytes)
 

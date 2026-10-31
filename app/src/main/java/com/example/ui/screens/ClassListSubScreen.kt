@@ -1424,9 +1424,29 @@ fun ClassListSubScreen(
                 selectedStudentForDetail = null
             },
             onCopyCode = {
+                val inviteMessage = buildString {
+                    appendLine("Sayın Velimiz,")
+                    appendLine()
+                    appendLine("BİRİZ İlkokul Dijital Sınıf ve Veli Yönetim Sistemi üzerinden öğrencimiz ${student.fullName} (${classRoom.gradeLevel}/${classRoom.section} Sınıfı - ${classRoom.schoolName}) için veli katılım kodunuz:")
+                    appendLine()
+                    appendLine("🔑 Veli Katılım Kodu: ${student.parentInviteCode}")
+                    appendLine()
+                    appendLine("BİRİZ uygulamasını indirip bu kod ile giriş yaparak öğrencimizin ders programı, oturma planı ve sınıf duyurularını anlık takip edebilirsiniz.")
+                    appendLine("📲 Uygulama İndirme Linki: https://github.com/CHNZL/biriz/releases/latest/download/Biriz.apk")
+                }
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Veli Katılım Kodu", student.parentInviteCode))
-                Toast.makeText(context, "${student.fullName} için Veli Kodu kopyalandı: ${student.parentInviteCode}", Toast.LENGTH_SHORT).show()
+                clipboard.setPrimaryClip(ClipData.newPlainText("Veli Katılım Kodu", inviteMessage))
+                Toast.makeText(context, "${student.fullName} için Veli Kodu ve davet mesajı kopyalandı! 📋 Paylaşılıyor...", Toast.LENGTH_SHORT).show()
+
+                try {
+                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "${student.fullName} - BİRİZ Veli Katılım Kodu")
+                        putExtra(android.content.Intent.EXTRA_TEXT, inviteMessage)
+                    }
+                    val chooser = android.content.Intent.createChooser(shareIntent, "${student.fullName} Veli Katılım Kodunu Paylaş")
+                    context.startActivity(chooser)
+                } catch (_: Exception) {}
             },
             onTogglePriority = {
                 onTogglePriority?.invoke(student.id)
@@ -2166,28 +2186,31 @@ fun StudentDetailDialog(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Kodu Kopyala Butonu
-                            OutlinedButton(
+                            // Kodu Kopyala & Veliye Paylaş Butonu
+                            Button(
                                 onClick = onCopyCode,
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, BirizAmber),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (isDarkTheme) Color(0x30E67E22) else Color.White
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BirizAmber,
+                                    contentColor = Color.White
                                 ),
-                                modifier = Modifier.testTag("btn_detail_copy_code")
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_detail_copy_code")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    tint = BirizAmber,
-                                    modifier = Modifier.size(15.dp)
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Paylaş",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Kodu Kopyala & Veliye Gönder",
-                                    fontSize = 12.sp,
+                                    text = "Kodu Kopyala & Veliye Paylaş (WhatsApp vb.)",
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = BirizAmber
+                                    color = Color.White
                                 )
                             }
 
