@@ -6,6 +6,7 @@ import com.example.data.model.BranchStatus
 import com.example.data.model.City
 import com.example.data.model.ClassRoom
 import com.example.data.model.ClassRoomDocument
+import com.example.data.model.LinkedParentAccount
 import com.example.data.model.School
 import com.example.data.model.SchoolDocument
 import com.example.data.model.Student
@@ -171,11 +172,59 @@ class ClassRegistryRepository(
         )
 
         val sampleStudents = listOf(
-            Student(id = "std_45", studentNumber = "45", fullName = "SEMİH AHMET KAVAKOĞLU", gender = "Erkek", parentInviteCode = "BRZ-KAV-45", parentName = "Ahmet Kavakoğlu", parentEmail = "ahmet.kav@gmail.com", parentLinkedAt = "12 Ekim 2026, 14:20", parentLastLoginAt = "Bugün, 09:15"),
+            Student(
+                id = "std_45",
+                studentNumber = "45",
+                fullName = "SEMİH AHMET KAVAKOĞLU",
+                gender = "Erkek",
+                parentInviteCode = "BRZ-KAV-45",
+                parentName = "Ahmet Kavakoğlu",
+                parentEmail = "ahmet.kav@gmail.com",
+                parentLinkedAt = "12 Ekim 2026, 14:20",
+                parentLastLoginAt = "Bugün, 09:15",
+                linkedParents = listOf(
+                    LinkedParentAccount(
+                        email = "ahmet.kav@gmail.com",
+                        name = "Ahmet Kavakoğlu",
+                        phone = "0532 111 22 33",
+                        relationship = "Baba",
+                        linkedAt = "12 Ekim 2026, 14:20",
+                        lastLoginAt = "Bugün, 09:15"
+                    ),
+                    LinkedParentAccount(
+                        email = "zeynep.kav@gmail.com",
+                        name = "Zeynep Kavakoğlu",
+                        phone = "0533 222 33 44",
+                        relationship = "Anne",
+                        linkedAt = "14 Ekim 2026, 11:05",
+                        lastLoginAt = "Dün, 18:40"
+                    )
+                )
+            ),
             Student(id = "std_326", studentNumber = "326", fullName = "GÜNEŞ DEMİR", gender = "Kız", parentInviteCode = "BRZ-DMR-326", isPriority = true),
             Student(id = "std_402", studentNumber = "402", fullName = "AHMET ASAF IŞIK", gender = "Erkek", parentInviteCode = "BRZ-ISK-402"),
             Student(id = "std_407", studentNumber = "407", fullName = "EMİR ASAF AKKAŞ", gender = "Erkek", parentInviteCode = "BRZ-AKK-407"),
-            Student(id = "std_408", studentNumber = "408", fullName = "KEVSER ÖZDEMİR", gender = "Kız", parentInviteCode = "BRZ-OZD-408"),
+            Student(
+                id = "std_408",
+                studentNumber = "408",
+                fullName = "KEVSER ÖZDEMİR",
+                gender = "Kız",
+                parentInviteCode = "BRZ-OZD-408",
+                parentName = "Fatma Özdemir",
+                parentEmail = "fatma.ozdemir@gmail.com",
+                parentLinkedAt = "18 Ekim 2026, 10:00",
+                parentLastLoginAt = "Bugün, 08:30",
+                linkedParents = listOf(
+                    LinkedParentAccount(
+                        email = "fatma.ozdemir@gmail.com",
+                        name = "Fatma Özdemir",
+                        phone = "0555 333 44 55",
+                        relationship = "Anne",
+                        linkedAt = "18 Ekim 2026, 10:00",
+                        lastLoginAt = "Bugün, 08:30"
+                    )
+                )
+            ),
             Student(id = "std_409", studentNumber = "409", fullName = "MEHMET AKİF KILIÇ", gender = "Erkek", parentInviteCode = "BRZ-KLC-409"),
             Student(id = "std_410", studentNumber = "410", fullName = "ELİF ZÜLAL YILMAZ", gender = "Kız", parentInviteCode = "BRZ-YLM-410"),
             Student(id = "std_412", studentNumber = "412", fullName = "YUSUF KEREM KAYA", gender = "Erkek", parentInviteCode = "BRZ-KYA-412"),
@@ -412,6 +461,23 @@ class ClassRegistryRepository(
                         val parentEmail = doc.getString("parentEmail")
                         val parentLinkedAt = doc.getString("parentLinkedAt")
                         val parentLastLoginAt = doc.getString("parentLastLoginAt")
+                        @Suppress("UNCHECKED_CAST")
+                        val rawLinkedParents = doc.get("linkedParents") as? List<Map<String, Any?>>
+                        val parsedLinked = rawLinkedParents?.mapNotNull { map ->
+                            val e = map["email"] as? String
+                            val n = map["name"] as? String
+                            if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
+                                LinkedParentAccount(
+                                    email = e,
+                                    name = n,
+                                    phone = (map["phone"] as? String) ?: "",
+                                    relationship = (map["relationship"] as? String) ?: "Veli",
+                                    linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
+                                    lastLoginAt = map["lastLoginAt"] as? String
+                                )
+                            } else null
+                        } ?: emptyList()
+
                         Student(
                             id = doc.id,
                             studentNumber = studentNo.toString(),
@@ -421,7 +487,8 @@ class ClassRegistryRepository(
                             parentName = parentName,
                             parentEmail = parentEmail,
                             parentLinkedAt = parentLinkedAt,
-                            parentLastLoginAt = parentLastLoginAt
+                            parentLastLoginAt = parentLastLoginAt,
+                            linkedParents = parsedLinked
                         )
                     }.sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
                     _students.value = list

@@ -373,6 +373,7 @@ object CommunicationPersistenceHelper {
             put("studentNumber", msg.studentNumber)
             put("studentName", msg.studentName)
             put("parentName", msg.parentName)
+            put("parentEmail", msg.parentEmail)
             put("isFromTeacher", msg.isFromTeacher)
             put("senderName", msg.senderName)
             put("text", msg.text)
@@ -389,6 +390,7 @@ object CommunicationPersistenceHelper {
             studentNumber = obj.getString("studentNumber"),
             studentName = obj.getString("studentName"),
             parentName = obj.getString("parentName"),
+            parentEmail = obj.optString("parentEmail", ""),
             isFromTeacher = obj.getBoolean("isFromTeacher"),
             senderName = obj.getString("senderName"),
             text = obj.getString("text"),

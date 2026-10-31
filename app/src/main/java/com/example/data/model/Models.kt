@@ -44,6 +44,15 @@ data class ClassRoom(
     val isOccupied: Boolean = true
 )
 
+data class LinkedParentAccount(
+    val email: String,
+    val name: String,
+    val phone: String = "",
+    val relationship: String = "Veli", // "Anne", "Baba", "Veli"
+    val linkedAt: String = "Bağlandı",
+    val lastLoginAt: String? = null
+)
+
 data class Student(
     val id: String,
     val studentNumber: String,
@@ -56,9 +65,26 @@ data class Student(
     val parentName: String? = null,
     val parentEmail: String? = null,
     val parentLinkedAt: String? = null,
-    val parentLastLoginAt: String? = null
+    val parentLastLoginAt: String? = null,
+    val linkedParents: List<LinkedParentAccount> = emptyList()
 ) {
-    val isParentLinked: Boolean get() = !parentName.isNullOrBlank() || !parentEmail.isNullOrBlank()
+    val allLinkedParents: List<LinkedParentAccount> get() {
+        val list = linkedParents.toMutableList()
+        if (!parentEmail.isNullOrBlank() && list.none { it.email.equals(parentEmail, ignoreCase = true) }) {
+            list.add(
+                0,
+                LinkedParentAccount(
+                    email = parentEmail,
+                    name = parentName ?: "Veli",
+                    linkedAt = parentLinkedAt ?: "Bağlandı",
+                    lastLoginAt = parentLastLoginAt
+                )
+            )
+        }
+        return list
+    }
+
+    val isParentLinked: Boolean get() = allLinkedParents.isNotEmpty()
 }
 
 data class BranchStatus(

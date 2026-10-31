@@ -74,6 +74,7 @@ data class ChatMessage(
     val studentNumber: String,
     val studentName: String,
     val parentName: String,
+    val parentEmail: String = "",
     val isFromTeacher: Boolean,
     val senderName: String,
     val text: String,
@@ -89,7 +90,8 @@ data class ParentChatSummary(
     val studentNumber: String,
     val studentName: String,
     val parentName: String,
-    val parentPhone: String,
+    val parentEmail: String = "",
+    val parentPhone: String = "",
     val isParentLinked: Boolean = true,
     val lastMessage: ChatMessage? = null,
     val unreadCount: Int = 0

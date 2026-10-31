@@ -308,12 +308,23 @@ class BirizViewModel(
         appContext?.let { CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList) }
     }
 
-    fun sendChatMessage(studentId: String, text: String, isFromTeacher: Boolean = true) {
+    fun sendChatMessage(
+        studentId: String,
+        text: String,
+        isFromTeacher: Boolean = true,
+        parentEmail: String = "",
+        parentName: String = ""
+    ) {
         val classId = _uiState.value.activeClassRoom?.id ?: "default"
         val student = repository.students.value.find { it.id == studentId }
         val studentNo = student?.studentNumber ?: ""
         val studentName = student?.fullName ?: "Öğrenci"
-        val parentName = student?.parentName ?: "${studentName.split(" ").first()} Velisi"
+
+        val targetParent = student?.allLinkedParents?.find { it.email.equals(parentEmail, ignoreCase = true) }
+            ?: student?.allLinkedParents?.firstOrNull()
+
+        val resolvedEmail = if (parentEmail.isNotBlank()) parentEmail else (targetParent?.email ?: "")
+        val resolvedParentName = if (parentName.isNotBlank()) parentName else (targetParent?.name ?: (student?.parentName ?: "${studentName.split(" ").first()} Velisi"))
 
         val newMsg = ChatMessage(
             id = "msg_${System.currentTimeMillis()}",
@@ -321,9 +332,10 @@ class BirizViewModel(
             studentId = studentId,
             studentNumber = studentNo,
             studentName = studentName,
-            parentName = parentName,
+            parentName = resolvedParentName,
+            parentEmail = resolvedEmail,
             isFromTeacher = isFromTeacher,
-            senderName = if (isFromTeacher) _uiState.value.activeClassRoom?.teacherName ?: "Cihan Özel" else parentName,
+            senderName = if (isFromTeacher) _uiState.value.activeClassRoom?.teacherName ?: "Cihan Özel" else resolvedParentName,
             text = text,
             timestamp = System.currentTimeMillis(),
             status = if (isFromTeacher) MessageStatus.READ else MessageStatus.DELIVERED
@@ -334,15 +346,21 @@ class BirizViewModel(
         appContext?.let { CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages) }
     }
 
-    fun simulateParentReply(studentId: String, replyText: String) {
-        sendChatMessage(studentId, replyText, isFromTeacher = false)
+    fun simulateParentReply(
+        studentId: String,
+        replyText: String,
+        parentEmail: String = "",
+        parentName: String = ""
+    ) {
+        sendChatMessage(studentId, replyText, isFromTeacher = false, parentEmail = parentEmail, parentName = parentName)
         val student = repository.students.value.find { it.id == studentId }
-        val parentName = student?.parentName ?: "Veli"
+        val targetParent = student?.allLinkedParents?.find { it.email.equals(parentEmail, ignoreCase = true) }
+        val resolvedParentName = if (parentName.isNotBlank()) parentName else (targetParent?.name ?: "Veli")
 
         val notif = BirizNotification(
             id = "notif_${System.currentTimeMillis()}",
             title = "Yeni Veli Mesajı 💬",
-            message = "$parentName (#${student?.studentNumber} ${student?.fullName}): $replyText",
+            message = "$resolvedParentName (#${student?.studentNumber} ${student?.fullName}): $replyText",
             timestamp = System.currentTimeMillis(),
             type = NotificationType.MESSAGE,
             targetSubPageName = "ILETISIM_MESAJLAR",
@@ -356,10 +374,12 @@ class BirizViewModel(
         }
     }
 
-    fun markChatMessagesAsRead(studentId: String) {
+    fun markChatMessagesAsRead(studentId: String, parentEmail: String = "") {
         val classId = _uiState.value.activeClassRoom?.id ?: "default"
         val updatedMessages = _uiState.value.chatMessages.map { msg ->
-            if (msg.studentId == studentId && !msg.isFromTeacher && msg.status != MessageStatus.READ) {
+            val matchesStudent = msg.studentId == studentId
+            val matchesParent = parentEmail.isBlank() || msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
+            if (matchesStudent && matchesParent && !msg.isFromTeacher && msg.status != MessageStatus.READ) {
                 msg.copy(status = MessageStatus.READ)
             } else msg
         }
