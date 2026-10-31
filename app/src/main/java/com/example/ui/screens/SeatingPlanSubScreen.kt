@@ -194,8 +194,8 @@ fun SeatingPlanSubScreen(
             shadowElevation = 2.dp
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                // İstatistik Rozetleri & Sıra Düzeni & Paylaş
-                // İstatistik Rozetleri & Sıra Düzeni & Paylaş
+                // İstatistik Rozetleri & Sıra Düzeni & Paylaş (Tam Eşit Yükseklikte)
+                val topBarHeight = 42.dp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -206,12 +206,14 @@ fun SeatingPlanSubScreen(
                         shape = RoundedCornerShape(10.dp),
                         color = if (isDarkTheme) Color(0x301E293B) else Color(0xFFF8FAFC),
                         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(topBarHeight)
                     ) {
                         Row(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
@@ -280,44 +282,44 @@ fun SeatingPlanSubScreen(
                         }
                     }
 
-                    // 2. Ayarlar Butonu (Simgesi ile)
-                    IconButton(
+                    // 2. Ayarlar Butonu (Simgesi ile - Eşit Yükseklikte)
+                    Surface(
                         onClick = onOpenConfigDialog,
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
+                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFBFDBFE)),
                         modifier = Modifier
-                            .size(36.dp)
-                            .background(
-                                color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFBFDBFE), RoundedCornerShape(10.dp))
+                            .size(topBarHeight)
                             .testTag("seating_config_open_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Sıra Düzeni Ayarları",
-                            tint = if (isDarkTheme) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Sıra Düzeni Ayarları",
+                                tint = if (isDarkTheme) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
                     }
 
-                    // 3. Paylaş Butonu (Simgesi ile)
+                    // 3. Paylaş Butonu (Simgesi ile - Eşit Yükseklikte)
                     Box {
-                        IconButton(
+                        Surface(
                             onClick = { isShareMenuOpen = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = BirizNavyPrimary,
                             modifier = Modifier
-                                .size(36.dp)
-                                .background(
-                                    color = BirizNavyPrimary,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
+                                .size(topBarHeight)
                                 .testTag("seating_share_button")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Paylaş",
-                                modifier = Modifier.size(17.dp),
-                                tint = Color.White
-                            )
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Paylaş",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = Color.White
+                                )
+                            }
                         }
 
                         DropdownMenu(
@@ -401,7 +403,8 @@ fun SeatingPlanSubScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Alt Satır: Akıllı Dağıt, Rotasyon, Arşiv ve Çöp Kutusu Simgesi (Sıfırlama Onaylı)
+                // Alt Satır: Akıllı Dağıt, Rotasyon, Arşiv ve Çöp Kutusu Simgesi (Tam Eşit Yükseklikte)
+                val actionBarHeight = 38.dp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -415,10 +418,10 @@ fun SeatingPlanSubScreen(
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier
                             .weight(1f)
-                            .height(38.dp)
+                            .height(actionBarHeight)
                             .testTag("seating_auto_assign_menu_button")
                     ) {
                         Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
@@ -432,9 +435,9 @@ fun SeatingPlanSubScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                         border = BorderStroke(1.dp, cardBorder),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(38.dp)
+                            .height(actionBarHeight)
                             .testTag("seating_rotation_menu_button")
                     ) {
                         Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -448,9 +451,9 @@ fun SeatingPlanSubScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                         border = BorderStroke(1.dp, cardBorder),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(38.dp)
+                            .height(actionBarHeight)
                             .testTag("seating_archive_button")
                     ) {
                         Icon(imageVector = Icons.Default.Archive, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -458,23 +461,26 @@ fun SeatingPlanSubScreen(
                         Text("Arşiv", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    // 4. Çöp Kutusu Simgesi (Sıfırla - Yanlış Silmeleri Önleyen Uyarı Onaylı)
-                    IconButton(
+                    // 4. Çöp Kutusu Simgesi (Sıfırla - Satırdaki Diğer Butonlarla Birebir Eşit Yükseklik ve Köşede)
+                    OutlinedButton(
                         onClick = { showClearConfirmDialog = true },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (isDarkTheme) Color(0x30EF4444) else Color(0xFFFEE2E2),
+                            contentColor = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFDC2626)
+                        ),
+                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0x60EF4444) else Color(0xFFFECACA)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(0.dp),
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(
-                                color = if (isDarkTheme) Color(0x30EF4444) else Color(0xFFFEE2E2),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(1.dp, if (isDarkTheme) Color(0x60EF4444) else Color(0xFFFECACA), RoundedCornerShape(10.dp))
+                            .height(actionBarHeight)
+                            .width(actionBarHeight)
                             .testTag("seating_clear_plan_menu_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Planı Sıfırla",
                             tint = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFDC2626),
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -1515,7 +1521,7 @@ private fun SeatDetailDialog(
                     }
                 }
 
-                // 2 Sütun x 2 Satır Eylem Kutuları (Akıllı Dağıt Tarzında)
+                // 2 Sütun x 2 Satır Eylem Kutuları (Bütünleşik & Uyumlu Tasarım)
                 // 1. Satır: Yer Değiştir (Takas) & Sıraya Kilitle / Serbest Bırak
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1528,37 +1534,45 @@ private fun SeatDetailDialog(
                         border = BorderStroke(1.dp, cardBorder),
                         modifier = Modifier
                             .weight(1f)
-                            .height(90.dp)
+                            .height(68.dp)
                             .clickable { onStartSwap() }
                             .testTag("dialog_swap_seat_button")
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFF3B82F6).copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("🔀", fontSize = 15.sp)
+                                Text("🔀", fontSize = 16.sp)
                             }
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(
                                     text = "Yer Değiştir",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
+                                    fontSize = 11.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Başka koltukla takas",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = Color.Gray,
-                                    maxLines = 1
+                                    lineHeight = 11.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1571,38 +1585,46 @@ private fun SeatDetailDialog(
                         border = BorderStroke(1.dp, if (isPinned) BirizAmber else cardBorder),
                         modifier = Modifier
                             .weight(1f)
-                            .height(90.dp)
+                            .height(68.dp)
                             .clickable { onTogglePin() }
                             .testTag("dialog_toggle_pin_button")
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(if (isPinned) "🔓" else "🔒", fontSize = 15.sp)
+                                Text(if (isPinned) "🔓" else "🔒", fontSize = 16.sp)
                             }
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(
                                     text = if (isPinned) "Kilidi Kaldır" else "Koltuğa Kilitle",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     color = if (isPinned) BirizAmber else Color.Unspecified,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isPinned) "Serbest bırak" else "Dağıtımda sabit kalır",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = Color.Gray,
-                                    maxLines = 1
+                                    lineHeight = 11.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1621,38 +1643,46 @@ private fun SeatDetailDialog(
                         border = BorderStroke(1.dp, if (isPriority) Color(0xFF8B5CF6) else cardBorder),
                         modifier = Modifier
                             .weight(1f)
-                            .height(90.dp)
+                            .height(68.dp)
                             .clickable { onTogglePriority() }
                             .testTag("dialog_toggle_priority_button")
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFF8B5CF6).copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("👓", fontSize = 15.sp)
+                                Text("👓", fontSize = 16.sp)
                             }
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(
                                     text = if (isPriority) "Önceliği Kaldır" else "Ön Sıra Önceliği",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     color = if (isPriority) Color(0xFF8B5CF6) else Color.Unspecified,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isPriority) "Öncelik aktif" else "Gözlük, boy, duyma",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = Color.Gray,
-                                    maxLines = 1
+                                    lineHeight = 11.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1665,38 +1695,46 @@ private fun SeatDetailDialog(
                         border = BorderStroke(1.dp, if (isDarkTheme) Color(0x50EF4444) else Color(0xFFFECACA)),
                         modifier = Modifier
                             .weight(1f)
-                            .height(90.dp)
+                            .height(68.dp)
                             .clickable { onEmptySeat() }
                             .testTag("dialog_empty_seat_button")
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFFEF4444).copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("🗑️", fontSize = 15.sp)
+                                Text("🗑️", fontSize = 16.sp)
                             }
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(
                                     text = "Koltuğu Boşalt",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     color = Color(0xFFDC2626),
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Sıradan kaldır",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = Color(0xFFB91C1C),
-                                    maxLines = 1
+                                    lineHeight = 11.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1805,7 +1843,7 @@ private fun AutoAssignModalDialog(
                                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(92.dp)
+                                    .height(68.dp)
                                     .clickable {
                                         onDismiss()
                                         when (item.id) {
@@ -1819,34 +1857,39 @@ private fun AutoAssignModalDialog(
                                     }
                                     .testTag("mode_${item.id}")
                             ) {
-                                Column(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(8.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(28.dp)
+                                            .size(34.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(item.badgeColor.copy(alpha = 0.15f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(item.icon, fontSize = 15.sp)
+                                        Text(item.icon, fontSize = 16.sp)
                                     }
-                                    Column {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
                                         Text(
                                             text = item.title,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
+                                            fontSize = 11.5.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = item.description,
-                                            fontSize = 9.5.sp,
+                                            fontSize = 9.sp,
                                             color = Color.Gray,
-                                            lineHeight = 12.sp,
+                                            lineHeight = 11.sp,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -1886,9 +1929,9 @@ private fun RotationModalDialog(
         ),
         SeatingModeOption(
             id = "groups",
-            icon = "🔀",
-            title = "Grupları Yana Döndür",
-            description = "Gruplar sola/sağa döner (Sol → Orta → Sağ), tahta görme açısı eşitlenir.",
+            icon = "↔️",
+            title = "Grupları Yana Kaydır",
+            description = "Gruplar sırayla yana kayar (Sol → Orta → Sağ), tahta görme açısı eşitlenir.",
             badgeColor = Color(0xFF10B981)
         )
     )
