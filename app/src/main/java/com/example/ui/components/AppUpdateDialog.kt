@@ -100,25 +100,14 @@ fun AppUpdateDialog(
         )
     }
 
-    var showRepoSettings by remember { mutableStateOf(false) }
-    var repoInput by remember { mutableStateOf(AppUpdateManager.getGitHubRepo(context)) }
-
-    fun runCheck(customRepo: String? = null) {
+    fun runCheck() {
         state = UpdateDialogState.Checking
         coroutineScope.launch {
-            val repoToUse = customRepo ?: AppUpdateManager.getGitHubRepo(context)
-            if (repoToUse.isEmpty() || !repoToUse.contains("/")) {
-                state = UpdateDialogState.Error(
-                    "GitHub depo adı belirlenmedi. Lütfen 'kullanıcı/depo-adı' şeklinde girin."
-                )
-                showRepoSettings = true
-                return@launch
-            }
-
+            val repoToUse = AppUpdateManager.getGitHubRepo(context)
             val result = AppUpdateManager.checkForUpdates(context, repoToUse)
             if (result == null) {
                 state = UpdateDialogState.Error(
-                    "GitHub'dan sürüm bilgisi alınamadı. Depo adını ('$repoToUse') kontrol edin veya GitHub Releases oluşturulduğundan emin olun."
+                    "GitHub üzerinden güncellemeler denetlenirken bir sorun oluştu. İnternet bağlantınızı kontrol edip tekrar deneyin."
                 )
             } else if (result.isUpdateAvailable) {
                 state = UpdateDialogState.Available(result)
@@ -188,77 +177,16 @@ fun AppUpdateDialog(
                         }
                     }
 
-                    Row {
-                        IconButton(
-                            onClick = { showRepoSettings = !showRepoSettings },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Depo Ayarı",
-                                tint = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Kapat",
-                                tint = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
-                // GitHub Depo Ayarı Açılır Kutusu
-                AnimatedVisibility(visible = showRepoSettings) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                            .background(
-                                if (isDarkTheme) Color(0x301E293B) else Color(0xFFF8FAFC),
-                                RoundedCornerShape(10.dp)
-                            )
-                            .padding(10.dp)
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Text(
-                            text = "GitHub Senkronizasyon Deposu:",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Kapat",
+                            tint = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = repoInput,
-                            onValueChange = { repoInput = it },
-                            placeholder = { Text("örn: cihanozel/biriz", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = BirizTurquoise,
-                                unfocusedBorderColor = if (isDarkTheme) Color(0x50FFFFFF) else Color(0xFFCBD5E1)
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                            Button(
-                                onClick = {
-                                    AppUpdateManager.setGitHubRepo(context, repoInput)
-                                    showRepoSettings = false
-                                    Toast.makeText(context, "Depo kaydedildi.", Toast.LENGTH_SHORT).show()
-                                    runCheck(repoInput)
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise)
-                            ) {
-                                Text("Kaydet ve Yenile", fontSize = 11.5.sp, color = Color.White)
-                            }
-                        }
                     }
                 }
 
@@ -300,53 +228,25 @@ fun AppUpdateDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(12.dp),
+                                    modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = "🎉", fontSize = 24.sp)
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(text = "🎉", fontSize = 26.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(
                                             text = "Yeni Sürüm Hazır: v${info.latestVersionName}",
-                                            fontSize = 13.5.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
                                         )
                                         Text(
-                                            text = "Yapı #${info.latestVersionCode}",
-                                            fontSize = 11.sp,
+                                            text = "Yapı #${info.latestVersionCode} • Tek tıkla hemen kurabilirsiniz",
+                                            fontSize = 11.5.sp,
                                             color = if (isDarkTheme) Color(0xFF6EE7B7).copy(alpha = 0.8f) else Color(0xFF059669)
                                         )
                                     }
                                 }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Text(
-                                text = "Sürüm Notları:",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(100.dp)
-                                    .background(
-                                        if (isDarkTheme) Color(0x40000000) else Color(0xFFF1F5F9),
-                                        RoundedCornerShape(8.dp)
-                                    )
-                                    .padding(8.dp)
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                Text(
-                                    text = info.releaseNotes.ifBlank { "Performans iyileştirmeleri ve hata düzeltmeleri yapıldı." },
-                                    fontSize = 11.5.sp,
-                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                                    lineHeight = 16.sp
-                                )
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
@@ -545,23 +445,12 @@ fun AppUpdateDialog(
                                 lineHeight = 16.sp
                             )
                             Spacer(modifier = Modifier.height(14.dp))
-                            Row(
+                            Button(
+                                onClick = { runCheck() },
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise)
                             ) {
-                                OutlinedButton(
-                                    onClick = { showRepoSettings = true },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Depo Ayarla", fontSize = 11.5.sp)
-                                }
-                                Button(
-                                    onClick = { runCheck() },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise)
-                                ) {
                                     Icon(
                                         imageVector = Icons.Default.Refresh,
                                         contentDescription = null,
@@ -572,7 +461,6 @@ fun AppUpdateDialog(
                                 }
                             }
                         }
-                    }
 
                     else -> {}
                 }

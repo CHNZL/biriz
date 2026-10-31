@@ -116,6 +116,12 @@ import com.example.ui.theme.BirizTurquoise
 import com.example.util.ExcelPdfHelper
 import com.example.util.TurkishTextHelper
 
+enum class ClassListTopTab {
+    NONE,
+    CLASS_SUMMARY,
+    STUDENT_REGISTRATION
+}
+
 enum class StudentEntryMode {
     SINGLE_ENTRY,
     BATCH_EXCEL
@@ -230,16 +236,11 @@ fun ClassListSubScreen(
     // Veli İndirme Karekodu Diyaloğu State'i
     var showParentQrDialog by remember { mutableStateOf(false) }
 
-    // Kayıt Alanı Açılır/Kapanır (Akordiyon) Tercihi: Tercih yerel hafızada hatırlanır
-    val sharedPrefs = remember { context.getSharedPreferences("biriz_ui_preferences", Context.MODE_PRIVATE) }
-    var isRegistrationExpanded by remember {
+    // Üst Panel Sekme Tercihi: Tek satırda [4/D Sınıfı] ve [+ Öğrenci Ekle] sekmeleri
+    var activeTopTab by remember {
         mutableStateOf(
-            if (students.isEmpty()) true else sharedPrefs.getBoolean("pref_student_registration_expanded", false)
+            if (students.isEmpty()) ClassListTopTab.STUDENT_REGISTRATION else ClassListTopTab.NONE
         )
-    }
-    // Sınıf Bilgi & İstatistik Kartı Açılır/Kapanır Tercihi (Kapalıyken tek satır: 4/D Sınıfı + Paylaş Butonu)
-    var isClassSummaryExpanded by remember {
-        mutableStateOf(sharedPrefs.getBoolean("pref_class_summary_expanded", false))
     }
 
     // Akıllı Sıralama & Filtreleme State'i
@@ -280,106 +281,171 @@ fun ClassListSubScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // --- 1. ÖĞRENCİ EKLEME PANELİ (BELİRGİN ARKA PLAN + KOMPAKT 42DP TEK SATIR KUTUCUKLAR) ---
+        // --- 1. TEK SATIRDA YAN YANA İKİ SEKME: [ 4/D Sınıfı ] & [ + Öğrenci Ekle ] ---
         item {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = if (isDarkTheme) Color(0xFF0C1F38) else Color(0xFFF0F7FF),
-                border = BorderStroke(
-                    1.5.dp,
-                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.6f) else Color(0xFF93C5FD)
-                ),
-                shadowElevation = if (isDarkTheme) 0.dp else 2.dp,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("student_entry_panel")
+                    .padding(bottom = 2.dp)
             ) {
-                Column(
+                // Tek Satır Yan Yana 2 Sekme Barı (Yükseklik: 44dp)
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp)
+                        .height(44.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Üst Başlık & Durum Rozeti (Açılır / Kapanır Akordiyon Başlığı)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable {
-                                val next = !isRegistrationExpanded
-                                isRegistrationExpanded = next
-                                sharedPrefs.edit().putBoolean("pref_student_registration_expanded", next).apply()
-                            }
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isDarkTheme) BirizTurquoise.copy(alpha = 0.2f) else Color(0xFFDBEAFE),
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.PersonAdd,
-                                        contentDescription = null,
-                                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Öğrenci Kayıt Alanı",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                        }
+                    val isClassActive = activeTopTab == ClassListTopTab.CLASS_SUMMARY
+                    val isRegActive = activeTopTab == ClassListTopTab.STUDENT_REGISTRATION
 
+                    // 1. SEKME: 4/D Sınıfı (Özet & İşlemler)
+                    Surface(
+                        onClick = {
+                            activeTopTab = if (isClassActive) ClassListTopTab.NONE else ClassListTopTab.CLASS_SUMMARY
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isClassActive -> if (isDarkTheme) Color(0xFF13294B) else Color(0xFFE0F2FE)
+                            else -> if (isDarkTheme) Color(0x350A162B) else Color.White
+                        },
+                        border = BorderStroke(
+                            width = if (isClassActive) 1.5.dp else 1.dp,
+                            color = if (isClassActive) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                        ),
+                        shadowElevation = if (isClassActive) 2.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .testTag("tab_class_summary")
+                    ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            // Mevcut Öğrenci Sayacı Çipi
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE),
-                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF0284C7) else Color(0xFFBAE6FD))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f, fill = false)
                             ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isListComplete) BirizTurquoise else BirizAmber,
+                                    modifier = Modifier.size(8.dp)
+                                ) {}
+                                Spacer(modifier = Modifier.width(7.dp))
                                 Text(
-                                    text = "${students.size} Öğrenci",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) Color(0xFF7DD3FC) else Color(0xFF0369A1),
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                    text = "${classRoom.gradeLevel}/${classRoom.section} Sınıfı",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isClassActive) {
+                                        if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                    } else {
+                                        if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-
-                            // Aç/Kapat (Genişlet/Daralt) İkon Butonu
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isDarkTheme) Color(0x300EA5E9) else Color(0xFFE2E8F0),
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = if (isRegistrationExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = if (isRegistrationExpanded) "Kayıt Alanını Kapat" else "Kayıt Alanını Aç",
-                                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = if (isClassActive) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isClassActive) "Kapat" else "Aç",
+                                tint = if (isClassActive) BirizTurquoise else if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
 
-                    AnimatedVisibility(visible = isRegistrationExpanded) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Spacer(modifier = Modifier.height(10.dp))
+                    // 2. SEKME: Öğrenci Kayıt Alanı (+ Öğrenci Ekle)
+                    Surface(
+                        onClick = {
+                            activeTopTab = if (isRegActive) ClassListTopTab.NONE else ClassListTopTab.STUDENT_REGISTRATION
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isRegActive -> if (isDarkTheme) Color(0xFF0C1F38) else Color(0xFFF0F7FF)
+                            else -> if (isDarkTheme) Color(0x350A162B) else Color.White
+                        },
+                        border = BorderStroke(
+                            width = if (isRegActive) 1.5.dp else 1.dp,
+                            color = if (isRegActive) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                        ),
+                        shadowElevation = if (isRegActive) 2.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .testTag("tab_student_registration")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f, fill = false)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PersonAdd,
+                                    contentDescription = null,
+                                    tint = if (isRegActive) BirizTurquoise else if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "+ Öğrenci Ekle",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isRegActive) {
+                                        if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                    } else {
+                                        if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = if (isRegActive) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isRegActive) "Kapat" else "Aç",
+                                tint = if (isRegActive) BirizTurquoise else if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // AÇILIR İÇERİK 2: Öğrenci Kayıt Paneli
+                AnimatedVisibility(visible = activeTopTab == ClassListTopTab.STUDENT_REGISTRATION) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (isDarkTheme) Color(0xFF0C1F38) else Color(0xFFF0F7FF),
+                            border = BorderStroke(
+                                1.5.dp,
+                                if (isDarkTheme) BirizTurquoise.copy(alpha = 0.6f) else Color(0xFF93C5FD)
+                            ),
+                            shadowElevation = if (isDarkTheme) 0.dp else 2.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("student_entry_panel")
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                            ) {
 
                     // Segmented Controller: [Tek Öğrenci Ekle] | [Toplu Yükleme (Excel)] - Kompakt Yükseklik (34dp)
                     Row(
@@ -773,363 +839,334 @@ fun ClassListSubScreen(
             }
         }
     }
-}
 
-        // --- 3. DOSYA İŞLEMLERİ & LİSTE ÖZETİ (MEVCUT + PDF & EXCEL İNDİR BUTONLARI) ---
-        item {
-            BentoCard(
-                isDark = isDarkTheme,
-                glowColor = BirizNavyPrimary.copy(alpha = 0.2f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    // 1. Satır: Sınıf Bilgisi & Paylaş Butonu (Ferah ve Kesintisiz)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    val next = !isClassSummaryExpanded
-                                    isClassSummaryExpanded = next
-                                    sharedPrefs.edit().putBoolean("pref_class_summary_expanded", next).apply()
-                                }
-                                .padding(end = 8.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isListComplete) BirizTurquoise else BirizAmber,
-                                modifier = Modifier.size(10.dp)
-                            ) {}
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "${classRoom.gradeLevel}/${classRoom.section} Sınıfı",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
-                                )
-                                Text(
-                                    text = classRoom.schoolName,
-                                    fontSize = 11.5.sp,
-                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            // Sağ 1: Standart Paylaş Butonu ve Menüsü
-                            Box {
-                                Button(
-                                    onClick = { isShareMenuOpen = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                    modifier = Modifier.testTag("classlist_share_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Share,
-                                        contentDescription = "Paylaş",
-                                        modifier = Modifier.size(15.dp),
-                                        tint = Color.White
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Paylaş", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                DropdownMenu(
-                                    expanded = isShareMenuOpen,
-                                    onDismissRequest = { isShareMenuOpen = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
-                                        onClick = {
-                                            isShareMenuOpen = false
-                                            if (students.isEmpty()) {
-                                                Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
-                                                return@DropdownMenuItem
-                                            }
-                                            val shareText = ExcelPdfHelper.generateClassListShareText(classRoom, students)
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("Sınıf Listesi", shareText))
-                                            Toast.makeText(context, "Sınıf listesi panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
-                                        onClick = {
-                                            isShareMenuOpen = false
-                                            if (students.isEmpty()) {
-                                                Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
-                                                return@DropdownMenuItem
-                                            }
-                                            try {
-                                                val excelUri = ExcelPdfHelper.exportStudentsToExcel(context, classRoom, students)
-                                                ExcelPdfHelper.shareFile(
-                                                    context = context,
-                                                    uri = excelUri,
-                                                    mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                                    chooserTitle = "Sınıf Listesi Excel Belgesini Aç / Paylaş"
-                                                )
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("🖨️ PDF İndir / Yazdır", fontSize = 12.sp) },
-                                        onClick = {
-                                            isShareMenuOpen = false
-                                            if (students.isEmpty()) {
-                                                Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
-                                                return@DropdownMenuItem
-                                            }
-                                            try {
-                                                val pdfUri = ExcelPdfHelper.exportStudentsToPdf(context, classRoom, students)
-                                                ExcelPdfHelper.shareFile(
-                                                    context = context,
-                                                    uri = pdfUri,
-                                                    mimeType = "application/pdf",
-                                                    chooserTitle = "Sınıf Listesi PDF Belgesini Aç / Paylaş"
-                                                )
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("🎟️ Veli Katılım Kartları (PDF)", fontSize = 12.sp) },
-                                        onClick = {
-                                            isShareMenuOpen = false
-                                            if (students.isEmpty()) {
-                                                Toast.makeText(context, "Kupon oluşturmak için listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
-                                                return@DropdownMenuItem
-                                            }
-                                            try {
-                                                val cardsUri = ExcelPdfHelper.exportParentInviteCardsPdf(context, classRoom, students)
-                                                ExcelPdfHelper.shareFile(
-                                                    context = context,
-                                                    uri = cardsUri,
-                                                    mimeType = "application/pdf",
-                                                    chooserTitle = "Veli Katılım Kartlarını (PDF) Aç / Yazdır / Paylaş"
-                                                )
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("📲 Veli İndirme Karekodu (QR)", fontSize = 12.sp) },
-                                        onClick = {
-                                            isShareMenuOpen = false
-                                            showParentQrDialog = true
-                                        }
-                                    )
-                                }
-                            }
-
-                            // Sağ 2: Açılır / Kapanır Akordiyon İkon Butonu
-                            Surface(
-                                onClick = {
-                                    val next = !isClassSummaryExpanded
-                                    isClassSummaryExpanded = next
-                                    sharedPrefs.edit().putBoolean("pref_class_summary_expanded", next).apply()
-                                },
-                                shape = CircleShape,
-                                color = if (isDarkTheme) Color(0x300EA5E9) else Color(0xFFE2E8F0),
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = if (isClassSummaryExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = if (isClassSummaryExpanded) "Özeti Daralt" else "Özeti Genişlet",
-                                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    AnimatedVisibility(visible = isClassSummaryExpanded) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                    // 2. Satır: Yan Yana İki Şık İstatistik Rozeti (Ferah, Net ve Kesintisiz Okunabilir)
-                    Row(
+                // AÇILIR İÇERİK 1: 4/D Sınıfı Bilgi ve Özet Paneli
+                AnimatedVisibility(visible = activeTopTab == ClassListTopTab.CLASS_SUMMARY) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("student_stats_summary_bar"),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(top = 8.dp)
                     ) {
-                        // Sol Rozet: Öğrenci Sayısı ve Kız/Erkek Dağılımı
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDarkTheme) Color(0x350A162B) else Color(0xFFF1F5F9),
-                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                            modifier = Modifier.weight(1f)
+                        BentoCard(
+                            isDark = isDarkTheme,
+                            glowColor = BirizNavyPrimary.copy(alpha = 0.2f),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = if (isDarkTheme) BirizTurquoise.copy(alpha = 0.2f) else Color(0xFFDBEAFE),
-                                    modifier = Modifier.size(30.dp)
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                // 1. Satır: Sınıf Bilgisi & Paylaş Butonu (Ferah ve Kesintisiz)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Group,
-                                            contentDescription = null,
-                                            tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 8.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (isListComplete) BirizTurquoise else BirizAmber,
+                                            modifier = Modifier.size(10.dp)
+                                        ) {}
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "${classRoom.gradeLevel}/${classRoom.section} Sınıfı",
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                            )
+                                            Text(
+                                                text = classRoom.schoolName,
+                                                fontSize = 11.5.sp,
+                                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    // Sağ 1: Standart Paylaş Butonu ve Menüsü
+                                    Box {
+                                        Button(
+                                            onClick = { isShareMenuOpen = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                            modifier = Modifier.testTag("classlist_share_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = "Paylaş",
+                                                modifier = Modifier.size(15.dp),
+                                                tint = Color.White
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Paylaş", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = isShareMenuOpen,
+                                            onDismissRequest = { isShareMenuOpen = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
+                                                onClick = {
+                                                    isShareMenuOpen = false
+                                                    if (students.isEmpty()) {
+                                                        Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                                                        return@DropdownMenuItem
+                                                    }
+                                                    val shareText = ExcelPdfHelper.generateClassListShareText(classRoom, students)
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Sınıf Listesi", shareText))
+                                                    Toast.makeText(context, "Sınıf listesi panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
+                                                onClick = {
+                                                    isShareMenuOpen = false
+                                                    if (students.isEmpty()) {
+                                                        Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                                                        return@DropdownMenuItem
+                                                    }
+                                                    try {
+                                                        val excelUri = ExcelPdfHelper.exportStudentsToExcel(context, classRoom, students)
+                                                        ExcelPdfHelper.shareFile(
+                                                            context = context,
+                                                            uri = excelUri,
+                                                            mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                            chooserTitle = "Sınıf Listesi Excel Belgesini Aç / Paylaş"
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("🖨️ PDF İndir / Yazdır", fontSize = 12.sp) },
+                                                onClick = {
+                                                    isShareMenuOpen = false
+                                                    if (students.isEmpty()) {
+                                                        Toast.makeText(context, "Önce listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                                                        return@DropdownMenuItem
+                                                    }
+                                                    try {
+                                                        val pdfUri = ExcelPdfHelper.exportStudentsToPdf(context, classRoom, students)
+                                                        ExcelPdfHelper.shareFile(
+                                                            context = context,
+                                                            uri = pdfUri,
+                                                            mimeType = "application/pdf",
+                                                            chooserTitle = "Sınıf Listesi PDF Belgesini Aç / Paylaş"
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("🎟️ Veli Katılım Kartları (PDF)", fontSize = 12.sp) },
+                                                onClick = {
+                                                    isShareMenuOpen = false
+                                                    if (students.isEmpty()) {
+                                                        Toast.makeText(context, "Kupon oluşturmak için listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                                                        return@DropdownMenuItem
+                                                    }
+                                                    try {
+                                                        val cardsUri = ExcelPdfHelper.exportParentInviteCardsPdf(context, classRoom, students)
+                                                        ExcelPdfHelper.shareFile(
+                                                            context = context,
+                                                            uri = cardsUri,
+                                                            mimeType = "application/pdf",
+                                                            chooserTitle = "Veli Katılım Kartlarını (PDF) Aç / Yazdır / Paylaş"
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("📲 Veli İndirme Karekodu (QR)", fontSize = 12.sp) },
+                                                onClick = {
+                                                    isShareMenuOpen = false
+                                                    showParentQrDialog = true
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "$totalStudents Öğrenci",
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                                    )
-                                    Text(
-                                        text = "$femaleCount Kız, $maleCount Erkek",
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                                    )
-                                }
-                            }
-                        }
 
-                        // Sağ Rozet: Veli Bağlantısı ve Katılım Oranı
-                        val hasConnectedParents = parentLinkedCount > 0
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (hasConnectedParents) {
-                                if (isDarkTheme) Color(0x2510B981) else Color(0xFFF0FDF4)
-                            } else {
-                                if (isDarkTheme) Color(0x25E67E22) else Color(0xFFFFFBEB)
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                if (hasConnectedParents) Color(0xFF86EFAC) else Color(0xFFFDE68A)
-                            ),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // 2. Satır: Yan Yana İki Şık İstatistik Rozeti (Ferah, Net ve Kesintisiz Okunabilir)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("student_stats_summary_bar"),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // Sol Rozet: Öğrenci Sayısı ve Kız/Erkek Dağılımı
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isDarkTheme) Color(0x350A162B) else Color(0xFFF1F5F9),
+                                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (isDarkTheme) BirizTurquoise.copy(alpha = 0.2f) else Color(0xFFDBEAFE),
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Group,
+                                                        contentDescription = null,
+                                                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "$totalStudents Öğrenci",
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                                )
+                                                Text(
+                                                    text = "$femaleCount Kız, $maleCount Erkek",
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Sağ Rozet: Veli Bağlantısı ve Katılım Oranı
+                                    val hasConnectedParents = parentLinkedCount > 0
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (hasConnectedParents) {
+                                            if (isDarkTheme) Color(0x2510B981) else Color(0xFFF0FDF4)
+                                        } else {
+                                            if (isDarkTheme) Color(0x25E67E22) else Color(0xFFFFFBEB)
+                                        },
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (hasConnectedParents) Color(0xFF86EFAC) else Color(0xFFFDE68A)
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (hasConnectedParents) {
+                                                    if (isDarkTheme) Color(0x4010B981) else Color(0xFFDCFCE7)
+                                                } else {
+                                                    if (isDarkTheme) Color(0x40E67E22) else Color(0xFFFEF3C7)
+                                                },
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = if (hasConnectedParents) Icons.Default.CheckCircle else Icons.Default.AccessTime,
+                                                        contentDescription = null,
+                                                        tint = if (hasConnectedParents) Color(0xFF10B981) else BirizAmber,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "$parentLinkedCount Veli Bağlı",
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (hasConnectedParents) {
+                                                        if (isDarkTheme) Color(0xFF4ADE80) else Color(0xFF166534)
+                                                    } else {
+                                                        if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309)
+                                                    }
+                                                )
+                                                Text(
+                                                    text = if (totalStudents > 0) "%$parentLinkedPercent Katılım" else "%0 Katılım",
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (hasConnectedParents) {
+                                                        if (isDarkTheme) Color(0xFF86EFAC) else Color(0xFF15803D)
+                                                    } else {
+                                                        if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFD97706)
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // --- KESİLEBİLİR VELİ KATILIM KARTLARI / KUPONLARI BUTONU (PDF) ---
+                                Spacer(modifier = Modifier.height(10.dp))
+
                                 Surface(
-                                    shape = CircleShape,
-                                    color = if (hasConnectedParents) {
-                                        if (isDarkTheme) Color(0x4010B981) else Color(0xFFDCFCE7)
-                                    } else {
-                                        if (isDarkTheme) Color(0x40E67E22) else Color(0xFFFEF3C7)
+                                    onClick = {
+                                        if (students.isEmpty()) {
+                                            Toast.makeText(context, "Kupon oluşturmak için listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
+                                            return@Surface
+                                        }
+                                        val cardsUri = ExcelPdfHelper.exportParentInviteCardsPdf(context, classRoom, students)
+                                        ExcelPdfHelper.shareFile(
+                                            context = context,
+                                            uri = cardsUri,
+                                            mimeType = "application/pdf",
+                                            chooserTitle = "Veli Katılım Kartlarını (PDF) Aç / Yazdır / Paylaş"
+                                        )
                                     },
-                                    modifier = Modifier.size(30.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isDarkTheme) Color(0x30E67E22) else Color(0xFFFEF3C7),
+                                    border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.65f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_export_invite_cards_pdf")
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
                                         Icon(
-                                            imageVector = if (hasConnectedParents) Icons.Default.CheckCircle else Icons.Default.AccessTime,
+                                            imageVector = Icons.Default.ContentCut,
                                             contentDescription = null,
-                                            tint = if (hasConnectedParents) Color(0xFF10B981) else BirizAmber,
+                                            tint = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309),
                                             modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "✂️ Veli Katılım Kartlarını Yazdır (Kesilebilir PDF)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309)
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "$parentLinkedCount Veli Bağlı",
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (hasConnectedParents) {
-                                            if (isDarkTheme) Color(0xFF4ADE80) else Color(0xFF166534)
-                                        } else {
-                                            if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309)
-                                        }
-                                    )
-                                    Text(
-                                        text = if (totalStudents > 0) "%$parentLinkedPercent Katılım" else "%0 Katılım",
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (hasConnectedParents) {
-                                            if (isDarkTheme) Color(0xFF86EFAC) else Color(0xFF15803D)
-                                        } else {
-                                            if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFD97706)
-                                        }
-                                    )
-                                }
                             }
-                        }
-                    }
-
-                    // --- KESİLEBİLİR VELİ KATILIM KARTLARI / KUPONLARI BUTONU (PDF) ---
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Surface(
-                        onClick = {
-                            if (students.isEmpty()) {
-                                Toast.makeText(context, "Kupon oluşturmak için listeye en az 1 öğrenci eklemelisiniz.", Toast.LENGTH_SHORT).show()
-                                return@Surface
-                            }
-                            val cardsUri = ExcelPdfHelper.exportParentInviteCardsPdf(context, classRoom, students)
-                            ExcelPdfHelper.shareFile(
-                                context = context,
-                                uri = cardsUri,
-                                mimeType = "application/pdf",
-                                chooserTitle = "Veli Katılım Kartlarını (PDF) Aç / Yazdır / Paylaş"
-                            )
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isDarkTheme) Color(0x30E67E22) else Color(0xFFFEF3C7),
-                        border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.65f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("btn_export_invite_cards_pdf")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCut,
-                                contentDescription = null,
-                                tint = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "✂️ Veli Katılım Kartlarını Yazdır (Kesilebilir PDF)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFFB45309)
-                            )
                         }
                     }
                 }
             }
         }
-    }
-}
 
         // --- 3. AKILLI SIRALAMA & FİLTRELEME ÇİPLERİ ---
         if (students.isNotEmpty()) {
@@ -1509,7 +1546,7 @@ fun StudentBentoCardItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 4.5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {

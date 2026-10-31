@@ -527,43 +527,9 @@ fun GoogleSignInScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                // 4. ÖNE ÇIKAN SİSTEM ÖZELLİKLERİ (Öğretmen İçin Pratiklik)
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (isDarkTheme) Color(0x18FFFFFF) else Color(0x60FFFFFF),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FeatureHighlightRow(
-                            icon = "🗓️",
-                            title = "Otomatik Ders Programı & Çizelge",
-                            description = "Sınıfınızın haftalık ders ve tenefüs saatlerini saniyeler içinde planlayın.",
-                            isDark = isDarkTheme
-                        )
-                        FeatureHighlightRow(
-                            icon = "🖨️",
-                            title = "A4 Veli Katılım Kartları & Karekod",
-                            description = "Her öğrenciye özel şifreli katılım kartlarını PDF olarak tek tıkla yazdırın.",
-                            isDark = isDarkTheme
-                        )
-                        FeatureHighlightRow(
-                            icon = "🔒",
-                            title = "KVKK Uyumlu & Güvenli Bulut",
-                            description = "Sınıf verileriniz Google Cloud üzerinde şifreli olarak saklanır ve korunur.",
-                            isDark = isDarkTheme
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 5. GÜVENLİK VE YASAL BİLGİLENDİRME
+                // GÜVENLİK VE YASAL BİLGİLENDİRME
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -578,10 +544,10 @@ fun GoogleSignInScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Giriş yaparak BİRİZ Kullanım Şartları ve KVKK Sözleşmesini onaylamış olursunuz.",
-                        fontSize = 10.5.sp,
+                        fontSize = 11.sp,
                         color = textColorSecondary,
                         textAlign = TextAlign.Center,
-                        lineHeight = 14.sp
+                        lineHeight = 15.sp
                     )
                 }
             }
@@ -596,36 +562,6 @@ fun GoogleSignInScreen(
             AppUpdateDialog(
                 isDarkTheme = isDarkTheme,
                 onDismiss = { showUpdateDialog = false }
-            )
-        }
-    }
-}
-
-@Composable
-private fun FeatureHighlightRow(
-    icon: String,
-    title: String,
-    description: String,
-    isDark: Boolean
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(text = icon, fontSize = 16.sp, modifier = Modifier.padding(top = 1.dp))
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
-            Text(
-                text = title,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDark) BirizDarkTextPrimary else BirizNavyPrimary
-            )
-            Text(
-                text = description,
-                fontSize = 10.5.sp,
-                color = if (isDark) BirizDarkTextSecondary else BirizTextSecondary,
-                lineHeight = 14.sp
             )
         }
     }
