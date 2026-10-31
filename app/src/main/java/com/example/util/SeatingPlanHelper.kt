@@ -186,8 +186,27 @@ object SeatingPlanHelper {
                 }
             }
 
+            SeatingPlacementMode.ROTATE_FRONT_TO_BACK -> {
+                val rotated = rotateSeatsFrontToBack(
+                    config = config,
+                    currentAssignments = currentState.assignments,
+                    pinnedStudents = currentState.pinnedStudents
+                )
+                return currentState.copy(assignments = rotated)
+            }
+
+            SeatingPlacementMode.ROTATE_GROUPS_SHIFT -> {
+                val rotated = rotateGroups(
+                    config = config,
+                    currentAssignments = currentState.assignments,
+                    pinnedStudents = currentState.pinnedStudents
+                )
+                return currentState.copy(assignments = rotated)
+            }
+
             SeatingPlacementMode.MANUAL,
-            SeatingPlacementMode.PLANNED -> {
+            SeatingPlacementMode.PLANNED,
+            SeatingPlacementMode.PRIORITY_FRONT -> {
                 // Manuel veya Planlı yerleştirme ekranları kendi özel sihirbazları/arayüzleri üzerinden yönetilir
             }
         }

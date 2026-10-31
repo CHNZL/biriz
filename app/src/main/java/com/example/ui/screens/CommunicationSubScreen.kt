@@ -2204,35 +2204,6 @@ private fun OneOnOneChatView(
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // Veli Yanıtı Simüle Etme Test Butonu (Öğretmen rolünde test için)
-                Surface(
-                    onClick = {
-                        val replies = listOf(
-                            "Öğretmenim iyi akşamlar, ödevini bitirdi kontrol ettik.",
-                            "Bilgilendirme için teşekkürler, yarın vaktinde okulda olacak.",
-                            "Tamamdır öğretmenim, iyi dersler dileriz.",
-                            "Çok teşekkürler öğretmenim, ilginiz için sağ olun."
-                        )
-                        onSimulateParentReply(replies.random())
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0x30FFFFFF)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🧪 Yanıt",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
             }
         }
 

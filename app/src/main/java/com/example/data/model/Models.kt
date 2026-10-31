@@ -156,6 +156,8 @@ enum class SeatingPlacementMode(val title: String, val description: String) {
     GENDER_BALANCED("Kız-Erkek Dengeli", "Kız ve erkek öğrencileri sıralara dengeli ve yan yana yerleştirir"),
     ALPHABETICAL("İsme Göre", "Öğrencileri ad ve soyadlarına göre alfabetik sırayla yerleştirir"),
     NUMBER_ORDER("Numaraya Göre", "Öğrencileri okul numarası sırasına göre yerleştirir"),
+    ROTATE_FRONT_TO_BACK("Önden Arkaya Kaydır", "Sıralar 1 kademe arkaya kayar, en arkadaki öğrenciler en öne geçer."),
+    ROTATE_GROUPS_SHIFT("Grupları Yana Kaydır", "Gruplar sırayla yana kayar (Sol → Orta → Sağ), tahta görme açısı eşitlenir."),
     MANUAL("Elle Yerleştirme", "Öğrenciler tek tek öğretmenin tercihine göre yerleştirilir."),
     PRIORITY_FRONT("Önceliklileri Öne Al", "Gözlük, dikkat veya işitme önceliği olan öğrencileri en ön sıralara yerleştirir")
 }

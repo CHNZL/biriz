@@ -42,7 +42,7 @@ object CommunicationPersistenceHelper {
     fun formatDateTime(timestamp: Long): String = dateFormat.format(Date(timestamp))
 
     /**
-     * Sınıfa ait duyuruları yükler; yoksa varsayılan örnek veriler üretip kaydeder.
+     * Sınıfa ait duyuruları yükler; sadece gerçek duyuruları getirir, sahte/örnek veri tohumlamaz.
      */
     fun loadAnnouncements(context: Context, classId: String, students: List<Student>): List<Announcement> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -54,18 +54,18 @@ object CommunicationPersistenceHelper {
                 val jsonArray = JSONArray(rawJson)
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
-                    list.add(parseAnnouncementJson(obj))
+                    val ann = parseAnnouncementJson(obj)
+                    // Örnek / sahte tohum duyuruları filtrele
+                    if (ann.id != "ann_1" && ann.id != "ann_2") {
+                        list.add(ann)
+                    }
                 }
                 return list
             } catch (_: Exception) {
-                // Hata durumunda varsayılan tohumlama yapılır
             }
         }
 
-        // İlk açılışta zengin tohum verileri oluştur
-        val defaultList = generateInitialAnnouncements(classId, students)
-        saveAnnouncements(context, classId, defaultList)
-        return defaultList
+        return emptyList()
     }
 
     /**
@@ -81,7 +81,7 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Sınıfa ait sohbet mesajlarını yükler; yoksa varsayılan veli diyalogları tohumlar.
+     * Sınıfa ait sohbet mesajlarını yükler; sadece gerçek mesajları getirir.
      */
     fun loadChatMessages(context: Context, classId: String, students: List<Student>): List<ChatMessage> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -93,17 +93,21 @@ object CommunicationPersistenceHelper {
                 val jsonArray = JSONArray(rawJson)
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
-                    list.add(parseChatMessageJson(obj))
+                    val msg = parseChatMessageJson(obj)
+                    // Örnek / sahte mesajları filtrele
+                    val isSample = msg.id.startsWith("msg_1") || msg.id.startsWith("msg_2") ||
+                            msg.id.startsWith("msg_3") || msg.id.startsWith("msg_4") ||
+                            msg.id.startsWith("msg_5") || msg.studentId.startsWith("student_test_")
+                    if (!isSample) {
+                        list.add(msg)
+                    }
                 }
                 return list
             } catch (_: Exception) {
-                // Fallback
             }
         }
 
-        val defaultList = generateInitialChatMessages(classId, students)
-        saveChatMessages(context, classId, defaultList)
-        return defaultList
+        return emptyList()
     }
 
     /**
@@ -119,7 +123,7 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Bildirimleri yükler.
+     * Bildirimleri yükler; sadece gerçek bildirimleri getirir.
      */
     fun loadNotifications(context: Context, classId: String): List<BirizNotification> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -131,59 +135,29 @@ object CommunicationPersistenceHelper {
                 val jsonArray = JSONArray(rawJson)
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
-                    list.add(
-                        BirizNotification(
-                            id = obj.getString("id"),
-                            title = obj.getString("title"),
-                            message = obj.getString("message"),
-                            timestamp = obj.getLong("timestamp"),
-                            type = NotificationType.valueOf(obj.optString("type", "ANNOUNCEMENT")),
-                            targetSubPageName = obj.optString("targetSubPageName", "ILETISIM_DUYURULAR"),
-                            targetId = if (obj.has("targetId")) obj.getString("targetId") else null,
-                            isRead = obj.optBoolean("isRead", false)
+                    val id = obj.getString("id")
+                    // Örnek / sahte bildirimleri filtrele
+                    if (id != "notif_1" && id != "notif_2" && id != "notif_3") {
+                        list.add(
+                            BirizNotification(
+                                id = id,
+                                title = obj.getString("title"),
+                                message = obj.getString("message"),
+                                timestamp = obj.getLong("timestamp"),
+                                type = NotificationType.valueOf(obj.optString("type", "ANNOUNCEMENT")),
+                                targetSubPageName = obj.optString("targetSubPageName", "ILETISIM_DUYURULAR"),
+                                targetId = if (obj.has("targetId")) obj.getString("targetId") else null,
+                                isRead = obj.optBoolean("isRead", false)
+                            )
                         )
-                    )
+                    }
                 }
                 return list
             } catch (_: Exception) {
-                // Fallback
             }
         }
 
-        val initialList = listOf(
-            BirizNotification(
-                id = "notif_1",
-                title = "Yeni Veli Mesajı",
-                message = "Fatma Kavakoğlu (#45 Semih): Öğretmenim iyi akşamlar...",
-                timestamp = System.currentTimeMillis() - 15 * 60 * 1000,
-                type = NotificationType.MESSAGE,
-                targetSubPageName = "ILETISIM_MESAJLAR",
-                targetId = "student_test_1",
-                isRead = false
-            ),
-            BirizNotification(
-                id = "notif_2",
-                title = "Yeni Anket Oyu",
-                message = "Güneş Demir'in velisi 'Müze Gezisi' anketinde 'Katılacak' seçeneğini işaretledi.",
-                timestamp = System.currentTimeMillis() - 45 * 60 * 1000,
-                type = NotificationType.ANNOUNCEMENT,
-                targetSubPageName = "ILETISIM_DUYURULAR",
-                targetId = "ann_1",
-                isRead = false
-            ),
-            BirizNotification(
-                id = "notif_3",
-                title = "Veli Katılım Talebi",
-                message = "Ayşe Demir (#326 Güneş Demir) BİRİZ veli katılım kodunu onayladı.",
-                timestamp = System.currentTimeMillis() - 2 * 3600 * 1000,
-                type = NotificationType.PARENT_REGISTRATION,
-                targetSubPageName = "SINIF_LISTESI",
-                targetId = null,
-                isRead = true
-            )
-        )
-        saveNotifications(context, classId, initialList)
-        return initialList
+        return emptyList()
     }
 
     /**
@@ -421,189 +395,5 @@ object CommunicationPersistenceHelper {
             timestamp = obj.getLong("timestamp"),
             status = MessageStatus.valueOf(obj.optString("status", "READ"))
         )
-    }
-
-    // --- BAŞLANGIÇ TOHUM VERİLERİ (TEST MODU VE İLK KULLANIM İÇİN) ---
-
-    private fun generateInitialAnnouncements(classId: String, students: List<Student>): List<Announcement> {
-        val parentNames = if (students.isNotEmpty()) {
-            students.map { it.parentName ?: "${it.fullName.split(" ").first()} Velisi" }
-        } else {
-            listOf(
-                "Fatma Kavakoğlu", "Ayşe Demir", "Mustafa Işık", "Zeynep Akkaş", "Mehmet Kaya",
-                "Hülya Çelik", "Ali Yıldız", "Emine Şahin", "Ahmet Koç", "Merve Arslan"
-            )
-        }
-
-        val now = System.currentTimeMillis()
-        val readReceipts1 = mutableMapOf<String, Long>()
-        parentNames.take(21).forEachIndexed { index, name ->
-            readReceipts1[name] = now - (3600 * 1000L * (index % 12 + 1))
-        }
-
-        val poll1 = AnnouncementPoll(
-            id = "poll_1",
-            question = "24 Mayıs Cuma günü planlanan 'Bilim ve Teknoloji Müzesi' gezisine öğrencinizin katılım durumu nedir?",
-            options = listOf(
-                PollOption(
-                    id = "opt_1",
-                    text = "Evet, katılacak (İzin belgesi imzalanacak)",
-                    voterParentNames = parentNames.take(16)
-                ),
-                PollOption(
-                    id = "opt_2",
-                    text = "Hayır, katılamayacak",
-                    voterParentNames = parentNames.drop(16).take(3)
-                ),
-                PollOption(
-                    id = "opt_3",
-                    text = "Kararsızım / Detaylı bilgi rica ediyorum",
-                    voterParentNames = parentNames.drop(19).take(2)
-                )
-            )
-        )
-
-        val ann1 = Announcement(
-            id = "ann_1",
-            classId = classId,
-            title = "🏛️ Bilim Müzesi Gezisi & İzin Formları",
-            content = "Değerli Velilerimiz;\nSınıfımızla birlikte MEB müfredatı kapsamında 'Bilim ve Teknoloji Müzesi' ziyareti gerçekleştireceğiz. Ulaşım okul servislerimiz ile sağlanacak olup gezi ücreti bulunmamaktadır. Lütfen aşağıdaki anketi yanıtlayınız.",
-            targetType = AnnouncementTargetType.ALL_CLASS,
-            targetStudentIds = emptyList(),
-            targetStudentNames = emptyList(),
-            poll = poll1,
-            createdAt = now - (2 * 86400 * 1000L),
-            updatedAt = now - (2 * 86400 * 1000L),
-            isEdited = false,
-            deliveredToParentNames = parentNames,
-            readReceipts = readReceipts1
-        )
-
-        // İkinci duyuru: Özel duyuru (3 öğrenciye)
-        val specificStudents = students.take(3)
-        val specificParentNames = if (specificStudents.isNotEmpty()) {
-            specificStudents.map { it.parentName ?: "${it.fullName} Velisi" }
-        } else {
-            listOf("Fatma Kavakoğlu", "Ayşe Demir", "Mustafa Işık")
-        }
-
-        val readReceipts2 = mutableMapOf<String, Long>()
-        if (specificParentNames.isNotEmpty()) {
-            readReceipts2[specificParentNames.first()] = now - (4 * 3600 * 1000L)
-        }
-
-        val ann2 = Announcement(
-            id = "ann_2",
-            classId = classId,
-            title = "⭐ Akıl Oyunları Turnuvası Hazırlık Çalışması",
-            content = "Sayın Velimiz;\nÖğrencimiz okullar arası Akıl ve Zeka Oyunları turnuvasında sınıfımızı temsil edecektir. Perşembe günü ders bitiminde 15:10 - 15:50 saatleri arasında okul kütüphanesinde mini pratik çalışması yapılacaktır. Bilginize sunarız.",
-            targetType = AnnouncementTargetType.SPECIFIC_STUDENTS,
-            targetStudentIds = specificStudents.map { it.id },
-            targetStudentNames = specificStudents.map { "#${it.studentNumber} ${it.fullName}" },
-            poll = null,
-            createdAt = now - (1 * 86400 * 1000L),
-            updatedAt = now - (1 * 86400 * 1000L),
-            isEdited = false,
-            deliveredToParentNames = specificParentNames,
-            readReceipts = readReceipts2
-        )
-
-        return listOf(ann1, ann2)
-    }
-
-    private fun generateInitialChatMessages(classId: String, students: List<Student>): List<ChatMessage> {
-        val now = System.currentTimeMillis()
-        val list = mutableListOf<ChatMessage>()
-
-        val s1 = students.getOrNull(0)
-        val s1Id = s1?.id ?: "student_test_1"
-        val s1No = s1?.studentNumber ?: "45"
-        val s1Name = s1?.fullName ?: "SEMİH AHMET KAVAKOĞLU"
-        val p1Name = s1?.parentName ?: "Fatma Kavakoğlu"
-
-        list.add(
-            ChatMessage(
-                id = "msg_1",
-                classId = classId,
-                studentId = s1Id,
-                studentNumber = s1No,
-                studentName = s1Name,
-                parentName = p1Name,
-                isFromTeacher = true,
-                senderName = "Cihan Özel",
-                text = "İyi günler Fatma Hanım, Semih Ahmet bu hafta matematik dersindeki grup çalışmalarında harika bir liderlik gösterdi. Tebrik ederim!",
-                timestamp = now - (4 * 3600 * 1000L),
-                status = MessageStatus.READ
-            )
-        )
-        list.add(
-            ChatMessage(
-                id = "msg_2",
-                classId = classId,
-                studentId = s1Id,
-                studentNumber = s1No,
-                studentName = s1Name,
-                parentName = p1Name,
-                isFromTeacher = false,
-                senderName = p1Name,
-                text = "Çok teşekkür ederiz Cihan Öğretmenim, evde de büyük bir hevesle ödevlerini hazırlıyor. İlginiz için minnettarız.",
-                timestamp = now - (3 * 3600 * 1000L),
-                status = MessageStatus.READ
-            )
-        )
-        list.add(
-            ChatMessage(
-                id = "msg_3",
-                classId = classId,
-                studentId = s1Id,
-                studentNumber = s1No,
-                studentName = s1Name,
-                parentName = p1Name,
-                isFromTeacher = false,
-                senderName = p1Name,
-                text = "Öğretmenim iyi akşamlar, yarınki fen bilimleri deneyi için gerekli büyüteci çantasına koyduk bilginiz olsun.",
-                timestamp = now - (15 * 60 * 1000L),
-                status = MessageStatus.DELIVERED
-            )
-        )
-
-        val s2 = students.getOrNull(1)
-        val s2Id = s2?.id ?: "student_test_2"
-        val s2No = s2?.studentNumber ?: "326"
-        val s2Name = s2?.fullName ?: "GÜNEŞ DEMİR"
-        val p2Name = s2?.parentName ?: "Ayşe Demir"
-
-        list.add(
-            ChatMessage(
-                id = "msg_4",
-                classId = classId,
-                studentId = s2Id,
-                studentNumber = s2No,
-                studentName = s2Name,
-                parentName = p2Name,
-                isFromTeacher = true,
-                senderName = "Cihan Özel",
-                text = "Merhaba Ayşe Hanım, Güneş'in gözlük kullanımını sınıfta ön sıraya alarak destekliyoruz. Tahtayı artık çok rahat takip edebiliyor.",
-                timestamp = now - (24 * 3600 * 1000L),
-                status = MessageStatus.READ
-            )
-        )
-        list.add(
-            ChatMessage(
-                id = "msg_5",
-                classId = classId,
-                studentId = s2Id,
-                studentNumber = s2No,
-                studentName = s2Name,
-                parentName = p2Name,
-                isFromTeacher = false,
-                senderName = p2Name,
-                text = "Çok teşekkürler öğretmenim, biz de evde fark ettik baş ağrısı şikayeti tamamen geçti.",
-                timestamp = now - (22 * 3600 * 1000L),
-                status = MessageStatus.READ
-            )
-        )
-
-        return list
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AirlineSeatReclineNormal
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -148,11 +149,8 @@ fun SeatingPlanSubScreen(
     // Boş koltuğa öğrenci atama diyaloğu
     var selectedSeatForAssignment by remember { mutableStateOf<String?>(null) }
 
-    // Otomatik dağıtım mod diyaloğu (2 sütun x 3 satır kutu kutu)
+    // Otomatik dağıtım mod diyaloğu (2 sütun x 4 satır kutu kutu - rotasyon modları dahil)
     var showAutoAssignDialog by remember { mutableStateOf(false) }
-
-    // Rotasyon mod diyaloğu
-    var showRotationDialog by remember { mutableStateOf(false) }
 
     // Paylaşım menüsü
     var isShareMenuOpen by remember { mutableStateOf(false) }
@@ -233,12 +231,17 @@ fun SeatingPlanSubScreen(
 
                             Text("•", color = Color(0xFF94A3B8), fontSize = 10.sp)
 
-                            // Dolu koltuk figürü + dolu koltuk sayısı
+                            // Dolu koltuk figürü (Sandalyede oturan kişi) + dolu koltuk sayısı
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text("💺", fontSize = 13.sp)
+                                Icon(
+                                    imageVector = Icons.Default.AirlineSeatReclineNormal,
+                                    contentDescription = "Dolu Koltuk",
+                                    tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E),
+                                    modifier = Modifier.size(16.dp)
+                                )
                                 Text(
                                     text = "$seatedCount",
                                     fontSize = 12.sp,
@@ -403,14 +406,14 @@ fun SeatingPlanSubScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Alt Satır: Akıllı Dağıt, Rotasyon, Arşiv ve Çöp Kutusu Simgesi (Tam Eşit Yükseklikte)
+                // Alt Satır: Akıllı Dağıt, Arşiv ve Çöp Kutusu Simgesi (Tam Eşit Yükseklikte)
                 val actionBarHeight = 38.dp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. Akıllı Dağıt Butonu (Kutu kutu mod penceresi)
+                    // 1. Akıllı Dağıt Butonu (Kutu kutu mod penceresi - Rotasyon modları dahil)
                     Button(
                         onClick = { showAutoAssignDialog = true },
                         colors = ButtonDefaults.buttonColors(
@@ -418,40 +421,24 @@ fun SeatingPlanSubScreen(
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .weight(1f)
                             .height(actionBarHeight)
                             .testTag("seating_auto_assign_menu_button")
                     ) {
                         Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text("Akıllı Dağıt", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
 
-                    // 2. Rotasyon Butonu (Kutu kutu rotasyon penceresi)
-                    OutlinedButton(
-                        onClick = { showRotationDialog = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
-                        border = BorderStroke(1.dp, cardBorder),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                        modifier = Modifier
-                            .height(actionBarHeight)
-                            .testTag("seating_rotation_menu_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Rotasyon", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-
-                    // 3. Arşiv Butonu
+                    // 2. Arşiv Butonu
                     OutlinedButton(
                         onClick = { isArchiveDialogOpen = true },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                         border = BorderStroke(1.dp, cardBorder),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .height(actionBarHeight)
                             .testTag("seating_archive_button")
@@ -460,8 +447,7 @@ fun SeatingPlanSubScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Arşiv", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
-
-                    // 4. Çöp Kutusu Simgesi (Sıfırla - Satırdaki Diğer Butonlarla Birebir Eşit Yükseklik ve Köşede)
+                    // 3. Çöp Kutusu Simgesi (Sıfırla - Satırdaki Diğer Butonlarla Birebir Eşit Yükseklik ve Köşede)
                     OutlinedButton(
                         onClick = { showClearConfirmDialog = true },
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -813,35 +799,7 @@ fun SeatingPlanSubScreen(
         )
     }
 
-    // 7. Sınıf Oturma Rotasyonu Diyaloğu (Kutu kutu rotasyon seçenekleri)
-    if (showRotationDialog) {
-        RotationModalDialog(
-            isDarkTheme = isDarkTheme,
-            onDismiss = { showRotationDialog = false },
-            onFrontToBack = {
-                val newAssignments = SeatingPlanHelper.rotateSeatsFrontToBack(
-                    config = seatingPlanState.config,
-                    currentAssignments = seatingPlanState.assignments,
-                    pinnedStudents = seatingPlanState.pinnedStudents
-                )
-                val updated = seatingPlanState.copy(assignments = newAssignments)
-                onApplyPlannedSeating(updated)
-                Toast.makeText(context, "Sıralar önden arkaya kaydırıldı! 🔄", Toast.LENGTH_SHORT).show()
-            },
-            onRotateGroups = {
-                val newAssignments = SeatingPlanHelper.rotateGroups(
-                    config = seatingPlanState.config,
-                    currentAssignments = seatingPlanState.assignments,
-                    pinnedStudents = seatingPlanState.pinnedStudents
-                )
-                val updated = seatingPlanState.copy(assignments = newAssignments)
-                onApplyPlannedSeating(updated)
-                Toast.makeText(context, "Gruplar yana döndürüldü! 🔀", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-
-    // 8. Planı Sıfırla Güvenlik Uyarısı Onay Diyaloğu
+    // 7. Planı Sıfırla Güvenlik Uyarısı Onay Diyaloğu
     if (showClearConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showClearConfirmDialog = false },
@@ -1797,6 +1755,20 @@ private fun AutoAssignModalDialog(
             badgeColor = Color(0xFFF59E0B)
         ),
         SeatingModeOption(
+            id = "front_to_back",
+            icon = "⬇️",
+            title = "Önden Arkaya Kaydır",
+            description = "Sıralar 1 kademe arkaya kayar",
+            badgeColor = Color(0xFF0284C7)
+        ),
+        SeatingModeOption(
+            id = "groups_shift",
+            icon = "↔️",
+            title = "Grupları Yana Kaydır",
+            description = "Gruplar sırayla yana kayar",
+            badgeColor = Color(0xFF0D9488)
+        ),
+        SeatingModeOption(
             id = "manual",
             icon = "👆",
             title = "Elle Yerleştirme",
@@ -1820,7 +1792,7 @@ private fun AutoAssignModalDialog(
                 )
                 Column {
                     Text("Akıllı Dağıtım Modları", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Yerleştirme algoritmasını seçin", fontSize = 11.sp, color = Color.Gray)
+                    Text("Yerleştirme veya kaydırma modunu seçin", fontSize = 11.sp, color = Color.Gray)
                 }
             }
         },
@@ -1829,7 +1801,7 @@ private fun AutoAssignModalDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                for (row in 0 until 3) {
+                for (row in 0 until 4) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1852,6 +1824,8 @@ private fun AutoAssignModalDialog(
                                             "gender_balanced" -> onSelectMode(SeatingPlacementMode.GENDER_BALANCED)
                                             "alphabetical" -> onSelectMode(SeatingPlacementMode.ALPHABETICAL)
                                             "number_order" -> onSelectMode(SeatingPlacementMode.NUMBER_ORDER)
+                                            "front_to_back" -> onSelectMode(SeatingPlacementMode.ROTATE_FRONT_TO_BACK)
+                                            "groups_shift" -> onSelectMode(SeatingPlacementMode.ROTATE_GROUPS_SHIFT)
                                             "manual" -> onSelectMode(SeatingPlacementMode.MANUAL)
                                         }
                                     }
@@ -1895,104 +1869,6 @@ private fun AutoAssignModalDialog(
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Kapat", fontSize = 12.sp)
-            }
-        }
-    )
-}
-
-/**
- * Sınıf Oturma Rotasyonu Penceresi (Kutu Kutu Kart Seçenekleri)
- */
-@Composable
-private fun RotationModalDialog(
-    isDarkTheme: Boolean,
-    onDismiss: () -> Unit,
-    onFrontToBack: () -> Unit,
-    onRotateGroups: () -> Unit
-) {
-    val modes = listOf(
-        SeatingModeOption(
-            id = "front_to_back",
-            icon = "⬇️",
-            title = "Önden Arkaya Kaydır",
-            description = "Sıralar 1 kademe arkaya kayar, en arkadaki öğrenciler en öne geçer.",
-            badgeColor = Color(0xFF3B82F6)
-        ),
-        SeatingModeOption(
-            id = "groups",
-            icon = "↔️",
-            title = "Grupları Yana Kaydır",
-            description = "Gruplar sırayla yana kayar (Sol → Orta → Sağ), tahta görme açısı eşitlenir.",
-            badgeColor = Color(0xFF10B981)
-        )
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SwapHoriz,
-                    contentDescription = null,
-                    tint = if (isDarkTheme) BirizAmber else BirizNavyPrimary,
-                    modifier = Modifier.size(22.dp)
-                )
-                Column {
-                    Text("Sınıf Oturma Rotasyonu", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Periyodik yer değiştirme modu seçin", fontSize = 11.sp, color = Color.Gray)
-                }
-            }
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                for (item in modes) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isDarkTheme) BirizDarkCardGlass else Color(0xFFF8FAFC),
-                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onDismiss()
-                                if (item.id == "front_to_back") onFrontToBack() else onRotateGroups()
-                            }
-                            .testTag("rotation_${item.id}")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(item.badgeColor.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(item.icon, fontSize = 20.sp)
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(item.description, fontSize = 11.sp, color = Color.Gray, lineHeight = 14.sp)
                             }
                         }
                     }
