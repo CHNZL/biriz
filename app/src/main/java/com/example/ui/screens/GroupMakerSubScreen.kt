@@ -173,135 +173,163 @@ fun GroupMakerSubScreen(
                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
+                    // 1. SATIR: Akıllı Dağıt, Yerleşen Kutusu, Kalan Kutusu ve Paylaş Kutusu (Simge ile)
+                    val topBarHeight = 38.dp
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Sol İstatistik Rozetleri
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        // 1. Akıllı Dağıt Butonu (1. Satır Başı)
+                        Button(
+                            onClick = onOpenWizard,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                contentColor = if (isDarkTheme) BirizNavyDark else Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(topBarHeight)
+                                .testTag("open_group_wizard_button")
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
-                                border = BorderStroke(1.dp, BirizTurquoise)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                                ) {
-                                    Text(
-                                        text = "👥 $assignedCount / $totalStudents Yerleşti",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDarkTheme) Color(0xFF5EEAD4) else Color(0xFF0F766E)
-                                    )
-                                }
-                            }
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Akıllı Dağıt", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
 
-                            if (unassignedCount > 0) {
-                                Surface(
-                                    onClick = { showUnassignedDrawer = true },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
-                                    border = BorderStroke(1.dp, BirizAmber)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                                    ) {
-                                        Text(
-                                            text = "📦 $unassignedCount Atanmamış",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
-                                        )
-                                    }
-                                }
+                        // 2. Yerleşen Kişi Kutusu
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
+                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x600D9488) else BirizTurquoise),
+                            modifier = Modifier.height(topBarHeight)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = "👥 $assignedCount Yerleşti",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color(0xFF5EEAD4) else Color(0xFF0F766E),
+                                    maxLines = 1
+                                )
                             }
                         }
 
-                        // Sağ Aksiyon Butonları (Dışa Aktar / Paylaş)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                        // 3. Kalan Kişi Kutusu
+                        Surface(
+                            onClick = { if (unassignedCount > 0) showUnassignedDrawer = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (unassignedCount > 0) {
+                                if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                            } else {
+                                if (isDarkTheme) Color(0x2064748B) else Color(0xFFF1F5F9)
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (unassignedCount > 0) BirizAmber else (if (isDarkTheme) Color(0x4064748B) else Color(0xFFCBD5E1))
+                            ),
+                            modifier = Modifier.height(topBarHeight)
                         ) {
-                            // Dışa Aktar Menüsü
-                            Box {
-                                Button(
-                                    onClick = { isExportMenuOpen = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                    modifier = Modifier.testTag("group_export_button")
-                                ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = "📦 $unassignedCount Kalan",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (unassignedCount > 0) {
+                                        if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                                    } else {
+                                        if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                    },
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // 4. Paylaş Kutusu (Simge ile, "Paylaş" yazısı yok)
+                        Box {
+                            Surface(
+                                onClick = { isExportMenuOpen = true },
+                                shape = RoundedCornerShape(10.dp),
+                                color = BirizNavyPrimary,
+                                modifier = Modifier
+                                    .size(topBarHeight)
+                                    .testTag("group_export_button")
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                     Icon(
                                         imageVector = Icons.Default.Share,
                                         contentDescription = "Paylaş",
-                                        modifier = Modifier.size(15.dp),
+                                        modifier = Modifier.size(17.dp),
                                         tint = Color.White
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Paylaş", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
 
-                                DropdownMenu(
-                                    expanded = isExportMenuOpen,
-                                    onDismissRequest = { isExportMenuOpen = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
-                                        onClick = {
-                                            isExportMenuOpen = false
-                                            val shareText = GroupMakerHelper.generateShareText(classRoom, groupMakerState.groups, students)
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("Grup Listesi", shareText))
-                                            Toast.makeText(context, "Grup listesi panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
+                            DropdownMenu(
+                                expanded = isExportMenuOpen,
+                                onDismissRequest = { isExportMenuOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("📋 WhatsApp / SMS Metni Kopyala", fontSize = 12.sp) },
+                                    onClick = {
+                                        isExportMenuOpen = false
+                                        val shareText = GroupMakerHelper.generateShareText(classRoom, groupMakerState.groups, students)
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Grup Listesi", shareText))
+                                        Toast.makeText(context, "Grup listesi panoya kopyalandı! 📋", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
+                                    onClick = {
+                                        isExportMenuOpen = false
+                                        try {
+                                            val uri = ExcelPdfHelper.exportGroupListExcel(context, classRoom, groupMakerState.groups, students)
+                                            ExcelPdfHelper.shareFile(
+                                                context = context,
+                                                uri = uri,
+                                                mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                chooserTitle = "Grup Listesi Excel Dosyasını Paylaş"
+                                            )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("📊 Excel (.xlsx) İndir / Paylaş", fontSize = 12.sp) },
-                                        onClick = {
-                                            isExportMenuOpen = false
-                                            try {
-                                                val uri = ExcelPdfHelper.exportGroupListExcel(context, classRoom, groupMakerState.groups, students)
-                                                ExcelPdfHelper.shareFile(
-                                                    context = context,
-                                                    uri = uri,
-                                                    mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                                    chooserTitle = "Grup Listesi Excel Dosyasını Paylaş"
-                                                )
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🖨️ PDF Krokisi İndir / Yazdır", fontSize = 12.sp) },
+                                    onClick = {
+                                        isExportMenuOpen = false
+                                        try {
+                                            val uri = ExcelPdfHelper.exportGroupListPdf(context, classRoom, groupMakerState.groups, students)
+                                            ExcelPdfHelper.shareFile(
+                                                context = context,
+                                                uri = uri,
+                                                mimeType = "application/pdf",
+                                                chooserTitle = "Grup Listesi PDF Dosyasını Paylaş"
+                                            )
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("🖨️ PDF Krokisi İndir / Yazdır", fontSize = 12.sp) },
-                                        onClick = {
-                                            isExportMenuOpen = false
-                                            try {
-                                                val uri = ExcelPdfHelper.exportGroupListPdf(context, classRoom, groupMakerState.groups, students)
-                                                ExcelPdfHelper.shareFile(
-                                                    context = context,
-                                                    uri = uri,
-                                                    mimeType = "application/pdf",
-                                                    chooserTitle = "Grup Listesi PDF Dosyasını Paylaş"
-                                                )
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 2. YATAY ARAÇ ÇUBUĞU (Sihirbaz, Karıştır, Lider Seç, Yeni Grup)
+                    // 2. SATIR: Yeniden Karıştır, Rastgele Sözcü, Kalanları Dağıt ve Grup Ekle
+                    val row2Height = 36.dp
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -309,103 +337,111 @@ fun GroupMakerSubScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
-                            onClick = onOpenWizard,
-                            colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("open_group_wizard_button")
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("✨ Dağıtım Sihirbazı", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
+                        // 1. Yeniden Karıştır
                         OutlinedButton(
                             onClick = onReshuffle,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                            modifier = Modifier.height(row2Height)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("🎲 Yeniden Karıştır", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("🎲 Yeniden Karıştır", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
+                        // 2. Rastgele Sözcü
                         OutlinedButton(
                             onClick = onPickRandomLeadersForAll,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                            modifier = Modifier.height(row2Height)
                         ) {
-                            Text("👑 Rastgele Sözcüler", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("👑 Rastgele Sözcü", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
-                        OutlinedButton(
-                            onClick = onAddNewGroup,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("➕ Grup Ekle", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
+                        // 3. Kalanları Dağıt
                         if (unassignedCount > 0) {
                             Button(
                                 onClick = onDistributeUnassigned,
-                                colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BirizAmber,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                                modifier = Modifier.height(row2Height)
                             ) {
-                                Text("⚡ Kalanları Dağıt ($unassignedCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("⚡ Kalanları Dağıt ($unassignedCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                             }
+                        } else {
+                            OutlinedButton(
+                                onClick = {},
+                                enabled = false,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                                modifier = Modifier.height(row2Height)
+                            ) {
+                                Text("⚡ Kalanları Dağıt", fontSize = 11.sp, fontWeight = FontWeight.Normal, maxLines = 1)
+                            }
+                        }
+
+                        // 4. Grup Ekle
+                        OutlinedButton(
+                            onClick = onAddNewGroup,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                            modifier = Modifier.height(row2Height)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("➕ Grup Ekle", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     }
                 }
             }
 
-            // 3. ATANMAMIŞ ÖĞRENCİLER HAVUZU UYARI BANTI (Eğer varsa)
+            // 3. ATANMAMIŞ ÖĞRENCİLER HAVUZU UYARI BANTI (Kompakt ve Zarif Tek Satır Şerit)
             if (unassignedCount > 0) {
                 Surface(
                     onClick = { showUnassignedDrawer = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
-                    border = BorderStroke(1.dp, BirizAmber)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isDarkTheme) Color(0x30F59E0B) else Color(0xFFFEF3C7),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x60F59E0B) else Color(0xFFFDE68A))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "📦", fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Atanmamış Öğrenciler Havuzu ($unassignedCount Kişi)",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFF92400E)
-                                )
-                                Text(
-                                    text = "Dokunarak listeyi açın veya kalanları gruplara dengeli paylaştırın",
-                                    fontSize = 10.sp,
-                                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFFB45309)
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = onDistributeUnassigned,
-                            colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text("Dengeli Dağıt", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "📦", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Atanmamış Öğrenci Havuzu: $unassignedCount kişi grupta değil",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFF92400E),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
+                        Text(
+                            text = "Listeyi Aç ❯",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                        )
                     }
                 }
             }
@@ -429,7 +465,7 @@ fun GroupMakerSubScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Yukarıdaki '✨ Dağıtım Sihirbazı' butonuna dokunarak sınıfınızı adil, dengeli ve eğlenceli çalışma gruplarına ayırın.",
+                            text = "Yukarıdaki '✨ Akıllı Dağıt' butonuna dokunarak sınıfınızı adil, dengeli ve eğlenceli çalışma gruplarına ayırın.",
                             fontSize = 12.sp,
                             color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
                             textAlign = TextAlign.Center,
@@ -443,7 +479,7 @@ fun GroupMakerSubScreen(
                         ) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Dağıtım Sihirbazını Başlat", fontWeight = FontWeight.Bold)
+                            Text("Akıllı Dağıtımı Başlat", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

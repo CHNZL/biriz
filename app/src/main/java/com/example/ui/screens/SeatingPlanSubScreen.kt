@@ -598,7 +598,7 @@ fun SeatingPlanSubScreen(
                     isDarkTheme = isDarkTheme
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // 3.2. Sıra ve Öbek Kolonları (Bento Düzeni - Yatay Kaydırılabilir)
                 Box(
@@ -869,7 +869,7 @@ fun SeatingPlanSubScreen(
 }
 
 /**
- * Sınıf Ön Cephesi: Ortalanmış Akıllı Tahta, Öğretmen Masası, Pencere ve Kapı Konumu
+ * Sınıf Ön Cephesi: Ortalanmış Akıllı Tahta, Öğretmen Masası, Pencere ve Kapı Konumu (Kompakt Tek Satır)
  */
 @Composable
 private fun ClassroomFrontArchBanner(
@@ -880,100 +880,75 @@ private fun ClassroomFrontArchBanner(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         color = if (isDarkTheme) Color(0x600E1A38) else Color(0xFFF1F5F9),
         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Sınıf Oturma Planı",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                letterSpacing = 0.5.sp
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 1. SATIR: ÖN DUVAR MİMARİSİ (Sol Kapı/Pencere, Ortalanmış Akıllı Tahta, Sağ Kapı/Pencere)
+            // Sol Duvar Elemanları (Ön Sol Kapı, Sol Pencere, Sol Öğretmen Masası)
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Sol Duvar Elemanları (Pencere ve/veya Ön Sol Kapı)
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (config.doorPosition == DoorPosition.ON_SOL || config.doorPosition == DoorPosition.SOL_ON) {
-                            ArchitecturalBadge(label = "🚪 Kapı (${config.doorPosition.positionOnFacade})", isDarkTheme = isDarkTheme, isDoor = true)
-                        }
-                        if (config.windowPosition == WindowPosition.LEFT) {
-                            ArchitecturalBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
-                        }
-                    }
+                if (config.doorPosition == DoorPosition.ON_SOL || config.doorPosition == DoorPosition.SOL_ON) {
+                    ArchitecturalBadge(label = "🚪 Kapı", isDarkTheme = isDarkTheme, isDoor = true)
                 }
+                if (config.windowPosition == WindowPosition.LEFT) {
+                    ArchitecturalBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
+                }
+                if (config.deskPosition == DeskPosition.LEFT) {
+                    TeacherDeskBadge(isDarkTheme = isDarkTheme)
+                }
+            }
 
-                // Ortalanmış Akıllı Tahta
+            // Orta Duvar Elemanları (Ortalanmış Akıllı Tahta ve Orta Öğretmen Masası)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(7.dp),
                     color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFF334155),
                     border = BorderStroke(1.dp, Color(0xFF475569))
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = "📋 AKILLI TAHTA",
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1
                         )
                     }
                 }
-
-                // Sağ Duvar Elemanları (Pencere ve/veya Ön Sağ Kapı)
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (config.windowPosition == WindowPosition.RIGHT) {
-                            ArchitecturalBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
-                        }
-                        if (config.doorPosition == DoorPosition.ON_SAG || config.doorPosition == DoorPosition.SAG_ON) {
-                            ArchitecturalBadge(label = "🚪 Kapı (${config.doorPosition.positionOnFacade})", isDarkTheme = isDarkTheme, isDoor = true)
-                        }
-                    }
+                if (config.deskPosition == DeskPosition.CENTER) {
+                    TeacherDeskBadge(isDarkTheme = isDarkTheme)
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 2. SATIR: ÖĞRETMEN MASASI (Sol Ön, Orta Ön veya Sağ Ön Konumu - Asla Tahta Altında Kalmaz)
+            // Sağ Duvar Elemanları (Sağ Öğretmen Masası, Sağ Pencere, Ön Sağ Kapı)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
-                horizontalArrangement = when (config.deskPosition) {
-                    DeskPosition.LEFT -> Arrangement.Start
-                    DeskPosition.CENTER -> Arrangement.Center
-                    DeskPosition.RIGHT -> Arrangement.End
-                }
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                TeacherDeskBadge(isDarkTheme = isDarkTheme)
+                if (config.deskPosition == DeskPosition.RIGHT) {
+                    TeacherDeskBadge(isDarkTheme = isDarkTheme)
+                }
+                if (config.windowPosition == WindowPosition.RIGHT) {
+                    ArchitecturalBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
+                }
+                if (config.doorPosition == DoorPosition.ON_SAG || config.doorPosition == DoorPosition.SAG_ON) {
+                    ArchitecturalBadge(label = "🚪 Kapı", isDarkTheme = isDarkTheme, isDoor = true)
+                }
             }
         }
     }
@@ -1031,7 +1006,7 @@ private fun ClassroomBackArchBanner(
 @Composable
 private fun ArchitecturalBadge(label: String, isDarkTheme: Boolean, isDoor: Boolean = false) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(7.dp),
         color = if (isDoor) {
             if (isDarkTheme) Color(0x40D97706) else Color(0xFFFEF3C7)
         } else {
@@ -1041,10 +1016,11 @@ private fun ArchitecturalBadge(label: String, isDarkTheme: Boolean, isDoor: Bool
     ) {
         Text(
             text = label,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDoor) Color(0xFFB45309) else Color(0xFF0284C7),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
         )
     }
 }
@@ -1052,16 +1028,17 @@ private fun ArchitecturalBadge(label: String, isDarkTheme: Boolean, isDoor: Bool
 @Composable
 private fun TeacherDeskBadge(isDarkTheme: Boolean) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(7.dp),
         color = if (isDarkTheme) Color(0x40F59E0B) else Color(0xFFFFFBEB),
         border = BorderStroke(1.dp, Color(0xFFF59E0B))
     ) {
         Text(
             text = "👩‍🏫 Öğretmen Masası",
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFFD97706),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp)
         )
     }
 }
