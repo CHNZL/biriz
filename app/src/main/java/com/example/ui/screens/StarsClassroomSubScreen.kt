@@ -35,6 +35,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -46,12 +47,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -145,6 +149,7 @@ fun StarsClassroomSubScreen(
     var studentForIndividualStar by remember { mutableStateOf<Student?>(null) }
     var studentForHistory by remember { mutableStateOf<Student?>(null) }
     var showActivityWizard by remember { mutableStateOf(false) }
+    var showAllClassRankingDialog by remember { mutableStateOf(false) }
 
     // Son verilen işlem (Geri Al için Snackbar)
     var lastAwardedBatch by remember { mutableStateOf<Pair<String, List<StarRewardRecord>>?>(null) }
@@ -202,8 +207,9 @@ fun StarsClassroomSubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Sol Bilgi Rozeti: Toplam Yıldız
+                        // Sol Bilgi Rozeti: Toplam Yıldız & Hızlı Sıralama Erişimi
                         Surface(
+                            onClick = { showAllClassRankingDialog = true },
                             shape = RoundedCornerShape(10.dp),
                             color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
                             border = BorderStroke(1.dp, BirizAmber)
@@ -219,6 +225,13 @@ fun StarsClassroomSubScreen(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Leaderboard,
+                                    contentDescription = "Sıralama",
+                                    tint = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309),
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
@@ -252,39 +265,73 @@ fun StarsClassroomSubScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Arama & Sıralama Satırı
+                    // Arama & Sıralama Satırı (Metin kesilmesi düzeltilmiş, dikeyde kusursuz ortalanmış arama alanı)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // Arama Çubuğu
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Öğrenci adı veya no ara...", fontSize = 11.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Close, contentDescription = "Temizle", modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder,
-                                focusedContainerColor = if (isDarkTheme) Color(0x301E293B) else Color.White,
-                                unfocusedContainerColor = if (isDarkTheme) Color(0x201E293B) else Color.White
-                            ),
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) Color(0x301E293B) else Color.White,
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(46.dp)
-                        )
+                                .height(48.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = "Öğrenci adı veya no ara...",
+                                            fontSize = 12.5.sp,
+                                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                        ),
+                                        cursorBrush = SolidColor(if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { searchQuery = "" },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Temizle",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = if (isDarkTheme) Color.White.copy(alpha = 0.7f) else BirizTextMuted
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         // Sıralama Butonu
                         Surface(
@@ -295,14 +342,14 @@ fun StarsClassroomSubScreen(
                                     else -> "STARS_DESC"
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
                             border = BorderStroke(1.dp, if (isDarkTheme) Color(0x503B82F6) else Color(0xFFBFDBFE)),
-                            modifier = Modifier.height(46.dp)
+                            modifier = Modifier.height(48.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp)
                             ) {
                                 Text(
                                     text = when (sortOrder) {
@@ -310,7 +357,7 @@ fun StarsClassroomSubScreen(
                                         "NAME_ASC" -> "🔤 İsme Göre"
                                         else -> "🔢 Numaraya Göre"
                                     },
-                                    fontSize = 11.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDarkTheme) BirizTurquoise else Color(0xFF1D4ED8)
                                 )
@@ -320,77 +367,160 @@ fun StarsClassroomSubScreen(
                 }
             }
 
-            // --- 2. LİDERLİK KÜRSÜSÜ (Eğer Yıldız Varsa) ---
-            if (topStudents.isNotEmpty() && searchQuery.isBlank()) {
+            // --- 2. PROFESYONEL LİDER KÜRSÜSÜ & TÜM SIRALAMA ERİŞİMİ ---
+            if (searchQuery.isBlank()) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) Color(0x250EA5E9) else Color(0xFFF0FDF4),
-                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x400EA5E9) else Color(0xFFBBF7D0))
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDarkTheme) Color(0x280F172A) else Color(0xFFFAF5FF),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x40A855F7) else Color(0xFFE9D5FF)),
+                    shadowElevation = 2.dp
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.EmojiEvents,
-                                contentDescription = null,
-                                tint = BirizAmber,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Haftanın Yıldızları (Lider Tablosu)",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) BirizDarkTextPrimary else Color(0xFF15803D)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        // Liderlik Kartı Başlığı & "Tüm Sıralama" Butonu
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            topStudents.forEachIndexed { index, student ->
-                                val medal = when (index) {
-                                    0 -> "🥇"
-                                    1 -> "🥈"
-                                    else -> "🥉"
-                                }
-                                val stars = studentStarMap[student.id] ?: 0
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
-                                    onClick = { studentForIndividualStar = student },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isDarkTheme) Color(0x351E293B) else Color.White,
-                                    border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                    shape = CircleShape,
+                                    color = BirizAmber.copy(alpha = 0.18f),
+                                    modifier = Modifier.size(28.dp)
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(text = medal, fontSize = 13.sp)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Column {
-                                            Text(
-                                                text = student.fullName.split(" ").firstOrNull() ?: student.fullName,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "$stars ⭐",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = BirizAmber
-                                            )
-                                        }
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.EmojiEvents,
+                                            contentDescription = null,
+                                            tint = BirizAmber,
+                                            modifier = Modifier.size(17.dp)
+                                        )
                                     }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Haftanın Yıldızları (Lider Kürsüsü)",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isDarkTheme) Color(0xFFF1F5F9) else BirizNavyPrimary
+                                    )
+                                    Text(
+                                        text = "En çok yıldız toplayan şampiyonlar",
+                                        fontSize = 10.sp,
+                                        color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                                    )
+                                }
+                            }
+
+                            // Tüm Sınıf Sıralaması Butonu
+                            Surface(
+                                onClick = { showAllClassRankingDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0x356366F1) else Color(0xFFEEF2FF),
+                                border = BorderStroke(1.dp, Color(0xFF818CF8)),
+                                modifier = Modifier.testTag("btn_all_class_ranking_podium")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Leaderboard,
+                                        contentDescription = null,
+                                        tint = Color(0xFF6366F1),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Tüm Sıralama",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF6366F1)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (topStudents.isEmpty()) {
+                            // Henüz yıldız verilmemişse
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0x201E293B) else Color.White,
+                                border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("✨", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Sınıfınızda henüz yıldız verilmemiş. Öğrencilerinize dokunarak veya 'Etkinlikli Yıldız' ile ilk yıldızlarını dağıtın!",
+                                        fontSize = 11.sp,
+                                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                    )
+                                }
+                            }
+                        } else {
+                            // 3'lü Olimpiyat Kürsüsü: Sol: 2. (Gümüş), Orta: 1. (Altın - Yüksek), Sağ: 3. (Bronz)
+                            val first = topStudents.getOrNull(0)
+                            val second = topStudents.getOrNull(1)
+                            val third = topStudents.getOrNull(2)
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                // 2. SIRA (Gümüş Kürsü - Sol)
+                                if (second != null) {
+                                    PodiumPillarItem(
+                                        rank = 2,
+                                        medalEmoji = "🥈",
+                                        student = second,
+                                        stars = studentStarMap[second.id] ?: 0,
+                                        isDarkTheme = isDarkTheme,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { studentForIndividualStar = second }
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+
+                                // 1. SIRA (Altın Kürsü - Orta / Yüksek & Taçlı)
+                                if (first != null) {
+                                    PodiumPillarItem(
+                                        rank = 1,
+                                        medalEmoji = "🥇",
+                                        student = first,
+                                        stars = studentStarMap[first.id] ?: 0,
+                                        isDarkTheme = isDarkTheme,
+                                        isCenterChampion = true,
+                                        modifier = Modifier.weight(1.15f),
+                                        onClick = { studentForIndividualStar = first }
+                                    )
+                                }
+
+                                // 3. SIRA (Bronz Kürsü - Sağ)
+                                if (third != null) {
+                                    PodiumPillarItem(
+                                        rank = 3,
+                                        medalEmoji = "🥉",
+                                        student = third,
+                                        stars = studentStarMap[third.id] ?: 0,
+                                        isDarkTheme = isDarkTheme,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { studentForIndividualStar = third }
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -596,6 +726,482 @@ fun StarsClassroomSubScreen(
                 Toast.makeText(context, "$summaryText başarıyla kaydedildi! 🎉", Toast.LENGTH_LONG).show()
             }
         )
+    }
+
+    // 4. Tüm Sınıf Yıldız Sıralaması Penceresi (Öğretmenin sınıfın tüm sıralamasını ve öğrencilerin kaç yıldızı olduğunu anında görmesi için)
+    if (showAllClassRankingDialog) {
+        AllClassStarRankingDialog(
+            students = students,
+            studentStarMap = studentStarMap,
+            totalClassStars = totalClassStars,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showAllClassRankingDialog = false },
+            onSelectStudent = { student ->
+                studentForIndividualStar = student
+            }
+        )
+    }
+}
+
+/**
+ * Profesyonel Olimpiyat Kürsüsü Sütunu (1., 2., 3. Sıra)
+ */
+@Composable
+private fun PodiumPillarItem(
+    rank: Int,
+    medalEmoji: String,
+    student: Student,
+    stars: Int,
+    isDarkTheme: Boolean,
+    isCenterChampion: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val isGirl = student.gender.equals("Kız", ignoreCase = true)
+    val ringColor = when (rank) {
+        1 -> BirizAmber
+        2 -> Color(0xFF94A3B8)
+        else -> Color(0xFFD97706)
+    }
+    val cardBg = when (rank) {
+        1 -> if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB)
+        2 -> if (isDarkTheme) Color(0x2594A3B8) else Color(0xFFF8FAFC)
+        else -> if (isDarkTheme) Color(0x25D97706) else Color(0xFFFFF7ED)
+    }
+    val cardBorder = when (rank) {
+        1 -> BirizAmber
+        2 -> Color(0xFF94A3B8)
+        else -> Color(0xFFFB923C)
+    }
+    val pillarHeight = if (isCenterChampion) 124.dp else 108.dp
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = cardBg,
+        border = BorderStroke(if (isCenterChampion) 1.5.dp else 1.dp, cardBorder),
+        shadowElevation = if (isCenterChampion) 4.dp else 1.dp,
+        modifier = modifier.height(pillarHeight)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Üst Rozet: Taç / Madalya
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (isCenterChampion) {
+                    Text("👑", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+                Text(
+                    text = "$medalEmoji $rank.",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    color = when (rank) {
+                        1 -> if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                        2 -> if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
+                        else -> if (isDarkTheme) Color(0xFFFED7AA) else Color(0xFFC2410C)
+                    }
+                )
+            }
+
+            // Avatar / Baş Harf Çemberi
+            Surface(
+                shape = CircleShape,
+                color = if (isGirl) Color(0xFFFDF2F8) else Color(0xFFEFF6FF),
+                border = BorderStroke(1.5.dp, ringColor),
+                modifier = Modifier.size(if (isCenterChampion) 34.dp else 28.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = student.fullName.take(2).uppercase(),
+                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB)
+                    )
+                }
+            }
+
+            // Öğrenci İsmi
+            Text(
+                text = student.fullName.split(" ").firstOrNull() ?: student.fullName,
+                fontSize = if (isCenterChampion) 11.5.sp else 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+
+            // Yıldız Kutucuğu
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (rank == 1) BirizAmber else if (isDarkTheme) Color(0x351E293B) else Color.White,
+                border = BorderStroke(0.8.dp, cardBorder)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "$stars ⭐",
+                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (rank == 1) Color.Black else if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Tüm Sınıf Yıldız Sıralaması Penceresi (Leaderboard Dialog)
+ */
+@Composable
+fun AllClassStarRankingDialog(
+    students: List<Student>,
+    studentStarMap: Map<String, Int>,
+    totalClassStars: Int,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit,
+    onSelectStudent: (Student) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Tüm sınıf sıralaması: yıldız sayısına göre azalan, eşitlikte numara
+    val rankedStudents = remember(students, studentStarMap) {
+        students.sortedWith { a, b ->
+            val starA = studentStarMap[a.id] ?: 0
+            val starB = studentStarMap[b.id] ?: 0
+            if (starA != starB) {
+                starB.compareTo(starA)
+            } else {
+                (a.studentNumber.toIntOrNull() ?: 0).compareTo(b.studentNumber.toIntOrNull() ?: 0)
+            }
+        }
+    }
+
+    // Arama filtreli liste
+    val displayList = remember(rankedStudents, searchQuery) {
+        if (searchQuery.isBlank()) rankedStudents
+        else {
+            rankedStudents.filter { s ->
+                s.fullName.contains(searchQuery, ignoreCase = true) ||
+                s.studentNumber.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    val classAverage = remember(students, totalClassStars) {
+        if (students.isNotEmpty()) {
+            val avg = totalClassStars.toFloat() / students.size
+            String.format(java.util.Locale.US, "%.1f", avg)
+        } else "0"
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
+            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+            shadowElevation = 16.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.85f)
+                .testTag("dialog_all_class_ranking")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Başlık Satırı
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BirizAmber.copy(alpha = 0.18f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Leaderboard,
+                                    contentDescription = null,
+                                    tint = BirizAmber,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Sınıf Yıldız Sıralaması",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                color = if (isDarkTheme) Color(0xFFF1F5F9) else BirizNavyPrimary
+                            )
+                            Text(
+                                text = "${students.size} Öğrenci • Toplam $totalClassStars ⭐ • Ort: $classAverage ⭐",
+                                fontSize = 11.sp,
+                                color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Kapat",
+                            tint = if (isDarkTheme) Color.White.copy(alpha = 0.7f) else BirizTextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Hızlı Arama Çubuğu (Öğrenci sorunca anında bulabilmek için)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) Color(0x301E293B) else Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Sıralamada öğrenci ara...",
+                                    fontSize = 12.sp,
+                                    color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                                )
+                            }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                ),
+                                cursorBrush = SolidColor(if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Temizle", modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sıralı Liste
+                if (displayList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Aramaya uygun öğrenci bulunamadı.",
+                            fontSize = 12.5.sp,
+                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(displayList.size) { index ->
+                            val student = displayList[index]
+                            val actualRank = rankedStudents.indexOfFirst { it.id == student.id } + 1
+                            val stars = studentStarMap[student.id] ?: 0
+
+                            Surface(
+                                onClick = {
+                                    onSelectStudent(student)
+                                    onDismiss()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = when (actualRank) {
+                                    1 -> if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB)
+                                    2 -> if (isDarkTheme) Color(0x2594A3B8) else Color(0xFFF8FAFC)
+                                    3 -> if (isDarkTheme) Color(0x30D97706) else Color(0xFFFFF7ED)
+                                    else -> if (isDarkTheme) Color(0x201E293B) else Color.White
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    when (actualRank) {
+                                        1 -> BirizAmber
+                                        2 -> Color(0xFF94A3B8)
+                                        3 -> Color(0xFFFB923C)
+                                        else -> if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                                    }
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Sıralama Rozeti
+                                    Box(
+                                        modifier = Modifier.size(30.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        when (actualRank) {
+                                            1 -> Text("🥇", fontSize = 18.sp)
+                                            2 -> Text("🥈", fontSize = 18.sp)
+                                            3 -> Text("🥉", fontSize = 18.sp)
+                                            else -> {
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0),
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = "$actualRank",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // Cinsiyet / Baş Harf Çemberi
+                                    val isGirl = student.gender.equals("Kız", ignoreCase = true)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isGirl) Color(0xFFFDF2F8) else Color(0xFFEFF6FF),
+                                        border = BorderStroke(1.dp, if (isGirl) Color(0xFFF472B6) else Color(0xFF60A5FA)),
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = student.fullName.take(2).uppercase(),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // İsim ve Numara
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = student.fullName,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "#${student.studentNumber}",
+                                            fontSize = 10.5.sp,
+                                            color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    // Yıldız Rozeti
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (stars > 0) {
+                                            if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                                        } else {
+                                            if (isDarkTheme) Color(0x201E293B) else Color(0xFFF1F5F9)
+                                        },
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (stars > 0) BirizAmber else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                        )
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("⭐", fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "$stars Yıldız",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = if (stars > 0) {
+                                                    if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                                                } else {
+                                                    if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Alt Kapat Butonu
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFF1F5F9),
+                        contentColor = if (isDarkTheme) Color.White else BirizNavyPrimary
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Text("Kapat", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
     }
 }
 
@@ -1311,6 +1917,7 @@ private fun IndividualStarAwardDialog(
                         onValueChange = { noteText = it },
                         placeholder = { Text("Örn: Hafta boyunca örnek davranış sergiledi...", fontSize = 12.5.sp, color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)) },
                         shape = RoundedCornerShape(10.dp),
+                        textStyle = TextStyle(fontSize = 13.sp, color = if (isDarkTheme) Color.White else BirizNavyPrimary),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                             unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
@@ -1580,13 +2187,14 @@ private fun ActivityStarWizardDialog(
                             placeholder = { Text("Örn: Ders içi aktif katılım, Matematik yarışması...", fontSize = 12.5.sp, color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)) },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
+                            textStyle = TextStyle(fontSize = 13.sp, color = if (isDarkTheme) Color.White else BirizNavyPrimary),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = if (isDarkTheme) BirizTurquoise else Color(0xFF6366F1),
                                 unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
+                                .height(54.dp)
                         )
 
                         Spacer(modifier = Modifier.height(14.dp))

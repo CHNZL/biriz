@@ -79,6 +79,7 @@ import com.example.data.model.ClassRoom
 import com.example.data.model.GroupColorTheme
 import com.example.data.model.GroupDistributionConfig
 import com.example.data.model.GroupMakerState
+import com.example.data.model.NotificationType
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.SeatingConfig
@@ -182,6 +183,7 @@ fun TeacherDashboardScreen(
     onMarkNotificationAsRead: (String) -> Unit = {},
     onMarkAllNotificationsAsRead: () -> Unit = {},
     onSetActiveChatStudent: (String?) -> Unit = {},
+    onOpenUpdateDialog: () -> Unit = {},
     onDeleteStudent: (Student) -> Unit,
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -689,15 +691,19 @@ fun TeacherDashboardScreen(
                 onDismiss = onCloseNotificationCenter,
                 onNotificationClick = { notif ->
                     onMarkNotificationAsRead(notif.id)
-                    val targetPage = try {
-                        DashboardSubPage.valueOf(notif.targetSubPageName)
-                    } catch (_: Exception) {
-                        DashboardSubPage.ILETISIM_DUYURULAR
+                    if (notif.type == NotificationType.APP_UPDATE) {
+                        onOpenUpdateDialog()
+                    } else {
+                        val targetPage = try {
+                            DashboardSubPage.valueOf(notif.targetSubPageName)
+                        } catch (_: Exception) {
+                            DashboardSubPage.ILETISIM_DUYURULAR
+                        }
+                        if (notif.targetId != null && targetPage == DashboardSubPage.ILETISIM_MESAJLAR) {
+                            onSetActiveChatStudent(notif.targetId)
+                        }
+                        onSelectSubPage(targetPage)
                     }
-                    if (notif.targetId != null && targetPage == DashboardSubPage.ILETISIM_MESAJLAR) {
-                        onSetActiveChatStudent(notif.targetId)
-                    }
-                    onSelectSubPage(targetPage)
                 },
                 onMarkAllAsRead = onMarkAllNotificationsAsRead
             )

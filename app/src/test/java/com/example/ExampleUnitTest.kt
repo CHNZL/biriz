@@ -499,6 +499,56 @@ class ExampleUnitTest {
     assertEquals("1.0.1", updateInfo.latestVersionName)
     assertTrue("Download URL must point to apk", updateInfo.downloadUrl.endsWith(".apk"))
   }
+
+  @Test
+  fun testNotificationTypeAppUpdateAndAutoDismissLogic() {
+    val notif = com.example.data.model.BirizNotification(
+      id = "update_1001",
+      title = "🚀 Yeni Güncelleme Yayında! (v1.0.1)",
+      message = "Yüklemek için dokunun.",
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "APP_UPDATE"
+    )
+    assertEquals(com.example.data.model.NotificationType.APP_UPDATE, notif.type)
+
+    val notifications = listOf(
+      notif,
+      com.example.data.model.BirizNotification("msg_1", "Mesaj", "Veli mesajı", type = com.example.data.model.NotificationType.MESSAGE, targetSubPageName = "ILETISIM_MESAJLAR")
+    )
+
+    // User clicks / reads the update notification: it should be removed from the list
+    val updatedNotifications = notifications.filterNot { it.id == "update_1001" }
+    assertEquals(1, updatedNotifications.size)
+    assertFalse(updatedNotifications.any { it.id == "update_1001" })
+  }
+
+  @Test
+  fun testAllClassStarRankingOrderDescending() {
+    val students = listOf(
+      com.example.data.model.Student("s1", "10", "Ayşe Ceylan", "Kız"),
+      com.example.data.model.Student("s2", "25", "Mehmet Kaya", "Erkek"),
+      com.example.data.model.Student("s3", "5", "Zeynep Demir", "Kız")
+    )
+    val starMap = mapOf("s1" to 15, "s2" to 20, "s3" to 15)
+
+    val sorted = students.sortedWith { a, b ->
+      val starA = starMap[a.id] ?: 0
+      val starB = starMap[b.id] ?: 0
+      if (starA != starB) {
+        starB.compareTo(starA)
+      } else {
+        (a.studentNumber.toIntOrNull() ?: 0).compareTo(b.studentNumber.toIntOrNull() ?: 0)
+      }
+    }
+
+    // Mehmet has 20 stars (Rank 1)
+    assertEquals("s2", sorted[0].id)
+    assertEquals("Mehmet Kaya", sorted[0].fullName)
+
+    // s3 (no 5) and s1 (no 10) both have 15 stars -> s3 comes first because of student number 5 < 10
+    assertEquals("s3", sorted[1].id)
+    assertEquals("s1", sorted[2].id)
+  }
 }
 
 

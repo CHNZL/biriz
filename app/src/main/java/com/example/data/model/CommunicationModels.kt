@@ -103,7 +103,8 @@ data class ParentChatSummary(
 enum class NotificationType {
     ANNOUNCEMENT,
     MESSAGE,
-    PARENT_REGISTRATION
+    PARENT_REGISTRATION,
+    APP_UPDATE
 }
 
 /**

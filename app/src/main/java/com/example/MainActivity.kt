@@ -344,6 +344,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onMarkNotificationAsRead = { viewModel.markNotificationAsRead(it) },
                             onMarkAllNotificationsAsRead = { viewModel.markAllNotificationsAsRead() },
                             onSetActiveChatStudent = { viewModel.setActiveChatStudent(it) },
+                            onOpenUpdateDialog = { viewModel.openGlobalUpdateDialog() },
                             onDeleteStudent = { viewModel.deleteStudent(it) },
                             onDeleteTeacherRoleAndClass = { viewModel.deleteTeacherRoleAndClassroom() },
                             onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
@@ -351,95 +352,6 @@ fun BirizApp(viewModel: BirizViewModel) {
                         )
                     } else {
                         viewModel.resetToRoleSelection()
-                    }
-                }
-            }
-
-            // Programda gezinirken yeni bir güncelleme çıktığında gösterilen üst afiş
-            val updateAvailable = uiState.availableUpdateInfo?.isUpdateAvailable == true
-            val showBanner = updateAvailable && !uiState.isUpdateBannerDismissed && !uiState.isGlobalUpdateDialogOpen
-
-            AnimatedVisibility(
-                visible = showBanner,
-                enter = slideInVertically(initialOffsetY = { -it }),
-                exit = slideOutVertically(targetOffsetY = { -it }),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (uiState.isDarkTheme) Color(0xFF1E293B) else Color(0xFFEFF6FF),
-                    border = BorderStroke(1.dp, Color(0xFF6366F1)),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { viewModel.openGlobalUpdateDialog() }
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFF6366F1),
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.SystemUpdate,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Yeni Sürüm Hazır: v${uiState.availableUpdateInfo?.latestVersionName} 🚀",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (uiState.isDarkTheme) Color.White else BirizNavyPrimary
-                                )
-                                Text(
-                                    text = "Yükleme ekranına gitmek için dokunun.",
-                                    fontSize = 10.sp,
-                                    color = if (uiState.isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
-                                )
-                            }
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = { viewModel.openGlobalUpdateDialog() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("Yükle", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            IconButton(
-                                onClick = { viewModel.dismissUpdateBanner() },
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Gizle",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                        }
                     }
                 }
             }

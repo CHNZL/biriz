@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -248,6 +249,11 @@ private fun NotificationRowItem(
             Icons.Default.PersonAdd,
             BirizTurquoise,
             Color(0xFFE0F2FE)
+        )
+        NotificationType.APP_UPDATE -> Triple(
+            Icons.Default.SystemUpdate,
+            Color(0xFF6366F1),
+            Color(0xFFEEF2FF)
         )
     }
 

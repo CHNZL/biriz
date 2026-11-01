@@ -209,9 +209,32 @@ class BirizViewModel(
                     availableUpdateInfo = update,
                     isUpdateBannerDismissed = false
                 )
+                syncUpdateNotification(update)
                 AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
             }
         } catch (_: Exception) {}
+    }
+
+    private fun syncUpdateNotification(update: UpdateInfo) {
+        if (!update.isUpdateAvailable) return
+        val ctx = appContext ?: return
+        val updateNotifId = "app_update_${update.latestVersionCode}"
+        val currentNotifs = _uiState.value.notifications
+        if (currentNotifs.none { it.id == updateNotifId }) {
+            val updateNotif = BirizNotification(
+                id = updateNotifId,
+                title = "🚀 Yeni Güncelleme Yayında! (v${update.latestVersionName})",
+                message = "Yeni sürüm kullanıma hazır. Dokunarak yenilikleri inceleyin ve güncelleyin.",
+                timestamp = System.currentTimeMillis(),
+                type = NotificationType.APP_UPDATE,
+                targetSubPageName = "APP_UPDATE",
+                isRead = false
+            )
+            val updatedList = listOf(updateNotif) + currentNotifs
+            _uiState.value = _uiState.value.copy(notifications = updatedList)
+            val classId = _uiState.value.activeClassRoom?.id ?: "default"
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedList)
+        }
     }
 
     fun openGlobalUpdateDialog(info: UpdateInfo? = null) {
@@ -239,6 +262,7 @@ class BirizViewModel(
                         availableUpdateInfo = update,
                         isGlobalUpdateDialogOpen = true
                     )
+                    syncUpdateNotification(update)
                     AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
                     onResult?.invoke(true)
                 } else {
@@ -471,18 +495,15 @@ class BirizViewModel(
 
     fun markNotificationAsRead(notificationId: String) {
         val classId = _uiState.value.activeClassRoom?.id ?: "default"
-        val updatedNotifs = _uiState.value.notifications.map { notif ->
-            if (notif.id == notificationId) notif.copy(isRead = true) else notif
-        }
+        val updatedNotifs = _uiState.value.notifications.filterNot { it.id == notificationId }
         _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
         appContext?.let { CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs) }
     }
 
     fun markAllNotificationsAsRead() {
         val classId = _uiState.value.activeClassRoom?.id ?: "default"
-        val updatedNotifs = _uiState.value.notifications.map { it.copy(isRead = true) }
-        _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
-        appContext?.let { CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs) }
+        _uiState.value = _uiState.value.copy(notifications = emptyList())
+        appContext?.let { CommunicationPersistenceHelper.saveNotifications(it, classId, emptyList()) }
     }
 
     fun setNotificationCenterOpen(isOpen: Boolean) {
