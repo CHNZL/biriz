@@ -426,5 +426,59 @@ class ExampleUnitTest {
     assertTrue(dilekceText.contains("Ahmet Öğretmen"))
     assertTrue(dilekceText.contains("Mazeret İzni"))
   }
+
+  @Test
+  fun testStarRewardCategoriesAndCalculation() {
+    val categories = com.example.data.model.StarCategory.ALL_CATEGORIES
+    assertEquals(17, categories.size)
+
+    val academic = categories.filter { it.isAcademic }
+    assertEquals(9, academic.size)
+
+    val values = categories.filter { !it.isAcademic }
+    assertEquals(8, values.size)
+
+    val records = listOf(
+      com.example.data.model.StarRewardRecord(
+        id = "1",
+        classId = "class_1",
+        studentId = "std_1",
+        studentName = "Ali Veli",
+        studentNumber = "101",
+        categoryId = "matematik",
+        categoryName = "Matematik",
+        starCount = 5,
+        note = "Problem çözümü"
+      ),
+      com.example.data.model.StarRewardRecord(
+        id = "2",
+        classId = "class_1",
+        studentId = "std_1",
+        studentName = "Ali Veli",
+        studentNumber = "101",
+        categoryId = "matematik",
+        categoryName = "Matematik",
+        starCount = 5,
+        note = "Problem çözümü (Şanslı Öğrenci Ödülü 👑)",
+        isLuckyBonus = true
+      ),
+      com.example.data.model.StarRewardRecord(
+        id = "3",
+        classId = "class_1",
+        studentId = "std_2",
+        studentName = "Ayşe Fatma",
+        studentNumber = "102",
+        categoryId = "turkce",
+        categoryName = "Türkçe",
+        starCount = 3,
+        note = "Şiir okuma"
+      )
+    )
+
+    assertEquals(10, com.example.data.repository.StarRewardPersistenceHelper.getStudentTotalStars(records, "std_1"))
+    assertEquals(3, com.example.data.repository.StarRewardPersistenceHelper.getStudentTotalStars(records, "std_2"))
+    assertEquals(0, com.example.data.repository.StarRewardPersistenceHelper.getStudentTotalStars(records, "std_3"))
+  }
 }
+
 

@@ -608,6 +608,15 @@ fun TeacherDashboardScreen(
                         )
                     }
 
+                    DashboardSubPage.YILDIZLAR_SINIFI -> {
+                        StarsClassroomSubScreen(
+                            classRoom = classRoom,
+                            students = students,
+                            isDarkTheme = isDarkTheme,
+                            onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
+                        )
+                    }
+
                     DashboardSubPage.ILETISIM_DUYURULAR,
                     DashboardSubPage.ILETISIM_MESAJLAR -> {
                         CommunicationSubScreen(
