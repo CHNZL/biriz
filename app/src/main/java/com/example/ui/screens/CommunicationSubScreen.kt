@@ -186,117 +186,8 @@ fun CommunicationSubScreen(
                 .fillMaxSize()
                 .testTag("screen_communication")
         ) {
-            // --- 1. ÜST SEÇİM ÇUBUĞU (Duyurular & Mesajlar) ---
+            // --- 1. PUNTO (YAZI BOYUTU) KONTROL ÇUBUĞU ---
             if (selectedChatTarget == null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (isDarkTheme) Color(0x600B162C) else Color(0xFFF1F5F9),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // 1. Duyurular Butonu
-                        val isDuyuruSelected = activeTab == 0
-                        Surface(
-                            onClick = { activeTab = 0 },
-                            shape = RoundedCornerShape(12.dp),
-                            color = when {
-                                isDuyuruSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                else -> if (isDarkTheme) Color(0x301E293B) else Color.White
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                if (isDuyuruSelected) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else BirizBorder
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("tab_communication_announcements")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Campaign,
-                                    contentDescription = null,
-                                    tint = if (isDuyuruSelected) (if (isDarkTheme) BirizNavyDark else Color.White) else BirizAmber,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Duyurular (${announcements.size})",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDuyuruSelected) (if (isDarkTheme) BirizNavyDark else Color.White) else (if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                )
-                            }
-                        }
-
-                        // 2. Mesajlar Butonu
-                        val isMesajSelected = activeTab == 1
-                        val totalUnreadMessages = chatMessages.count { !it.isFromTeacher && it.status != MessageStatus.READ }
-
-                        Surface(
-                            onClick = { activeTab = 1 },
-                            shape = RoundedCornerShape(12.dp),
-                            color = when {
-                                isMesajSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                else -> if (isDarkTheme) Color(0x301E293B) else Color.White
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                if (isMesajSelected) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else BirizBorder
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("tab_communication_messages")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Chat,
-                                    contentDescription = null,
-                                    tint = if (isMesajSelected) (if (isDarkTheme) BirizNavyDark else Color.White) else Color(0xFF10B981),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Mesajlar",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isMesajSelected) (if (isDarkTheme) BirizNavyDark else Color.White) else (if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                )
-                                if (totalUnreadMessages > 0) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = BirizAmber,
-                                        modifier = Modifier.size(18.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = "$totalUnreadMessages",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // --- 1.1 PUNTO (YAZI BOYUTU) KONTROL ÇUBUĞU ---
                 CommunicationPuntoBar(
                     fontOffset = fontOffset,
                     isDarkTheme = isDarkTheme,
@@ -2139,47 +2030,58 @@ private fun InactiveStudentRowItem(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = student.fullName,
-                        fontSize = (13 + (fontOffset / 2)).sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF475569)
-                    )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Öğrenci Adı Soyadı (Tam genişlik, sıkışmaz)
+                Text(
+                    text = student.fullName,
+                    fontSize = (13.5 + (fontOffset / 2)).sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF334155),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
+                Spacer(modifier = Modifier.height(3.dp))
+
+                // İsmin Altında: Bağlı Veli Yok (Pasif) Rozeti ve Bilgisi
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = if (isDarkTheme) Color(0x30475569) else Color(0xFFEDE9FE)
+                        color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9),
+                        border = BorderStroke(0.8.dp, if (isDarkTheme) Color(0x4064748B) else Color(0xFFCBD5E1))
                     ) {
-                        Text(
-                            text = "⚪ Bağlı Veli Yok (Pasif)",
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF6D28D9),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LinkOff,
+                                contentDescription = null,
+                                tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Bağlı Veli Yok (Pasif)",
+                                fontSize = (10 + (fontOffset / 2)).sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            )
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LinkOff,
-                        contentDescription = null,
-                        tint = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF94A3B8),
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Mesaj gönderilemez • Katılım kodu ile davet edin",
-                        fontSize = (10.5 + (fontOffset / 2)).sp,
-                        color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                        text = "• Katılım kodu bekliyor",
+                        fontSize = (10 + (fontOffset / 2)).sp,
+                        color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -2289,7 +2191,10 @@ private fun ActiveStudentChatCard(
                             text = student.fullName,
                             fontSize = (13.5 + (fontOffset / 2)).sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
 
                         // Toplam Okunmayan Mesaj Bildirim Rozeti (Öğrencinin üzerinde)
