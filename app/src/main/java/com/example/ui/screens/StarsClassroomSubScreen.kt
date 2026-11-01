@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -135,9 +136,18 @@ fun StarsClassroomSubScreen(
         onBackToClassList()
     }
 
-    // Kalıcı Yıldız Kayıtları
+    // Kalıcı Yıldız Kayıtları (Yerel Hafıza + Firebase Firestore Canlı Senkronizasyon)
     var starRecords by remember {
         mutableStateOf(StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id))
+    }
+
+    DisposableEffect(classRoom.id) {
+        val listener = StarRewardPersistenceHelper.observeFirestoreStars(context, classRoom.id) { updated ->
+            starRecords = updated
+        }
+        onDispose {
+            listener?.remove()
+        }
     }
 
     // Arama ve Filtreleme

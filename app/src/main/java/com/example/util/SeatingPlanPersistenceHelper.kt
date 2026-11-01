@@ -7,6 +7,16 @@ import com.example.data.model.DoorPosition
 import com.example.data.model.SeatingConfig
 import com.example.data.model.SeatingPlanState
 import com.example.data.model.WindowPosition
+import com.example.R
+import com.example.util.OperationType
+import com.example.util.handleFirestoreError
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -14,15 +24,26 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Akıllı Sınıf Oturma Planı ve Arşivlenen Planlar için Yerel Kalıcı Depolama Yardımcısı.
+ * Akıllı Sınıf Oturma Planı ve Arşivlenen Planlar için Yerel Kalıcı Depolama ve Bulut Senkronizasyon Yardımcısı.
  * - Aktif planı saklar ve geri yükler.
- * - Tarih ve saat damgalı plan arşivini yönetir (Tekli, çoklu veya tümünü silme destekli).
+ * - Firebase Firestore ile buluta senkronize eder.
+ * - Tarih ve saat damgalı plan arşivini yönetir.
  */
 object SeatingPlanPersistenceHelper {
 
     private const val PREFS_NAME = "biriz_seating_storage"
     private const val KEY_ACTIVE_PREFIX = "active_plan_"
     private const val KEY_ARCHIVE_PREFIX = "archived_plans_"
+    private val syncScope = CoroutineScope(Dispatchers.IO)
+
+    private fun getFirestore(context: Context): FirebaseFirestore? {
+        return try {
+            val dbId = context.getString(R.string.firestore_database_id)
+            FirebaseFirestore.getInstance(dbId)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun generateDefaultPlanName(): String {
         val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr"))
@@ -193,9 +214,48 @@ object SeatingPlanPersistenceHelper {
             }
             editor.putString(KEY_ACTIVE_PREFIX + "default", jsonStr)
             editor.apply()
+
+            if (classId.isNotBlank() && classId != "default" && Firebase.auth.currentUser != null) {
+                syncScope.launch {
+                    try {
+                        val db = getFirestore(context) ?: return@launch
+                        val docRef = db.collection("classrooms").document(classId).collection("seating").document("current")
+                        val payload = mapOf(
+                            "classId" to classId,
+                            "name" to state.activePlanName,
+                            "seatsJson" to jsonStr,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        docRef.set(payload)
+                    } catch (e: Exception) {
+                        handleFirestoreError(e, OperationType.WRITE, "classrooms/$classId/seating/current")
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun syncActivePlanFromFirestore(context: Context, classId: String, onLoaded: (SeatingPlanState) -> Unit) {
+        if (classId.isBlank() || classId == "default" || Firebase.auth.currentUser == null) return
+        val db = getFirestore(context) ?: return
+        db.collection("classrooms").document(classId).collection("seating").document("current")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                if (snapshot != null && snapshot.exists()) {
+                    val seatsJson = snapshot.getString("seatsJson")
+                    if (!seatsJson.isNullOrBlank()) {
+                        try {
+                            val state = deserializePlanState(JSONObject(seatsJson))
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            prefs.edit().putString(KEY_ACTIVE_PREFIX + classId, seatsJson).apply()
+                            onLoaded(state)
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
     }
 
     fun loadActivePlan(context: Context, classId: String): SeatingPlanState? {

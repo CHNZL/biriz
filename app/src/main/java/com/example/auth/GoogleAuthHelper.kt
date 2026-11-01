@@ -22,19 +22,12 @@ import kotlinx.coroutines.tasks.await
 
 object GoogleAuthHelper {
 
-    private const val FALLBACK_WEB_CLIENT_ID = "1053897004873-s0gplmvfrfmsdqajb076el3chkmf3ltk.apps.googleusercontent.com"
-
     fun getServerClientId(context: Context): String {
         return try {
-            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resId != 0) {
-                val value = context.getString(resId)
-                if (value.isNotBlank()) value else FALLBACK_WEB_CLIENT_ID
-            } else {
-                FALLBACK_WEB_CLIENT_ID
-            }
+            context.getString(R.string.default_web_client_id)
         } catch (_: Exception) {
-            FALLBACK_WEB_CLIENT_ID
+            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (resId != 0) context.getString(resId) else ""
         }
     }
 

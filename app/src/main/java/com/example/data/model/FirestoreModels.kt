@@ -63,3 +63,53 @@ data class StudentDocument(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+@IgnoreExtraProperties
+data class StarRewardDocument(
+    @DocumentId val id: String = "",
+    val classId: String = "",
+    val studentId: String = "",
+    val studentName: String = "",
+    val studentNumber: String = "",
+    val categoryId: String = "",
+    val categoryName: String = "",
+    val starCount: Int = 1,
+    val note: String = "",
+    val isLuckyBonus: Boolean = false,
+    val timestamp: Long = 0L,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class SeatingPlanDocument(
+    @DocumentId val id: String = "",
+    val classId: String = "",
+    val name: String = "",
+    val layoutType: String = "",
+    val seatsJson: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class ScheduleDocument(
+    @DocumentId val id: String = "",
+    val classId: String = "",
+    val scheduleJson: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class AnnouncementDocument(
+    @DocumentId val id: String = "",
+    val classId: String = "",
+    val title: String = "",
+    val content: String = "",
+    val authorName: String = "",
+    val targetType: String = "ALL",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+

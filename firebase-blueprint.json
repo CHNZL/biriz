@@ -19,7 +19,7 @@
         },
         "role": {
           "type": "string",
-          "enum": ["MEMBER", "TEACHER", "PARENT"],
+          "enum": ["MEMBER", "TEACHER", "PARENT", "UYE", "OGRETMEN", "VELI"],
           "description": "Assigned user role in BİRİZ."
         },
         "kvkkAccepted": {
@@ -122,6 +122,210 @@
         "updatedAt"
       ]
     },
+    "Student": {
+      "title": "Student",
+      "description": "Primary school student in a classroom.",
+      "type": "object",
+      "properties": {
+        "studentNo": {
+          "type": "integer",
+          "description": "Student school number."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full name of the student."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["Erkek", "Kız"],
+          "description": "Gender of the student."
+        },
+        "parentCode": {
+          "type": "string",
+          "description": "Unique access code for student's parents."
+        },
+        "classroomId": {
+          "type": "string",
+          "description": "Classroom document ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["studentNo", "fullName", "gender", "parentCode", "classroomId", "createdAt", "updatedAt"]
+    },
+    "StarReward": {
+      "title": "StarReward",
+      "description": "Star reward assigned to a student individually or via event.",
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string",
+          "description": "Classroom ID."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Student ID."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Student name."
+        },
+        "studentNumber": {
+          "type": "string",
+          "description": "Student number."
+        },
+        "categoryId": {
+          "type": "string",
+          "description": "Category identifier (academic, behavioral, etc.)."
+        },
+        "categoryName": {
+          "type": "string",
+          "description": "Category display name."
+        },
+        "starCount": {
+          "type": "integer",
+          "description": "Quantity of stars awarded (can be negative for penalty or positive)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note or reasoning."
+        },
+        "isLuckyBonus": {
+          "type": "boolean",
+          "description": "True if awarded as Lucky Student bonus."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Client timestamp in epoch millis."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "classId",
+        "studentId",
+        "studentName",
+        "categoryId",
+        "categoryName",
+        "starCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SeatingPlan": {
+      "title": "SeatingPlan",
+      "description": "Seating layout plan for a classroom.",
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string",
+          "description": "Classroom ID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Plan name (e.g., Güncel Oturma Düzeni)."
+        },
+        "layoutType": {
+          "type": "string",
+          "description": "Grid layout descriptor."
+        },
+        "seatsJson": {
+          "type": "string",
+          "description": "Serialized desk assignments JSON."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["classId", "name", "seatsJson", "createdAt", "updatedAt"]
+    },
+    "ClassSchedule": {
+      "title": "ClassSchedule",
+      "description": "Weekly lesson schedule configuration.",
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string",
+          "description": "Classroom ID."
+        },
+        "scheduleJson": {
+          "type": "string",
+          "description": "Serialized lessons JSON."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["classId", "scheduleJson", "createdAt", "updatedAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Class announcement or poll for students and parents.",
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string",
+          "description": "Classroom ID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Announcement title."
+        },
+        "content": {
+          "type": "string",
+          "description": "Announcement description text."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Teacher name."
+        },
+        "targetType": {
+          "type": "string",
+          "description": "ALL, PARENTS, or SPECIFIC."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": ["classId", "title", "content", "createdAt", "updatedAt"]
+    },
     "School": {
       "title": "School",
       "description": "School record registered in a specific district.",
@@ -155,6 +359,77 @@
         }
       },
       "required": ["cityId", "districtName", "name", "creatorId", "createdAt", "updatedAt"]
+    },
+    "BoardSession": {
+      "title": "BoardSession",
+      "description": "Smart board pairing session matching a classroom and teacher with a web client.",
+      "type": "object",
+      "properties": {
+        "sessionCode": {
+          "type": "string",
+          "description": "8-character pairing code displayed on the smart board."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["WAITING", "CONNECTED", "DISCONNECTED"],
+          "description": "Connection status."
+        },
+        "teacherUid": {
+          "type": "string",
+          "description": "Teacher Firebase Auth UID."
+        },
+        "classId": {
+          "type": "string",
+          "description": "Active classroom ID."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp."
+        }
+      },
+      "required": ["sessionCode", "status", "updatedAt"]
+    },
+    "LiveBoardState": {
+      "title": "LiveBoardState",
+      "description": "Real-time projection state mirrored from the teacher's smartphone to the smart board.",
+      "type": "object",
+      "properties": {
+        "classId": {
+          "type": "string",
+          "description": "Active classroom ID."
+        },
+        "sessionCode": {
+          "type": "string",
+          "description": "Active pairing session code."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status."
+        },
+        "isLiveMirrorActive": {
+          "type": "boolean",
+          "description": "True if live projection is active, false if privacy mode."
+        },
+        "currentSubPage": {
+          "type": "string",
+          "description": "Current active dashboard page."
+        },
+        "currentSubPageTitle": {
+          "type": "string",
+          "description": "Localized page title."
+        },
+        "activeScheduleDay": {
+          "type": "string",
+          "description": "Active schedule day if applicable."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp."
+        }
+      },
+      "required": ["classId", "isLiveMirrorActive", "currentSubPage", "updatedAt"]
     }
   },
   "firestore": {
@@ -165,6 +440,38 @@
     "/classrooms/{classroomId}": {
       "schema": "ClassRoom",
       "description": "Registered primary school classrooms with exclusive class teacher ownership."
+    },
+    "/classrooms/{classroomId}/students/{studentId}": {
+      "schema": "Student",
+      "description": "Students in this classroom."
+    },
+    "/classrooms/{classroomId}/stars/{starRecordId}": {
+      "schema": "StarReward",
+      "description": "Star reward records for students."
+    },
+    "/classrooms/{classroomId}/seating/{seatingPlanId}": {
+      "schema": "SeatingPlan",
+      "description": "Seating layout plans for the classroom."
+    },
+    "/classrooms/{classroomId}/schedule/{scheduleId}": {
+      "schema": "ClassSchedule",
+      "description": "Weekly schedule records."
+    },
+    "/classrooms/{classroomId}/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Class announcements."
+    },
+    "/classrooms/{classroomId}/live_board/{docId}": {
+      "schema": "LiveBoardState",
+      "description": "Live state mirror for classroom smart board."
+    },
+    "/classes/{classId}/live_board/{docId}": {
+      "schema": "LiveBoardState",
+      "description": "Live state mirror for classroom smart board (alias path)."
+    },
+    "/board_sessions/{sessionCode}": {
+      "schema": "BoardSession",
+      "description": "Smart board pairing sessions accessible from browser."
     },
     "/schools/{schoolId}": {
       "schema": "School",

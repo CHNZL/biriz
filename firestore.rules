@@ -19,8 +19,9 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isClassTeacher(classroomId) {
+      return isSignedIn() &&
+        request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId;
     }
 
     // 3. Entity Validators
@@ -42,6 +43,47 @@ service cloud.firestore {
              data.gender in ['Erkek', 'Kız'] &&
              data.parentCode is string && data.parentCode.size() >= 4 && data.parentCode.size() <= 50 &&
              data.classroomId is string && data.classroomId.size() > 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidStarReward(data) {
+      return data.classId is string && data.classId.size() > 0 &&
+             data.studentId is string && data.studentId.size() > 0 &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+             (!('studentNumber' in data) || data.studentNumber is string) &&
+             data.categoryId is string && data.categoryId.size() > 0 &&
+             data.categoryName is string && data.categoryName.size() > 0 &&
+             data.starCount is int && data.starCount >= -50 && data.starCount <= 50 &&
+             (!('note' in data) || data.note is string) &&
+             (!('isLuckyBonus' in data) || data.isLuckyBonus is bool) &&
+             (!('timestamp' in data) || data.timestamp is int || data.timestamp is timestamp) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSeatingPlan(data) {
+      return data.classId is string && data.classId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.seatsJson is string &&
+             (!('layoutType' in data) || data.layoutType is string) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidClassSchedule(data) {
+      return data.classId is string && data.classId.size() > 0 &&
+             data.scheduleJson is string &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAnnouncement(data) {
+      return data.classId is string && data.classId.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.content is string && data.content.size() > 0 &&
+             (!('authorName' in data) || data.authorName is string) &&
+             (!('targetType' in data) || data.targetType is string) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -95,7 +137,6 @@ service cloud.firestore {
     }
 
     // Classrooms Collection
-    // Authenticated users can read classrooms to search/check branch occupancy
     match /classrooms/{classroomId} {
       allow read: if isSignedIn();
 
@@ -117,20 +158,88 @@ service cloud.firestore {
       match /students/{studentId} {
         allow read: if isSignedIn();
 
-        allow create: if isSignedIn() &&
-                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId &&
+        allow create: if isClassTeacher(classroomId) &&
                          incoming().classroomId == classroomId &&
                          incoming().keys().hasAll(['studentNo', 'fullName', 'gender', 'parentCode', 'classroomId', 'createdAt', 'updatedAt']) &&
                          isValidStudent(incoming());
 
-        allow update: if isSignedIn() &&
-                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId &&
+        allow update: if isClassTeacher(classroomId) &&
                          incoming().classroomId == classroomId &&
                          incoming().createdAt == existing().createdAt &&
                          isValidStudent(incoming());
 
-        allow delete: if isSignedIn() &&
-                         request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)).data.teacherId;
+        allow delete: if isClassTeacher(classroomId);
+      }
+
+      // Stars Subcollection (Yıldızlar Sınıfı)
+      match /stars/{starId} {
+        allow read: if isSignedIn();
+
+        allow create: if isClassTeacher(classroomId) &&
+                         incoming().classId == classroomId &&
+                         incoming().keys().hasAll(['classId', 'studentId', 'studentName', 'categoryId', 'categoryName', 'starCount', 'createdAt', 'updatedAt']) &&
+                         isValidStarReward(incoming());
+
+        allow update: if isClassTeacher(classroomId) &&
+                         incoming().classId == classroomId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidStarReward(incoming());
+
+        allow delete: if isClassTeacher(classroomId);
+      }
+
+      // Seating Plans Subcollection (Oturma Düzeni)
+      match /seating/{seatingId} {
+        allow read: if isSignedIn();
+
+        allow create, update: if isClassTeacher(classroomId) &&
+                                 incoming().classId == classroomId &&
+                                 incoming().keys().hasAll(['classId', 'name', 'seatsJson', 'createdAt', 'updatedAt']) &&
+                                 isValidSeatingPlan(incoming());
+
+        allow delete: if isClassTeacher(classroomId);
+      }
+
+      // Schedule Subcollection (Ders Programı)
+      match /schedule/{scheduleId} {
+        allow read: if isSignedIn();
+
+        allow create, update: if isClassTeacher(classroomId) &&
+                                 incoming().classId == classroomId &&
+                                 incoming().keys().hasAll(['classId', 'scheduleJson', 'createdAt', 'updatedAt']) &&
+                                 isValidClassSchedule(incoming());
+
+        allow delete: if isClassTeacher(classroomId);
+      }
+
+      // Announcements Subcollection (Duyurular)
+      match /announcements/{announcementId} {
+        allow read: if isSignedIn();
+
+        allow create, update: if isClassTeacher(classroomId) &&
+                                 incoming().classId == classroomId &&
+                                 incoming().keys().hasAll(['classId', 'title', 'content', 'createdAt', 'updatedAt']) &&
+                                 isValidAnnouncement(incoming());
+
+        allow delete: if isClassTeacher(classroomId);
+      }
+
+      // Live Board Mirror Subcollection (Akıllı Tahta Canlı Yansıtma)
+      match /live_board/{docId} {
+        allow read, write: if true;
+      }
+    }
+
+    // Board Pairing Sessions Collection (Akıllı Tahta Eşleştirme)
+    match /board_sessions/{sessionCode} {
+      allow read, write: if true;
+    }
+
+    // Classes Live Board Alias
+    match /classes/{classId} {
+      allow read: if true;
+      match /live_board/{docId} {
+        allow read, write: if true;
       }
     }
 
@@ -148,3 +257,4 @@ service cloud.firestore {
     }
   }
 }
+
