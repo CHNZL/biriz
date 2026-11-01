@@ -1379,7 +1379,8 @@ private fun ActivityStarWizardDialog(
             shadowElevation = 12.dp,
             modifier = Modifier
                 .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.94f)
+                .fillMaxHeight(0.90f)
+                .padding(vertical = 4.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // --- ÜST BAR (Adım Göstergesi & Kapat Butonu) ---
@@ -1391,60 +1392,65 @@ private fun ActivityStarWizardDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 shape = CircleShape,
                                 color = Color(0xFFEEF2FF),
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = null,
                                         tint = Color(0xFF6366F1),
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = "ETKİNLİKLİ YILDIZ DAĞITIMI",
-                                        fontSize = 13.5.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Black,
                                         color = if (isDarkTheme) Color.White else BirizNavyPrimary,
-                                        letterSpacing = 0.5.sp
+                                        letterSpacing = 0.3.sp
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Surface(
-                                        shape = RoundedCornerShape(6.dp),
+                                        shape = RoundedCornerShape(4.dp),
                                         color = Color(0xFF6366F1)
                                     ) {
                                         Text(
-                                            text = if (currentStep == 1) "Adım 1/2: Kazanım & Kurallar" else "Adım 2/2: Öğrenci Seçimi",
-                                            fontSize = 9.5.sp,
+                                            text = if (currentStep == 1) "Adım 1/2" else "Adım 2/2",
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                         )
                                     }
                                 }
                                 Text(
-                                    text = if (currentStep == 1) "Kategori, açıklama, yıldız adedi, zaman sınırı ve hedef öğrenci limitini belirleyin."
-                                    else "${students.size} öğrencinin tamamı ekranda listelenmektedir. Tek dokunuşla seçebilirsiniz.",
-                                    fontSize = 10.5.sp,
-                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                    text = if (currentStep == 1) "Kazanım & Kurallar: Kategori, açıklama, süre ve limit"
+                                    else "Öğrenci Seçimi (${students.size} Öğrenci) - Tek dokunuşla seçin",
+                                    fontSize = 10.sp,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
 
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Kapat")
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Kapat", tint = if (isDarkTheme) Color.White else Color(0xFF64748B), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1455,18 +1461,18 @@ private fun ActivityStarWizardDialog(
                         modifier = Modifier
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
-                            .padding(16.dp)
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
-                        // 1. KATEGORİ SEÇİN (Açılır Kapanır 3 Sütunlu Pencere Butonu)
+                        // 1. KATEGORİ SEÇİN
                         Text(
                             text = "YILDIZ KATEGORİSİ",
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
                             letterSpacing = 0.5.sp
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         SelectedCategorySummaryCard(
                             category = selectedCategory,
@@ -1474,257 +1480,153 @@ private fun ActivityStarWizardDialog(
                             onOpenPicker = { showCategoryPicker = true }
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // 2. ETKİNLİK AÇIKLAMASI & VERİLECEK YILDIZ MİKTARI
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val isWide = maxWidth > 560.dp
-                            if (isWide) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    // Açıklama
-                                    Column(modifier = Modifier.weight(1.3f)) {
-                                        Text(
-                                            text = "ETKİNLİK / KAZANIM AÇIKLAMASI (İSTEĞE BAĞLI)",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                            letterSpacing = 0.5.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        OutlinedTextField(
-                                            value = activityNote,
-                                            onValueChange = { activityNote = it },
-                                            placeholder = { Text("Örn: Ders içi aktif katılım, Matematik yarışması...", fontSize = 12.sp) },
-                                            shape = RoundedCornerShape(12.dp),
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = if (isDarkTheme) BirizTurquoise else Color(0xFF6366F1),
-                                                unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                                            ),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(58.dp)
-                                        )
+                        // 2. ETKİNLİK / KAZANIM AÇIKLAMASI
+                        Text(
+                            text = "ETKİNLİK / KAZANIM AÇIKLAMASI (İSTEĞE BAĞLI)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
+                            letterSpacing = 0.5.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        OutlinedTextField(
+                            value = activityNote,
+                            onValueChange = { activityNote = it },
+                            placeholder = { Text("Örn: Ders içi aktif katılım, Matematik yarışması...", fontSize = 11.5.sp) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isDarkTheme) BirizTurquoise else Color(0xFF6366F1),
+                                unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 3. VERİLECEK YILDIZ MİKTARI
+                        Text(
+                            text = "VERİLECEK YILDIZ MİKTARI",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
+                            letterSpacing = 0.5.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { if (starCount > 1) starCount-- },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Remove, contentDescription = "Azalt", modifier = Modifier.size(15.dp))
                                     }
-
-                                    // Yıldız Miktarı
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "VERİLECEK YILDIZ MİKTARI",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                            letterSpacing = 0.5.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
-                                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(58.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(horizontal = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    IconButton(
-                                                        onClick = { if (starCount > 1) starCount-- },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        Icon(Icons.Default.Remove, contentDescription = "Azalt", modifier = Modifier.size(16.dp))
-                                                    }
-                                                    Text(
-                                                        text = "+$starCount YILDIZ",
-                                                        fontSize = 14.sp,
-                                                        fontWeight = FontWeight.Black,
-                                                        color = Color(0xFF6366F1)
-                                                    )
-                                                    IconButton(
-                                                        onClick = { if (starCount < 25) starCount++ },
-                                                        modifier = Modifier.size(32.dp)
-                                                    ) {
-                                                        Icon(Icons.Default.Add, contentDescription = "Arttır", modifier = Modifier.size(16.dp))
-                                                    }
-                                                }
-
-                                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                    listOf(1, 2, 3, 5, 10).forEach { amount ->
-                                                        val isSel = starCount == amount
-                                                        Surface(
-                                                            onClick = { starCount = amount },
-                                                            shape = RoundedCornerShape(6.dp),
-                                                            color = if (isSel) Color(0xFF6366F1) else (if (isDarkTheme) Color(0x306366F1) else Color(0xFFEEF2FF))
-                                                        ) {
-                                                            Text(
-                                                                text = "+$amount",
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = if (isSel) Color.White else Color(0xFF4F46E5),
-                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = "+$starCount YILDIZ",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF6366F1)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    IconButton(
+                                        onClick = { if (starCount < 25) starCount++ },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "Arttır", modifier = Modifier.size(15.dp))
                                     }
                                 }
-                            } else {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    // Açıklama
-                                    Text(
-                                        text = "ETKİNLİK / KAZANIM AÇIKLAMASI (İSTEĞE BAĞLI)",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                        letterSpacing = 0.5.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    OutlinedTextField(
-                                        value = activityNote,
-                                        onValueChange = { activityNote = it },
-                                        placeholder = { Text("Örn: Ders içi aktif katılım, Matematik yarışması...", fontSize = 12.sp) },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = if (isDarkTheme) BirizTurquoise else Color(0xFF6366F1),
-                                            unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(56.dp)
-                                    )
 
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    // Yıldız Miktarı
-                                    Text(
-                                        text = "VERİLECEK YILDIZ MİKTARI",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                        letterSpacing = 0.5.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
-                                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    listOf(1, 2, 3, 5, 10).forEach { amount ->
+                                        val isSel = starCount == amount
+                                        Surface(
+                                            onClick = { starCount = amount },
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSel) Color(0xFF6366F1) else (if (isDarkTheme) Color(0x306366F1) else Color(0xFFEEF2FF))
                                         ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                IconButton(
-                                                    onClick = { if (starCount > 1) starCount-- },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Remove, contentDescription = "Azalt", modifier = Modifier.size(16.dp))
-                                                }
-                                                Text(
-                                                    text = "+$starCount YILDIZ",
-                                                    fontSize = 15.sp,
-                                                    fontWeight = FontWeight.Black,
-                                                    color = Color(0xFF6366F1)
-                                                )
-                                                IconButton(
-                                                    onClick = { if (starCount < 25) starCount++ },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Add, contentDescription = "Arttır", modifier = Modifier.size(16.dp))
-                                                }
-                                            }
-
-                                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                listOf(1, 2, 3, 5, 10).forEach { amount ->
-                                                    val isSel = starCount == amount
-                                                    Surface(
-                                                        onClick = { starCount = amount },
-                                                        shape = RoundedCornerShape(6.dp),
-                                                        color = if (isSel) Color(0xFF6366F1) else (if (isDarkTheme) Color(0x306366F1) else Color(0xFFEEF2FF))
-                                                    ) {
-                                                        Text(
-                                                            text = "+$amount",
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = if (isSel) Color.White else Color(0xFF4F46E5),
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
+                                            Text(
+                                                text = "+$amount",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSel) Color.White else Color(0xFF4F46E5),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // 3. EŞİT ÖLÇÜLERDE KUTUCUKLAR: ZAMAN SINIRI & HEDEF KİŞİ SINIRI (SİMETRİK VE DÜZENLİ)
+                        // 4. EŞİT ÖLÇÜLERDE VE SİMETRİK KUTUCUKLAR: ZAMAN SINIRI & HEDEF KİŞİ SINIRI
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // --- 1. ZAMAN SINIRI KUTUSU ---
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
                                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(112.dp)
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp)
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    // Başlık & Durum Rozeti
+                                    // Başlık & Rozet
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("⏱", fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "ZAMAN SINIRI",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                                letterSpacing = 0.5.sp
-                                            )
-                                        }
+                                        Text(
+                                            text = "⏱ Süre Sınırı",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155)
+                                        )
                                         Surface(
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = RoundedCornerShape(4.dp),
                                             color = if (timeLimitSeconds > 0) Color(0xFFFEF3C7) else (if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9))
                                         ) {
                                             Text(
-                                                text = if (timeLimitSeconds == 0) "Süresiz" else "$timeLimitSeconds sn",
-                                                fontSize = 10.sp,
+                                                text = if (timeLimitSeconds == 0) "Süresiz" else "${timeLimitSeconds}s",
+                                                fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (timeLimitSeconds > 0) Color(0xFFB45309) else Color.Gray,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                             )
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Stepper Satırı: [-10s]  [0 sn]  [+10s]
+                                    // Stepper: [-10s]  XX sn  [+10s]
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1732,48 +1634,46 @@ private fun ActivityStarWizardDialog(
                                     ) {
                                         Surface(
                                             onClick = { if (timeLimitSeconds >= 10) timeLimitSeconds -= 10 },
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(6.dp),
                                             color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(30.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Text("-10s", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                Text("-10s", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
 
                                         Text(
                                             text = "$timeLimitSeconds sn",
-                                            fontSize = 16.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Black,
                                             color = if (timeLimitSeconds > 0) Color(0xFFD97706) else (if (isDarkTheme) Color.White else Color(0xFF1E293B))
                                         )
 
                                         Surface(
                                             onClick = { timeLimitSeconds += 10 },
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(6.dp),
                                             color = Color(0xFFFEF3C7),
                                             border = BorderStroke(1.dp, Color(0xFFFDE68A)),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(30.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Text("+10s", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                                                Text("+10s", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
                                             }
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Önayar Butonları (4 adet eşit buton)
+                                    // Önayarlar: [Yok] [30s] [60s] [120s]
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
-                                        val timePresets = listOf(0 to "Süresiz", 30 to "30s", 60 to "60s", 120 to "120s")
+                                        val timePresets = listOf(0 to "Yok", 30 to "30s", 60 to "60s", 120 to "120s")
                                         timePresets.forEach { (sec, label) ->
                                             val isSel = timeLimitSeconds == sec
                                             Surface(
                                                 onClick = { timeLimitSeconds = sec },
-                                                shape = RoundedCornerShape(6.dp),
+                                                shape = RoundedCornerShape(4.dp),
                                                 color = if (isSel) Color(0xFFD97706) else (if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9)),
                                                 border = BorderStroke(
                                                     1.dp,
@@ -1781,12 +1681,12 @@ private fun ActivityStarWizardDialog(
                                                 ),
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .height(28.dp)
+                                                    .height(24.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text(
                                                         text = label,
-                                                        fontSize = 10.sp,
+                                                        fontSize = 9.5.sp,
                                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                                                         color = if (isSel) Color.White else (if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary)
                                                     )
@@ -1797,52 +1697,48 @@ private fun ActivityStarWizardDialog(
                                 }
                             }
 
-                            // --- 2. HEDEF KİŞİ SINIRI KUTUSU (EŞİT ÖLÇÜDE) ---
+                            // --- 2. HEDEF KİŞİ SINIRI KUTUSU (BİREBİR EŞİT ÖLÇÜ) ---
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
                                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(112.dp)
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp)
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    // Başlık & Durum Rozeti
+                                    // Başlık & Rozet
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("🎯", fontSize = 13.sp)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "HEDEF KİŞİ SINIRI",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155),
-                                                letterSpacing = 0.5.sp
-                                            )
-                                        }
+                                        Text(
+                                            text = "🎯 Hedef Limit",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155)
+                                        )
                                         Surface(
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = RoundedCornerShape(4.dp),
                                             color = if (targetStudentLimit > 0) Color(0xFFEEF2FF) else (if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9))
                                         ) {
                                             Text(
-                                                text = if (targetStudentLimit == 0) "Sınırsız" else "$targetStudentLimit kişi",
-                                                fontSize = 10.sp,
+                                                text = if (targetStudentLimit == 0) "Sınırsız" else "$targetStudentLimit Kişi",
+                                                fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (targetStudentLimit > 0) Color(0xFF4338CA) else Color.Gray,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                             )
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Stepper Satırı: [-1]  [0 kişi / Sınırsız]  [+1]
+                                    // Stepper: [-1]  XX kişi  [+1]
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1850,48 +1746,46 @@ private fun ActivityStarWizardDialog(
                                     ) {
                                         Surface(
                                             onClick = { if (targetStudentLimit > 0) targetStudentLimit-- },
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(6.dp),
                                             color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(30.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Text("-1", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text("-1", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
 
                                         Text(
                                             text = if (targetStudentLimit == 0) "Sınırsız" else "$targetStudentLimit kişi",
-                                            fontSize = 16.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Black,
                                             color = if (targetStudentLimit > 0) Color(0xFF4F46E5) else (if (isDarkTheme) Color.White else Color(0xFF1E293B))
                                         )
 
                                         Surface(
                                             onClick = { targetStudentLimit++ },
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(6.dp),
                                             color = Color(0xFFEEF2FF),
                                             border = BorderStroke(1.dp, Color(0xFFC7D2FE)),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(30.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Text("+1", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4338CA))
+                                                Text("+1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4338CA))
                                             }
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Önayar Butonları (4 adet eşit buton)
+                                    // Önayarlar: [Yok] [3] [5] [10]
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
-                                        val targetPresets = listOf(0 to "Sınırsız", 3 to "İlk 3", 5 to "İlk 5", 10 to "İlk 10")
+                                        val targetPresets = listOf(0 to "Yok", 3 to "İlk 3", 5 to "İlk 5", 10 to "İlk 10")
                                         targetPresets.forEach { (limit, label) ->
                                             val isSel = targetStudentLimit == limit
                                             Surface(
                                                 onClick = { targetStudentLimit = limit },
-                                                shape = RoundedCornerShape(6.dp),
+                                                shape = RoundedCornerShape(4.dp),
                                                 color = if (isSel) Color(0xFF4F46E5) else (if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9)),
                                                 border = BorderStroke(
                                                     1.dp,
@@ -1899,12 +1793,12 @@ private fun ActivityStarWizardDialog(
                                                 ),
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .height(28.dp)
+                                                    .height(24.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Text(
                                                         text = label,
-                                                        fontSize = 10.sp,
+                                                        fontSize = 9.5.sp,
                                                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                                                         color = if (isSel) Color.White else (if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary)
                                                     )
@@ -1917,7 +1811,7 @@ private fun ActivityStarWizardDialog(
                         }
                     }
 
-                    // Adım 1 Alt Butonları
+                    // Adım 1 Alt Butonları (Sabit ve Asla Kesilmez)
                     Surface(
                         color = if (isDarkTheme) Color(0x401E293B) else Color(0xFFF8FAFC),
                         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
@@ -1926,12 +1820,12 @@ private fun ActivityStarWizardDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(onClick = onDismiss) {
-                                Text("VAZGEÇ", fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text("VAZGEÇ", fontWeight = FontWeight.Bold, color = Color.Gray, fontSize = 11.5.sp)
                             }
 
                             Button(
@@ -1941,48 +1835,49 @@ private fun ActivityStarWizardDialog(
                                     currentStep = 2
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.height(38.dp)
                             ) {
-                                Text("ÖĞRENCİ SEÇİMİNE GEÇ", fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("ÖĞRENCİ SEÇİMİNE GEÇ", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(15.dp))
                             }
                         }
                     }
                 }
 
-                // --- ADIM 2: ÖĞRENCİ SEÇİMİ (Görsel 6 & 7) ---
+                // --- ADIM 2: ÖĞRENCİ SEÇİMİ (KAYDIRMASIZ, HER ŞEY TEK EKRANDA) ---
                 if (currentStep == 2) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        // Üst Bilgi Satırı: Seçili Kategori & Yıldız, Sayaç, Seçilen Sayısı
+                        // ÜST KONTROL BANDI - 1. SATIR: Kategori, Süre, Canlı Seçim Sayacı
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             // Kategori & Yıldız Rozeti
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(selectedCategory.colorHex).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(selectedCategory.colorHex).copy(alpha = 0.16f),
                                 border = BorderStroke(1.dp, Color(selectedCategory.colorHex))
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
                                         imageVector = selectedCategory.icon,
                                         contentDescription = null,
                                         tint = Color(selectedCategory.colorHex),
-                                        modifier = Modifier.size(15.dp)
+                                        modifier = Modifier.size(13.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "${selectedCategory.name} +$starCount Yıldız",
+                                        text = "${selectedCategory.name} +$starCount⭐",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(selectedCategory.colorHex)
@@ -1990,30 +1885,29 @@ private fun ActivityStarWizardDialog(
                                 }
                             }
 
-                            // Süre Sayacı & Hızlı Butonlar (10s, 20s, 30s)
+                            // Süre Sayacı & Hızlı Butonlar
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = if (remainingSeconds > 0) Color(0xFFFEF3C7) else (if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9)),
                                 border = BorderStroke(1.dp, if (remainingSeconds > 0) BirizAmber else Color(0xFFCBD5E1))
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                                 ) {
                                     Text(
                                         text = "⏱ ${remainingSeconds}s",
-                                        fontSize = 11.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Black,
                                         color = if (remainingSeconds > 0) Color(0xFFB45309) else Color.Gray
                                     )
 
                                     Spacer(modifier = Modifier.width(4.dp))
 
-                                    // Hızlı 10s 20s 30s butonları
                                     listOf(10, 20, 30).forEach { sec ->
                                         Text(
                                             text = "${sec}s",
-                                            fontSize = 10.sp,
+                                            fontSize = 9.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF4F46E5),
                                             modifier = Modifier
@@ -2022,114 +1916,176 @@ private fun ActivityStarWizardDialog(
                                                     remainingSeconds = sec
                                                     isTimerRunning = true
                                                 }
-                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                .padding(horizontal = 3.dp, vertical = 2.dp)
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.width(4.dp))
-
-                                    // Başlat / Duraklat
                                     if (remainingSeconds > 0) {
-                                        IconButton(
-                                            onClick = { isTimerRunning = !isTimerRunning },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                contentDescription = null,
-                                                tint = Color(0xFF15803D),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Icon(
+                                            imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = Color(0xFF15803D),
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clickable { isTimerRunning = !isTimerRunning }
+                                        )
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.weight(1f))
-
-                            // Seçilen Kişi Sayısı Rozeti
+                            // Canlı Seçilen Kişi Sayısı Rozeti (ASLA EZİLMEZ)
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isDarkTheme) Color(0x356366F1) else Color(0xFFEEF2FF),
-                                border = BorderStroke(1.dp, Color(0xFF6366F1))
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (selectedStudentIds.isNotEmpty()) Color(0xFFEEF2FF) else (if (isDarkTheme) Color(0x301E293B) else Color(0xFFF8FAFC)),
+                                border = BorderStroke(1.2.dp, if (selectedStudentIds.isNotEmpty()) Color(0xFF6366F1) else Color(0xFFCBD5E1))
                             ) {
-                                Text(
-                                    text = "👥 Seçilen: ${selectedStudentIds.size} / ${students.size}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4338CA),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "👥 ${selectedStudentIds.size}/${students.size}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (selectedStudentIds.isNotEmpty()) Color(0xFF4338CA) else Color.Gray
+                                    )
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        // Hızlı Filtre Butonları (Tümünü Seç, Erkekler, Kızlar, Tersine Çevir, Temizle)
+                        // ÜST KONTROL BANDI - 2. SATIR: Hızlı Filtre Butonları
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(
+                            val erkekSayisi = students.count { it.gender.equals("Erkek", ignoreCase = true) }
+                            val kizSayisi = students.count { it.gender.equals("Kız", ignoreCase = true) }
+
+                            // Tümünü Seç
+                            Surface(
                                 onClick = {
                                     selectedStudentIds.clear()
                                     selectedStudentIds.addAll(students.map { it.id })
                                     checkTargetPersonLimitAndProceed()
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (selectedStudentIds.size == students.size) Color(0xFF6366F1) else (if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9)),
+                                border = BorderStroke(1.dp, if (selectedStudentIds.size == students.size) Color(0xFF6366F1) else Color(0xFFCBD5E1)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = "Tümü",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selectedStudentIds.size == students.size) Color.White else (if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary)
+                                    )
                                 }
-                            ) { Text("Tümünü Seç", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
 
-                            TextButton(
+                            // Erkekler
+                            Surface(
                                 onClick = {
                                     selectedStudentIds.clear()
                                     selectedStudentIds.addAll(students.filter { it.gender.equals("Erkek", ignoreCase = true) }.map { it.id })
                                     checkTargetPersonLimitAndProceed()
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isDarkTheme) Color(0x200284C7) else Color(0xFFF0F9FF),
+                                border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = "Erkek ($erkekSayisi)",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0284C7)
+                                    )
                                 }
-                            ) { Text("Erkekler (${students.count { it.gender.equals("Erkek", ignoreCase = true) }})", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
 
-                            TextButton(
+                            // Kızlar
+                            Surface(
                                 onClick = {
                                     selectedStudentIds.clear()
                                     selectedStudentIds.addAll(students.filter { it.gender.equals("Kız", ignoreCase = true) }.map { it.id })
                                     checkTargetPersonLimitAndProceed()
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isDarkTheme) Color(0x20EC4899) else Color(0xFFFDF2F8),
+                                border = BorderStroke(1.dp, Color(0xFFF472B6)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = "Kız ($kizSayisi)",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFDB2777)
+                                    )
                                 }
-                            ) { Text("Kızlar (${students.count { it.gender.equals("Kız", ignoreCase = true) }})", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
 
-                            TextButton(
+                            // Tersine Çevir
+                            Surface(
                                 onClick = {
                                     val current = selectedStudentIds.toSet()
                                     selectedStudentIds.clear()
                                     selectedStudentIds.addAll(students.filter { !current.contains(it.id) }.map { it.id })
                                     checkTargetPersonLimitAndProceed()
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9),
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = "Tersine",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                    )
                                 }
-                            ) { Text("Tersine Çevir", fontSize = 10.5.sp, fontWeight = FontWeight.Bold) }
+                            }
 
-                            TextButton(
-                                onClick = { selectedStudentIds.clear() }
-                            ) { Text("Temizle", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = BirizError) }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Öğrenci Seçim Grid'i (Görseller 6 & 7 gibi mor butonlu kartlar)
-                        val step2FilteredStudents = remember(students, studentSearch) {
-                            if (studentSearch.isBlank()) students
-                            else students.filter {
-                                it.fullName.contains(studentSearch, ignoreCase = true) ||
-                                        it.studentNumber.contains(studentSearch, ignoreCase = true)
+                            // Temizle
+                            Surface(
+                                onClick = { selectedStudentIds.clear() },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isDarkTheme) Color(0x20EF4444) else Color(0xFFFEF2F2),
+                                border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = "Temizle",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BirizError
+                                    )
+                                }
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // ÖĞRENCİ GRID'İ - TÜM ÖĞRENCİLER KAYDIRMA OLMADAN EKRANDA!
+                        val colCount = if (students.size <= 18) 2 else if (students.size <= 27) 3 else 4
+
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 130.dp),
+                            columns = GridCells.Fixed(colCount),
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp)
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp)
                         ) {
-                            items(step2FilteredStudents, key = { it.id }) { student ->
+                            items(students, key = { it.id }) { student ->
                                 val isSelected = selectedStudentIds.contains(student.id)
                                 val isKiz = student.gender.equals("Kız", ignoreCase = true)
 
@@ -2142,52 +2098,65 @@ private fun ActivityStarWizardDialog(
                                             checkTargetPersonLimitAndProceed()
                                         }
                                     },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isSelected) Color(0xFF4F46E5) else (if (isDarkTheme) Color(0x351E293B) else Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) Color(0xFF4338CA) else (if (isDarkTheme) Color(0x351E293B) else Color.White),
                                     border = BorderStroke(
-                                        if (isSelected) 2.dp else 1.dp,
-                                        if (isSelected) Color(0xFF6366F1) else (if (isKiz) Color(0x40F472B6) else Color(0x4038BDF8))
+                                        if (isSelected) 1.5.dp else 1.dp,
+                                        if (isSelected) Color(0xFF6366F1) else (if (isKiz) Color(0x80F472B6) else Color(0x8038BDF8))
                                     ),
-                                    shadowElevation = if (isSelected) 3.dp else 1.dp,
-                                    modifier = Modifier.fillMaxWidth()
+                                    shadowElevation = if (isSelected) 2.dp else 0.dp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(34.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                            .fillMaxSize()
+                                            .padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Column(modifier = Modifier.weight(1f)) {
+                                        // Numara & İsim
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
                                             Text(
                                                 text = "#${student.studentNumber}",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) Color(0xFFE0E7FF) else (if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7))
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = if (isSelected) Color(0xFFC7D2FE) else (if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7))
                                             )
+                                            Spacer(modifier = Modifier.width(4.dp))
                                             Text(
                                                 text = student.fullName,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) Color.White else (if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary),
+                                                fontSize = 10.sp,
+                                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                                color = if (isSelected) Color.White else (if (isDarkTheme) Color.White else BirizNavyPrimary),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
 
+                                        Spacer(modifier = Modifier.width(3.dp))
+
+                                        // Seçim Göstergesi (Seçiliyse Beyaz Dolu Tik, Seçili Değilse İnce Halka)
                                         Surface(
                                             shape = CircleShape,
                                             color = if (isSelected) Color.White else Color.Transparent,
-                                            border = BorderStroke(1.2.dp, if (isSelected) Color.White else Color(0xFFCBD5E1)),
-                                            modifier = Modifier.size(20.dp)
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) Color.White else (if (isKiz) Color(0x80F472B6) else Color(0x8038BDF8))
+                                            ),
+                                            modifier = Modifier.size(15.dp)
                                         ) {
                                             if (isSelected) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Icon(
                                                         imageVector = Icons.Default.Check,
                                                         contentDescription = "Seçildi",
-                                                        tint = Color(0xFF4F46E5),
-                                                        modifier = Modifier.size(13.dp)
+                                                        tint = Color(0xFF4338CA),
+                                                        modifier = Modifier.size(11.dp)
                                                     )
                                                 }
                                             }
@@ -2197,9 +2166,9 @@ private fun ActivityStarWizardDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        // Adım 2 Alt Butonları
+                        // Adım 2 Alt Butonları (Sabit ve Asla Kesilmez)
                         Surface(
                             color = if (isDarkTheme) Color(0x401E293B) else Color(0xFFF8FAFC),
                             border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
@@ -2208,21 +2177,22 @@ private fun ActivityStarWizardDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 OutlinedButton(
                                     onClick = { currentStep = 1 },
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(38.dp)
                                 ) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(13.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("GERİ", fontSize = 11.sp)
+                                    Text("GERİ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
 
                                 TextButton(onClick = onDismiss) {
-                                    Text("VAZGEÇ", fontSize = 11.sp, color = Color.Gray)
+                                    Text("VAZGEÇ", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                                 }
 
                                 Button(
@@ -2233,13 +2203,14 @@ private fun ActivityStarWizardDialog(
                                     },
                                     enabled = selectedStudentIds.isNotEmpty(),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(38.dp)
                                 ) {
-                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "${selectedStudentIds.size} ÖĞRENCİYE YILDIZ VER (+${starCount * selectedStudentIds.size})",
-                                        fontSize = 11.5.sp,
+                                        text = "${selectedStudentIds.size} ÖĞRENCİYE VER (+${starCount * selectedStudentIds.size})",
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
