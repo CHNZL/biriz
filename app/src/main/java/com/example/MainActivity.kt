@@ -1,37 +1,76 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
+import android.os.Build
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.repository.ClassRegistryRepository
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.screens.GoogleSignInScreen
 import com.example.ui.screens.RoleSelectionScreen
 import com.example.ui.screens.SetupSuccessScreen
 import com.example.ui.screens.TeacherDashboardScreen
 import com.example.ui.screens.TeacherSetupWizardScreen
+import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTheme
 import com.example.ui.viewmodel.BirizViewModel
 import com.example.ui.viewmodel.BirizViewModelFactory
 import com.example.ui.viewmodel.ScreenState
+import com.example.util.AppUpdateNotificationHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -46,14 +85,33 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Android 8.0+ bildirim kanalını açılışta garantiye al
+        AppUpdateNotificationHelper.createNotificationChannel(applicationContext)
+
         // Cihaz hafızasında eski APK kalıntılarının birikmesini önlemek için temizle
         com.example.util.AppUpdateManager.cleanOldApkFiles(applicationContext)
+
+        // Bildirim çubuğundan tıklandıysa güncelleme ekranını doğrudan aç
+        handleUpdateIntent(intent)
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             BirizTheme(darkTheme = uiState.isDarkTheme) {
                 BirizApp(viewModel = viewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUpdateIntent(intent)
+    }
+
+    private fun handleUpdateIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
+            viewModel.openGlobalUpdateDialog()
+            intent.removeExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG)
         }
     }
 }
@@ -66,6 +124,28 @@ fun BirizApp(viewModel: BirizViewModel) {
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Android 13+ (API 33) için Bildirim İzni İsteme (Güncelleme bildirimlerinin çubuğa düşmesi için)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val permissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                uiState.availableUpdateInfo?.let { update ->
+                    AppUpdateNotificationHelper.showUpdateNotification(context, update)
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            val currentPerm = ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            )
+            if (currentPerm != PackageManager.PERMISSION_GRANTED) {
+                permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { _ ->
@@ -273,6 +353,104 @@ fun BirizApp(viewModel: BirizViewModel) {
                         viewModel.resetToRoleSelection()
                     }
                 }
+            }
+
+            // Programda gezinirken yeni bir güncelleme çıktığında gösterilen üst afiş
+            val updateAvailable = uiState.availableUpdateInfo?.isUpdateAvailable == true
+            val showBanner = updateAvailable && !uiState.isUpdateBannerDismissed && !uiState.isGlobalUpdateDialogOpen
+
+            AnimatedVisibility(
+                visible = showBanner,
+                enter = slideInVertically(initialOffsetY = { -it }),
+                exit = slideOutVertically(targetOffsetY = { -it }),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (uiState.isDarkTheme) Color(0xFF1E293B) else Color(0xFFEFF6FF),
+                    border = BorderStroke(1.dp, Color(0xFF6366F1)),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.openGlobalUpdateDialog() }
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFF6366F1),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Yeni Sürüm Hazır: v${uiState.availableUpdateInfo?.latestVersionName} 🚀",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (uiState.isDarkTheme) Color.White else BirizNavyPrimary
+                                )
+                                Text(
+                                    text = "Yükleme ekranına gitmek için dokunun.",
+                                    fontSize = 10.sp,
+                                    color = if (uiState.isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { viewModel.openGlobalUpdateDialog() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Yükle", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { viewModel.dismissUpdateBanner() },
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Gizle",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Global Güncelleme Yükleme Penceresi (Bildirimden tıklandığında veya butonla açılır)
+            if (uiState.isGlobalUpdateDialogOpen) {
+                AppUpdateDialog(
+                    isDarkTheme = uiState.isDarkTheme,
+                    initialInfo = uiState.availableUpdateInfo,
+                    onDismiss = { viewModel.dismissGlobalUpdateDialog() }
+                )
             }
         }
     }

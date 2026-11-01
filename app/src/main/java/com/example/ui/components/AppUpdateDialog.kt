@@ -66,6 +66,7 @@ import com.example.ui.theme.BirizSuccess
 import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTurquoise
 import com.example.util.AppUpdateManager
+import com.example.util.AppUpdateNotificationHelper
 import com.example.util.UpdateInfo
 import kotlinx.coroutines.launch
 import java.io.File
@@ -111,6 +112,7 @@ fun AppUpdateDialog(
                 )
             } else if (result.isUpdateAvailable) {
                 state = UpdateDialogState.Available(result)
+                AppUpdateNotificationHelper.showUpdateNotification(context, result)
             } else {
                 state = UpdateDialogState.UpToDate(result)
             }
@@ -367,7 +369,9 @@ fun AppUpdateDialog(
 
                             Button(
                                 onClick = {
+                                    AppUpdateNotificationHelper.cancelUpdateNotification(context)
                                     AppUpdateManager.installApk(context, current.apkFile)
+                                    onDismiss()
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()

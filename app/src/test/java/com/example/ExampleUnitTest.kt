@@ -479,6 +479,26 @@ class ExampleUnitTest {
     assertEquals(3, com.example.data.repository.StarRewardPersistenceHelper.getStudentTotalStars(records, "std_2"))
     assertEquals(0, com.example.data.repository.StarRewardPersistenceHelper.getStudentTotalStars(records, "std_3"))
   }
+
+  @Test
+  fun testAppUpdateNotificationConfiguration() {
+    assertEquals("biriz_update_notifications", com.example.util.AppUpdateNotificationHelper.CHANNEL_ID)
+    assertEquals(2026, com.example.util.AppUpdateNotificationHelper.NOTIFICATION_ID)
+    assertEquals("extra_open_update_dialog", com.example.util.AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG)
+
+    val updateInfo = com.example.util.UpdateInfo(
+      isUpdateAvailable = true,
+      currentVersionName = "1.0.0",
+      currentVersionCode = 1000,
+      latestVersionName = "1.0.1",
+      latestVersionCode = 1001,
+      downloadUrl = "https://github.com/test/repo/releases/download/v1.0.1/Biriz.apk",
+      releaseNotes = "Hata düzeltmeleri ve yeni bildirim özellikleri."
+    )
+    assertTrue("Update must be marked available", updateInfo.isUpdateAvailable)
+    assertEquals("1.0.1", updateInfo.latestVersionName)
+    assertTrue("Download URL must point to apk", updateInfo.downloadUrl.endsWith(".apk"))
+  }
 }
 
 

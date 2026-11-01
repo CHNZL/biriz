@@ -46,10 +46,7 @@ import com.example.data.model.AnnouncementPoll
 import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
-import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.NotificationCenterDialog
-import com.example.util.AppUpdateManager
-import com.example.util.UpdateInfo
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -194,19 +191,6 @@ fun TeacherDashboardScreen(
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
     var showDeleteRoleDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
-
-    var autoUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var showAutoUpdateDialog by remember { mutableStateOf(false) }
-
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        try {
-            val update = AppUpdateManager.checkForUpdates(context)
-            if (update != null && update.isUpdateAvailable) {
-                autoUpdateInfo = update
-                showAutoUpdateDialog = true
-            }
-        } catch (_: Exception) {}
-    }
 
     val hasStudents = students.isNotEmpty()
 
@@ -922,15 +906,6 @@ fun TeacherDashboardScreen(
                     }
                 }
             }
-        }
-
-        // Otomatik Güncelleme Bildirimi Modalı
-        if (showAutoUpdateDialog && autoUpdateInfo != null) {
-            AppUpdateDialog(
-                isDarkTheme = isDarkTheme,
-                initialInfo = autoUpdateInfo,
-                onDismiss = { showAutoUpdateDialog = false }
-            )
         }
     }
 }

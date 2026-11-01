@@ -34,8 +34,14 @@ import com.example.data.model.ChatMessage
 import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
 import com.example.util.CommunicationPersistenceHelper
+import com.example.util.AppUpdateManager
+import com.example.util.AppUpdateNotificationHelper
+import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -146,6 +152,11 @@ data class BirizUiState(
     val activeChatStudentId: String? = null,
     val isNotificationCenterOpen: Boolean = false,
 
+    // Uygulama Güncelleme Durumu (Arka planda & gezinirken otomatik tespit)
+    val availableUpdateInfo: UpdateInfo? = null,
+    val isGlobalUpdateDialogOpen: Boolean = false,
+    val isUpdateBannerDismissed: Boolean = false,
+
     // UI Bildirimleri
     val snackbarMessage: String? = null
 )
@@ -161,11 +172,82 @@ class BirizViewModel(
     val cities: List<City> = repository.cities
     val students: StateFlow<List<com.example.data.model.Student>> = repository.students
 
+    private var updateCheckJob: Job? = null
+
     init {
         loadScheduleFromStorage("default")
         loadSeatingPlanFromStorage("default")
         loadCommunicationFromStorage("default")
         refreshCurrentUser()
+        startPeriodicUpdateChecker()
+    }
+
+    /**
+     * Kullanıcı programda gezinirken yeni bir sürüm çıktığında
+     * otomatik olarak algılar ve hem sistem bildirim çubuğuna bildirim atar
+     * hem de uygulama içi bildirim alanını günceller.
+     */
+    fun startPeriodicUpdateChecker() {
+        updateCheckJob?.cancel()
+        updateCheckJob = viewModelScope.launch {
+            // İlk açılışta UI akıcılığını engellememek için kısa bir bekleme
+            delay(2500L)
+            while (isActive) {
+                checkUpdatesSilently()
+                // Programda gezinirken her 60 saniyede bir otomatik denetle
+                delay(60_000L)
+            }
+        }
+    }
+
+    suspend fun checkUpdatesSilently(forceResendNotification: Boolean = false) {
+        val ctx = appContext ?: return
+        try {
+            val update = AppUpdateManager.checkForUpdates(ctx)
+            if (update != null && update.isUpdateAvailable) {
+                _uiState.value = _uiState.value.copy(
+                    availableUpdateInfo = update,
+                    isUpdateBannerDismissed = false
+                )
+                AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun openGlobalUpdateDialog(info: UpdateInfo? = null) {
+        _uiState.value = _uiState.value.copy(
+            isGlobalUpdateDialogOpen = true,
+            availableUpdateInfo = info ?: _uiState.value.availableUpdateInfo
+        )
+    }
+
+    fun dismissGlobalUpdateDialog() {
+        _uiState.value = _uiState.value.copy(isGlobalUpdateDialogOpen = false)
+    }
+
+    fun dismissUpdateBanner() {
+        _uiState.value = _uiState.value.copy(isUpdateBannerDismissed = true)
+    }
+
+    fun checkUpdatesNow(onResult: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            val ctx = appContext ?: return@launch
+            try {
+                val update = AppUpdateManager.checkForUpdates(ctx)
+                if (update != null && update.isUpdateAvailable) {
+                    _uiState.value = _uiState.value.copy(
+                        availableUpdateInfo = update,
+                        isGlobalUpdateDialogOpen = true
+                    )
+                    AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
+                    onResult?.invoke(true)
+                } else {
+                    onResult?.invoke(false)
+                }
+            } catch (_: Exception) {
+                onResult?.invoke(false)
+            }
+        }
     }
 
     fun loadScheduleFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
