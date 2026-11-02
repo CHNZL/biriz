@@ -202,15 +202,20 @@ object SmartBoardHelper {
         return try {
             val mainDb = getMainFirestore(context)
 
-            // Ana veritabanına yaz (Maksimum 1 saniye timeout ile)
-            withTimeoutOrNull(1000) {
+            // Ana veritabanına kesintisiz yaz
+            scope.launch {
                 try {
                     mainDb.collection("board_sessions")
                         .document(cleanCode)
                         .set(sessionPayload, SetOptions.merge())
-                        .await()
+                        .addOnSuccessListener {
+                            Log.d(TAG, "Successfully wrote to board_sessions/$cleanCode on mainDb")
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w(TAG, "Failed writing to board_sessions/$cleanCode on mainDb: ${e.message}")
+                        }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Direct main write timed out or exception: ${e.message}")
+                    Log.w(TAG, "Exception writing to mainDb: ${e.message}")
                 }
             }
 
@@ -228,18 +233,6 @@ object SmartBoardHelper {
                 seatingPlanState = seatingPlanState,
                 groupMakerState = groupMakerState
             )
-
-            // Yedek varsayılan veritabanına arka planda sessizce yaz
-            scope.launch {
-                try {
-                    val defaultDb = FirebaseFirestore.getInstance()
-                    if (defaultDb != mainDb) {
-                        defaultDb.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(sessionPayload, SetOptions.merge())
-                    }
-                } catch (ignored: Exception) {}
-            }
 
             saveConnectionState(context, cleanCode, true)
             Result.success(Unit)
@@ -329,6 +322,10 @@ object SmartBoardHelper {
         }
         if (groupsData != null) {
             boardSessionUpdate["groups"] = groupsData
+        }
+        if (extraData.isNotEmpty()) {
+            boardSessionUpdate.putAll(extraData)
+            boardSessionUpdate["extraData"] = extraData
         }
         if (cleanCode != null) {
             boardSessionUpdate["sessionCode"] = cleanCode

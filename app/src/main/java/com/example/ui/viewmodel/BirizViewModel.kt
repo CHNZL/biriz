@@ -1775,6 +1775,7 @@ class BirizViewModel(
     }
 
     fun signOut(context: android.content.Context? = null) {
+        disconnectSmartBoard()
         Firebase.auth.signOut()
         repository.disableTestMode()
         context?.let { ctx ->

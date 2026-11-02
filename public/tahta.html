@@ -8,9 +8,43 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
   
-  <!-- Firebase JS SDK (Compat: works on file://, Cloudflare, and all custom domains without CORS issues) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase JS SDK (Modular SDK with named database support) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
+      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
+      projectId: "gen-lang-client-0343498023",
+      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
+    };
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app, "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
+      
+      window.startSdkListener = function(code) {
+        if (window.activeSdkUnsubscribe) {
+          try { window.activeSdkUnsubscribe(); } catch (e) {}
+        }
+        window.activeSdkUnsubscribe = onSnapshot(doc(db, "board_sessions", code), (snap) => {
+          if (!snap.exists()) return;
+          if (window.handleSessionUpdate) {
+            window.handleSessionUpdate(snap.data());
+          }
+        }, (err) => {
+          console.warn("Firestore SDK dinleme:", err);
+        });
+      };
+
+      if (window.activeSessionCode && window.startSdkListener) {
+        window.startSdkListener(window.activeSessionCode);
+      }
+    } catch (err) {
+      console.warn("Modular SDK başlatma:", err);
+    }
+  </script>
 
   <style>
     :root {
@@ -149,6 +183,12 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(0.85); }
     }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes bounceIn {
+      0% { transform: scale(0.75); opacity: 0; }
+      70% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1); }
+    }
 
     .fullscreen-btn {
       background: rgba(255,255,255,0.12);
@@ -219,6 +259,24 @@
       font-weight: 700;
       color: var(--primary);
       box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .refresh-code-btn {
+      background: #EFF6FF;
+      border: 1.5px solid #BFDBFE;
+      color: #1D4ED8;
+      padding: 8px 18px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .refresh-code-btn:hover {
+      background: #DBEAFE;
+      border-color: #93C5FD;
     }
     .pairing-steps {
       display: flex;
@@ -825,11 +883,38 @@
         <div class="pairing-icon">🖥️</div>
         <h1 class="pairing-title">Akıllı Tahtayı Telefona Bağlayın</h1>
         <p class="pairing-desc">
-          Bu ekrandaki 8 haneli kodu öğretmen telefonundaki BİRİZ uygulamasında üstteki 
-          <strong>"🖥️ Tahta"</strong> butonuna basıp girin.
+          Telefonunuzdaki BİRİZ uygulamasından karekodu kamerayla okutarak saniyeler içinde bağlanabilirsiniz.
         </p>
 
-        <div class="code-display" id="session-code-display">BRZ94K7P</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 36px; align-items: center; justify-content: center; width: 100%; margin: 16px 0;">
+          <!-- KAREKOD ALANI (KAMERA İLE ANINDA BAĞLANMA) -->
+          <div style="background: #F8FAFC; border: 2px dashed var(--turquoise); border-radius: 24px; padding: 22px 28px; display: flex; flex-direction: column; align-items: center; gap: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.03);">
+            <div style="font-weight: 800; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.2rem;">📷</span> <span>Karekod ile Bağlan</span>
+            </div>
+            <div style="background: white; padding: 12px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border: 1px solid var(--border);">
+              <img id="qr-code-img" src="" alt="Karekod" style="width: 170px; height: 170px; display: block; border-radius: 8px;" />
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 700;">
+              Telefonda <span style="color: var(--turquoise);">"📷 Karekod Tara"</span>ya dokunun
+            </div>
+          </div>
+
+          <!-- 8 HANELİ KOD ALANI -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 14px;">
+            <div style="font-weight: 800; font-size: 1rem; color: var(--primary);">
+              veya 8 Haneli Kodu Girin:
+            </div>
+            <div class="code-display" id="session-code-display">--------</div>
+            <button class="refresh-code-btn" onclick="generateNewCodeAndListen()">
+              🔄 Yeni Kod Üret
+            </button>
+          </div>
+        </div>
+
+        <div id="pairing-status-indicator" style="font-size: 0.95rem; font-weight: 700; color: #0284C7; margin-top: 4px;">
+          ⏳ Telefondan karekodu okutun veya 8 haneli kodu girin...
+        </div>
 
         <div class="pairing-steps">
           <div class="step-box">
@@ -842,7 +927,7 @@
           </div>
           <div class="step-box">
             <div class="step-num">3</div>
-            <div class="step-text">Yukarıdaki kodu girip <strong>"Tahtaya Bağlan"</strong> butonuna basın.</div>
+            <div class="step-text"><strong>"📷 Karekod Tara"</strong> ile bu karekodu okutun veya kodu girin.</div>
           </div>
         </div>
       </div>
@@ -856,107 +941,142 @@
   </main>
 
   <script>
-    // --- 1. FIREBASE BAŞLATMA (COMPAT: file:// ve Domain Uyumlu) ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
-      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
-      projectId: "gen-lang-client-0343498023",
-      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
-    };
+    const PROJECT_ID = "gen-lang-client-0343498023";
+    const DB_ID = "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e";
+    const API_KEY = "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw";
 
-    let db = null;
-    try {
-      if (typeof firebase !== "undefined") {
-        if (!firebase.apps || !firebase.apps.length) {
-          firebase.initializeApp(firebaseConfig);
-        }
-        try {
-          db = firebase.app().firestore("ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
-        } catch (e) {
-          db = firebase.firestore();
+    // Firestore REST alanlarını doğrudan JS formatına dönüştürücü
+    function parseFirestoreRestFields(fields) {
+      if (!fields) return {};
+      const res = {};
+      for (const key in fields) {
+        const val = fields[key];
+        if (val.stringValue !== undefined) res[key] = val.stringValue;
+        else if (val.booleanValue !== undefined) res[key] = val.booleanValue;
+        else if (val.integerValue !== undefined) res[key] = parseInt(val.integerValue, 10);
+        else if (val.doubleValue !== undefined) res[key] = parseFloat(val.doubleValue);
+        else if (val.timestampValue !== undefined) res[key] = val.timestampValue;
+        else if (val.arrayValue !== undefined) {
+          const list = val.arrayValue.values || [];
+          res[key] = list.map(v => {
+            if (v.mapValue) return parseFirestoreRestFields(v.mapValue.fields);
+            if (v.stringValue !== undefined) return v.stringValue;
+            if (v.booleanValue !== undefined) return v.booleanValue;
+            if (v.integerValue !== undefined) return parseInt(v.integerValue, 10);
+            return v;
+          });
+        } else if (val.mapValue !== undefined) {
+          res[key] = parseFirestoreRestFields(val.mapValue.fields);
         }
       }
-    } catch (err) {
-      console.warn("Firebase başlatma uyarısı:", err);
+      return res;
     }
 
-    // --- 2. OTURUM KODU OLUŞTURMA VE GÖSTERİMİ ---
+    // --- 1. OTURUM KODU OLUŞTURMA (BRZ öneki olmadan, saf 8 karakter) ---
     function generateSessionCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      let code = "BRZ";
-      for (let i = 0; i < 5; i++) {
+      let code = "";
+      for (let i = 0; i < 8; i++) {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
       }
       return code;
     }
 
-    let sessionCode = null;
-    try {
-      sessionCode = localStorage.getItem("biriz_board_session_code");
-    } catch (e) {
-      console.warn("localStorage erişilemedi, geçici kod kullanılıyor", e);
-    }
-    if (!sessionCode || sessionCode.length < 6) {
-      sessionCode = generateSessionCode();
-      try {
-        localStorage.setItem("biriz_board_session_code", sessionCode);
-      } catch (ignored) {}
-    }
+    let sessionCode = generateSessionCode();
+    window.activeSessionCode = sessionCode;
 
-    const codeEl = document.getElementById("session-code-display");
-    if (codeEl) {
-      codeEl.innerText = sessionCode;
-    }
-
-    // --- 3. DURUM YÖNETİMİ ---
-    let currentModule = null; // Aktif sayfa sıfırlanmasını önlemek için bellek durumu
+    // --- 2. DURUM YÖNETİMİ ---
+    let currentModule = null;
     let latestData = null;
     let selectedDay = "PZT";
     let timerSeconds = 300;
     let timerInterval = null;
+    let restPollInterval = null;
 
-    // --- 4. FIRESTORE DİNLEYİCİSİ ---
-    if (db) {
-      db.collection("board_sessions").doc(sessionCode).onSnapshot((snap) => {
-        if (!snap || !snap.exists) return;
-        const data = snap.data();
-        latestData = data;
+    // --- 3. ÇİFT MOTORLU CANLI DİNLEME (SDK + REST POLLING) ---
+    function attachListeners(code) {
+      window.activeSessionCode = code;
+      const codeEl = document.getElementById("session-code-display");
+      if (codeEl) codeEl.innerText = code;
 
-        // Bağlantı durumu
-        const isConnected = data.status === "CONNECTED" || data.isConnected === true;
-        updateConnectionUI(isConnected, data);
+      const qrEl = document.getElementById("qr-code-img");
+      if (qrEl) {
+        qrEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${code}`;
+      }
 
-        if (isConnected) {
-          // Gizlilik Kalkanı Kontrolü
-          const isPrivacy = data.isPrivacyMode === true;
-          const overlay = document.getElementById("privacy-overlay");
-          if (overlay) overlay.style.display = isPrivacy ? "flex" : "none";
+      // SDK Dinleyicisi
+      if (window.startSdkListener) {
+        window.startSdkListener(code);
+      }
 
-          // Sınıf başlığı
-          if (data.schoolName) {
-            const schoolEl = document.getElementById("school-title");
-            if (schoolEl) schoolEl.innerText = data.schoolName;
+      // REST Polling Dinleyicisi (Her 1 saniyede bir kontrol - Garanti Anlık Bağlantı)
+      if (restPollInterval) clearInterval(restPollInterval);
+      const restUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DB_ID}/documents/board_sessions/${code}?key=${API_KEY}`;
+
+      const poll = async () => {
+        try {
+          const resp = await fetch(restUrl);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && json.fields) {
+              const data = parseFirestoreRestFields(json.fields);
+              window.handleSessionUpdate(data);
+            }
           }
-          if (data.grade && data.branch) {
-            const classEl = document.getElementById("class-name");
-            if (classEl) classEl.innerText = `${data.grade}/${data.branch} Sınıfı`;
-          }
-
-          // Sayfa Sıfırlanmasını Önleme Kuralı:
-          // Sadece activeModule gerçekten değiştiğinde veya ilk açılışta modülü değiştir!
-          const newModule = data.activeModule || "SINIF_LISTESI";
-          if (newModule !== currentModule) {
-            currentModule = newModule;
-            renderActiveModule(newModule, data);
-          } else {
-            // Modül aynı, sadece verileri mevcut ekranda sessizce tazele
-            updateActiveModuleData(newModule, data);
-          }
+        } catch (e) {
+          // Ağ geçişlerinde sessizce devam et
         }
-      }, (error) => {
-        console.warn("Firestore dinleme hatası:", error);
-      });
+      };
+
+      poll();
+      restPollInterval = setInterval(poll, 1000);
     }
+
+    window.generateNewCodeAndListen = function() {
+      sessionCode = generateSessionCode();
+      const statusEl = document.getElementById("pairing-status-indicator");
+      if (statusEl) statusEl.innerText = "⏳ Yeni kod aktif. Telefondan karekodu okutun veya 8 haneli kodu giriniz...";
+      attachListeners(sessionCode);
+    };
+
+    window.handleSessionUpdate = function(data) {
+      if (!data) return;
+      latestData = data;
+
+      const isConnected = (data.status === "CONNECTED" || data.isConnected === true) && data.status !== "DISCONNECTED";
+
+      if (!isConnected) {
+        if (currentModule !== null) {
+          currentModule = null;
+          latestData = null;
+          updateConnectionUI(false, null);
+          window.generateNewCodeAndListen();
+        }
+        return;
+      }
+
+      updateConnectionUI(true, data);
+
+      const isPrivacy = data.isPrivacyMode === true;
+      const overlay = document.getElementById("privacy-overlay");
+      if (overlay) overlay.style.display = isPrivacy ? "flex" : "none";
+
+      if (data.schoolName) {
+        const schoolEl = document.getElementById("school-title");
+        if (schoolEl) schoolEl.innerText = data.schoolName;
+      }
+      if (data.grade && data.branch) {
+        const classEl = document.getElementById("class-name");
+        if (classEl) classEl.innerText = `${data.grade}/${data.branch} Sınıfı`;
+      }
+
+      const newModule = data.activeModule || "SINIF_LISTESI";
+      currentModule = newModule;
+      renderActiveModule(newModule, data);
+    };
+
+    // Sayfa açıldığında dinlemeyi başlat
+    attachListeners(sessionCode);
 
     function updateConnectionUI(isConnected, data) {
       const pill = document.getElementById("connection-pill");
@@ -1272,20 +1392,53 @@
     }
 
     // 5. ŞANSLI ÖĞRENCİ ŞABLONU
+    // 5. ŞANSLI ÖĞRENCİ ŞABLONU (TAM YANSITMA - TUŞSUZ CANLI EKRAN)
     function generateLuckyStudentHtml(data) {
-      const students = data.students || [];
-      const winner = students[Math.floor(Math.random() * students.length)] || { fullName: "AHMET YILMAZ", studentNo: 101 };
+      const winner = data.luckyStudent;
+      const isRolling = data.isRolling === true;
+
+      if (isRolling) {
+        return `
+          <div class="lucky-container">
+            <div style="font-size: 72px; animation: spin 0.8s linear infinite;">🎲</div>
+            <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Şanslı Öğrenci Seçiliyor...</h2>
+            <div style="font-size: 1.15rem; color: var(--text-secondary); font-weight: 600; max-width: 500px; line-height: 1.5;">
+              Öğretmen telefonundan çekilişi başlattı! Kazanan öğrenci birazdan burada görünecek...
+            </div>
+            <div class="pulse-dot" style="width: 16px; height: 16px; background: var(--turquoise); margin-top: 14px;"></div>
+          </div>
+        `;
+      }
+
+      if (winner) {
+        return `
+          <div class="lucky-container">
+            <div style="font-size: 72px;">🎉</div>
+            <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
+            <div class="lucky-winner-box" style="animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); width: 100%; max-width: 620px;">
+              <div style="font-size: 1.3rem; font-weight: 800; color: var(--turquoise);">OKUL NO: #${winner.studentNo || winner.studentNumber || ''}</div>
+              <div class="lucky-winner-name" style="font-size: 2.8rem; margin: 12px 0;">${winner.fullName}</div>
+              <div style="font-size: 1.3rem; color: var(--amber); font-weight: 800;">⭐ Tebrikler! Söz Hakkı Sende! ⭐</div>
+            </div>
+            <div style="font-size: 1rem; color: var(--text-secondary); font-weight: 600; margin-top: 12px;">
+              📱 Öğretmen telefonundan yeni bir çekiliş yapabilir.
+            </div>
+          </div>
+        `;
+      }
 
       return `
         <div class="lucky-container">
-          <div style="font-size: 64px;">🎯</div>
-          <h2 style="font-size: 2rem; font-weight: 800; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
-          <div class="lucky-winner-box">
-            <div style="font-size: 1.2rem; font-weight: 700; color: var(--turquoise);">#${winner.studentNo || winner.studentNumber || '101'}</div>
-            <div class="lucky-winner-name">${winner.fullName}</div>
-            <div style="font-size: 1.1rem; color: var(--amber); font-weight: 800;">🎉 Tebrikler! Söz Hakkı Sende! 🎉</div>
+          <div style="font-size: 72px;">🎯</div>
+          <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Şanslı Öğrenci Çarkı</h2>
+          <div style="background: white; border: 2px dashed var(--turquoise); border-radius: 24px; padding: 36px 48px; max-width: 580px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
+            <div style="font-size: 1.25rem; font-weight: 800; color: var(--primary);">
+              Çekiliş İçin Hazır
+            </div>
+            <div style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.5; font-weight: 600;">
+              Öğretmen telefonundan çekilişi başlattığında kazanan öğrenci canlı olarak burada görünecektir.
+            </div>
           </div>
-          <button class="preset-btn" style="background: var(--turquoise); color: white; border: none; font-size: 1.1rem; padding: 14px 28px;" onclick="renderActiveModule('SANSLI_OGRENCI', latestData)">Yeniden Çek 🎲</button>
         </div>
       `;
     }

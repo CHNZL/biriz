@@ -150,6 +150,21 @@ fun StarsClassroomSubScreen(
         }
     }
 
+    LaunchedEffect(starRecords) {
+        val savedSession = com.example.util.SmartBoardHelper.getSavedSessionCode(context)
+        if (!savedSession.isNullOrBlank()) {
+            com.example.util.SmartBoardHelper.updateLiveBoardState(
+                context = context,
+                classId = classRoom.id,
+                sessionCode = savedSession,
+                isLiveMirrorActive = com.example.util.SmartBoardHelper.isMirrorActive(context),
+                currentSubPage = "YILDIZLAR_SINIFI",
+                currentSubPageTitle = "Yıldızlar Sınıfı",
+                students = students
+            )
+        }
+    }
+
     // Arama ve Filtreleme
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf<String?>("ALL") } // ALL, ACADEMIC, VALUES

@@ -38,8 +38,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import com.example.ui.components.QrScannerDialog
 import androidx.compose.material3.Button
 import com.example.data.model.Announcement
 import com.example.data.model.AnnouncementPoll
@@ -1066,6 +1068,7 @@ fun SmartBoardDialog(
     onDisconnect: () -> Unit
 ) {
     var codeInput by remember { mutableStateOf("") }
+    var isScannerOpen by remember { mutableStateOf(false) }
     val isConnected = !connectedBoardSessionCode.isNullOrBlank()
 
     AlertDialog(
@@ -1207,13 +1210,59 @@ fun SmartBoardDialog(
                         )
                     }
                 } else {
-                    // Bağlı Değil Durum: Kod Girme Ekranı
-                    Text(
-                        text = "Akıllı tahta tarayıcısında (cihanogretmen.com) görünen 8 haneli eşleştirme kodunu girin:",
-                        fontSize = 12.5.sp,
-                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                        lineHeight = 17.sp
-                    )
+                    // 📷 Karekod Tara Butonu (Kamera ile anında bağlan)
+                    Button(
+                        onClick = { isScannerOpen = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("smart_board_scan_qr_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkTheme) Color(0x3500B4D8) else Color(0x1500B4D8),
+                            contentColor = BirizTurquoise
+                        ),
+                        border = BorderStroke(1.5.dp, BirizTurquoise)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = BirizTurquoise
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "📷 Karekod Tara (Kamera ile)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            color = BirizTurquoise
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(1.dp)
+                                .background(if (isDarkTheme) Color(0x30FFFFFF) else Color(0x20000000))
+                        )
+                        Text(
+                            text = "  VEYA ELLE KOD GİRİN  ",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(1.dp)
+                                .background(if (isDarkTheme) Color(0x30FFFFFF) else Color(0x20000000))
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -1227,7 +1276,7 @@ fun SmartBoardDialog(
                             }
                         },
                         label = { Text("Eşleştirme Kodu") },
-                        placeholder = { Text("Örn: BRZ94K7P veya BRZ9-4K7P") },
+                        placeholder = { Text("Örn: K9X2P7M4") },
                         singleLine = true,
                         supportingText = {
                             if (normalizedPreview.isNotEmpty() && normalizedPreview != codeInput.trim()) {
@@ -1339,37 +1388,6 @@ fun SmartBoardDialog(
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 📥 Akıllı Tahta Web Dosyasını (tahta.html) İndir Butonu
-                OutlinedButton(
-                    onClick = {
-                        SmartBoardHelper.downloadOrShareTahtaHtml(context)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("download_tahta_html_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isDarkTheme) Color(0x15FFFFFF) else Color(0x081B2A4A),
-                        contentColor = if (isDarkTheme) Color.White else BirizNavyPrimary
-                    ),
-                    border = BorderStroke(1.dp, if (isDarkTheme) Color.White.copy(alpha = 0.2f) else BirizBorder)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(text = "📥", fontSize = 15.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Web Dosyasını (tahta.html) İndir / Paylaş",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
@@ -1384,5 +1402,16 @@ fun SmartBoardDialog(
             }
         }
     )
+
+    if (isScannerOpen) {
+        QrScannerDialog(
+            onDismiss = { isScannerOpen = false },
+            onQrCodeScanned = { scannedCode ->
+                isScannerOpen = false
+                codeInput = scannedCode
+                onConnect(scannedCode)
+            }
+        )
+    }
 }
 

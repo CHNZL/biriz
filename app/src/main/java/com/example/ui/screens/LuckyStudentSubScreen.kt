@@ -188,6 +188,20 @@ fun LuckyStudentSubScreen(
 
         if (isSpinning) return
 
+        val savedSession = com.example.util.SmartBoardHelper.getSavedSessionCode(context)
+        if (!savedSession.isNullOrBlank()) {
+            com.example.util.SmartBoardHelper.updateLiveBoardState(
+                context = context,
+                classId = classRoom.id,
+                sessionCode = savedSession,
+                isLiveMirrorActive = com.example.util.SmartBoardHelper.isMirrorActive(context),
+                currentSubPage = "SANSLI_OGRENCI",
+                currentSubPageTitle = "Şanslı Öğrenci",
+                students = students,
+                extraData = mapOf("isRolling" to true, "luckyStudent" to null)
+            )
+        }
+
         isSpinning = true
         coroutineScope.launch {
             if (isInstant) {
@@ -222,6 +236,27 @@ fun LuckyStudentSubScreen(
             currentWinner = winner
             showWinnerDialog = true
             onFinished(winner)
+
+            if (!savedSession.isNullOrBlank()) {
+                com.example.util.SmartBoardHelper.updateLiveBoardState(
+                    context = context,
+                    classId = classRoom.id,
+                    sessionCode = savedSession,
+                    isLiveMirrorActive = com.example.util.SmartBoardHelper.isMirrorActive(context),
+                    currentSubPage = "SANSLI_OGRENCI",
+                    currentSubPageTitle = "Şanslı Öğrenci",
+                    students = students,
+                    extraData = mapOf(
+                        "isRolling" to false,
+                        "luckyStudent" to mapOf(
+                            "fullName" to winner.fullName,
+                            "studentNo" to (winner.studentNumber.toIntOrNull() ?: 0),
+                            "studentNumber" to winner.studentNumber,
+                            "gender" to winner.gender
+                        )
+                    )
+                )
+            }
         }
     }
 

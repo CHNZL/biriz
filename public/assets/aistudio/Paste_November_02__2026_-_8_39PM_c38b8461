@@ -1,0 +1,1457 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BİRİZ - Akıllı Tahta Canlı Ekranı</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  
+  <!-- Firebase JS SDK (Compat: works on file://, Cloudflare, and all custom domains without CORS issues) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    :root {
+      --primary: #1B2A4A;
+      --primary-light: #2D4263;
+      --turquoise: #00B4D8;
+      --turquoise-light: #E0F7FA;
+      --amber: #FFB703;
+      --amber-light: #FFF8E1;
+      --emerald: #10B981;
+      --rose: #E11D48;
+      --purple: #8B5CF6;
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --text: #0F172A;
+      --text-secondary: #475569;
+      --border: #E2E8F0;
+      --font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    /* ÜST BAR */
+    header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(27, 42, 74, 0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .emblem {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-subtitle {
+      font-size: 0.8rem;
+      opacity: 0.85;
+      font-weight: 500;
+    }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .class-badge {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.25);
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .active-module-badge {
+      background: var(--turquoise);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .status-connected {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #6EE7B7;
+    }
+    .status-waiting {
+      background: rgba(255, 183, 3, 0.2);
+      border: 1px solid rgba(255, 183, 3, 0.4);
+      color: #FDE68A;
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .fullscreen-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      padding: 8px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .fullscreen-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* ANA İÇERİK ALANI */
+    main {
+      flex: 1;
+      padding: 24px;
+      max-width: 1600px;
+      width: 100%;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    /* 1. EŞLEŞTİRME BEKLEME EKRANI */
+    #pairing-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 140px);
+      text-align: center;
+      gap: 24px;
+    }
+    .pairing-card {
+      background: var(--card-bg);
+      border-radius: 28px;
+      border: 1px solid var(--border);
+      padding: 40px 48px;
+      max-width: 760px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(27, 42, 74, 0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    .pairing-icon { font-size: 56px; }
+    .pairing-title {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .pairing-desc {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 580px;
+    }
+    .code-display {
+      background: linear-gradient(135deg, #F1F5F9, #E2E8F0);
+      border: 2px dashed var(--turquoise);
+      padding: 16px 36px;
+      border-radius: 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2.8rem;
+      letter-spacing: 6px;
+      font-weight: 700;
+      color: var(--primary);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .pairing-steps {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+      margin-top: 10px;
+    }
+    .step-box {
+      flex: 1;
+      background: #F8FAFC;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      text-align: left;
+    }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--turquoise);
+      color: white;
+      font-weight: 800;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    .step-text {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      font-weight: 600;
+    }
+
+    /* 2. CANLI MODÜL ALANI */
+    #dashboard-screen {
+      display: none;
+    }
+
+    /* GİZLİLİK KALKANI OVERLAY */
+    #privacy-overlay {
+      display: none;
+      position: fixed;
+      top: 66px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      z-index: 999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      text-align: center;
+      gap: 20px;
+    }
+    .privacy-box {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* MODÜL: SINIF LİSTESİ */
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .stats-row {
+      display: flex;
+      gap: 12px;
+    }
+    .stat-pill {
+      background: white;
+      border: 1px solid var(--border);
+      padding: 8px 18px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .students-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .student-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      transition: all 0.2s;
+    }
+    .student-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+    }
+    .student-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .avatar-kiz {
+      background: #FFF1F2;
+      color: #E11D48;
+      border: 2px solid #FECDD3;
+    }
+    .avatar-erkek {
+      background: #E0F2FE;
+      color: #0284C7;
+      border: 2px solid #BAE6FD;
+    }
+    .student-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .student-name {
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .student-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+    .masked-code {
+      font-family: monospace;
+      letter-spacing: 2px;
+      background: #F1F5F9;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+    }
+    .student-star-badge {
+      background: var(--amber-light);
+      border: 1px solid var(--amber);
+      color: #B45309;
+      font-weight: 800;
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* MODÜL: DERS PROGRAMI */
+    .schedule-day-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .day-tab {
+      flex: 1;
+      text-align: center;
+      padding: 12px;
+      border-radius: 14px;
+      background: white;
+      border: 2px solid var(--border);
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--primary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .day-tab.active {
+      background: var(--turquoise);
+      color: white;
+      border-color: var(--turquoise);
+      box-shadow: 0 4px 16px rgba(0, 180, 216, 0.3);
+    }
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .timeline-card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+    .timeline-time {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 140px;
+    }
+    .time-badge {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--primary-light);
+    }
+    .time-slot {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .lesson-details {
+      flex: 1;
+      margin-left: 20px;
+    }
+    .lesson-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .lesson-topic {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .recess-card {
+      background: #F8FAFC;
+      border-left: 6px solid var(--amber);
+      color: #92400E;
+    }
+    .lunch-card {
+      background: #EFF6FF;
+      border-left: 6px solid var(--turquoise);
+      color: #0369A1;
+    }
+
+    /* MODÜL: OTURMA PLANI */
+    .seating-board-header {
+      background: #1E293B;
+      color: white;
+      text-align: center;
+      padding: 14px;
+      border-radius: 16px;
+      font-weight: 800;
+      font-size: 1.1rem;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .seating-grid {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      overflow-x: auto;
+      padding-bottom: 20px;
+    }
+    .seating-column {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .desk-card {
+      background: white;
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 14px;
+      width: 250px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+      display: flex;
+      gap: 10px;
+    }
+    .seat-slot {
+      flex: 1;
+      background: #F8FAFC;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 10px 8px;
+      text-align: center;
+      font-size: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 80px;
+    }
+    .seat-occupied {
+      background: white;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .seat-name {
+      font-weight: 800;
+      font-size: 0.85rem;
+      color: var(--primary);
+      margin-top: 4px;
+      line-height: 1.2;
+    }
+
+    /* MODÜL: YILDIZLAR SINIFI */
+    .podium-container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 20px;
+      margin-bottom: 30px;
+      padding: 20px 0;
+    }
+    .podium-card {
+      background: white;
+      border-radius: 20px;
+      padding: 24px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      border: 2px solid var(--border);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    }
+    .podium-1 { width: 260px; height: 280px; border-color: #F59E0B; background: linear-gradient(180deg, #FEF3C7, white); }
+    .podium-2 { width: 230px; height: 240px; border-color: #94A3B8; background: linear-gradient(180deg, #F1F5F9, white); }
+    .podium-3 { width: 230px; height: 210px; border-color: #B45309; background: linear-gradient(180deg, #FFEDD5, white); }
+    .podium-badge { font-size: 2.2rem; }
+    .podium-name { font-weight: 800; font-size: 1.15rem; color: var(--primary); }
+    .podium-stars {
+      background: var(--amber);
+      color: white;
+      font-weight: 800;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 1.1rem;
+    }
+
+    /* MODÜL: ŞANSLI ÖĞRENCİ */
+    .lucky-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      gap: 24px;
+    }
+    .lucky-winner-box {
+      background: white;
+      border: 3px solid var(--amber);
+      border-radius: 28px;
+      padding: 40px 60px;
+      text-align: center;
+      box-shadow: 0 16px 40px rgba(255, 183, 3, 0.2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      animation: bounceIn 0.8s;
+    }
+    @keyframes bounceIn {
+      0% { transform: scale(0.6); opacity: 0; }
+      70% { transform: scale(1.08); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .lucky-winner-name {
+      font-size: 2.8rem;
+      font-weight: 900;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+    }
+
+    /* MODÜL: ZAMANLAYICI */
+    .timer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      gap: 30px;
+    }
+    .timer-circle {
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      border: 12px solid var(--turquoise);
+      background: white;
+      box-shadow: 0 16px 40px rgba(0, 180, 216, 0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .timer-digits {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 4.8rem;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .timer-presets {
+      display: flex;
+      gap: 12px;
+    }
+    .preset-btn {
+      background: white;
+      border: 2px solid var(--border);
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--primary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .preset-btn:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    /* MODÜL: GRUP OLUŞTURMA */
+    .groups-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .group-card {
+      background: white;
+      border-radius: 18px;
+      border: 2px solid var(--border);
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.03);
+    }
+    .group-header {
+      padding: 14px 18px;
+      background: var(--primary);
+      color: white;
+      font-weight: 800;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .group-members {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .group-member-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: #F8FAFC;
+      font-weight: 700;
+    /* MODÜL: KİTAPLIK */
+    .library-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .book-card {
+      background: white;
+      border-radius: 18px;
+      border: 2px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+    .book-icon {
+      font-size: 2.2rem;
+      background: #EFF6FF;
+      border-radius: 14px;
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .book-info { flex: 1; }
+    .book-title { font-weight: 800; font-size: 1rem; color: var(--primary); }
+    .book-author { font-size: 0.85rem; color: var(--text-sec); margin-top: 2px; }
+    .book-status {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: #DCFCE7;
+      color: #15803D;
+    }
+
+    /* MODÜL: TURNUVA */
+    .tournament-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .match-card {
+      background: white;
+      border-radius: 16px;
+      border: 2px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+    .match-team {
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .match-vs {
+      font-weight: 900;
+      font-size: 1.1rem;
+      color: var(--turquoise);
+      background: #E0F2FE;
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ÜST BAR -->
+  <header>
+    <div class="brand">
+      <div class="emblem">
+        <svg width="28" height="28" viewBox="0 0 100 100" fill="none">
+          <circle cx="50" cy="50" r="45" stroke="#1B2A4A" stroke-width="8"/>
+          <path d="M50 20 A30 30 0 0 1 80 50 A30 30 0 0 1 50 80 A30 30 0 0 1 20 50 A30 30 0 0 1 50 20 Z" fill="#00B4D8"/>
+          <circle cx="50" cy="50" r="14" fill="#FFB703"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">BİRİZ <span style="font-weight: 500; font-size: 0.9rem; opacity: 0.85;">Akıllı Tahta</span></div>
+        <div class="brand-subtitle" id="school-title">Akıllı Sınıf Ekranı</div>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="class-badge" id="class-badge">
+        <span>🏫</span>
+        <span id="class-name">Sınıf Yükleniyor...</span>
+      </div>
+      <div class="active-module-badge" id="active-module-badge">Sınıf Listesi</div>
+    </div>
+
+    <div class="header-right">
+      <div class="connection-status status-waiting" id="connection-pill">
+        <div class="pulse-dot"></div>
+        <span id="connection-text">Eşleşme Bekleniyor</span>
+      </div>
+      <button class="fullscreen-btn" id="fs-btn" onclick="toggleFullScreen()">⛶ Tam Ekran</button>
+    </div>
+  </header>
+
+  <!-- GİZLİLİK KALKANI OVERLAY -->
+  <div id="privacy-overlay">
+    <div class="privacy-box">
+      <div style="font-size: 48px;">🔒</div>
+      <h2 style="font-size: 1.8rem; font-weight: 800;">Gizlilik Modu Aktif</h2>
+      <p style="font-size: 1rem; opacity: 0.85; line-height: 1.5;">
+        Öğretmen telefonunda gizlilik modunu açtı.<br>
+        Öğrenci ve sınıf bilgileri geçici olarak gizlendi.
+      </p>
+    </div>
+  </div>
+
+  <main>
+    <!-- 1. EŞLEŞTİRME EKRANI (BAĞLANTI BEKLENİRKEN) -->
+    <section id="pairing-screen">
+      <div class="pairing-card">
+        <div class="pairing-icon">🖥️</div>
+        <h1 class="pairing-title">Akıllı Tahtayı Telefona Bağlayın</h1>
+        <p class="pairing-desc">
+          Bu ekrandaki 8 haneli kodu öğretmen telefonundaki BİRİZ uygulamasında üstteki 
+          <strong>"🖥️ Tahta"</strong> butonuna basıp girin.
+        </p>
+
+        <div class="code-display" id="session-code-display">BRZ94K7P</div>
+
+        <div class="pairing-steps">
+          <div class="step-box">
+            <div class="step-num">1</div>
+            <div class="step-text">Öğretmen telefonunda <strong>BİRİZ</strong> uygulamasını açın.</div>
+          </div>
+          <div class="step-box">
+            <div class="step-num">2</div>
+            <div class="step-text">Üst bardaki <strong>🖥️ Tahta</strong> butonuna dokunun.</div>
+          </div>
+          <div class="step-box">
+            <div class="step-num">3</div>
+            <div class="step-text">Yukarıdaki kodu girip <strong>"Tahtaya Bağlan"</strong> butonuna basın.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. CANLI SUNUM EKRANI (BAĞLANDIKTAN SONRA) -->
+    <section id="dashboard-screen">
+      <!-- Dinamik Modül Konteyneri -->
+      <div id="module-container"></div>
+    </section>
+  </main>
+
+  <script>
+    // --- 1. FIREBASE BAŞLATMA (COMPAT: file:// ve Domain Uyumlu) ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
+      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
+      projectId: "gen-lang-client-0343498023",
+      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
+    };
+
+    let db = null;
+    try {
+      if (typeof firebase !== "undefined") {
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        try {
+          db = firebase.app().firestore("ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
+        } catch (e) {
+          db = firebase.firestore();
+        }
+      }
+    } catch (err) {
+      console.warn("Firebase başlatma uyarısı:", err);
+    }
+
+    // --- 2. OTURUM KODU OLUŞTURMA VE GÖSTERİMİ ---
+    function generateSessionCode() {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let code = "BRZ";
+      for (let i = 0; i < 5; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return code;
+    }
+
+    let sessionCode = null;
+    try {
+      sessionCode = localStorage.getItem("biriz_board_session_code");
+    } catch (e) {
+      console.warn("localStorage erişilemedi, geçici kod kullanılıyor", e);
+    }
+    if (!sessionCode || sessionCode.length < 6) {
+      sessionCode = generateSessionCode();
+      try {
+        localStorage.setItem("biriz_board_session_code", sessionCode);
+      } catch (ignored) {}
+    }
+
+    const codeEl = document.getElementById("session-code-display");
+    if (codeEl) {
+      codeEl.innerText = sessionCode;
+    }
+
+    // --- 3. DURUM YÖNETİMİ ---
+    let currentModule = null; // Aktif sayfa sıfırlanmasını önlemek için bellek durumu
+    let latestData = null;
+    let selectedDay = "PZT";
+    let timerSeconds = 300;
+    let timerInterval = null;
+
+    // --- 4. FIRESTORE DİNLEYİCİSİ ---
+    if (db) {
+      db.collection("board_sessions").doc(sessionCode).onSnapshot((snap) => {
+        if (!snap || !snap.exists) return;
+        const data = snap.data();
+        latestData = data;
+
+        // Bağlantı durumu
+        const isConnected = data.status === "CONNECTED" || data.isConnected === true;
+        updateConnectionUI(isConnected, data);
+
+        if (isConnected) {
+          // Gizlilik Kalkanı Kontrolü
+          const isPrivacy = data.isPrivacyMode === true;
+          const overlay = document.getElementById("privacy-overlay");
+          if (overlay) overlay.style.display = isPrivacy ? "flex" : "none";
+
+          // Sınıf başlığı
+          if (data.schoolName) {
+            const schoolEl = document.getElementById("school-title");
+            if (schoolEl) schoolEl.innerText = data.schoolName;
+          }
+          if (data.grade && data.branch) {
+            const classEl = document.getElementById("class-name");
+            if (classEl) classEl.innerText = `${data.grade}/${data.branch} Sınıfı`;
+          }
+
+          // Sayfa Sıfırlanmasını Önleme Kuralı:
+          // Sadece activeModule gerçekten değiştiğinde veya ilk açılışta modülü değiştir!
+          const newModule = data.activeModule || "SINIF_LISTESI";
+          if (newModule !== currentModule) {
+            currentModule = newModule;
+            renderActiveModule(newModule, data);
+          } else {
+            // Modül aynı, sadece verileri mevcut ekranda sessizce tazele
+            updateActiveModuleData(newModule, data);
+          }
+        }
+      }, (error) => {
+        console.warn("Firestore dinleme hatası:", error);
+      });
+    }
+
+    function updateConnectionUI(isConnected, data) {
+      const pill = document.getElementById("connection-pill");
+      const text = document.getElementById("connection-text");
+      const pairingScreen = document.getElementById("pairing-screen");
+      const dashboardScreen = document.getElementById("dashboard-screen");
+
+      if (isConnected) {
+        pill.className = "connection-status status-connected";
+        text.innerText = "🟢 Canlı Bağlantı";
+        pairingScreen.style.display = "none";
+        dashboardScreen.style.display = "block";
+      } else {
+        pill.className = "connection-status status-waiting";
+        text.innerText = "Eşleşme Bekleniyor";
+        pairingScreen.style.display = "flex";
+        dashboardScreen.style.display = "none";
+      }
+    }
+
+    // --- 4. MODÜL GÖRÜNÜM ÜRETİCİLERİ ---
+    function renderActiveModule(moduleName, data) {
+      const container = document.getElementById("module-container");
+      const badge = document.getElementById("active-module-badge");
+
+      switch (moduleName) {
+        case "SINIF_LISTESI":
+          badge.innerText = "Sınıf Listesi";
+          container.innerHTML = generateStudentListHtml(data);
+          break;
+        case "DERS_PROGRAMI":
+          badge.innerText = "Ders Programı";
+          selectedDay = data.selectedDay || "PZT";
+          container.innerHTML = generateScheduleHtml(data, selectedDay);
+          break;
+        case "OTURMA_PLANI":
+          badge.innerText = "Oturma Planı";
+          container.innerHTML = generateSeatingPlanHtml(data);
+          break;
+        case "YILDIZLAR_SINIFI":
+          badge.innerText = "Yıldızlar Sınıfı";
+          container.innerHTML = generateStarsHtml(data);
+          break;
+        case "SANSLI_OGRENCI":
+          badge.innerText = "Şanslı Öğrenci";
+          container.innerHTML = generateLuckyStudentHtml(data);
+          break;
+        case "GRUP_OLUSTURMA":
+          badge.innerText = "Grup Oluşturma";
+          container.innerHTML = generateGroupsHtml(data);
+          break;
+        case "ZAMANLAYICI":
+          badge.innerText = "Zamanlayıcı";
+          container.innerHTML = generateTimerHtml(data);
+          startTimer();
+          break;
+        case "KITAPLIK":
+        case "KITAPLIK_YONETIMI":
+          badge.innerText = "Kitaplık Yönetimi";
+          container.innerHTML = generateLibraryHtml(data);
+          break;
+        case "TURNUVA":
+        case "TURNUVA_YONETIMI":
+          badge.innerText = "Turnuva Yönetimi";
+          container.innerHTML = generateTournamentHtml(data);
+          break;
+        default:
+          badge.innerText = data.activeModuleTitle || "Canlı Ekran";
+          container.innerHTML = generateStudentListHtml(data);
+          break;
+      }
+    }
+
+    function updateActiveModuleData(moduleName, data) {
+      // Sayfa tipi değişmediğinde sadece verileri güncelle
+      if (moduleName === "SINIF_LISTESI") {
+        const grid = document.getElementById("students-grid-container");
+        if (grid) grid.innerHTML = generateStudentCardsOnly(data.students || []);
+      } else if (moduleName === "DERS_PROGRAMI") {
+        if (data.selectedDay && data.selectedDay !== selectedDay) {
+          selectedDay = data.selectedDay;
+          renderActiveModule("DERS_PROGRAMI", data);
+        }
+      } else if (moduleName === "YILDIZLAR_SINIFI") {
+        const container = document.getElementById("module-container");
+        if (container) container.innerHTML = generateStarsHtml(data);
+      }
+    }
+
+    // 1. SINIF LİSTESİ ŞABLONU
+    function generateStudentListHtml(data) {
+      const students = data.students || [];
+      const girlCount = students.filter(s => s.gender === "Kız" || s.gender === "KIZ").length;
+      const boyCount = students.filter(s => s.gender === "Erkek" || s.gender === "ERKEK").length;
+
+      return `
+        <div class="module-header">
+          <div class="stats-row">
+            <div class="stat-pill">👥 Toplam: <strong>${students.length} Öğrenci</strong></div>
+            <div class="stat-pill" style="color: #E11D48;">🌸 Kız: <strong>${girlCount}</strong></div>
+            <div class="stat-pill" style="color: #0284C7;">⚡ Erkek: <strong>${boyCount}</strong></div>
+          </div>
+        </div>
+        <div class="students-grid" id="students-grid-container">
+          ${generateStudentCardsOnly(students)}
+        </div>
+      `;
+    }
+
+    function generateStudentCardsOnly(students) {
+      if (!students || students.length === 0) {
+        return `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-secondary);">Henüz öğrenci kaydı bulunmuyor.</div>`;
+      }
+      return students.map(s => {
+        const isKiz = s.gender === "Kız" || s.gender === "KIZ";
+        const avatarClass = isKiz ? "avatar-kiz" : "avatar-erkek";
+        const no = s.studentNo || s.studentNumber || "0";
+        const stars = s.stars || 0;
+        return `
+          <div class="student-card">
+            <div class="student-avatar ${avatarClass}">#${no}</div>
+            <div class="student-info">
+              <div class="student-name">${s.fullName}</div>
+              <div class="student-meta">
+                <span>${isKiz ? "Kız" : "Erkek"}</span>
+                <span>•</span>
+                <span class="masked-code">Veli Kodu: ••••••••</span>
+              </div>
+            </div>
+            ${stars > 0 ? `<div class="student-star-badge">⭐ ${stars}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 2. DERS PROGRAMI ŞABLONU
+    function generateScheduleHtml(data, day) {
+      const days = [
+        { code: "PZT", name: "Pazartesi" },
+        { code: "SAL", name: "Salı" },
+        { code: "ÇAR", name: "Çarşamba" },
+        { code: "PER", name: "Perşembe" },
+        { code: "CUM", name: "Cuma" }
+      ];
+
+      const allLessons = data.schedule || [];
+      const dayLessons = allLessons.filter(l => l.dayOfWeek === day);
+
+      const tabsHtml = days.map(d => `
+        <div class="day-tab ${d.code === day ? 'active' : ''}" onclick="switchDay('${d.code}')">
+          ${d.name}
+        </div>
+      `).join('');
+
+      const defaultTimes = [
+        { start: "08:30", end: "09:10" },
+        { start: "09:25", end: "10:05" },
+        { start: "10:20", end: "11:00" },
+        { start: "11:15", end: "11:55" },
+        { start: "12:40", end: "13:20" },
+        { start: "13:35", end: "14:15" }
+      ];
+
+      let timelineHtml = '';
+      for (let i = 1; i <= 6; i++) {
+        const lesson = dayLessons.find(l => l.lessonIndex === i);
+        const time = defaultTimes[i - 1] || { start: "--:--", end: "--:--" };
+
+        timelineHtml += `
+          <div class="timeline-card">
+            <div class="timeline-time">
+              <div class="time-badge">${i}. DERS</div>
+              <div class="time-slot">${time.start} - ${time.end}</div>
+            </div>
+            <div class="lesson-details">
+              <div class="lesson-title">${lesson ? lesson.subjectName : 'DERS GİRİLMEDİ'}</div>
+              <div class="lesson-topic">${lesson && lesson.topicOrNotes ? lesson.topicOrNotes : 'Etkinlik ve Konu Planı'}</div>
+            </div>
+          </div>
+        `;
+
+        if (i === 2) {
+          timelineHtml += `
+            <div class="timeline-card recess-card">
+              <div class="timeline-time">
+                <div class="time-badge">☕ TENEFFÜS</div>
+                <div class="time-slot">10:05 - 10:20</div>
+              </div>
+              <div class="lesson-details">
+                <div class="lesson-title" style="color: #92400E;">Dinlenme ve Oyun Vakti (15 Dk)</div>
+              </div>
+            </div>
+          `;
+        } else if (i === 4) {
+          timelineHtml += `
+            <div class="timeline-card lunch-card">
+              <div class="timeline-time">
+                <div class="time-badge">🍽️ ÖĞLE ARASI</div>
+                <div class="time-slot">11:55 - 12:40</div>
+              </div>
+              <div class="lesson-details">
+                <div class="lesson-title" style="color: #0369A1;">Öğle Yemeği ve Beslenme Arası (45 Dk)</div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      return `
+        <div class="schedule-day-tabs">${tabsHtml}</div>
+        <div class="timeline-list">${timelineHtml}</div>
+      `;
+    }
+
+    window.switchDay = function(dayCode) {
+      selectedDay = dayCode;
+      if (latestData) {
+        renderActiveModule("DERS_PROGRAMI", latestData);
+      }
+    };
+
+    // 3. OTURMA PLANI ŞABLONU
+    function generateSeatingPlanHtml(data) {
+      const students = data.students || [];
+      const studentMap = {};
+      students.forEach(s => { studentMap[s.id] = s; });
+
+      // 3 grup x 4 sıra x 2 koltuk
+      let groupsHtml = '';
+      for (let g = 1; g <= 3; g++) {
+        let rowsHtml = '';
+        for (let r = 1; r <= 4; r++) {
+          const s1 = students[(g - 1) * 8 + (r - 1) * 2];
+          const s2 = students[(g - 1) * 8 + (r - 1) * 2 + 1];
+
+          rowsHtml += `
+            <div class="desk-card">
+              <div class="seat-slot ${s1 ? 'seat-occupied' : ''}">
+                ${s1 ? `<div style="font-weight: 800; font-size: 0.75rem; color: #00B4D8;">#${s1.studentNo || s1.studentNumber}</div><div class="seat-name">${s1.fullName}</div>` : '<span style="color:#94A3B8;">Boş Sıra</span>'}
+              </div>
+              <div class="seat-slot ${s2 ? 'seat-occupied' : ''}">
+                ${s2 ? `<div style="font-weight: 800; font-size: 0.75rem; color: #00B4D8;">#${s2.studentNo || s2.studentNumber}</div><div class="seat-name">${s2.fullName}</div>` : '<span style="color:#94A3B8;">Boş Sıra</span>'}
+              </div>
+            </div>
+          `;
+        }
+        groupsHtml += `<div class="seating-column">${rowsHtml}</div>`;
+      }
+
+      return `
+        <div class="seating-board-header">
+          <span>⬛ YAZI TAHTASI</span>
+          <span>•</span>
+          <span>👨‍🏫 ÖĞRETMEN KÜRSÜSÜ</span>
+        </div>
+        <div class="seating-grid">${groupsHtml}</div>
+      `;
+    }
+
+    // 4. YILDIZLAR SINIFI ŞABLONU
+    function generateStarsHtml(data) {
+      const students = [...(data.students || [])];
+      students.sort((a, b) => (b.stars || 0) - (a.stars || 0));
+
+      const first = students[0];
+      const second = students[1];
+      const third = students[2];
+
+      const podiumHtml = `
+        <div class="podium-container">
+          ${second ? `
+            <div class="podium-card podium-2">
+              <div class="podium-badge">🥈</div>
+              <div class="podium-name">${second.fullName}</div>
+              <div class="podium-stars">⭐ ${second.stars || 0}</div>
+            </div>
+          ` : ''}
+          ${first ? `
+            <div class="podium-card podium-1">
+              <div class="podium-badge">🥇</div>
+              <div class="podium-name">${first.fullName}</div>
+              <div class="podium-stars">⭐ ${first.stars || 0}</div>
+            </div>
+          ` : ''}
+          ${third ? `
+            <div class="podium-card podium-3">
+              <div class="podium-badge">🥉</div>
+              <div class="podium-name">${third.fullName}</div>
+              <div class="podium-stars">⭐ ${third.stars || 0}</div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      const listHtml = students.map((s, idx) => `
+        <div class="student-card" style="margin-bottom: 10px;">
+          <div style="font-weight: 900; font-size: 1.1rem; width: 30px; color: var(--primary);">${idx + 1}.</div>
+          <div class="student-avatar ${s.gender === 'Kız' ? 'avatar-kiz' : 'avatar-erkek'}">#${s.studentNo || s.studentNumber}</div>
+          <div class="student-info">
+            <div class="student-name">${s.fullName}</div>
+          </div>
+          <div class="student-star-badge" style="font-size: 1rem; padding: 6px 12px;">⭐ ${s.stars || 0} Yıldız</div>
+        </div>
+      `).join('');
+
+      return `
+        ${podiumHtml}
+        <div style="max-width: 800px; margin: 0 auto;">
+          <h3 style="margin-bottom: 16px; font-weight: 800; color: var(--primary);">Tüm Sınıf Yıldız Sıralaması</h3>
+          ${listHtml}
+        </div>
+      `;
+    }
+
+    // 5. ŞANSLI ÖĞRENCİ ŞABLONU
+    function generateLuckyStudentHtml(data) {
+      const students = data.students || [];
+      const winner = students[Math.floor(Math.random() * students.length)] || { fullName: "AHMET YILMAZ", studentNo: 101 };
+
+      return `
+        <div class="lucky-container">
+          <div style="font-size: 64px;">🎯</div>
+          <h2 style="font-size: 2rem; font-weight: 800; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
+          <div class="lucky-winner-box">
+            <div style="font-size: 1.2rem; font-weight: 700; color: var(--turquoise);">#${winner.studentNo || winner.studentNumber || '101'}</div>
+            <div class="lucky-winner-name">${winner.fullName}</div>
+            <div style="font-size: 1.1rem; color: var(--amber); font-weight: 800;">🎉 Tebrikler! Söz Hakkı Sende! 🎉</div>
+          </div>
+          <button class="preset-btn" style="background: var(--turquoise); color: white; border: none; font-size: 1.1rem; padding: 14px 28px;" onclick="renderActiveModule('SANSLI_OGRENCI', latestData)">Yeniden Çek 🎲</button>
+        </div>
+      `;
+    }
+
+    // 6. ZAMANLAYICI ŞABLONU
+    function generateTimerHtml(data) {
+      return `
+        <div class="timer-container">
+          <div class="timer-circle">
+            <div class="timer-digits" id="timer-display">05:00</div>
+            <div style="font-weight: 700; color: var(--text-secondary); margin-top: 8px;" id="timer-status">Süre Başlatıldı</div>
+          </div>
+          <div class="timer-presets">
+            <button class="preset-btn" onclick="setTimer(60)">1 Dk</button>
+            <button class="preset-btn" onclick="setTimer(180)">3 Dk</button>
+            <button class="preset-btn" onclick="setTimer(300)">5 Dk</button>
+            <button class="preset-btn" onclick="setTimer(600)">10 Dk</button>
+            <button class="preset-btn" onclick="setTimer(900)">15 Dk</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (timerSeconds > 0) {
+          timerSeconds--;
+          updateTimerDisplay();
+        } else {
+          clearInterval(timerInterval);
+          const status = document.getElementById("timer-status");
+          if (status) status.innerText = "SÜRE BİTTİ! 🔔";
+        }
+      }, 1000);
+    }
+
+    window.setTimer = function(seconds) {
+      timerSeconds = seconds;
+      updateTimerDisplay();
+      startTimer();
+    };
+
+    function updateTimerDisplay() {
+      const display = document.getElementById("timer-display");
+      if (!display) return;
+      const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+      const s = (timerSeconds % 60).toString().padStart(2, '0');
+      display.innerText = `${m}:${s}`;
+    }
+
+    // 7. GRUPLAR ŞABLONU
+    function generateGroupsHtml(data) {
+      const students = data.students || [];
+      const groups = [
+        { name: "1. GRUP - KARTALLAR", color: "#4F46E5", members: students.slice(0, 6) },
+        { name: "2. GRUP - ŞAHİNLER", color: "#10B981", members: students.slice(6, 12) },
+        { name: "3. GRUP - ASLANLAR", color: "#0284C7", members: students.slice(12, 18) },
+        { name: "4. GRUP - KAPLANLAR", color: "#D97706", members: students.slice(18, 24) }
+      ];
+
+      return `
+        <div class="groups-grid">
+          ${groups.map(g => `
+            <div class="group-card">
+              <div class="group-header" style="background: ${g.color};">
+                <span>${g.name}</span>
+                <span>👥 ${g.members.length} Kişi</span>
+              </div>
+              <div class="group-members">
+                ${g.members.map((m, idx) => `
+                  <div class="group-member-item">
+                    ${idx === 0 ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
+                    <span>${m.fullName}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // 8. KİTAPLIK YÖNETİMİ ŞABLONU
+    function generateLibraryHtml(data) {
+      const sampleBooks = [
+        { title: "Küçük Prens", author: "Antoine de Saint-Exupéry", icon: "📖", status: "Rafta" },
+        { title: "Şeker Portakalı", author: "José Mauro de Vasconcelos", icon: "📙", status: "Okunuyor" },
+        { title: "Sol Ayağım", author: "Christy Brown", icon: "📘", status: "Rafta" },
+        { title: "Beyaz Diş", author: "Jack London", icon: "📗", status: "Rafta" },
+        { title: "Karatavuk Masalları", author: "Kemalettin Tuğcu", icon: "📕", status: "Okunuyor" },
+        { title: "Alice Harikalar Diyarında", author: "Lewis Carroll", icon: "📖", status: "Rafta" }
+      ];
+
+      return `
+        <div style="background: white; border-radius: 18px; padding: 20px; border: 2px solid var(--border); margin-bottom: 24px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight: 800; font-size: 1.2rem; color: var(--primary);">📚 Sınıf Kitaplığı & Okuma Takibi</div>
+            <div style="font-size: 0.9rem; color: var(--text-sec); margin-top: 4px;">Öğrencilerimizin okuma yolculuğu ve sınıf kütüphanesi</div>
+          </div>
+          <div style="background: #EFF6FF; padding: 8px 18px; border-radius: 20px; font-weight: 800; color: #1D4ED8;">
+            Toplam: ${sampleBooks.length} Kitap
+          </div>
+        </div>
+        <div class="library-grid">
+          ${sampleBooks.map(b => `
+            <div class="book-card">
+              <div class="book-icon">${b.icon}</div>
+              <div class="book-info">
+                <div class="book-title">${b.title}</div>
+                <div class="book-author">${b.author}</div>
+                <span class="book-status" style="background: ${b.status === 'Okunuyor' ? '#FEF3C7' : '#DCFCE7'}; color: ${b.status === 'Okunuyor' ? '#D97706' : '#15803D'};">
+                  ${b.status}
+                </span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // 9. TURNUVA YÖNETİMİ ŞABLONU
+    function generateTournamentHtml(data) {
+      const students = data.students || [];
+      const p1 = students[0] ? students[0].fullName : "1. Yarışmacı";
+      const p2 = students[1] ? students[1].fullName : "2. Yarışmacı";
+      const p3 = students[2] ? students[2].fullName : "3. Yarışmacı";
+      const p4 = students[3] ? students[3].fullName : "4. Yarışmacı";
+
+      return `
+        <div style="background: white; border-radius: 18px; padding: 20px; border: 2px solid var(--border); margin-bottom: 24px; text-align: center;">
+          <div style="font-weight: 900; font-size: 1.3rem; color: var(--primary);">🏆 Sınıf İçi Turnuva Fikstürü</div>
+          <div style="font-size: 0.9rem; color: var(--text-sec); margin-top: 4px;">Akıl Oyunları, Münazara ve Bilgi Yarışması Eşleşmeleri</div>
+        </div>
+        <div class="tournament-grid">
+          <div class="match-card">
+            <div class="match-team"><span>👤</span> ${p1}</div>
+            <div class="match-vs">VS</div>
+            <div class="match-team"><span>👤</span> ${p2}</div>
+          </div>
+          <div class="match-card">
+            <div class="match-team"><span>👤</span> ${p3}</div>
+            <div class="match-vs">VS</div>
+            <div class="match-team"><span>👤</span> ${p4}</div>
+          </div>
+          <div class="match-card" style="border-color: var(--amber); background: linear-gradient(180deg, #FEF3C7, white);">
+            <div class="match-team" style="color: #B45309;"><span>👑</span> FİNAL MAÇI</div>
+            <div class="match-vs" style="background: #F59E0B; color: white;">BÜYÜK FİNAL</div>
+            <div class="match-team" style="color: #B45309;">Şampiyonluk Kupası 🏆</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // --- 5. TAM EKRAN MODU ---
+    window.toggleFullScreen = function() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => alert("Tam ekran desteklenmiyor"));
+        document.getElementById("fs-btn").innerText = "✕ Çıkış";
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+          document.getElementById("fs-btn").innerText = "⛶ Tam Ekran";
+        }
+      }
+    };
+  </script>
+</body>
+</html>
