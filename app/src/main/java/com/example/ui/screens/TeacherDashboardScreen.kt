@@ -1281,6 +1281,38 @@ fun SmartBoardDialog(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 📥 Akıllı Tahta Web Dosyasını (tahta.html) İndir Butonu
+                val context = LocalContext.current
+                OutlinedButton(
+                    onClick = {
+                        SmartBoardHelper.downloadOrShareTahtaHtml(context)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("download_tahta_html_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isDarkTheme) Color(0x2500B4D8) else Color(0x1000B4D8),
+                        contentColor = if (isDarkTheme) Color(0xFF67E8F9) else BirizTurquoise
+                    ),
+                    border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(text = "📥", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Akıllı Tahta Web Dosyasını (tahta.html) İndir",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp
+                        )
+                    }
+                }
             }
         },
         confirmButton = {

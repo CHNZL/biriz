@@ -951,7 +951,9 @@ class BirizViewModel(
             currentSubPageTitle = subPage.title,
             activeDay = day,
             students = repository.students.value,
-            schedule = _uiState.value.scheduleLessons
+            schedule = _uiState.value.scheduleLessons,
+            seatingPlanState = _uiState.value.seatingPlanState,
+            groupMakerState = _uiState.value.groupMakerState
         )
     }
 
@@ -1004,7 +1006,9 @@ class BirizViewModel(
                     currentSubPageTitle = _uiState.value.currentSubPage.title,
                     activeDay = _uiState.value.activeScheduleDay,
                     students = repository.students.value,
-                    schedule = _uiState.value.scheduleLessons
+                    schedule = _uiState.value.scheduleLessons,
+                    seatingPlanState = _uiState.value.seatingPlanState,
+                    groupMakerState = _uiState.value.groupMakerState
                 )
             } catch (e: Exception) {
                 Log.w("BirizViewModel", "Background board connect warning: ${e.message}")

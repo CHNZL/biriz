@@ -1,10 +1,17 @@
 package com.example.util
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import android.widget.Toast
 import com.example.R
+import com.example.data.model.GroupMakerState
 import com.example.data.model.ScheduleLesson
+import com.example.data.model.SeatingPlanState
 import com.example.data.model.Student
+import com.example.data.repository.StarRewardPersistenceHelper
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -13,14 +20,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
  * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
  *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
  *   belgelerini anlık günceller.
- * - Ana veritabanı olarak `ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e`
- *   baz alınır, işlemler hiçbir zaman telefon arayüzünü (UI) kilitlemez.
+ * - Öğrenci yıldızları, oturma planı, gruplar ve ders programı modül verilerini eksiksiz aktarır.
+ * - Akıllı Tahta web dosyasını (`tahta.html`) cihazda üretir ve indirme/paylaşma imkanı sunar.
  */
 object SmartBoardHelper {
     private const val TAG = "SmartBoardHelper"
@@ -74,6 +82,35 @@ object SmartBoardHelper {
     }
 
     /**
+     * Öğrencilerin yıldız puanları ve maskelenmiş veli kodları ile sunum verisini hazırlar.
+     */
+    private fun prepareStudentPresentationData(
+        context: Context,
+        classId: String,
+        students: List<Student>
+    ): List<Map<String, Any?>> {
+        val starMap = try {
+            val records = StarRewardPersistenceHelper.loadStarRecords(context, classId)
+            records.groupBy { it.studentId }.mapValues { entry -> entry.value.sumOf { it.starCount } }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+
+        return students.map { s ->
+            mapOf(
+                "id" to s.id,
+                "studentNo" to (s.studentNumber.toIntOrNull() ?: 0),
+                "studentNumber" to s.studentNumber,
+                "fullName" to s.fullName,
+                "gender" to s.gender,
+                "parentCode" to "••••••••", // Veli Katılım Kodu akıllı tahta projeksiyonunda gizlenir
+                "parentInviteCode" to "••••••••",
+                "stars" to (starMap[s.id] ?: 0)
+            )
+        }
+    }
+
+    /**
      * Akıllı tahtada görünen 8 haneli kod ile eşleştirme yapar.
      * `board_sessions/{temizKod}` belgesine CONNECTED durumu yazar (SetOptions.merge() ile).
      * Maksimum 1 saniye timeout ile çalışır, arayüzü asla bekletmez.
@@ -91,7 +128,9 @@ object SmartBoardHelper {
         currentSubPageTitle: String,
         activeDay: String = "PZT",
         students: List<Student> = emptyList(),
-        schedule: List<ScheduleLesson> = emptyList()
+        schedule: List<ScheduleLesson> = emptyList(),
+        seatingPlanState: SeatingPlanState? = null,
+        groupMakerState: GroupMakerState? = null
     ): Result<Unit> {
         val cleanCode = normalizeCode(sessionCode)
         if (cleanCode.length < 4) {
@@ -99,18 +138,7 @@ object SmartBoardHelper {
         }
 
         val now = System.currentTimeMillis()
-
-        val studentData = students.map { s ->
-            mapOf(
-                "id" to s.id,
-                "studentNo" to (s.studentNumber.toIntOrNull() ?: 0),
-                "studentNumber" to s.studentNumber,
-                "fullName" to s.fullName,
-                "gender" to s.gender,
-                "parentCode" to s.parentInviteCode,
-                "parentInviteCode" to s.parentInviteCode
-            )
-        }
+        val studentData = prepareStudentPresentationData(context, classId, students)
 
         val scheduleData = schedule.map { l ->
             mapOf(
@@ -120,6 +148,31 @@ object SmartBoardHelper {
                 "topicOrNotes" to l.topicOrNotes,
                 "teacherName" to l.teacherName,
                 "colorTheme" to l.colorTheme
+            )
+        }
+
+        val seatingData = seatingPlanState?.let { plan ->
+            mapOf(
+                "groupCount" to plan.config.groupCount,
+                "rowsPerGroup" to plan.config.rowsPerGroup,
+                "peoplePerRow" to plan.config.peoplePerRow,
+                "assignments" to plan.assignments,
+                "activePlanName" to plan.activePlanName
+            )
+        }
+
+        val groupsData = groupMakerState?.let { gm ->
+            mapOf(
+                "groups" to gm.groups.map { g ->
+                    mapOf(
+                        "id" to g.id,
+                        "name" to g.name,
+                        "colorTheme" to g.colorTheme.id,
+                        "leaderStudentId" to g.leaderStudentId,
+                        "studentIds" to g.studentIds
+                    )
+                },
+                "isPresenterMode" to gm.isPresenterMode
             )
         }
 
@@ -143,6 +196,8 @@ object SmartBoardHelper {
             "connectedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
+        if (seatingData != null) sessionPayload["seatingPlan"] = seatingData
+        if (groupsData != null) sessionPayload["groups"] = groupsData
 
         return try {
             val mainDb = getMainFirestore(context)
@@ -169,7 +224,9 @@ object SmartBoardHelper {
                 currentSubPageTitle = currentSubPageTitle,
                 activeDay = activeDay,
                 students = students,
-                schedule = schedule
+                schedule = schedule,
+                seatingPlanState = seatingPlanState,
+                groupMakerState = groupMakerState
             )
 
             // Yedek varsayılan veritabanına arka planda sessizce yaz
@@ -207,23 +264,15 @@ object SmartBoardHelper {
         activeDay: String = "PZT",
         students: List<Student> = emptyList(),
         schedule: List<ScheduleLesson> = emptyList(),
+        seatingPlanState: SeatingPlanState? = null,
+        groupMakerState: GroupMakerState? = null,
         extraData: Map<String, Any?> = emptyMap()
     ) {
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
         val isPrivacyMode = !isLiveMirrorActive
         val now = System.currentTimeMillis()
 
-        val studentData = students.map { s ->
-            mapOf(
-                "id" to s.id,
-                "studentNo" to (s.studentNumber.toIntOrNull() ?: 0),
-                "studentNumber" to s.studentNumber,
-                "fullName" to s.fullName,
-                "gender" to s.gender,
-                "parentCode" to s.parentInviteCode,
-                "parentInviteCode" to s.parentInviteCode
-            )
-        }
+        val studentData = prepareStudentPresentationData(context, classId, students)
 
         val scheduleData = schedule.map { l ->
             mapOf(
@@ -233,6 +282,31 @@ object SmartBoardHelper {
                 "topicOrNotes" to l.topicOrNotes,
                 "teacherName" to l.teacherName,
                 "colorTheme" to l.colorTheme
+            )
+        }
+
+        val seatingData = seatingPlanState?.let { plan ->
+            mapOf(
+                "groupCount" to plan.config.groupCount,
+                "rowsPerGroup" to plan.config.rowsPerGroup,
+                "peoplePerRow" to plan.config.peoplePerRow,
+                "assignments" to plan.assignments,
+                "activePlanName" to plan.activePlanName
+            )
+        }
+
+        val groupsData = groupMakerState?.let { gm ->
+            mapOf(
+                "groups" to gm.groups.map { g ->
+                    mapOf(
+                        "id" to g.id,
+                        "name" to g.name,
+                        "colorTheme" to g.colorTheme.id,
+                        "leaderStudentId" to g.leaderStudentId,
+                        "studentIds" to g.studentIds
+                    )
+                },
+                "isPresenterMode" to gm.isPresenterMode
             )
         }
 
@@ -249,6 +323,12 @@ object SmartBoardHelper {
         }
         if (scheduleData.isNotEmpty()) {
             boardSessionUpdate["schedule"] = scheduleData
+        }
+        if (seatingData != null) {
+            boardSessionUpdate["seatingPlan"] = seatingData
+        }
+        if (groupsData != null) {
+            boardSessionUpdate["groups"] = groupsData
         }
         if (cleanCode != null) {
             boardSessionUpdate["sessionCode"] = cleanCode
@@ -273,6 +353,12 @@ object SmartBoardHelper {
         }
         if (scheduleData.isNotEmpty()) {
             liveBoardPayload["schedule"] = scheduleData
+        }
+        if (seatingData != null) {
+            liveBoardPayload["seatingPlan"] = seatingData
+        }
+        if (groupsData != null) {
+            liveBoardPayload["groups"] = groupsData
         }
         if (extraData.isNotEmpty()) {
             liveBoardPayload["extraData"] = extraData
@@ -384,6 +470,60 @@ object SmartBoardHelper {
                         )
                 }
             } catch (ignored: Exception) {}
+        }
+    }
+
+    /**
+     * Akıllı Tahta Web Dosyası (`tahta.html`) HTML İçeriğini Döndürür.
+     */
+    fun getTahtaHtmlContent(context: Context): String {
+        return try {
+            context.assets.open("tahta.html").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read tahta.html from assets, trying fallback: ${e.message}")
+            try {
+                val f = File("public/tahta.html")
+                if (f.exists()) f.readText(Charsets.UTF_8) else ""
+            } catch (ignored: Exception) {
+                ""
+            }
+        }
+    }
+
+    /**
+     * Akıllı Tahta web dosyasını (`tahta.html`) oluşturup dışa aktarır / paylaşır.
+     */
+    fun downloadOrShareTahtaHtml(context: Context) {
+        try {
+            val content = getTahtaHtmlContent(context)
+
+            // 1. Dosyayı yerel cache klasörüne kaydet
+            val file = File(context.cacheDir, "tahta.html")
+            file.writeText(content, Charsets.UTF_8)
+
+            // 2. Kodu panoya da kopyala (Kullanıcı dilerse doğrudan yapıştırabilsin)
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            if (clipboard != null) {
+                val clip = ClipData.newPlainText("tahta.html", content)
+                clipboard.setPrimaryClip(clip)
+            }
+
+            // 3. Android Share Intent ile paylaş / bilgisayara aktar
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(Intent.EXTRA_SUBJECT, "BİRİZ - Akıllı Tahta Canlı Ekran Dosyası (tahta.html)")
+                putExtra(Intent.EXTRA_TEXT, content)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(shareIntent, "Akıllı Tahta Dosyasını (tahta.html) İndir / Paylaş").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+
+            Toast.makeText(context, "📥 tahta.html hazırlandı ve panoya kopyalandı!", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading or sharing tahta.html", e)
+            Toast.makeText(context, "Dosya hazırlanırken hata: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 }
