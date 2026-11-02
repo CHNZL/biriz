@@ -56,6 +56,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -185,6 +187,16 @@ fun TeacherDashboardScreen(
     onMarkAllNotificationsAsRead: () -> Unit = {},
     onSetActiveChatStudent: (String?) -> Unit = {},
     onOpenUpdateDialog: () -> Unit = {},
+    connectedBoardSessionCode: String? = null,
+    isLiveBoardMirrorActive: Boolean = true,
+    isSmartBoardDialogOpen: Boolean = false,
+    isConnectingBoard: Boolean = false,
+    smartBoardMessage: String? = null,
+    onOpenSmartBoardDialog: () -> Unit = {},
+    onDismissSmartBoardDialog: () -> Unit = {},
+    onConnectSmartBoard: (String) -> Unit = {},
+    onToggleLiveBoardMirror: (Boolean) -> Unit = {},
+    onDisconnectSmartBoard: () -> Unit = {},
     onDeleteStudent: (Student) -> Unit,
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -318,11 +330,53 @@ fun TeacherDashboardScreen(
                             )
                         }
 
-                        // Sağ İkon Butonları: Tema Değiştirici + Bildirim + Profil + Çıkış
+                        // Sağ İkon Butonları: Akıllı Tahta + Tema Değiştirici + Bildirim + Profil + Çıkış
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
+                            // 🖥️ Akıllı Tahta Kumandası Butonu
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onOpenSmartBoardDialog() }
+                                    .testTag("dashboard_smart_board_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (!connectedBoardSessionCode.isNullOrBlank()) {
+                                    if (isLiveBoardMirrorActive) Color(0xFF059669) else Color(0xFFD97706)
+                                } else {
+                                    if (isDarkTheme) Color(0x35334E68) else Color(0x25FFFFFF)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (!connectedBoardSessionCode.isNullOrBlank()) {
+                                        Color.White.copy(alpha = 0.6f)
+                                    } else {
+                                        if (isDarkTheme) Color(0x4064748B) else Color(0x30FFFFFF)
+                                    }
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "🖥️", fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = if (!connectedBoardSessionCode.isNullOrBlank()) {
+                                            if (isLiveBoardMirrorActive) "Canlı" else "Gizli"
+                                        } else {
+                                            "Tahta"
+                                        },
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(2.dp))
+
                             // Açık / Koyu Tema Butonu
                             ThemeToggleIconButton(
                                 isDark = isDarkTheme,
@@ -389,6 +443,72 @@ fun TeacherDashboardScreen(
                                     contentDescription = "Çıkış Yap",
                                     tint = Color.White.copy(alpha = 0.85f),
                                     modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- 1.1 SABİT AKILLI TAHTA CANLI YANSITMA / GİZLİLİK MODU BARI ---
+            if (!connectedBoardSessionCode.isNullOrBlank()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (isLiveBoardMirrorActive) Color(0xFF064E3B) else Color(0xFF78350F),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = if (isLiveBoardMirrorActive) "🟢" else "🔒",
+                                fontSize = 13.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text(
+                                    text = if (isLiveBoardMirrorActive) "Canlı Yansıtma Açık" else "Gizlilik Modu (Yayın Duraklatıldı)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isLiveBoardMirrorActive) Color(0xFF6EE7B7) else Color(0xFFFDE68A)
+                                )
+                                Text(
+                                    text = "Tahta: $connectedBoardSessionCode • Sayfa: ${currentSubPage.title}",
+                                    fontSize = 10.5.sp,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Canlı / Gizlilik Modu Toggle Butonu
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onToggleLiveBoardMirror(!isLiveBoardMirrorActive) }
+                                .testTag("smart_board_mirror_toggle"),
+                            color = if (isLiveBoardMirrorActive) Color(0xFF047857) else Color(0xFFB45309),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isLiveBoardMirrorActive) "🔒 Gizle" else "🟢 Yansıt",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
                             }
                         }
@@ -914,5 +1034,258 @@ fun TeacherDashboardScreen(
                 }
             }
         }
+
+        // 5. Akıllı Tahta Eşleştirme ve Kumanda Diyaloğu
+        if (isSmartBoardDialogOpen) {
+            SmartBoardDialog(
+                connectedBoardSessionCode = connectedBoardSessionCode,
+                isLiveBoardMirrorActive = isLiveBoardMirrorActive,
+                isConnecting = isConnectingBoard,
+                statusMessage = smartBoardMessage,
+                isDarkTheme = isDarkTheme,
+                onDismiss = onDismissSmartBoardDialog,
+                onConnect = onConnectSmartBoard,
+                onToggleMirror = onToggleLiveBoardMirror,
+                onDisconnect = onDisconnectSmartBoard
+            )
+        }
     }
 }
+
+@Composable
+fun SmartBoardDialog(
+    connectedBoardSessionCode: String?,
+    isLiveBoardMirrorActive: Boolean,
+    isConnecting: Boolean,
+    statusMessage: String?,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit,
+    onConnect: (String) -> Unit,
+    onToggleMirror: (Boolean) -> Unit,
+    onDisconnect: () -> Unit
+) {
+    var codeInput by remember { mutableStateOf("") }
+    val isConnected = !connectedBoardSessionCode.isNullOrBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "🖥️", fontSize = 22.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Akıllı Tahta Kumandası",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Kapat",
+                        tint = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isConnected) {
+                    // Bağlı Durum
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF059669).copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, Color(0xFF059669).copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "🟢", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Akıllı Tahta Bağlı!",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF065F46)
+                                )
+                                Text(
+                                    text = "Eşleşme Kodu: $connectedBoardSessionCode",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isDarkTheme) Color(0xFFD1FAE5) else Color(0xFF047857)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Canlı Yansıtma Anahtarı (Toggle)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkTheme) BirizDarkCardGlass else Color(0xFFF8FAFC)
+                        ),
+                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = if (isLiveBoardMirrorActive) "🟢 Canlı Yansıtma Açık" else "🔒 Gizlilik Modu",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                )
+                                Text(
+                                    text = if (isLiveBoardMirrorActive) {
+                                        "Telefonda gezindiğiniz sayfalar anında tahtada gösterilir."
+                                    } else {
+                                        "Yayın duraklatıldı. Tahtada gizlilik perdesi gösterilir."
+                                    },
+                                    fontSize = 11.5.sp,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            Switch(
+                                checked = isLiveBoardMirrorActive,
+                                onCheckedChange = { onToggleMirror(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF059669),
+                                    uncheckedThumbColor = Color.White,
+                                    uncheckedTrackColor = Color(0xFFD97706)
+                                ),
+                                modifier = Modifier.testTag("smart_board_mirror_switch")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Bağlantıyı Kes Butonu
+                    OutlinedButton(
+                        onClick = onDisconnect,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("smart_board_disconnect_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = BirizError
+                        ),
+                        border = BorderStroke(1.dp, BirizError.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = "Tahta Bağlantısını Kes",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp
+                        )
+                    }
+                } else {
+                    // Bağlı Değil Durum: Kod Girme Ekranı
+                    Text(
+                        text = "Akıllı tahta tarayıcısında (cihanogretmen.com) görünen 8 haneli eşleştirme kodunu girin:",
+                        fontSize = 12.5.sp,
+                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = codeInput,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 10) {
+                                codeInput = newValue.uppercase().filter { it.isLetterOrDigit() }
+                            }
+                        },
+                        label = { Text("Eşleştirme Kodu") },
+                        placeholder = { Text("Örn: BRZ94K7P") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("smart_board_code_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    if (!statusMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = statusMessage,
+                            fontSize = 11.5.sp,
+                            color = if (statusMessage.startsWith("✅")) Color(0xFF059669) else BirizError,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (codeInput.isNotBlank()) {
+                                onConnect(codeInput.trim())
+                            }
+                        },
+                        enabled = codeInput.trim().length >= 4 && !isConnecting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("smart_board_connect_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BirizTurquoise,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (isConnecting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Bağlanıyor...", fontWeight = FontWeight.Bold)
+                        } else {
+                            Text("Tahtaya Bağlan 🚀", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "Kapat",
+                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                )
+            }
+        }
+    )
+}
+
