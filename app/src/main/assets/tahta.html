@@ -8,27 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
   
-  <!-- Firebase JS SDK (v10 modular via esm / unpkg) -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
-      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
-      projectId: "gen-lang-client-0343498023",
-      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app, "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
-
-    window.BİRİZ_DB = db;
-    window.BİRİZ_DOC = doc;
-    window.BİRİZ_SNAPSHOT = onSnapshot;
-    window.BİRİZ_SET_DOC = setDoc;
-    window.dispatchEvent(new Event("biriz-firebase-ready"));
-  </script>
+  <!-- Firebase JS SDK (Compat: works on file://, Cloudflare, and all custom domains without CORS issues) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
   <style>
     :root {
@@ -874,7 +856,31 @@
   </main>
 
   <script>
-    // --- 1. OTURUM KODU OLUŞTURMA VE YÖNETİMİ ---
+    // --- 1. FIREBASE BAŞLATMA (COMPAT: file:// ve Domain Uyumlu) ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
+      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
+      projectId: "gen-lang-client-0343498023",
+      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
+    };
+
+    let db = null;
+    try {
+      if (typeof firebase !== "undefined") {
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        try {
+          db = firebase.app().firestore("ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
+        } catch (e) {
+          db = firebase.firestore();
+        }
+      }
+    } catch (err) {
+      console.warn("Firebase başlatma uyarısı:", err);
+    }
+
+    // --- 2. OTURUM KODU OLUŞTURMA VE GÖSTERİMİ ---
     function generateSessionCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       let code = "BRZ";
@@ -884,30 +890,35 @@
       return code;
     }
 
-    let sessionCode = localStorage.getItem("biriz_board_session_code");
+    let sessionCode = null;
+    try {
+      sessionCode = localStorage.getItem("biriz_board_session_code");
+    } catch (e) {
+      console.warn("localStorage erişilemedi, geçici kod kullanılıyor", e);
+    }
     if (!sessionCode || sessionCode.length < 6) {
       sessionCode = generateSessionCode();
-      localStorage.setItem("biriz_board_session_code", sessionCode);
+      try {
+        localStorage.setItem("biriz_board_session_code", sessionCode);
+      } catch (ignored) {}
     }
-    document.getElementById("session-code-display").innerText = sessionCode;
 
-    // --- 2. DURUM YÖNETİMİ ---
+    const codeEl = document.getElementById("session-code-display");
+    if (codeEl) {
+      codeEl.innerText = sessionCode;
+    }
+
+    // --- 3. DURUM YÖNETİMİ ---
     let currentModule = null; // Aktif sayfa sıfırlanmasını önlemek için bellek durumu
     let latestData = null;
     let selectedDay = "PZT";
     let timerSeconds = 300;
     let timerInterval = null;
 
-    // --- 3. FIRESTORE DİNLEYİCİSİ ---
-    window.addEventListener("biriz-firebase-ready", () => {
-      const db = window.BİRİZ_DB;
-      const doc = window.BİRİZ_DOC;
-      const onSnapshot = window.BİRİZ_SNAPSHOT;
-
-      const sessionRef = doc(db, "board_sessions", sessionCode);
-
-      onSnapshot(sessionRef, (snap) => {
-        if (!snap.exists()) return;
+    // --- 4. FIRESTORE DİNLEYİCİSİ ---
+    if (db) {
+      db.collection("board_sessions").doc(sessionCode).onSnapshot((snap) => {
+        if (!snap || !snap.exists) return;
         const data = snap.data();
         latestData = data;
 
@@ -918,14 +929,17 @@
         if (isConnected) {
           // Gizlilik Kalkanı Kontrolü
           const isPrivacy = data.isPrivacyMode === true;
-          document.getElementById("privacy-overlay").style.display = isPrivacy ? "flex" : "none";
+          const overlay = document.getElementById("privacy-overlay");
+          if (overlay) overlay.style.display = isPrivacy ? "flex" : "none";
 
           // Sınıf başlığı
           if (data.schoolName) {
-            document.getElementById("school-title").innerText = data.schoolName;
+            const schoolEl = document.getElementById("school-title");
+            if (schoolEl) schoolEl.innerText = data.schoolName;
           }
           if (data.grade && data.branch) {
-            document.getElementById("class-name").innerText = `${data.grade}/${data.branch} Sınıfı`;
+            const classEl = document.getElementById("class-name");
+            if (classEl) classEl.innerText = `${data.grade}/${data.branch} Sınıfı`;
           }
 
           // Sayfa Sıfırlanmasını Önleme Kuralı:
@@ -939,8 +953,10 @@
             updateActiveModuleData(newModule, data);
           }
         }
+      }, (error) => {
+        console.warn("Firestore dinleme hatası:", error);
       });
-    });
+    }
 
     function updateConnectionUI(isConnected, data) {
       const pill = document.getElementById("connection-pill");

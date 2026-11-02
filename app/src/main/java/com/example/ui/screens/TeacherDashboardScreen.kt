@@ -1284,8 +1284,65 @@ fun SmartBoardDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // 📥 Akıllı Tahta Web Dosyasını (tahta.html) İndir Butonu
                 val context = LocalContext.current
+
+                // 🌐 Akıllı Tahta Web Ekranı Adresi (cihanogretmen.com/tahta)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) Color(0x2000B4D8) else Color(0x1000B4D8),
+                    border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🌐", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Akıllı Tahta Web Ekranı",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clickable { SmartBoardHelper.copySmartBoardUrl(context) }
+                                    .background(
+                                        color = if (isDarkTheme) Color(0x3000B4D8) else Color(0x1500B4D8),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text("📋 Kopyala", fontSize = 11.sp, color = BirizTurquoise, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text(
+                            text = "cihanogretmen.com/tahta",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BirizTurquoise
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Okuldaki akıllı tahta tarayıcısında bu adresi açabilirsiniz.",
+                            fontSize = 10.5.sp,
+                            color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 📥 Akıllı Tahta Web Dosyasını (tahta.html) İndir Butonu
                 OutlinedButton(
                     onClick = {
                         SmartBoardHelper.downloadOrShareTahtaHtml(context)
@@ -1295,21 +1352,21 @@ fun SmartBoardDialog(
                         .testTag("download_tahta_html_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isDarkTheme) Color(0x2500B4D8) else Color(0x1000B4D8),
-                        contentColor = if (isDarkTheme) Color(0xFF67E8F9) else BirizTurquoise
+                        containerColor = if (isDarkTheme) Color(0x15FFFFFF) else Color(0x081B2A4A),
+                        contentColor = if (isDarkTheme) Color.White else BirizNavyPrimary
                     ),
-                    border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.5f))
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color.White.copy(alpha = 0.2f) else BirizBorder)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Text(text = "📥", fontSize = 16.sp)
+                        Text(text = "📥", fontSize = 15.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Akıllı Tahta Web Dosyasını (tahta.html) İndir",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.5.sp
+                            text = "Web Dosyasını (tahta.html) İndir / Paylaş",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
                         )
                     }
                 }

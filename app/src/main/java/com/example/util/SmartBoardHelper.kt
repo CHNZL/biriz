@@ -473,20 +473,78 @@ object SmartBoardHelper {
         }
     }
 
+    const val SMART_BOARD_WEB_URL = "https://cihanogretmen.com/tahta"
+
     /**
      * Akıllı Tahta Web Dosyası (`tahta.html`) HTML İçeriğini Döndürür.
      */
     fun getTahtaHtmlContent(context: Context): String {
-        return try {
+        val loaded = try {
             context.assets.open("tahta.html").bufferedReader(Charsets.UTF_8).use { it.readText() }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not read tahta.html from assets, trying fallback: ${e.message}")
+            Log.w(TAG, "Could not read tahta.html from assets, trying file fallback: ${e.message}")
             try {
                 val f = File("public/tahta.html")
                 if (f.exists()) f.readText(Charsets.UTF_8) else ""
             } catch (ignored: Exception) {
                 ""
             }
+        }
+
+        if (loaded.isNotBlank() && loaded.length > 500) {
+            return loaded
+        }
+
+        // Failsafe acil durum HTML şablonu (Asla boş dosya oluşmasın)
+        return """
+            <!DOCTYPE html>
+            <html lang="tr">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>BİRİZ - Akıllı Tahta Canlı Ekranı</title>
+              <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+              <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+              <style>
+                body { font-family: system-ui, sans-serif; background: #F8FAFC; color: #0F172A; text-align: center; padding: 40px; }
+                .card { background: white; border-radius: 24px; padding: 40px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+                .code { font-size: 3rem; font-weight: 800; color: #1B2A4A; background: #EFF6FF; padding: 16px; border-radius: 16px; letter-spacing: 4px; margin: 20px 0; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>🖥️ BİRİZ Akıllı Tahta</h1>
+                <p>Telefondaki kod giriş alanına aşağıdaki 8 haneli kodu giriniz:</p>
+                <div class="code" id="code">BRZ94K7P</div>
+              </div>
+              <script>
+                const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                let c = "BRZ";
+                for (let i = 0; i < 5; i++) c += chars.charAt(Math.floor(Math.random() * chars.length));
+                document.getElementById("code").innerText = c;
+              </script>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+    fun copySmartBoardUrl(context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard != null) {
+            val clip = ClipData.newPlainText("Akıllı Tahta Adresi", SMART_BOARD_WEB_URL)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "🔗 Web adresi panoya kopyalandı:\n$SMART_BOARD_WEB_URL", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openSmartBoardUrl(context: Context) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SMART_BOARD_WEB_URL)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            copySmartBoardUrl(context)
         }
     }
 
@@ -520,7 +578,7 @@ object SmartBoardHelper {
             }
             context.startActivity(chooser)
 
-            Toast.makeText(context, "📥 tahta.html hazırlandı ve panoya kopyalandı!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "📥 tahta.html (${file.length() / 1024} KB) hazırlandı ve panoya kopyalandı!", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading or sharing tahta.html", e)
             Toast.makeText(context, "Dosya hazırlanırken hata: ${e.message}", Toast.LENGTH_SHORT).show()
