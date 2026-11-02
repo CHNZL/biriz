@@ -925,26 +925,33 @@ class BirizViewModel(
 
         _uiState.value = _uiState.value.copy(currentSubPage = subPage)
 
-        // Akıllı Tahta Canlı Yansıtma Durumu
-        val activeCode = _uiState.value.connectedBoardSessionCode
-        if (activeCode != null && _uiState.value.isLiveBoardMirrorActive) {
-            val ctx = appContext
-            val activeClass = _uiState.value.activeClassRoom
-            if (ctx != null && activeClass != null) {
-                SmartBoardHelper.updateLiveBoardState(
-                    context = ctx,
-                    classId = activeClass.id,
-                    sessionCode = activeCode,
-                    isLiveMirrorActive = _uiState.value.isLiveBoardMirrorActive,
-                    currentSubPage = subPage.name,
-                    currentSubPageTitle = subPage.title,
-                    activeDay = _uiState.value.activeScheduleDay
-                )
-            }
-        }
+        // Akıllı Tahta Canlı Yansıtma Senkronizasyonu
+        triggerSmartBoardSync(subPage = subPage)
     }
 
     // --- AKILLI TAHTA KUMANDASI VE CANLI YANSITMA METODLARI ---
+
+    fun triggerSmartBoardSync(
+        subPage: DashboardSubPage = _uiState.value.currentSubPage,
+        day: String = _uiState.value.activeScheduleDay,
+        isMirrorActive: Boolean = _uiState.value.isLiveBoardMirrorActive
+    ) {
+        val activeCode = _uiState.value.connectedBoardSessionCode ?: return
+        val ctx = appContext ?: return
+        val activeClass = _uiState.value.activeClassRoom ?: return
+
+        SmartBoardHelper.updateLiveBoardState(
+            context = ctx,
+            classId = activeClass.id,
+            sessionCode = activeCode,
+            isLiveMirrorActive = isMirrorActive,
+            currentSubPage = subPage.name,
+            currentSubPageTitle = subPage.title,
+            activeDay = day,
+            students = repository.students.value,
+            schedule = _uiState.value.scheduleLessons
+        )
+    }
 
     fun openSmartBoardDialog() {
         _uiState.value = _uiState.value.copy(isSmartBoardDialogOpen = true, smartBoardMessage = null)
@@ -959,25 +966,31 @@ class BirizViewModel(
         val activeClass = _uiState.value.activeClassRoom ?: return
         val teacherUid = Firebase.auth.currentUser?.uid ?: "preview_teacher"
         val teacherName = _uiState.value.currentUser.fullName
+        val cleanCode = SmartBoardHelper.normalizeCode(sessionCode)
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isConnectingBoard = true, smartBoardMessage = null)
             val result = SmartBoardHelper.connectSession(
                 context = ctx,
-                sessionCode = sessionCode,
+                sessionCode = cleanCode,
                 classId = activeClass.id,
                 teacherUid = teacherUid,
                 teacherName = teacherName,
+                schoolName = activeClass.schoolName,
+                grade = activeClass.gradeLevel,
+                branch = activeClass.section,
                 currentSubPage = _uiState.value.currentSubPage.name,
                 currentSubPageTitle = _uiState.value.currentSubPage.title,
-                activeDay = _uiState.value.activeScheduleDay
+                activeDay = _uiState.value.activeScheduleDay,
+                students = repository.students.value,
+                schedule = _uiState.value.scheduleLessons
             )
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
-                    connectedBoardSessionCode = sessionCode.trim().uppercase(),
+                    connectedBoardSessionCode = cleanCode,
                     isLiveBoardMirrorActive = true,
                     isConnectingBoard = false,
-                    smartBoardMessage = "Akıllı Tahtaya başarıyla bağlandı!",
+                    smartBoardMessage = "Akıllı Tahtaya başarıyla bağlandı! ($cleanCode)",
                     isSmartBoardDialogOpen = false
                 )
             } else {
@@ -991,19 +1004,10 @@ class BirizViewModel(
 
     fun toggleLiveBoardMirror(active: Boolean) {
         val ctx = appContext ?: return
-        val activeClass = _uiState.value.activeClassRoom ?: return
         val code = _uiState.value.connectedBoardSessionCode
         _uiState.value = _uiState.value.copy(isLiveBoardMirrorActive = active)
         SmartBoardHelper.saveConnectionState(ctx, code, active)
-        SmartBoardHelper.updateLiveBoardState(
-            context = ctx,
-            classId = activeClass.id,
-            sessionCode = code,
-            isLiveMirrorActive = active,
-            currentSubPage = _uiState.value.currentSubPage.name,
-            currentSubPageTitle = _uiState.value.currentSubPage.title,
-            activeDay = _uiState.value.activeScheduleDay
-        )
+        triggerSmartBoardSync(isMirrorActive = active)
     }
 
     fun disconnectSmartBoard() {
@@ -1215,22 +1219,8 @@ class BirizViewModel(
         }
         _uiState.value = _uiState.value.copy(activeScheduleDay = day)
 
-        val activeCode = _uiState.value.connectedBoardSessionCode
-        if (activeCode != null && _uiState.value.isLiveBoardMirrorActive) {
-            val ctx = appContext
-            val activeClass = _uiState.value.activeClassRoom
-            if (ctx != null && activeClass != null) {
-                SmartBoardHelper.updateLiveBoardState(
-                    context = ctx,
-                    classId = activeClass.id,
-                    sessionCode = activeCode,
-                    isLiveMirrorActive = _uiState.value.isLiveBoardMirrorActive,
-                    currentSubPage = _uiState.value.currentSubPage.name,
-                    currentSubPageTitle = _uiState.value.currentSubPage.title,
-                    activeDay = day
-                )
-            }
-        }
+        // Akıllı Tahta Canlı Gün Güncellemesi
+        triggerSmartBoardSync(day = day)
     }
 
     // --- AKILLI SINIF OTURMA PLANI METODLARI ---

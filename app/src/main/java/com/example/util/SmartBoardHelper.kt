@@ -3,10 +3,11 @@ package com.example.util
 import android.content.Context
 import android.util.Log
 import com.example.R
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
+import com.example.data.model.ScheduleLesson
+import com.example.data.model.Student
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,9 +15,11 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
- * - Firestore `board_sessions/{sessionCode}` eşleştirmesini yönetir.
- * - `classes/{classId}/live_board/state` ve `classrooms/{classId}/live_board/state`
- *   belgelerine öğretmenin seçtiği ekranı ve canlı veriyi gerçek zamanlı yansıtır.
+ * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
+ *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
+ *   belgelerini anlık günceller.
+ * - Garanti eşleşme için hem özel `ai-studio-android-biriz-...` veritabanına
+ *   hem de varsayılan `(default)` Firestore veritabanına aynı anda yazar.
  */
 object SmartBoardHelper {
     private const val TAG = "SmartBoardHelper"
@@ -25,14 +28,39 @@ object SmartBoardHelper {
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    private fun getFirestore(context: Context): FirebaseFirestore? {
-        return try {
-            val dbId = context.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
+    /**
+     * 1. KOD NORMALİZASYONU (Tire, boşluk ve yabancı karakter temizliği)
+     * Örn: "BRZ9-4K7P" veya "brz9 4k7p" -> "BRZ94K7P"
+     */
+    fun normalizeCode(code: String): String {
+        return code.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
+    }
+
+    /**
+     * 2. ÇİFT VERİTABANI YÖNETİMİ
+     * Hem özel veritabanını hem de varsayılan (default) veritabanını döndürür.
+     */
+    fun getAllFirestores(context: Context): List<FirebaseFirestore> {
+        val instances = mutableListOf<FirebaseFirestore>()
+        // 1. Özel / İsimlendirilmiş Veritabanı
+        try {
+            val customDbId = context.getString(R.string.firestore_database_id)
+            if (customDbId.isNotBlank()) {
+                instances.add(FirebaseFirestore.getInstance(customDbId))
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting Firestore with custom DB ID", e)
-            null
+            Log.w(TAG, "Custom database instance error: ${e.message}")
         }
+        // 2. Varsayılan (default) Veritabanı
+        try {
+            val defaultDb = FirebaseFirestore.getInstance()
+            if (!instances.contains(defaultDb)) {
+                instances.add(defaultDb)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Default database instance error: ${e.message}")
+        }
+        return instances
     }
 
     fun getSavedSessionCode(context: Context): String? {
@@ -55,7 +83,7 @@ object SmartBoardHelper {
 
     /**
      * Akıllı tahtada görünen 8 haneli kod ile eşleştirme yapar.
-     * `board_sessions/{sessionCode}` belgesine CONNECTED durumu yazar.
+     * `board_sessions/{temizKod}` belgesine CONNECTED durumu yazar (SetOptions.merge() ile).
      */
     suspend fun connectSession(
         context: Context,
@@ -63,33 +91,85 @@ object SmartBoardHelper {
         classId: String,
         teacherUid: String,
         teacherName: String,
+        schoolName: String,
+        grade: Int,
+        branch: String,
         currentSubPage: String,
         currentSubPageTitle: String,
-        activeDay: String = "PZT"
+        activeDay: String = "PZT",
+        students: List<Student> = emptyList(),
+        schedule: List<ScheduleLesson> = emptyList()
     ): Result<Unit> {
-        val cleanCode = sessionCode.trim().uppercase()
+        val cleanCode = normalizeCode(sessionCode)
         if (cleanCode.length < 4) {
             return Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
         }
 
-        val db = getFirestore(context)
-            ?: return Result.failure(IllegalStateException("Bulut veritabanına bağlanılamadı."))
+        val databases = getAllFirestores(context)
+        if (databases.isEmpty()) {
+            return Result.failure(IllegalStateException("Bulut veritabanına bağlanılamadı."))
+        }
+
+        val now = System.currentTimeMillis()
+
+        val studentData = students.map { s ->
+            mapOf(
+                "id" to s.id,
+                "studentNo" to (s.studentNumber.toIntOrNull() ?: 0),
+                "studentNumber" to s.studentNumber,
+                "fullName" to s.fullName,
+                "gender" to s.gender,
+                "parentCode" to s.parentInviteCode,
+                "parentInviteCode" to s.parentInviteCode
+            )
+        }
+
+        val scheduleData = schedule.map { l ->
+            mapOf(
+                "dayOfWeek" to l.dayOfWeek,
+                "lessonIndex" to l.lessonIndex,
+                "subjectName" to l.subjectName,
+                "topicOrNotes" to l.topicOrNotes,
+                "teacherName" to l.teacherName,
+                "colorTheme" to l.colorTheme
+            )
+        }
+
+        val sessionPayload = hashMapOf<String, Any?>(
+            "sessionCode" to cleanCode,
+            "status" to "CONNECTED",
+            "isConnected" to true,
+            "teacherUid" to teacherUid,
+            "teacherName" to teacherName,
+            "classId" to classId,
+            "schoolName" to schoolName,
+            "grade" to grade,
+            "branch" to branch,
+            "activeModule" to currentSubPage,
+            "activeModuleTitle" to currentSubPageTitle,
+            "isPrivacyMode" to false,
+            "selectedDay" to activeDay,
+            "students" to studentData,
+            "schedule" to scheduleData,
+            "updatedAt" to now,
+            "connectedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
 
         return try {
-            // 1. board_sessions/{sessionCode} güncelle
-            val sessionRef = db.collection("board_sessions").document(cleanCode)
-            val sessionPayload = mapOf(
-                "sessionCode" to cleanCode,
-                "status" to "CONNECTED",
-                "teacherUid" to teacherUid,
-                "teacherName" to teacherName,
-                "classId" to classId,
-                "connectedAt" to FieldValue.serverTimestamp(),
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            sessionRef.set(sessionPayload).await()
+            // Hem isimlendirilmiş hem de default veritabanına merge ile yaz
+            for (db in databases) {
+                try {
+                    db.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(sessionPayload, SetOptions.merge())
+                        .await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed writing session to db: ${e.message}")
+                }
+            }
 
-            // 2. Canlı Yansıtma Başlangıç Durumunu Yaz
+            // Canlı Yansıtma Başlangıç Durumunu da tetikle
             updateLiveBoardState(
                 context = context,
                 classId = classId,
@@ -97,20 +177,23 @@ object SmartBoardHelper {
                 isLiveMirrorActive = true,
                 currentSubPage = currentSubPage,
                 currentSubPageTitle = currentSubPageTitle,
-                activeDay = activeDay
+                activeDay = activeDay,
+                students = students,
+                schedule = schedule
             )
 
             saveConnectionState(context, cleanCode, true)
             Result.success(Unit)
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, "board_sessions/$cleanCode")
+            Log.e(TAG, "Error connecting smart board session", e)
             Result.failure(e)
         }
     }
 
     /**
      * Akıllı tahtaya canlı ekran durumunu yansıtır.
-     * `classes/{classId}/live_board/state` ve `classrooms/{classId}/live_board/state`
+     * DOĞRUDAN `board_sessions/{temizKod}` belgesini ve
+     * `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state` belgelerini günceller.
      */
     fun updateLiveBoardState(
         context: Context,
@@ -120,32 +203,110 @@ object SmartBoardHelper {
         currentSubPage: String,
         currentSubPageTitle: String,
         activeDay: String = "PZT",
+        students: List<Student> = emptyList(),
+        schedule: List<ScheduleLesson> = emptyList(),
         extraData: Map<String, Any?> = emptyMap()
     ) {
-        if (classId.isBlank() || classId == "default") return
-        val db = getFirestore(context) ?: return
+        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+        val databases = getAllFirestores(context)
+        if (databases.isEmpty()) return
+
+        val isPrivacyMode = !isLiveMirrorActive
+        val now = System.currentTimeMillis()
+
+        val studentData = students.map { s ->
+            mapOf(
+                "id" to s.id,
+                "studentNo" to (s.studentNumber.toIntOrNull() ?: 0),
+                "studentNumber" to s.studentNumber,
+                "fullName" to s.fullName,
+                "gender" to s.gender,
+                "parentCode" to s.parentInviteCode,
+                "parentInviteCode" to s.parentInviteCode
+            )
+        }
+
+        val scheduleData = schedule.map { l ->
+            mapOf(
+                "dayOfWeek" to l.dayOfWeek,
+                "lessonIndex" to l.lessonIndex,
+                "subjectName" to l.subjectName,
+                "topicOrNotes" to l.topicOrNotes,
+                "teacherName" to l.teacherName,
+                "colorTheme" to l.colorTheme
+            )
+        }
+
+        val boardSessionUpdate = hashMapOf<String, Any?>(
+            "activeModule" to currentSubPage,
+            "activeModuleTitle" to currentSubPageTitle,
+            "isPrivacyMode" to isPrivacyMode,
+            "selectedDay" to activeDay,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
+        if (studentData.isNotEmpty()) {
+            boardSessionUpdate["students"] = studentData
+        }
+        if (scheduleData.isNotEmpty()) {
+            boardSessionUpdate["schedule"] = scheduleData
+        }
+        if (cleanCode != null) {
+            boardSessionUpdate["sessionCode"] = cleanCode
+            boardSessionUpdate["status"] = "CONNECTED"
+            boardSessionUpdate["isConnected"] = true
+        }
+
+        val liveBoardPayload = hashMapOf<String, Any?>(
+            "classId" to classId,
+            "sessionCode" to (cleanCode ?: ""),
+            "status" to if (cleanCode != null) "CONNECTED" else "DISCONNECTED",
+            "isLiveMirrorActive" to isLiveMirrorActive,
+            "isPrivacyMode" to isPrivacyMode,
+            "currentSubPage" to currentSubPage,
+            "currentSubPageTitle" to currentSubPageTitle,
+            "activeScheduleDay" to activeDay,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
+        if (studentData.isNotEmpty()) {
+            liveBoardPayload["students"] = studentData
+        }
+        if (scheduleData.isNotEmpty()) {
+            liveBoardPayload["schedule"] = scheduleData
+        }
+        if (extraData.isNotEmpty()) {
+            liveBoardPayload["extraData"] = extraData
+        }
 
         scope.launch {
-            try {
-                val payload = mutableMapOf<String, Any?>(
-                    "classId" to classId,
-                    "sessionCode" to (sessionCode ?: ""),
-                    "status" to if (sessionCode != null) "CONNECTED" else "DISCONNECTED",
-                    "isLiveMirrorActive" to isLiveMirrorActive,
-                    "currentSubPage" to currentSubPage,
-                    "currentSubPageTitle" to currentSubPageTitle,
-                    "activeScheduleDay" to activeDay,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-                if (extraData.isNotEmpty()) {
-                    payload["extraData"] = extraData
-                }
+            for (db in databases) {
+                try {
+                    // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
+                    if (!cleanCode.isNullOrBlank()) {
+                        db.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(boardSessionUpdate, SetOptions.merge())
+                    }
 
-                // Hem `classes` hem de `classrooms` yollarına yazılır
-                db.collection("classes").document(classId).collection("live_board").document("state").set(payload)
-                db.collection("classrooms").document(classId).collection("live_board").document("state").set(payload)
-            } catch (e: Exception) {
-                Log.w(TAG, "Live board state update error: ${e.message}")
+                    // 2. classes/{classId}/live_board/state
+                    if (classId.isNotBlank() && classId != "default") {
+                        db.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveBoardPayload, SetOptions.merge())
+
+                        // 3. classrooms/{classId}/live_board/state
+                        db.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveBoardPayload, SetOptions.merge())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error updating live board state: ${e.message}")
+                }
             }
         }
     }
@@ -155,31 +316,50 @@ object SmartBoardHelper {
      */
     fun disconnectSession(context: Context, sessionCode: String?, classId: String) {
         saveConnectionState(context, null, false)
-        if (sessionCode.isNullOrBlank()) return
+        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+        val databases = getAllFirestores(context)
+        if (databases.isEmpty()) return
 
-        val db = getFirestore(context) ?: return
+        val now = System.currentTimeMillis()
         scope.launch {
-            try {
-                db.collection("board_sessions").document(sessionCode.uppercase()).update(
-                    mapOf(
-                        "status" to "DISCONNECTED",
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                )
+            for (db in databases) {
+                try {
+                    if (!cleanCode.isNullOrBlank()) {
+                        val disconnectSessionPayload = mapOf(
+                            "status" to "DISCONNECTED",
+                            "isConnected" to false,
+                            "isPrivacyMode" to true,
+                            "updatedAt" to now
+                        )
+                        db.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(disconnectSessionPayload, SetOptions.merge())
+                    }
 
-                if (classId.isNotBlank()) {
-                    val disconnectPayload = mapOf(
-                        "classId" to classId,
-                        "sessionCode" to "",
-                        "status" to "DISCONNECTED",
-                        "isLiveMirrorActive" to false,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                    db.collection("classes").document(classId).collection("live_board").document("state").set(disconnectPayload)
-                    db.collection("classrooms").document(classId).collection("live_board").document("state").set(disconnectPayload)
+                    if (classId.isNotBlank() && classId != "default") {
+                        val disconnectPayload = mapOf(
+                            "classId" to classId,
+                            "sessionCode" to "",
+                            "status" to "DISCONNECTED",
+                            "isLiveMirrorActive" to false,
+                            "isPrivacyMode" to true,
+                            "updatedAt" to now
+                        )
+                        db.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(disconnectPayload, SetOptions.merge())
+
+                        db.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(disconnectPayload, SetOptions.merge())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error disconnecting smart board: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error disconnecting smart board: ${e.message}")
             }
         }
     }

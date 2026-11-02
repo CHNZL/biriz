@@ -549,6 +549,17 @@ class ExampleUnitTest {
     assertEquals("s3", sorted[1].id)
     assertEquals("s1", sorted[2].id)
   }
+
+  @Test
+  fun testSmartBoardCodeNormalization() {
+    val helper = com.example.util.SmartBoardHelper
+    assertEquals("BRZ94K7P", helper.normalizeCode("BRZ9-4K7P"))
+    assertEquals("BRZ94K7P", helper.normalizeCode(" brz9 4k7p "))
+    assertEquals("BRZ94K7P", helper.normalizeCode("brz9-4k7p!"))
+    assertEquals("BRZ94K7P", helper.normalizeCode("BRZ94K7P"))
+    assertEquals("BRZ12345", helper.normalizeCode("  brz-12-345  "))
+  }
 }
+
 
 

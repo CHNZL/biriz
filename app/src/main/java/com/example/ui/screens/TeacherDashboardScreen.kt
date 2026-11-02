@@ -111,6 +111,7 @@ import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.DashboardSubPage
+import com.example.util.SmartBoardHelper
 
 @Composable
 fun TeacherDashboardScreen(
@@ -1216,16 +1217,23 @@ fun SmartBoardDialog(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val normalizedPreview = SmartBoardHelper.normalizeCode(codeInput)
+
                     OutlinedTextField(
                         value = codeInput,
                         onValueChange = { newValue ->
-                            if (newValue.length <= 10) {
-                                codeInput = newValue.uppercase().filter { it.isLetterOrDigit() }
+                            if (newValue.length <= 14) {
+                                codeInput = newValue.uppercase()
                             }
                         },
                         label = { Text("Eşleştirme Kodu") },
-                        placeholder = { Text("Örn: BRZ94K7P") },
+                        placeholder = { Text("Örn: BRZ94K7P veya BRZ9-4K7P") },
                         singleLine = true,
+                        supportingText = {
+                            if (normalizedPreview.isNotEmpty() && normalizedPreview != codeInput.trim()) {
+                                Text("Algılanan Temiz Kod: $normalizedPreview", color = BirizTurquoise, fontSize = 11.sp)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("smart_board_code_input"),
@@ -1246,11 +1254,11 @@ fun SmartBoardDialog(
 
                     Button(
                         onClick = {
-                            if (codeInput.isNotBlank()) {
-                                onConnect(codeInput.trim())
+                            if (normalizedPreview.isNotBlank()) {
+                                onConnect(normalizedPreview)
                             }
                         },
-                        enabled = codeInput.trim().length >= 4 && !isConnecting,
+                        enabled = normalizedPreview.length >= 4 && !isConnecting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("smart_board_connect_button"),
