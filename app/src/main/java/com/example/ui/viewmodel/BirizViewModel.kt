@@ -40,6 +40,8 @@ import com.example.util.SmartBoardHelper
 import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -968,36 +970,44 @@ class BirizViewModel(
         val teacherName = _uiState.value.currentUser.fullName
         val cleanCode = SmartBoardHelper.normalizeCode(sessionCode)
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isConnectingBoard = true, smartBoardMessage = null)
-            val result = SmartBoardHelper.connectSession(
-                context = ctx,
-                sessionCode = cleanCode,
-                classId = activeClass.id,
-                teacherUid = teacherUid,
-                teacherName = teacherName,
-                schoolName = activeClass.schoolName,
-                grade = activeClass.gradeLevel,
-                branch = activeClass.section,
-                currentSubPage = _uiState.value.currentSubPage.name,
-                currentSubPageTitle = _uiState.value.currentSubPage.title,
-                activeDay = _uiState.value.activeScheduleDay,
-                students = repository.students.value,
-                schedule = _uiState.value.scheduleLessons
+        if (cleanCode.length < 4) {
+            _uiState.value = _uiState.value.copy(
+                smartBoardMessage = "Eşleştirme kodu en az 4 karakter olmalıdır."
             )
-            if (result.isSuccess) {
-                _uiState.value = _uiState.value.copy(
-                    connectedBoardSessionCode = cleanCode,
-                    isLiveBoardMirrorActive = true,
-                    isConnectingBoard = false,
-                    smartBoardMessage = "Akıllı Tahtaya başarıyla bağlandı! ($cleanCode)",
-                    isSmartBoardDialogOpen = false
+            return
+        }
+
+        // 1. OPTIMISTIC UI: Beklemeden ANINDA bağlan ve modalı kapat
+        _uiState.value = _uiState.value.copy(
+            connectedBoardSessionCode = cleanCode,
+            isLiveBoardMirrorActive = true,
+            isConnectingBoard = false,
+            isSmartBoardDialogOpen = false,
+            smartBoardMessage = null,
+            snackbarMessage = "Akıllı Tahta Bağlandı: $cleanCode 🖥️"
+        )
+        SmartBoardHelper.saveConnectionState(ctx, cleanCode, true)
+
+        // 2. Arka Planda Asenkron Yazma (Telefon arayüzünü ASLA kilitlemez)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                SmartBoardHelper.connectSession(
+                    context = ctx,
+                    sessionCode = cleanCode,
+                    classId = activeClass.id,
+                    teacherUid = teacherUid,
+                    teacherName = teacherName,
+                    schoolName = activeClass.schoolName,
+                    grade = activeClass.gradeLevel,
+                    branch = activeClass.section,
+                    currentSubPage = _uiState.value.currentSubPage.name,
+                    currentSubPageTitle = _uiState.value.currentSubPage.title,
+                    activeDay = _uiState.value.activeScheduleDay,
+                    students = repository.students.value,
+                    schedule = _uiState.value.scheduleLessons
                 )
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isConnectingBoard = false,
-                    smartBoardMessage = result.exceptionOrNull()?.message ?: "Bağlantı kurulamadı."
-                )
+            } catch (e: Exception) {
+                Log.w("BirizViewModel", "Background board connect warning: ${e.message}")
             }
         }
     }
@@ -1005,7 +1015,10 @@ class BirizViewModel(
     fun toggleLiveBoardMirror(active: Boolean) {
         val ctx = appContext ?: return
         val code = _uiState.value.connectedBoardSessionCode
-        _uiState.value = _uiState.value.copy(isLiveBoardMirrorActive = active)
+        _uiState.value = _uiState.value.copy(
+            isLiveBoardMirrorActive = active,
+            snackbarMessage = if (active) "Canlı Yansıtma Açık 🟢" else "Gizlilik Modu Aktif (Yayın Duraklatıldı) 🔒"
+        )
         SmartBoardHelper.saveConnectionState(ctx, code, active)
         triggerSmartBoardSync(isMirrorActive = active)
     }
@@ -1021,7 +1034,8 @@ class BirizViewModel(
             connectedBoardSessionCode = null,
             isLiveBoardMirrorActive = false,
             isSmartBoardDialogOpen = false,
-            smartBoardMessage = null
+            smartBoardMessage = null,
+            snackbarMessage = "Akıllı Tahta Bağlantısı Kesildi 🔌"
         )
     }
 

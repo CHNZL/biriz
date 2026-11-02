@@ -12,14 +12,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
  * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
  *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
  *   belgelerini anlık günceller.
- * - Garanti eşleşme için hem özel `ai-studio-android-biriz-...` veritabanına
- *   hem de varsayılan `(default)` Firestore veritabanına aynı anda yazar.
+ * - Ana veritabanı olarak `ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e`
+ *   baz alınır, işlemler hiçbir zaman telefon arayüzünü (UI) kilitlemez.
  */
 object SmartBoardHelper {
     private const val TAG = "SmartBoardHelper"
@@ -37,30 +38,21 @@ object SmartBoardHelper {
     }
 
     /**
-     * 2. ÇİFT VERİTABANI YÖNETİMİ
-     * Hem özel veritabanını hem de varsayılan (default) veritabanını döndürür.
+     * 2. ANA VERİTABANI ERİŞİMİ
+     * Öncelikle projenin özel veritabanını (R.string.firestore_database_id) döndürür.
      */
-    fun getAllFirestores(context: Context): List<FirebaseFirestore> {
-        val instances = mutableListOf<FirebaseFirestore>()
-        // 1. Özel / İsimlendirilmiş Veritabanı
-        try {
+    fun getMainFirestore(context: Context): FirebaseFirestore {
+        return try {
             val customDbId = context.getString(R.string.firestore_database_id)
             if (customDbId.isNotBlank()) {
-                instances.add(FirebaseFirestore.getInstance(customDbId))
+                FirebaseFirestore.getInstance(customDbId)
+            } else {
+                FirebaseFirestore.getInstance()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Custom database instance error: ${e.message}")
+            Log.w(TAG, "Custom database init exception: ${e.message}")
+            FirebaseFirestore.getInstance()
         }
-        // 2. Varsayılan (default) Veritabanı
-        try {
-            val defaultDb = FirebaseFirestore.getInstance()
-            if (!instances.contains(defaultDb)) {
-                instances.add(defaultDb)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Default database instance error: ${e.message}")
-        }
-        return instances
     }
 
     fun getSavedSessionCode(context: Context): String? {
@@ -84,6 +76,7 @@ object SmartBoardHelper {
     /**
      * Akıllı tahtada görünen 8 haneli kod ile eşleştirme yapar.
      * `board_sessions/{temizKod}` belgesine CONNECTED durumu yazar (SetOptions.merge() ile).
+     * Maksimum 1 saniye timeout ile çalışır, arayüzü asla bekletmez.
      */
     suspend fun connectSession(
         context: Context,
@@ -103,11 +96,6 @@ object SmartBoardHelper {
         val cleanCode = normalizeCode(sessionCode)
         if (cleanCode.length < 4) {
             return Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
-        }
-
-        val databases = getAllFirestores(context)
-        if (databases.isEmpty()) {
-            return Result.failure(IllegalStateException("Bulut veritabanına bağlanılamadı."))
         }
 
         val now = System.currentTimeMillis()
@@ -157,19 +145,21 @@ object SmartBoardHelper {
         )
 
         return try {
-            // Hem isimlendirilmiş hem de default veritabanına merge ile yaz
-            for (db in databases) {
+            val mainDb = getMainFirestore(context)
+
+            // Ana veritabanına yaz (Maksimum 1 saniye timeout ile)
+            withTimeoutOrNull(1000) {
                 try {
-                    db.collection("board_sessions")
+                    mainDb.collection("board_sessions")
                         .document(cleanCode)
                         .set(sessionPayload, SetOptions.merge())
                         .await()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed writing session to db: ${e.message}")
+                    Log.w(TAG, "Direct main write timed out or exception: ${e.message}")
                 }
             }
 
-            // Canlı Yansıtma Başlangıç Durumunu da tetikle
+            // Canlı Yansıtma Durumunu da güncelle
             updateLiveBoardState(
                 context = context,
                 classId = classId,
@@ -182,11 +172,23 @@ object SmartBoardHelper {
                 schedule = schedule
             )
 
+            // Yedek varsayılan veritabanına arka planda sessizce yaz
+            scope.launch {
+                try {
+                    val defaultDb = FirebaseFirestore.getInstance()
+                    if (defaultDb != mainDb) {
+                        defaultDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(sessionPayload, SetOptions.merge())
+                    }
+                } catch (ignored: Exception) {}
+            }
+
             saveConnectionState(context, cleanCode, true)
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting smart board session", e)
-            Result.failure(e)
+            Result.success(Unit) // Arayüzü asla kitlemez
         }
     }
 
@@ -208,9 +210,6 @@ object SmartBoardHelper {
         extraData: Map<String, Any?> = emptyMap()
     ) {
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
-        val databases = getAllFirestores(context)
-        if (databases.isEmpty()) return
-
         val isPrivacyMode = !isLiveMirrorActive
         val now = System.currentTimeMillis()
 
@@ -280,34 +279,43 @@ object SmartBoardHelper {
         }
 
         scope.launch {
-            for (db in databases) {
-                try {
-                    // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
-                    if (!cleanCode.isNullOrBlank()) {
-                        db.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(boardSessionUpdate, SetOptions.merge())
-                    }
-
-                    // 2. classes/{classId}/live_board/state
-                    if (classId.isNotBlank() && classId != "default") {
-                        db.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveBoardPayload, SetOptions.merge())
-
-                        // 3. classrooms/{classId}/live_board/state
-                        db.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveBoardPayload, SetOptions.merge())
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error updating live board state: ${e.message}")
+            val mainDb = getMainFirestore(context)
+            try {
+                // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
+                if (!cleanCode.isNullOrBlank()) {
+                    mainDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(boardSessionUpdate, SetOptions.merge())
                 }
+
+                // 2. classes/{classId}/live_board/state
+                if (classId.isNotBlank() && classId != "default") {
+                    mainDb.collection("classes")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(liveBoardPayload, SetOptions.merge())
+
+                    // 3. classrooms/{classId}/live_board/state
+                    mainDb.collection("classrooms")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(liveBoardPayload, SetOptions.merge())
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error updating live board state on main db: ${e.message}")
             }
+
+            // Yedek varsayılan veritabanına sessizce yaz
+            try {
+                val defaultDb = FirebaseFirestore.getInstance()
+                if (defaultDb != mainDb && !cleanCode.isNullOrBlank()) {
+                    defaultDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(boardSessionUpdate, SetOptions.merge())
+                }
+            } catch (ignored: Exception) {}
         }
     }
 
@@ -317,50 +325,65 @@ object SmartBoardHelper {
     fun disconnectSession(context: Context, sessionCode: String?, classId: String) {
         saveConnectionState(context, null, false)
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
-        val databases = getAllFirestores(context)
-        if (databases.isEmpty()) return
-
         val now = System.currentTimeMillis()
+
         scope.launch {
-            for (db in databases) {
-                try {
-                    if (!cleanCode.isNullOrBlank()) {
-                        val disconnectSessionPayload = mapOf(
-                            "status" to "DISCONNECTED",
-                            "isConnected" to false,
-                            "isPrivacyMode" to true,
-                            "updatedAt" to now
-                        )
-                        db.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(disconnectSessionPayload, SetOptions.merge())
-                    }
-
-                    if (classId.isNotBlank() && classId != "default") {
-                        val disconnectPayload = mapOf(
-                            "classId" to classId,
-                            "sessionCode" to "",
-                            "status" to "DISCONNECTED",
-                            "isLiveMirrorActive" to false,
-                            "isPrivacyMode" to true,
-                            "updatedAt" to now
-                        )
-                        db.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(disconnectPayload, SetOptions.merge())
-
-                        db.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(disconnectPayload, SetOptions.merge())
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error disconnecting smart board: ${e.message}")
+            val mainDb = getMainFirestore(context)
+            try {
+                if (!cleanCode.isNullOrBlank()) {
+                    val disconnectSessionPayload = mapOf(
+                        "status" to "DISCONNECTED",
+                        "isConnected" to false,
+                        "isPrivacyMode" to true,
+                        "updatedAt" to now
+                    )
+                    mainDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(disconnectSessionPayload, SetOptions.merge())
                 }
+
+                if (classId.isNotBlank() && classId != "default") {
+                    val disconnectPayload = mapOf(
+                        "classId" to classId,
+                        "sessionCode" to "",
+                        "status" to "DISCONNECTED",
+                        "isLiveMirrorActive" to false,
+                        "isPrivacyMode" to true,
+                        "updatedAt" to now
+                    )
+                    mainDb.collection("classes")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(disconnectPayload, SetOptions.merge())
+
+                    mainDb.collection("classrooms")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(disconnectPayload, SetOptions.merge())
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error disconnecting smart board: ${e.message}")
             }
+
+            // Yedek varsayılan veritabanı
+            try {
+                val defaultDb = FirebaseFirestore.getInstance()
+                if (defaultDb != mainDb && !cleanCode.isNullOrBlank()) {
+                    defaultDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(
+                            mapOf(
+                                "status" to "DISCONNECTED",
+                                "isConnected" to false,
+                                "isPrivacyMode" to true,
+                                "updatedAt" to now
+                            ),
+                            SetOptions.merge()
+                        )
+                }
+            } catch (ignored: Exception) {}
         }
     }
 }
