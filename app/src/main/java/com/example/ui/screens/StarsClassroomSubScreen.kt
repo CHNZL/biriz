@@ -280,114 +280,6 @@ fun StarsClassroomSubScreen(
                                 tint = Color.White
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "ETKİNLİKLİ YILDIZ",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Arama & Sıralama Satırı (Metin kesilmesi düzeltilmiş, dikeyde kusursuz ortalanmış arama alanı)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Arama Çubuğu
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isDarkTheme) Color(0x301E293B) else Color.White,
-                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.CenterStart
-                                ) {
-                                    if (searchQuery.isEmpty()) {
-                                        Text(
-                                            text = "Öğrenci adı veya no ara...",
-                                            fontSize = 12.5.sp,
-                                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
-                                        )
-                                    }
-                                    BasicTextField(
-                                        value = searchQuery,
-                                        onValueChange = { searchQuery = it },
-                                        singleLine = true,
-                                        textStyle = TextStyle(
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                                        ),
-                                        cursorBrush = SolidColor(if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { searchQuery = "" },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Temizle",
-                                            modifier = Modifier.size(16.dp),
-                                            tint = if (isDarkTheme) Color.White.copy(alpha = 0.7f) else BirizTextMuted
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Sıralama Butonu
-                        Surface(
-                            onClick = {
-                                sortOrder = when (sortOrder) {
-                                    "STARS_DESC" -> "NAME_ASC"
-                                    "NAME_ASC" -> "NUMBER_ASC"
-                                    else -> "STARS_DESC"
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
-                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x503B82F6) else Color(0xFFBFDBFE)),
-                            modifier = Modifier.height(48.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp)
-                            ) {
-                                Text(
-                                    text = when (sortOrder) {
-                                        "STARS_DESC" -> "⭐ Puana Göre"
-                                        "NAME_ASC" -> "🔤 İsme Göre"
-                                        else -> "🔢 Numaraya Göre"
-                                    },
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) BirizTurquoise else Color(0xFF1D4ED8)
-                                )
-                            }
                         }
                     }
                 }
@@ -550,6 +442,108 @@ fun StarsClassroomSubScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // --- 2.5. KOMPAKT ÖĞRENCİ ARAMA VE SIRALAMA ÇUBUĞU (LİDER KÜRSÜSÜNÜN ALTINDA) ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Arama Çubuğu (Kompakt 38.dp)
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isDarkTheme) Color(0x301E293B) else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Öğrenci adı veya no ara...",
+                                    fontSize = 12.sp,
+                                    color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                                )
+                            }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                ),
+                                cursorBrush = SolidColor(if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Temizle",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (isDarkTheme) Color.White.copy(alpha = 0.7f) else BirizTextMuted
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Sıralama Butonu (Kompakt 38.dp)
+                Surface(
+                    onClick = {
+                        sortOrder = when (sortOrder) {
+                            "STARS_DESC" -> "NAME_ASC"
+                            "NAME_ASC" -> "NUMBER_ASC"
+                            else -> "STARS_DESC"
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x503B82F6) else Color(0xFFBFDBFE)),
+                    modifier = Modifier.height(38.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp)
+                    ) {
+                        Text(
+                            text = when (sortOrder) {
+                                "STARS_DESC" -> "⭐ Puan"
+                                "NAME_ASC" -> "🔤 İsim"
+                                else -> "🔢 No"
+                            },
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) BirizTurquoise else Color(0xFF1D4ED8)
+                        )
                     }
                 }
             }
@@ -766,7 +760,9 @@ fun StarsClassroomSubScreen(
                 studentForIndividualStar = student
             },
             onResetAllStars = {
-                starRecords = StarRewardPersistenceHelper.clearAllRecords(context, classRoom.id)
+                starRecords = emptyList()
+                studentForIndividualStar = null
+                StarRewardPersistenceHelper.clearAllRecords(context, classRoom.id)
                 Toast.makeText(context, "Sınıfın tüm yıldız kayıtları başarıyla sıfırlandı.", Toast.LENGTH_SHORT).show()
             }
         )
@@ -775,8 +771,8 @@ fun StarsClassroomSubScreen(
 
 /**
  * Profesyonel Olimpiyat Kürsüsü Sütunu (1., 2., 3. Sıra)
- * - Numaralı avatar çemberi (#12)
- * - Yüksek kontrastlı, net okunabilir madalya rozetleri ve öğrenci isimleri
+ * - Okul numarası kaldırıldı
+ * - Derece kutusu, öğrenci adı ve yıldız sayısı büyütüldü ve belirginleştirildi
  */
 @Composable
 private fun PodiumPillarItem(
@@ -789,12 +785,6 @@ private fun PodiumPillarItem(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val isGirl = student.gender.equals("Kız", ignoreCase = true)
-    val ringColor = when (rank) {
-        1 -> Color(0xFFF59E0B)
-        2 -> Color(0xFF94A3B8)
-        else -> Color(0xFFEA580C)
-    }
     val cardBg = when (rank) {
         1 -> if (isDarkTheme) Color(0xFF2E1F08) else Color(0xFFFFFBEB)
         2 -> if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF8FAFC)
@@ -810,7 +800,7 @@ private fun PodiumPillarItem(
         2 -> Color(0xFF64748B)
         else -> Color(0xFFEA580C)
     }
-    val pillarHeight = if (isCenterChampion) 142.dp else 124.dp
+    val pillarHeight = if (isCenterChampion) 130.dp else 114.dp
 
     Surface(
         onClick = onClick,
@@ -823,75 +813,61 @@ private fun PodiumPillarItem(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 7.dp),
+                .padding(horizontal = 6.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            // Üst Rozet: Taç / Madalya / Sıra
+            // 1. Üst Rozet: Taç / Madalya / Derece (Büyütüldü ve daha belirgin yapıldı)
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = rankBadgeBg
+                color = rankBadgeBg,
+                shadowElevation = if (isCenterChampion) 3.dp else 1.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = if (isCenterChampion) 10.dp else 8.dp, vertical = 3.5.dp)
                 ) {
                     if (isCenterChampion) {
-                        Text("👑", fontSize = 11.sp)
+                        Text("👑", fontSize = 13.sp)
                         Spacer(modifier = Modifier.width(3.dp))
                     }
                     Text(
                         text = "$medalEmoji $rank.",
-                        fontSize = 10.5.sp,
+                        fontSize = if (isCenterChampion) 13.sp else 11.5.sp,
                         fontWeight = FontWeight.Black,
                         color = Color.White
                     )
                 }
             }
 
-            // Avatar / Okul Numarası Çemberi (#12)
-            Surface(
-                shape = CircleShape,
-                color = if (isGirl) Color(0xFFFDF2F8) else Color(0xFFEFF6FF),
-                border = BorderStroke(1.5.dp, ringColor),
-                modifier = Modifier.size(if (isCenterChampion) 34.dp else 30.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "#${student.studentNumber}",
-                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
-                        fontWeight = FontWeight.Black,
-                        color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
-                    )
-                }
-            }
-
-            // Öğrenci İsmi (Yüksek kontrastlı, net okunur)
+            // 2. Öğrenci İsmi (Okul no kaldırıldı, isim boyutu büyütüldü ve belirginleştirildi)
             Text(
                 text = student.fullName.split(" ").firstOrNull() ?: student.fullName,
-                fontSize = if (isCenterChampion) 12.sp else 11.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontSize = if (isCenterChampion) 15.sp else 13.5.sp,
+                fontWeight = FontWeight.Black,
                 color = if (isDarkTheme) Color.White else Color(0xFF0F172A),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
 
-            // Yıldız Kutucuğu
+            // 3. Yıldız Kutucuğu (Büyütüldü, net ve yüksek kontrastlı)
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = if (rank == 1) Color(0xFFF59E0B) else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
-                border = BorderStroke(0.8.dp, cardBorder)
+                border = BorderStroke(1.dp, cardBorder),
+                shadowElevation = if (rank == 1) 2.dp else 1.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                    modifier = Modifier.padding(horizontal = if (isCenterChampion) 10.dp else 8.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "$stars ⭐",
-                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
+                        fontSize = if (isCenterChampion) 13.5.sp else 12.sp,
                         fontWeight = FontWeight.Black,
                         color = if (rank == 1) Color(0xFF1E293B) else (if (isDarkTheme) Color(0xFFF8FAFC) else Color(0xFF0F172A))
                     )
@@ -1209,21 +1185,18 @@ fun AllClassStarRankingDialog(
 
                                     Spacer(modifier = Modifier.width(10.dp))
 
-                                    // İsim ve Numara
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    // İsim (Okul no 2. satırı kaldırıldı, isim dikeyde ortalandı)
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
                                         Text(
                                             text = student.fullName,
-                                            fontSize = 12.5.sp,
+                                            fontSize = 13.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "#${student.studentNumber}",
-                                            fontSize = 10.5.sp,
-                                            color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB),
-                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
 

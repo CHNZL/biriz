@@ -141,14 +141,27 @@ object StarRewardPersistenceHelper {
     }
 
     fun clearAllRecords(context: Context, classId: String): List<StarRewardRecord> {
-        val existing = loadStarRecords(context, classId)
-        val existingIds = existing.map { it.id }.toSet()
         saveStarRecords(context, classId, emptyList())
 
         syncScope.launch {
-            existingIds.forEach { recordId ->
-                deleteRecordFromFirestore(context, classId, recordId)
-            }
+            if (Firebase.auth.currentUser == null) return@launch
+            val db = getFirestore(context) ?: return@launch
+            val collRef = db.collection("classrooms").document(classId).collection("stars")
+            collRef.get()
+                .addOnSuccessListener { snapshot ->
+                    if (snapshot != null && !snapshot.isEmpty) {
+                        val batch = db.batch()
+                        snapshot.documents.forEach { doc ->
+                            batch.delete(doc.reference)
+                        }
+                        batch.commit().addOnFailureListener { e ->
+                            handleFirestoreError(e, OperationType.DELETE, collRef.path)
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    handleFirestoreError(e, OperationType.LIST, collRef.path)
+                }
         }
         return emptyList()
     }
@@ -203,10 +216,8 @@ object StarRewardPersistenceHelper {
                             )
                         }.sortedByDescending { it.timestamp }
 
-                        if (cloudRecords.isNotEmpty()) {
-                            saveStarRecords(context, classId, cloudRecords)
-                            onUpdate(cloudRecords)
-                        }
+                        saveStarRecords(context, classId, cloudRecords)
+                        onUpdate(cloudRecords)
                     }
                 }
         } catch (e: Exception) {
