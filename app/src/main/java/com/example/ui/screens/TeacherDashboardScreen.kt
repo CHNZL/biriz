@@ -774,6 +774,14 @@ fun TeacherDashboardScreen(
                         )
                     }
 
+                    DashboardSubPage.ZAMANLAYICI -> {
+                        TimerSubScreen(
+                            classRoom = classRoom,
+                            isDarkTheme = isDarkTheme,
+                            onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
+                        )
+                    }
+
                     else -> {
                         // Diğer Alt Sayfalar (Zengin Bento Mikro-Önizleme)
                         ModulePreviewsSubScreen(

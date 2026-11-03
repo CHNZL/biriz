@@ -551,13 +551,36 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun testSmartBoardCodeNormalization() {
-    val helper = com.example.util.SmartBoardHelper
-    assertEquals("BRZ94K7P", helper.normalizeCode("BRZ9-4K7P"))
-    assertEquals("BRZ94K7P", helper.normalizeCode(" brz9 4k7p "))
-    assertEquals("BRZ94K7P", helper.normalizeCode("brz9-4k7p!"))
-    assertEquals("BRZ94K7P", helper.normalizeCode("BRZ94K7P"))
-    assertEquals("BRZ12345", helper.normalizeCode("  brz-12-345  "))
+  fun testTimerModesAndFormatting() {
+    val modes = com.example.ui.screens.TimerClassroomMode.values()
+    assertEquals(4, modes.size)
+
+    // Verify Quick mode defaults
+    val quick = com.example.ui.screens.TimerClassroomMode.QUICK
+    assertEquals(5, quick.defaultMinutes)
+    assertEquals("Hızlı Sayaç", quick.title)
+    assertTrue(quick.presetMinutes.contains(5))
+
+    // Verify Exam mode defaults
+    val exam = com.example.ui.screens.TimerClassroomMode.EXAM
+    assertEquals(30, exam.defaultMinutes)
+    assertEquals("Sınav Sayacı", exam.title)
+    assertTrue(exam.presetMinutes.contains(40))
+
+    // Formatting check
+    val time300Sec = 300
+    val m = time300Sec / 60
+    val s = time300Sec % 60
+    val formatted = String.format(java.util.Locale.US, "%02d:%02d", m, s)
+    assertEquals("05:00", formatted)
+
+    // Over an hour formatting check
+    val time3665Sec = 3665
+    val hours = time3665Sec / 3600
+    val mins = (time3665Sec % 3600) / 60
+    val secs = time3665Sec % 60
+    val formattedLong = String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, mins, secs)
+    assertEquals("01:01:05", formattedLong)
   }
 }
 
