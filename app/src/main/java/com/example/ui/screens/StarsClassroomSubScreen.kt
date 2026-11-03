@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -763,6 +764,10 @@ fun StarsClassroomSubScreen(
             onDismiss = { showAllClassRankingDialog = false },
             onSelectStudent = { student ->
                 studentForIndividualStar = student
+            },
+            onResetAllStars = {
+                starRecords = StarRewardPersistenceHelper.clearAllRecords(context, classRoom.id)
+                Toast.makeText(context, "Sınıfın tüm yıldız kayıtları başarıyla sıfırlandı.", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -770,6 +775,8 @@ fun StarsClassroomSubScreen(
 
 /**
  * Profesyonel Olimpiyat Kürsüsü Sütunu (1., 2., 3. Sıra)
+ * - Numaralı avatar çemberi (#12)
+ * - Yüksek kontrastlı, net okunabilir madalya rozetleri ve öğrenci isimleri
  */
 @Composable
 private fun PodiumPillarItem(
@@ -784,81 +791,88 @@ private fun PodiumPillarItem(
 ) {
     val isGirl = student.gender.equals("Kız", ignoreCase = true)
     val ringColor = when (rank) {
-        1 -> BirizAmber
+        1 -> Color(0xFFF59E0B)
         2 -> Color(0xFF94A3B8)
-        else -> Color(0xFFD97706)
+        else -> Color(0xFFEA580C)
     }
     val cardBg = when (rank) {
-        1 -> if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB)
-        2 -> if (isDarkTheme) Color(0x2594A3B8) else Color(0xFFF8FAFC)
-        else -> if (isDarkTheme) Color(0x25D97706) else Color(0xFFFFF7ED)
+        1 -> if (isDarkTheme) Color(0xFF2E1F08) else Color(0xFFFFFBEB)
+        2 -> if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF8FAFC)
+        else -> if (isDarkTheme) Color(0xFF2C1608) else Color(0xFFFFF7ED)
     }
     val cardBorder = when (rank) {
-        1 -> BirizAmber
+        1 -> Color(0xFFF59E0B)
         2 -> Color(0xFF94A3B8)
-        else -> Color(0xFFFB923C)
+        else -> Color(0xFFF97316)
     }
-    val pillarHeight = if (isCenterChampion) 124.dp else 108.dp
+    val rankBadgeBg = when (rank) {
+        1 -> Color(0xFFF59E0B)
+        2 -> Color(0xFF64748B)
+        else -> Color(0xFFEA580C)
+    }
+    val pillarHeight = if (isCenterChampion) 142.dp else 124.dp
 
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = cardBg,
-        border = BorderStroke(if (isCenterChampion) 1.5.dp else 1.dp, cardBorder),
-        shadowElevation = if (isCenterChampion) 4.dp else 1.dp,
+        border = BorderStroke(if (isCenterChampion) 2.dp else 1.2.dp, cardBorder),
+        shadowElevation = if (isCenterChampion) 6.dp else 2.dp,
         modifier = modifier.height(pillarHeight)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 6.dp, vertical = 6.dp),
+                .padding(horizontal = 6.dp, vertical = 7.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Üst Rozet: Taç / Madalya
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                if (isCenterChampion) {
-                    Text("👑", fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(2.dp))
-                }
-                Text(
-                    text = "$medalEmoji $rank.",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    color = when (rank) {
-                        1 -> if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
-                        2 -> if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                        else -> if (isDarkTheme) Color(0xFFFED7AA) else Color(0xFFC2410C)
-                    }
-                )
-            }
-
-            // Avatar / Baş Harf Çemberi
+            // Üst Rozet: Taç / Madalya / Sıra
             Surface(
-                shape = CircleShape,
-                color = if (isGirl) Color(0xFFFDF2F8) else Color(0xFFEFF6FF),
-                border = BorderStroke(1.5.dp, ringColor),
-                modifier = Modifier.size(if (isCenterChampion) 34.dp else 28.dp)
+                shape = RoundedCornerShape(20.dp),
+                color = rankBadgeBg
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    if (isCenterChampion) {
+                        Text("👑", fontSize = 11.sp)
+                        Spacer(modifier = Modifier.width(3.dp))
+                    }
                     Text(
-                        text = student.fullName.take(2).uppercase(),
-                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB)
+                        text = "$medalEmoji $rank.",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
                     )
                 }
             }
 
-            // Öğrenci İsmi
+            // Avatar / Okul Numarası Çemberi (#12)
+            Surface(
+                shape = CircleShape,
+                color = if (isGirl) Color(0xFFFDF2F8) else Color(0xFFEFF6FF),
+                border = BorderStroke(1.5.dp, ringColor),
+                modifier = Modifier.size(if (isCenterChampion) 34.dp else 30.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "#${student.studentNumber}",
+                        fontSize = if (isCenterChampion) 11.sp else 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
+                    )
+                }
+            }
+
+            // Öğrenci İsmi (Yüksek kontrastlı, net okunur)
             Text(
                 text = student.fullName.split(" ").firstOrNull() ?: student.fullName,
-                fontSize = if (isCenterChampion) 11.5.sp else 10.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                fontSize = if (isCenterChampion) 12.sp else 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isDarkTheme) Color.White else Color(0xFF0F172A),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
@@ -866,19 +880,20 @@ private fun PodiumPillarItem(
 
             // Yıldız Kutucuğu
             Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (rank == 1) BirizAmber else if (isDarkTheme) Color(0x351E293B) else Color.White,
+                shape = RoundedCornerShape(10.dp),
+                color = if (rank == 1) Color(0xFFF59E0B) else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
                 border = BorderStroke(0.8.dp, cardBorder)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
                 ) {
                     Text(
                         text = "$stars ⭐",
                         fontSize = if (isCenterChampion) 11.sp else 10.sp,
                         fontWeight = FontWeight.Black,
-                        color = if (rank == 1) Color.Black else if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                        color = if (rank == 1) Color(0xFF1E293B) else (if (isDarkTheme) Color(0xFFF8FAFC) else Color(0xFF0F172A))
                     )
                 }
             }
@@ -896,9 +911,11 @@ fun AllClassStarRankingDialog(
     totalClassStars: Int,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
-    onSelectStudent: (Student) -> Unit
+    onSelectStudent: (Student) -> Unit,
+    onResetAllStars: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
 
     // Tüm sınıf sıralaması: yıldız sayısına göre azalan, eşitlikte numara
     val rankedStudents = remember(students, studentStarMap) {
@@ -929,6 +946,42 @@ fun AllClassStarRankingDialog(
             val avg = totalClassStars.toFloat() / students.size
             String.format(java.util.Locale.US, "%.1f", avg)
         } else "0"
+    }
+
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚠️", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tüm Yıldızları Sıfırla?", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Text(
+                    text = "Sınıftaki tüm öğrencilerin kazanmış olduğu yıldızlar ve geçmiş yıldız kayıtları tamamen silinecektir.\n\nBu işlem geri alınamaz! Devam etmek istediğinize emin misiniz?",
+                    fontSize = 13.sp,
+                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        onResetAllStars()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("Evet, Tümünü Sıfırla", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text("Vazgeç")
+                }
+            }
+        )
     }
 
     Dialog(
@@ -1136,7 +1189,7 @@ fun AllClassStarRankingDialog(
 
                                     Spacer(modifier = Modifier.width(10.dp))
 
-                                    // Cinsiyet / Baş Harf Çemberi
+                                    // Profil Numarası Çemberi (Baş harf yerine Okul Numarası)
                                     val isGirl = student.gender.equals("Kız", ignoreCase = true)
                                     Surface(
                                         shape = CircleShape,
@@ -1146,9 +1199,9 @@ fun AllClassStarRankingDialog(
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = student.fullName.take(2).uppercase(),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
+                                                text = "#${student.studentNumber}",
+                                                fontSize = if (student.studentNumber.length > 3) 9.sp else 10.5.sp,
+                                                fontWeight = FontWeight.Black,
                                                 color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB)
                                             )
                                         }
@@ -1213,17 +1266,40 @@ fun AllClassStarRankingDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Alt Kapat Butonu
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFF1F5F9),
-                        contentColor = if (isDarkTheme) Color.White else BirizNavyPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                // Alt Aksiyon Butonları (Tümünü Sıfırla & Kapat)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Kapat", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    OutlinedButton(
+                        onClick = { showResetConfirmDialog = true },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFFEF4444)
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .testTag("btn_reset_all_stars")
+                    ) {
+                        Text("🗑️ Tümünü Sıfırla", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFF1F5F9),
+                            contentColor = if (isDarkTheme) Color.White else BirizNavyPrimary
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                    ) {
+                        Text("Kapat", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -2128,37 +2204,38 @@ private fun ActivityStarWizardDialog(
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
+                                Text(
+                                    text = "ETKİNLİKLİ YILDIZ DAĞITIMI",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isDarkTheme) Color.White else Color(0xFF0F172A),
+                                    letterSpacing = 0.3.sp
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "ETKİNLİKLİ YILDIZ DAĞITIMI",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = if (isDarkTheme) Color.White else Color(0xFF0F172A),
-                                        letterSpacing = 0.3.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
                                         color = Color(0xFF6366F1)
                                     ) {
                                         Text(
                                             text = if (currentStep == 1) "Adım 1/2: Kazanım & Kurallar" else "Adım 2/2: Öğrenci Seçimi",
-                                            fontSize = 10.sp,
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
                                         )
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (currentStep == 1) "Kategori, açıklama ve süre kuralları"
+                                        else "${students.size} Öğrenci - Tek dokunuşla seçin",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
-                                Text(
-                                    text = if (currentStep == 1) "Kazanım & Kurallar: Kategori, açıklama, süre ve limit belirleyin"
-                                    else "Öğrenci Seçimi (${students.size} Öğrenci) - Tek dokunuşla seçebilirsiniz",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
                         }
 

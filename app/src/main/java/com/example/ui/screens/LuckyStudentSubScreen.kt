@@ -169,6 +169,7 @@ fun LuckyStudentSubScreen(
     // Kazanan diyalog state'i
     var currentWinner by remember { mutableStateOf<Student?>(null) }
     var showWinnerDialog by remember { mutableStateOf(false) }
+    var showClearAllConfirmationDialog by remember { mutableStateOf(false) }
 
     // Alt Tab: 0 = Seçilenler (Kürsü), 1 = Kalan Adaylar
     var bottomActiveTab by remember { mutableIntStateOf(0) }
@@ -725,6 +726,48 @@ fun LuckyStudentSubScreen(
                     }
                 }
             } else {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Toplam ${drawnStudentsHistory.size} Öğrenci Seçildi",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
+                        )
+                        Surface(
+                            onClick = { showClearAllConfirmationDialog = true },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDarkTheme) Color(0x30EF4444) else Color(0xFFFEE2E2),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                            modifier = Modifier.testTag("btn_clear_lucky_history")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.RestartAlt,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Tümünü Sıfırla 🗑️",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFDC2626)
+                                )
+                            }
+                        }
+                    }
+                }
                 itemsIndexed(drawnStudentsHistory, key = { _, s -> "drawn_${s.id}" }) { index, student ->
                     val isKiz = student.gender.equals("Kız", ignoreCase = true)
                     Surface(
@@ -1181,5 +1224,66 @@ fun LuckyStudentSubScreen(
                 }
             }
         }
+    }
+
+    // --- 7. TÜM SEÇİLENLERİ SIFIRLAMA ONAY DİYALOĞU ---
+    if (showClearAllConfirmationDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearAllConfirmationDialog = false },
+            title = {
+                Text(
+                    text = "Seçilenler Listesini Temizle",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "Seçilen tüm öğrenciler (${drawnStudentsHistory.size} kişi) tekrar aday havuzuna aktarılacak ve liste sıfırlanacaktır. Havuzdaki tüm öğrencilerin tekrar çekilişe dahil olmasını onaylıyor musunuz?",
+                    fontSize = 13.sp,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val count = drawnStudentsHistory.size
+                        excludedStudentIds.removeAll(drawnStudentsHistory.map { it.id }.toSet())
+                        drawnStudentsHistory.clear()
+                        persistCurrentState()
+                        currentWinner = null
+                        showClearAllConfirmationDialog = false
+                        Toast.makeText(context, "$count öğrenci tekrar aday havuzuna eklendi. Havuz yenilendi!", Toast.LENGTH_SHORT).show()
+
+                        val savedSession = com.example.util.SmartBoardHelper.getSavedSessionCode(context)
+                        if (!savedSession.isNullOrBlank()) {
+                            com.example.util.SmartBoardHelper.updateLiveBoardState(
+                                context = context,
+                                classId = classRoom.id,
+                                sessionCode = savedSession,
+                                isLiveMirrorActive = com.example.util.SmartBoardHelper.isMirrorActive(context),
+                                currentSubPage = "SANSLI_OGRENCI",
+                                currentSubPageTitle = "Şanslı Öğrenci",
+                                students = students,
+                                extraData = mapOf("isRolling" to false, "luckyStudent" to null)
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Evet, Tümünü Sıfırla", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { showClearAllConfirmationDialog = false },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("İptal", color = if (isDarkTheme) Color.White else BirizNavyPrimary)
+                }
+            }
+        )
     }
 }

@@ -140,6 +140,19 @@ object StarRewardPersistenceHelper {
         return current
     }
 
+    fun clearAllRecords(context: Context, classId: String): List<StarRewardRecord> {
+        val existing = loadStarRecords(context, classId)
+        val existingIds = existing.map { it.id }.toSet()
+        saveStarRecords(context, classId, emptyList())
+
+        syncScope.launch {
+            existingIds.forEach { recordId ->
+                deleteRecordFromFirestore(context, classId, recordId)
+            }
+        }
+        return emptyList()
+    }
+
     fun getStudentTotalStars(records: List<StarRewardRecord>, studentId: String): Int {
         return records.filter { it.studentId == studentId }.sumOf { it.starCount }
     }

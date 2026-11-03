@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -973,25 +974,27 @@ fun ScheduleTableScreen(
                 else -> if (isDarkTheme) Color.White else BirizNavyPrimary
             }
 
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = liveBgColor,
-                border = BorderStroke(1.dp, liveBorderColor),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 2.dp)
-                    .testTag("schedule_live_status_banner")
+                    .padding(vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
+                // 1. Bağımsız Canlı Durum / Ders Bilgi Kutusu (Oturma Planındaki gibi ayrı kutu)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = liveBgColor,
+                    border = BorderStroke(1.dp, liveBorderColor),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
+                        .testTag("schedule_live_status_banner")
                 ) {
-                    // Sol: Bilgi / Canlı Durum Metinleri (Daraltılmış & Ferah)
                     Row(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (liveStatus.isLive) {
@@ -1001,9 +1004,9 @@ fun ScheduleTableScreen(
                                     .clip(CircleShape)
                                     .background(if (liveStatus.iconType == "LESSON") Color(0xFF22C55E) else Color(0xFFF59E0B))
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(7.dp))
                         }
-                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = liveStatus.title,
                                 fontSize = 12.sp,
@@ -1014,61 +1017,55 @@ fun ScheduleTableScreen(
                             )
                             Text(
                                 text = liveStatus.subtitle,
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                // 2. Ayarlar Butonu (Oturma Planındaki gibi bağımsız buton)
+                Surface(
+                    onClick = onOpenSettings,
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) Color(0x303B82F6) else Color(0xFFEFF6FF),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFBFDBFE)),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .testTag("btn_schedule_settings_top")
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Program Ayarları",
+                            tint = if (isDarkTheme) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
 
-                    // Sağ: Ayarlar ve Paylaş İkon Butonları
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                // 3. Paylaş Butonu (Oturma Planındaki gibi bağımsız buton)
+                Box {
+                    Surface(
+                        onClick = { isShareMenuOpen = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = BirizNavyPrimary,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("schedule_share_button")
                     ) {
-                        // "Ayarlar ⚙️" Butonu
-                        Surface(
-                            onClick = onOpenSettings,
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isDarkTheme) Color(0x40000000) else Color.White,
-                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                            modifier = Modifier
-                                .size(34.dp)
-                                .testTag("btn_schedule_settings_top")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Program Ayarları",
-                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                    modifier = Modifier.size(17.dp)
-                                )
-                            }
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Paylaş",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
-
-                        // "Paylaş" Butonu ve Açılır Menüsü
-                        Box {
-                            Surface(
-                                onClick = { isShareMenuOpen = true },
-                                shape = RoundedCornerShape(8.dp),
-                                color = BirizNavyPrimary,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .testTag("schedule_share_button")
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Share,
-                                        contentDescription = "Paylaş",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                    }
 
                             DropdownMenu(
                                 expanded = isShareMenuOpen,
@@ -1124,8 +1121,6 @@ fun ScheduleTableScreen(
                                     }
                                 )
                             }
-                        }
-                    }
                 }
             }
         }

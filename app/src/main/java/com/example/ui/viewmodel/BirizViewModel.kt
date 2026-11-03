@@ -22,6 +22,7 @@ import com.example.data.model.SeatingPlanState
 import com.example.data.model.UserRole
 import com.example.data.repository.ClassRegistryRepository
 import com.example.util.GroupMakerHelper
+import com.example.util.GroupMakerPersistenceHelper
 import com.example.util.ScheduleHelper
 import com.example.util.SeatingPlanHelper
 import com.example.util.SeatingPlanPersistenceHelper
@@ -188,10 +189,14 @@ class BirizViewModel(
         loadScheduleFromStorage("default")
         loadSeatingPlanFromStorage("default")
         loadCommunicationFromStorage("default")
+        loadGroupMakerFromStorage("default")
         if (appContext != null) {
+            val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+            val savedDark = prefs.getBoolean("key_is_dark_theme", false)
             val savedSession = SmartBoardHelper.getSavedSessionCode(appContext)
             val savedMirror = SmartBoardHelper.isMirrorActive(appContext)
             _uiState.value = _uiState.value.copy(
+                isDarkTheme = savedDark,
                 connectedBoardSessionCode = savedSession,
                 isLiveBoardMirrorActive = savedMirror
             )
@@ -324,6 +329,20 @@ class BirizViewModel(
             val finalCloudPlan = if (savedConfig != null) cloudPlan.copy(config = savedConfig) else cloudPlan
             _uiState.value = _uiState.value.copy(seatingPlanState = finalCloudPlan)
         }
+    }
+
+    fun loadGroupMakerFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
+        val ctx = appContext ?: return
+        val saved = GroupMakerPersistenceHelper.loadState(ctx, classId)
+        if (saved != null && saved.groups.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(groupMakerState = saved)
+        }
+    }
+
+    private fun persistGroupMakerState(state: GroupMakerState) {
+        val ctx = appContext ?: return
+        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        GroupMakerPersistenceHelper.saveState(ctx, classId, state)
     }
 
     fun loadCommunicationFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
@@ -886,9 +905,11 @@ class BirizViewModel(
             repository.observeStudents(classRoom.id)
             loadScheduleFromStorage(classRoom.id)
             loadSeatingPlanFromStorage(classRoom.id)
+            loadGroupMakerFromStorage(classRoom.id)
         } else {
             loadScheduleFromStorage("default")
             loadSeatingPlanFromStorage("default")
+            loadGroupMakerFromStorage("default")
         }
         _uiState.value = _uiState.value.copy(
             currentScreen = ScreenState.TEACHER_DASHBOARD,
@@ -1460,9 +1481,9 @@ class BirizViewModel(
     }
 
     fun saveGroupConfig(config: GroupDistributionConfig) {
-        _uiState.value = _uiState.value.copy(
-            groupMakerState = _uiState.value.groupMakerState.copy(config = config)
-        )
+        val newState = _uiState.value.groupMakerState.copy(config = config)
+        _uiState.value = _uiState.value.copy(groupMakerState = newState)
+        persistGroupMakerState(newState)
     }
 
     fun distributeGroups(config: GroupDistributionConfig? = null) {
@@ -1473,15 +1494,17 @@ class BirizViewModel(
             config = activeConfig,
             existingGroups = _uiState.value.groupMakerState.groups
         )
+        val newState = _uiState.value.groupMakerState.copy(
+            groups = newGroups,
+            unassignedStudentIds = unassigned,
+            config = activeConfig,
+            isWizardOpen = false
+        )
         _uiState.value = _uiState.value.copy(
-            groupMakerState = _uiState.value.groupMakerState.copy(
-                groups = newGroups,
-                unassignedStudentIds = unassigned,
-                config = activeConfig,
-                isWizardOpen = false
-            ),
+            groupMakerState = newState,
             snackbarMessage = "${newGroups.size} adet çalışma grubu başarıyla oluşturuldu! 🎉"
         )
+        persistGroupMakerState(newState)
     }
 
     fun reshuffleGroups() {
@@ -1492,10 +1515,12 @@ class BirizViewModel(
             currentGroups = current.groups,
             balanceGender = current.config.balanceGender
         )
+        val newState = current.copy(groups = reshuffled)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = reshuffled),
+            groupMakerState = newState,
             snackbarMessage = "Öğrenciler mevcut gruplar arasında yeniden karıştırıldı 🎲"
         )
+        persistGroupMakerState(newState)
     }
 
     fun distributeUnassignedGroups() {
@@ -1507,22 +1532,26 @@ class BirizViewModel(
             currentGroups = current.groups,
             balanceGender = current.config.balanceGender
         )
+        val newState = current.copy(
+            groups = updatedGroups,
+            unassignedStudentIds = newUnassigned
+        )
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(
-                groups = updatedGroups,
-                unassignedStudentIds = newUnassigned
-            ),
+            groupMakerState = newState,
             snackbarMessage = "Kalan öğrenciler mevcut gruplara dengeli olarak dağıtıldı ✨"
         )
+        persistGroupMakerState(newState)
     }
 
     fun pickRandomLeadersForAllGroups() {
         val current = _uiState.value.groupMakerState
         val updated = GroupMakerHelper.pickRandomLeadersForAll(current.groups)
+        val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated),
+            groupMakerState = newState,
             snackbarMessage = "Tüm gruplar için rastgele birer sözcü/lider seçildi 👑"
         )
+        persistGroupMakerState(newState)
     }
 
     fun pickRandomLeaderForSingleGroup(groupId: String) {
@@ -1532,10 +1561,12 @@ class BirizViewModel(
         }
         val target = updated.firstOrNull { it.id == groupId }
         val leader = repository.students.value.firstOrNull { it.id == target?.leaderStudentId }
+        val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated),
+            groupMakerState = newState,
             snackbarMessage = if (leader != null) "${target?.name} lideri olarak ${leader.fullName} seçildi 👑" else "Lider seçilemedi."
         )
+        persistGroupMakerState(newState)
     }
 
     fun toggleStudentLeader(groupId: String, studentId: String) {
@@ -1548,11 +1579,13 @@ class BirizViewModel(
             } else group
         }
         val isNowLeader = updated.firstOrNull { it.id == groupId }?.leaderStudentId == studentId
+        val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated),
+            groupMakerState = newState,
             snackbarMessage = if (isNowLeader) "${student?.fullName ?: "Öğrenci"} grup sözcüsü yapıldı 👑"
             else "${student?.fullName ?: "Öğrenci"} liderlik unvanı kaldırıldı."
         )
+        persistGroupMakerState(newState)
     }
 
     fun renameGroup(groupId: String, newName: String) {
@@ -1560,10 +1593,12 @@ class BirizViewModel(
         val updated = current.groups.map { group ->
             if (group.id == groupId) group.copy(name = newName) else group
         }
+        val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated),
+            groupMakerState = newState,
             snackbarMessage = "Grup adı güncellendi: $newName ✏️"
         )
+        persistGroupMakerState(newState)
     }
 
     fun changeGroupColorTheme(groupId: String, theme: GroupColorTheme) {
@@ -1571,10 +1606,12 @@ class BirizViewModel(
         val updated = current.groups.map { group ->
             if (group.id == groupId) group.copy(colorTheme = theme) else group
         }
+        val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated),
+            groupMakerState = newState,
             snackbarMessage = "Grup teması değiştirildi: ${theme.title} 🎨"
         )
+        persistGroupMakerState(newState)
     }
 
     fun addNewGroup() {
@@ -1588,10 +1625,12 @@ class BirizViewModel(
             colorTheme = colorThemes[nextIdx % colorThemes.size],
             studentIds = emptyList()
         )
+        val newState = current.copy(groups = current.groups + newGroup)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = current.groups + newGroup),
+            groupMakerState = newState,
             snackbarMessage = "Yeni boş grup eklendi: $presetName ➕"
         )
+        persistGroupMakerState(newState)
     }
 
     fun deleteGroup(groupId: String) {
@@ -1602,13 +1641,15 @@ class BirizViewModel(
             unassigned = current.unassignedStudentIds,
             groupId = groupId
         )
+        val newState = current.copy(
+            groups = updatedGroups,
+            unassignedStudentIds = newUnassigned
+        )
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(
-                groups = updatedGroups,
-                unassignedStudentIds = newUnassigned
-            ),
+            groupMakerState = newState,
             snackbarMessage = "${groupToDelete?.name ?: "Grup"} silindi. Öğrenciler Atanmamışlar Havuzuna aktarıldı 🗑️"
         )
+        persistGroupMakerState(newState)
     }
 
     fun openSwapModal(studentId: String) {
@@ -1628,10 +1669,12 @@ class BirizViewModel(
         val updated = GroupMakerHelper.swapStudents(current.groups, studentAId, studentBId)
         val studentA = repository.students.value.firstOrNull { it.id == studentAId }
         val studentB = repository.students.value.firstOrNull { it.id == studentBId }
+        val newState = current.copy(groups = updated, activeSwapStudentId = null)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(groups = updated, activeSwapStudentId = null),
+            groupMakerState = newState,
             snackbarMessage = "${studentA?.fullName ?: "Öğrenci 1"} ve ${studentB?.fullName ?: "Öğrenci 2"} karşılıklı takas edildi ⇄"
         )
+        persistGroupMakerState(newState)
     }
 
     fun moveStudentToGroup(studentId: String, targetGroupId: String) {
@@ -1644,14 +1687,16 @@ class BirizViewModel(
         )
         val student = repository.students.value.firstOrNull { it.id == studentId }
         val targetGroup = updatedGroups.firstOrNull { it.id == targetGroupId }
+        val newState = current.copy(
+            groups = updatedGroups,
+            unassignedStudentIds = newUnassigned,
+            activeSwapStudentId = null
+        )
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(
-                groups = updatedGroups,
-                unassignedStudentIds = newUnassigned,
-                activeSwapStudentId = null
-            ),
+            groupMakerState = newState,
             snackbarMessage = "${student?.fullName ?: "Öğrenci"} -> ${targetGroup?.name ?: "Yeni Grup"} grubuna taşındı ➡️"
         )
+        persistGroupMakerState(newState)
     }
 
     fun removeStudentFromGroup(studentId: String) {
@@ -1662,26 +1707,38 @@ class BirizViewModel(
             studentId = studentId
         )
         val student = repository.students.value.firstOrNull { it.id == studentId }
+        val newState = current.copy(
+            groups = updatedGroups,
+            unassignedStudentIds = newUnassigned,
+            activeSwapStudentId = null
+        )
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(
-                groups = updatedGroups,
-                unassignedStudentIds = newUnassigned,
-                activeSwapStudentId = null
-            ),
+            groupMakerState = newState,
             snackbarMessage = "${student?.fullName ?: "Öğrenci"} gruptan çıkarıldı ve Atanmamışlar Havuzuna alındı 📦"
         )
+        persistGroupMakerState(newState)
     }
 
     fun togglePresenterMode() {
         val current = _uiState.value.groupMakerState
         val newMode = !current.isPresenterMode
+        val newState = current.copy(isPresenterMode = newMode)
         _uiState.value = _uiState.value.copy(
-            groupMakerState = current.copy(isPresenterMode = newMode),
+            groupMakerState = newState,
             snackbarMessage = if (newMode) "Akıllı Tahta / Sunum Modu Açıldı 📺" else "Sunum Modundan Çıkıldı ↩️"
         )
+        persistGroupMakerState(newState)
     }
 
     fun ensureGroupMakerInitialized() {
+        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        if (appContext != null) {
+            val saved = GroupMakerPersistenceHelper.loadState(appContext, classId)
+            if (saved != null && saved.groups.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(groupMakerState = saved)
+                return
+            }
+        }
         val current = _uiState.value.groupMakerState
         val currentStudents = repository.students.value
         if (current.groups.isEmpty() && currentStudents.isNotEmpty()) {
@@ -1689,12 +1746,14 @@ class BirizViewModel(
                 allStudents = currentStudents,
                 config = current.config
             )
-            _uiState.value = _uiState.value.copy(
-                groupMakerState = current.copy(
-                    groups = initialGroups,
-                    unassignedStudentIds = unassigned
-                )
+            val newState = current.copy(
+                groups = initialGroups,
+                unassignedStudentIds = unassigned
             )
+            _uiState.value = _uiState.value.copy(
+                groupMakerState = newState
+            )
+            persistGroupMakerState(newState)
         }
     }
 
@@ -1772,6 +1831,10 @@ class BirizViewModel(
             isDarkTheme = newTheme,
             snackbarMessage = if (newTheme) "Koyu Tema Aktif Edildi 🌙" else "Açık Tema Aktif Edildi ☀️"
         )
+        appContext?.let { ctx ->
+            val prefs = ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("key_is_dark_theme", newTheme).apply()
+        }
     }
 
     fun signOut(context: android.content.Context? = null) {
