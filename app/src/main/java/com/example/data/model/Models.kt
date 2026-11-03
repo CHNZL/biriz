@@ -291,4 +291,43 @@ data class GroupMakerState(
     val activeSwapStudentId: String? = null
 )
 
+/**
+ * Akıllı Sınıf Kitaplığı & Okuma Takip Modelleri
+ */
+data class ActiveAssignment(
+    val studentId: String,
+    val studentName: String,
+    val assignmentDate: Long = System.currentTimeMillis()
+)
+
+data class Book(
+    val id: String,
+    val registrationNo: Int, // Demirbaş / Sıra No (Otomatik 1, 2, 3...)
+    val name: String,        // Kitap Adı (Benzersiz)
+    val author: String = "",
+    val pageCount: Int = 0,
+    val status: String = "Rafta", // "Rafta" veya "Okunuyor"
+    val activeAssignments: List<ActiveAssignment> = emptyList(),
+    val currentStudentId: String? = null,
+    val currentStudentName: String? = null,
+    val assignmentDate: Long? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ReadingRecord(
+    val id: String,
+    val bookId: String,
+    val bookName: String,
+    val pageCount: Int = 0,
+    val studentId: String,
+    val studentName: String,
+    val studentNumber: String = "",
+    val startDate: Long,
+    val endDate: Long,
+    val earnedStars: Int = 1, // Kitap Kurdu Yıldızı
+    val teacherUid: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 

@@ -16,9 +16,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.R
 import com.example.data.model.ClassRoom
+import com.example.data.model.Book
 import com.example.data.model.DeskPosition
 import com.example.data.model.DoorPosition
 import com.example.data.model.GroupTeam
+import com.example.data.model.ReadingRecord
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.ScheduleTimelineItem
@@ -2213,6 +2215,296 @@ object ExcelPdfHelper {
     }
 
     /**
+     * Sınıf Kitaplığı Envanterini Excel (.xlsx) formatında dışa aktarır.
+     */
+    fun exportBooksExcel(
+        context: Context,
+        classRoom: ClassRoom,
+        books: List<Book>
+    ): Uri {
+        val safeSchool = classRoom.schoolName.replace(" ", "_").filter { it.isLetterOrDigit() || it == '_' }
+        val fileName = "${safeSchool}_${classRoom.gradeLevel}${classRoom.section}_Kitaplik_Envanteri.xlsx"
+        val file = File(context.cacheDir, fileName)
+
+        val headers = listOf("Demirbaş No", "Kitap Adı", "Yazar", "Sayfa Sayısı", "Durum", "Şu An Okuyan(lar)", "Veriliş Tarihi")
+        val rows = books.sortedBy { it.registrationNo }.map { book ->
+            val readersText = when {
+                book.activeAssignments.isNotEmpty() -> book.activeAssignments.joinToString(", ") { it.studentName }
+                !book.currentStudentName.isNullOrBlank() -> book.currentStudentName
+                else -> "-"
+            }
+            listOf(
+                book.registrationNo.toString(),
+                book.name,
+                book.author.ifBlank { "-" },
+                if (book.pageCount > 0) book.pageCount.toString() else "-",
+                book.status,
+                readersText,
+                book.assignmentDate?.let { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(it)) } ?: "-"
+            )
+        }
+
+        writeXlsx(file, headers, rows)
+
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+    }
+
+    /**
+     * Okuma Takip ve İade Geçmişini Excel (.xlsx) formatında dışa aktarır.
+     */
+    fun exportReadingRecordsExcel(
+        context: Context,
+        classRoom: ClassRoom,
+        records: List<ReadingRecord>
+    ): Uri {
+        val safeSchool = classRoom.schoolName.replace(" ", "_").filter { it.isLetterOrDigit() || it == '_' }
+        val fileName = "${safeSchool}_${classRoom.gradeLevel}${classRoom.section}_Okuma_Gecmisi.xlsx"
+        val file = File(context.cacheDir, fileName)
+
+        val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale("tr"))
+        val headers = listOf("Sıra", "Öğrenci Adı", "Kitap Adı", "Sayfa Sayısı", "Başlangıç Tarihi", "İade Tarihi", "Kazanılan Yıldız")
+        val rows = records.mapIndexed { index, record ->
+            val starsEarned = (record.pageCount / 10).coerceAtLeast(1)
+            val startStr = if (record.startDate > 0) dateFormat.format(Date(record.startDate)) else "-"
+            val endStr = if (record.endDate > 0) dateFormat.format(Date(record.endDate)) else "-"
+            listOf(
+                (index + 1).toString(),
+                record.studentName,
+                record.bookName,
+                if (record.pageCount > 0) record.pageCount.toString() else "-",
+                startStr,
+                endStr,
+                "$starsEarned ⭐"
+            )
+        }
+
+        writeXlsx(file, headers, rows)
+
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+    }
+
+    /**
+     * Kitaplık Envanteri ve Okuma Takip Raporunu Resmi A4 PDF olarak üretir.
+     */
+    fun exportLibraryPdf(
+        context: Context,
+        classRoom: ClassRoom,
+        books: List<Book>,
+        records: List<ReadingRecord>
+    ): Uri {
+        val safeSchool = classRoom.schoolName.replace(" ", "_").filter { it.isLetterOrDigit() || it == '_' }
+        val fileName = "${safeSchool}_${classRoom.gradeLevel}${classRoom.section}_Kitaplik_Raporu.pdf"
+        val file = File(context.cacheDir, fileName)
+
+        val pdfDocument = PdfDocument()
+        val pageWidth = 595 // Standard A4 width in pt
+        val pageHeight = 842 // Standard A4 height in pt
+
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val primaryColor = 0xFF1E3A8A.toInt() // Biriz Navy
+        val textColor = 0xFF0F172A.toInt()
+        val mutedTextColor = 0xFF64748B.toInt()
+        val lightBgColor = 0xFFF1F5F9.toInt()
+        val accentGreen = 0xFF059669.toInt()
+        val accentOrange = 0xFFD97706.toInt()
+
+        // 1. Üst Başlık & BİRİZ Amblemi
+        val emblemBitmap = renderEmblemBitmap(context, 70)
+        emblemBitmap?.let {
+            canvas.drawBitmap(it, 36f, 32f, null)
+        }
+
+        val titlePaint = Paint().apply {
+            color = primaryColor
+            textSize = 17f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val subTitlePaint = Paint().apply {
+            color = textColor
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val textPaint = Paint().apply {
+            color = mutedTextColor
+            textSize = 9.5f
+            typeface = Typeface.DEFAULT
+            isAntiAlias = true
+        }
+
+        val startX = if (emblemBitmap != null) 116f else 36f
+        canvas.drawText("${classRoom.schoolName} - ${classRoom.gradeLevel}/${classRoom.section} SINIFI", startX, 48f, titlePaint)
+        canvas.drawText("AKILLI SINIF KİTAPLIĞI VE OKUMA RAPORU", startX, 66f, subTitlePaint)
+        val currentDateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date())
+        canvas.drawText("Öğretmen: ${classRoom.teacherName}  |  Rapor Tarihi: $currentDateStr", startX, 82f, textPaint)
+
+        // Çizgi
+        val linePaint = Paint().apply {
+            color = 0xFFCBD5E1.toInt()
+            strokeWidth = 1f
+        }
+        canvas.drawLine(36f, 100f, (pageWidth - 36).toFloat(), 100f, linePaint)
+
+        // 2. Bento KPI Özet İstatistik Kutuları
+        val totalBooks = books.size
+        val onReadingBooks = books.count { it.status == "Okunuyor" || it.activeAssignments.isNotEmpty() }
+        val shelfBooks = totalBooks - onReadingBooks
+        val completedReadings = records.size
+        val totalPagesRead = records.sumOf { it.pageCount }
+
+        val cardWidth = (pageWidth - 72f - 24f) / 4f
+        val kpiY = 112f
+        val kpiHeight = 54f
+
+        val kpiData = listOf(
+            Triple("Toplam Kitap", "$totalBooks Adet", primaryColor),
+            Triple("Şu An Okunan", "$onReadingBooks Kitap", accentOrange),
+            Triple("Tamamlanan", "$completedReadings Okuma", accentGreen),
+            Triple("Okunan Sayfa", "$totalPagesRead Sayfa", 0xFF6D28D9.toInt())
+        )
+
+        val cardPaint = Paint().apply {
+            color = lightBgColor
+            style = Paint.Style.FILL
+        }
+        val cardBorderPaint = Paint().apply {
+            color = 0xFFE2E8F0.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+        }
+        val kpiLabelPaint = Paint().apply {
+            color = mutedTextColor
+            textSize = 8.5f
+            isAntiAlias = true
+        }
+        val kpiValuePaint = Paint().apply {
+            textSize = 12.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+
+        kpiData.forEachIndexed { index, (label, value, colorVal) ->
+            val cX = 36f + index * (cardWidth + 8f)
+            val rect = RectF(cX, kpiY, cX + cardWidth, kpiY + kpiHeight)
+            canvas.drawRoundRect(rect, 6f, 6f, cardPaint)
+            canvas.drawRoundRect(rect, 6f, 6f, cardBorderPaint)
+
+            canvas.drawText(label, cX + 10f, kpiY + 18f, kpiLabelPaint)
+            kpiValuePaint.color = colorVal
+            canvas.drawText(value, cX + 10f, kpiY + 38f, kpiValuePaint)
+        }
+
+        // 3. Tablo Başlığı: Kitaplık Envanter Listesi (İlk 24 Kitap)
+        var currentY = 186f
+        val sectionTitlePaint = Paint().apply {
+            color = primaryColor
+            textSize = 11.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        canvas.drawText("📚 Sınıf Kitaplığı Envanteri (Örnek Döküm)", 36f, currentY, sectionTitlePaint)
+        currentY += 14f
+
+        // Tablo Başlık Satırı
+        val thPaint = Paint().apply {
+            color = primaryColor
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(36f, currentY, (pageWidth - 36).toFloat(), currentY + 20f, thPaint)
+
+        val thTextPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        canvas.drawText("No", 42f, currentY + 14f, thTextPaint)
+        canvas.drawText("Kitap Adı", 80f, currentY + 14f, thTextPaint)
+        canvas.drawText("Yazar", 250f, currentY + 14f, thTextPaint)
+        canvas.drawText("Sayfa", 370f, currentY + 14f, thTextPaint)
+        canvas.drawText("Durum", 420f, currentY + 14f, thTextPaint)
+        canvas.drawText("Okuyan Öğrenci", 480f, currentY + 14f, thTextPaint)
+        currentY += 20f
+
+        val rowTextPaint = Paint().apply {
+            color = textColor
+            textSize = 8.5f
+            isAntiAlias = true
+        }
+        val zebraPaint = Paint().apply {
+            color = 0xFFF8FAFC.toInt()
+            style = Paint.Style.FILL
+        }
+
+        val displayBooks = books.sortedBy { it.registrationNo }.take(22)
+        displayBooks.forEachIndexed { idx, book ->
+            val rowY = currentY + (idx * 19f)
+            if (rowY > pageHeight - 60) return@forEachIndexed
+
+            if (idx % 2 == 1) {
+                canvas.drawRect(36f, rowY, (pageWidth - 36).toFloat(), rowY + 19f, zebraPaint)
+            }
+            canvas.drawText("#${book.registrationNo}", 42f, rowY + 13f, rowTextPaint)
+            val titleCut = if (book.name.length > 30) book.name.take(28) + ".." else book.name
+            canvas.drawText(titleCut, 80f, rowY + 13f, rowTextPaint)
+            val authorCut = if (book.author.length > 20) book.author.take(18) + ".." else book.author.ifBlank { "-" }
+            canvas.drawText(authorCut, 250f, rowY + 13f, rowTextPaint)
+            canvas.drawText(if (book.pageCount > 0) "${book.pageCount} s." else "-", 370f, rowY + 13f, rowTextPaint)
+
+            val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty()
+            rowTextPaint.color = if (isReading) accentOrange else accentGreen
+            canvas.drawText(if (isReading) "Okunuyor" else "Rafta", 420f, rowY + 13f, rowTextPaint)
+
+            rowTextPaint.color = textColor
+            val readerName = when {
+                book.activeAssignments.isNotEmpty() -> book.activeAssignments.first().studentName
+                !book.currentStudentName.isNullOrBlank() -> book.currentStudentName
+                else -> "-"
+            }
+            val readerCut = if (readerName.length > 16) readerName.take(14) + ".." else readerName
+            canvas.drawText(readerCut, 480f, rowY + 13f, rowTextPaint)
+        }
+
+        // Alt Bilgi (Footer)
+        val footerPaint = Paint().apply {
+            color = mutedTextColor
+            textSize = 8.5f
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "BİRİZ Akıllı Sınıf & Okuma Takip Sistemi | Toplam Kayıtlı Kitap: ${books.size} | Toplam Okuma Hareketi: ${records.size}",
+            36f,
+            (pageHeight - 24).toFloat(),
+            footerPaint
+        )
+
+        pdfDocument.finishPage(page)
+
+        FileOutputStream(file).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+    }
+
+    /**
      * Oluşturulan dosyayı diğer uygulamalarla (WhatsApp, E-posta, Dosyalar, Yazdır vb.) paylaşır / açar.
      */
     fun shareFile(context: Context, uri: Uri, mimeType: String, chooserTitle: String) {
@@ -2227,3 +2519,4 @@ object ExcelPdfHelper {
         context.startActivity(chooser)
     }
 }
+

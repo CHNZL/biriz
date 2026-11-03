@@ -582,7 +582,110 @@ class ExampleUnitTest {
     val formattedLong = String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, mins, secs)
     assertEquals("01:01:05", formattedLong)
   }
+
+  @Test
+  fun testSmartRegistrationNumberAssignment() {
+    val helper = com.example.util.LibraryPersistenceHelper
+
+    // 1. Empty list -> 1
+    assertEquals(1, helper.findNextAvailableRegistrationNo(emptyList()))
+
+    // 2. Sequential list [1, 2, 3] -> 4
+    val seqBooks = listOf(
+      com.example.data.model.Book(id = "b1", registrationNo = 1, name = "Kitap 1"),
+      com.example.data.model.Book(id = "b2", registrationNo = 2, name = "Kitap 2"),
+      com.example.data.model.Book(id = "b3", registrationNo = 3, name = "Kitap 3")
+    )
+    assertEquals(4, helper.findNextAvailableRegistrationNo(seqBooks))
+
+    // 3. Gap inside [1, 2, 4] -> 3 (fills first hole)
+    val gapBooks = listOf(
+      com.example.data.model.Book(id = "b1", registrationNo = 1, name = "Kitap 1"),
+      com.example.data.model.Book(id = "b2", registrationNo = 2, name = "Kitap 2"),
+      com.example.data.model.Book(id = "b4", registrationNo = 4, name = "Kitap 4")
+    )
+    assertEquals(3, helper.findNextAvailableRegistrationNo(gapBooks))
+
+    // 4. Missing #1 [2, 3, 5] -> 1
+    val missingOne = listOf(
+      com.example.data.model.Book(id = "b2", registrationNo = 2, name = "Kitap 2"),
+      com.example.data.model.Book(id = "b3", registrationNo = 3, name = "Kitap 3"),
+      com.example.data.model.Book(id = "b5", registrationNo = 5, name = "Kitap 5")
+    )
+    assertEquals(1, helper.findNextAvailableRegistrationNo(missingOne))
+  }
+
+  @Test
+  fun testDuplicateBookNameDetection() {
+    val helper = com.example.util.LibraryPersistenceHelper
+    val existing = listOf(
+      com.example.data.model.Book(id = "b1", registrationNo = 1, name = "Küçük Prens"),
+      com.example.data.model.Book(id = "b2", registrationNo = 2, name = "Şeker Portakalı")
+    )
+
+    // Exact match
+    assertTrue(helper.isBookNameDuplicate(existing, "Küçük Prens"))
+    // Case-insensitive match
+    assertTrue(helper.isBookNameDuplicate(existing, "küçük prens"))
+    // Extra spaces
+    assertTrue(helper.isBookNameDuplicate(existing, "  Küçük Prens  "))
+    // Different book
+    assertFalse(helper.isBookNameDuplicate(existing, "Sol Ayağım"))
+    // Same book edit (excludeCurrentBookId)
+    assertFalse(helper.isBookNameDuplicate(existing, "Küçük Prens", excludeCurrentBookId = "b1"))
+  }
+
+  @Test
+  fun testReadingStarCalculation() {
+    val helper = com.example.util.LibraryPersistenceHelper
+
+    // 0 pages -> minimum 1 star
+    assertEquals(1, helper.calculateReadingStars(0))
+    // Under 10 pages -> 1 star
+    assertEquals(1, helper.calculateReadingStars(9))
+    // 10 pages -> 1 star
+    assertEquals(1, helper.calculateReadingStars(10))
+    // 35 pages -> 3 stars
+    assertEquals(3, helper.calculateReadingStars(35))
+    // 120 pages -> 12 stars
+    assertEquals(12, helper.calculateReadingStars(120))
+  }
+
+  @Test
+  fun testReadingAnalyticsKPIs() {
+    val records = listOf(
+      com.example.data.model.ReadingRecord(
+        id = "r1",
+        bookId = "b1",
+        bookName = "Kitap A",
+        pageCount = 60,
+        studentId = "s1",
+        studentName = "Ahmet",
+        startDate = 1730419200000L,
+        endDate = 1730592000000L
+      ),
+      com.example.data.model.ReadingRecord(
+        id = "r2",
+        bookId = "b2",
+        bookName = "Kitap B",
+        pageCount = 140,
+        studentId = "s2",
+        studentName = "Ayşe",
+        startDate = 1730419200000L,
+        endDate = 1730764800000L
+      )
+    )
+
+    val totalBooks = records.size
+    val totalPages = records.sumOf { it.pageCount }
+    val starsSum = records.sumOf { (it.pageCount / 10).coerceAtLeast(1) }
+
+    assertEquals(2, totalBooks)
+    assertEquals(200, totalPages)
+    assertEquals(6 + 14, starsSum)
+  }
 }
+
 
 
 

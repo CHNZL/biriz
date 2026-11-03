@@ -80,9 +80,9 @@ enum class DashboardSubPage(val title: String, val category: String) {
     ILETISIM_MESAJLAR("Mesajlar", "İLETİŞİM"),
 
     // 4. KİTAPLIK YÖNETİMİ
-    KITAPLIK_LISTE("Liste", "KİTAPLIK YÖNETİMİ"),
-    KITAPLIK_KAYITLAR("Kayıtlar", "KİTAPLIK YÖNETİMİ"),
-    KITAPLIK_DEGERLENDIRME("Değerlendirme", "KİTAPLIK YÖNETİMİ"),
+    KITAPLIK_LISTE("Kitaplık Envanteri", "KİTAPLIK YÖNETİMİ"),
+    KITAPLIK_KAYITLAR("Ödünç & İade Geçmişi", "KİTAPLIK YÖNETİMİ"),
+    KITAPLIK_DEGERLENDIRME("Okuma Analitiği", "KİTAPLIK YÖNETİMİ"),
 
     // 5. TURNUVA YÖNETİMİ
     TURNUVA_DEVAM_EDENLER("Devam Edenler", "TURNUVA YÖNETİMİ"),

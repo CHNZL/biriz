@@ -782,6 +782,19 @@ fun TeacherDashboardScreen(
                         )
                     }
 
+                    DashboardSubPage.KITAPLIK_LISTE,
+                    DashboardSubPage.KITAPLIK_KAYITLAR,
+                    DashboardSubPage.KITAPLIK_DEGERLENDIRME -> {
+                        LibrarySubScreen(
+                            classRoom = classRoom,
+                            students = students,
+                            currentSubPage = currentSubPage,
+                            isDarkTheme = isDarkTheme,
+                            onSelectSubPage = onSelectSubPage,
+                            onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
+                        )
+                    }
+
                     else -> {
                         // Diğer Alt Sayfalar (Zengin Bento Mikro-Önizleme)
                         ModulePreviewsSubScreen(
