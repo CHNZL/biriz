@@ -217,173 +217,7 @@ fun LibrarySubScreen(
                 .fillMaxSize()
                 .padding(bottom = 68.dp) // space for floating dock
         ) {
-            // 1. Üst Başlık ve Hızlı Eylemler
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (isDarkTheme) Color(0x950E172A) else Color.White,
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, cardBorder)
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { onBackToClassList() },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("library_back_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Geri",
-                                    tint = primaryText
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column {
-                                Text(
-                                    text = "📚 ${classRoom.gradeLevel}/${classRoom.section} Akıllı Sınıf Kitaplığı",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryText
-                                )
-                                Text(
-                                    text = "${books.size} Kitap • ${records.size} Tamamlanan Okuma",
-                                    fontSize = 11.5.sp,
-                                    color = secondaryText
-                                )
-                            }
-                        }
-
-                        // Üst Aksiyonlar: Dışa Aktar & Yeni Kitap
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showExportDialog = true },
-                                modifier = Modifier
-                                    .height(34.dp)
-                                    .testTag("library_export_button"),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FileDownload,
-                                    contentDescription = "Raporla",
-                                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Rapor",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                )
-                            }
-
-                            Button(
-                                onClick = {
-                                    bookToEdit = null
-                                    showAddEditDialog = true
-                                },
-                                modifier = Modifier
-                                    .height(34.dp)
-                                    .testTag("library_add_book_button"),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                ),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Kitap Ekle",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Kitap Ekle",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Segmented Tab Butonları
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9))
-                            .padding(3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val tabs = listOf(
-                            Triple(0, "Kitaplık (${books.size})", Icons.AutoMirrored.Filled.MenuBook),
-                            Triple(1, "Ödünç & İade", Icons.Default.History),
-                            Triple(2, "Analitik & Karne", Icons.Default.Insights)
-                        )
-
-                        tabs.forEach { (index, title, icon) ->
-                            val isSelected = selectedTab == index
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        selectedTab = index
-                                        when (index) {
-                                            0 -> onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE)
-                                            1 -> onSelectSubPage(DashboardSubPage.KITAPLIK_KAYITLAR)
-                                            2 -> onSelectSubPage(DashboardSubPage.KITAPLIK_DEGERLENDIRME)
-                                        }
-                                    }
-                                    .testTag("library_tab_$index"),
-                                color = if (isSelected) {
-                                    if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                } else {
-                                    Color.Transparent
-                                },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 7.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = title,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (isSelected) Color.White else secondaryText
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = title,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else secondaryText
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Tab İçerikleri
+            // İçerik: currentSubPage'e göre gösterilir (Envanter, Ödünç & İade, Analitik)
             when (selectedTab) {
                 0 -> {
                     // TAB 0: KİTAPLIK ENVANTERİ
@@ -397,6 +231,11 @@ fun LibrarySubScreen(
                         onSearchChange = { searchQuery = it },
                         onStatusFilterChange = { statusFilter = it },
                         onViewModeToggle = { viewMode = if (viewMode == "GRID") "LIST" else "GRID" },
+                        onExportClick = { showExportDialog = true },
+                        onAddBookClick = {
+                            bookToEdit = null
+                            showAddEditDialog = true
+                        },
                         onBorrowClick = { book ->
                             bookToBorrow = book
                             showBorrowDialog = true
@@ -672,6 +511,8 @@ private fun LibraryInventoryView(
     onSearchChange: (String) -> Unit,
     onStatusFilterChange: (String) -> Unit,
     onViewModeToggle: () -> Unit,
+    onExportClick: () -> Unit,
+    onAddBookClick: () -> Unit,
     onBorrowClick: (Book) -> Unit,
     onReturnClick: (Book) -> Unit,
     onEditClick: (Book) -> Unit,
@@ -707,46 +548,98 @@ private fun LibraryInventoryView(
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        // Arama ve Görünüm Değiştirici
+        // Arama Kutucuğu, Rapor, Kitap Ekle ve Görünüm Değiştirici
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
                 modifier = Modifier
                     .weight(1f)
-                    .height(50.dp)
+                    .height(46.dp)
                     .testTag("library_search_input"),
-                placeholder = { Text("Kitap adı, yazar veya demirbaş no...", fontSize = 12.5.sp) },
+                placeholder = { Text("Kitap adı, yazar...", fontSize = 12.sp, maxLines = 1) },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = "Ara", modifier = Modifier.size(18.dp))
+                    Icon(imageVector = Icons.Default.Search, contentDescription = "Ara", modifier = Modifier.size(17.dp))
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchChange("") }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Temizle", modifier = Modifier.size(16.dp))
+                        IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(24.dp)) {
+                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Temizle", modifier = Modifier.size(15.dp))
                         }
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                     unfocusedBorderColor = if (isDarkTheme) Color(0x5064748B) else BirizBorder
                 )
             )
 
+            // Rapor Butonu
+            OutlinedButton(
+                onClick = onExportClick,
+                modifier = Modifier
+                    .height(46.dp)
+                    .testTag("library_export_button"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FileDownload,
+                    contentDescription = "Rapor",
+                    tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = "Rapor",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
+            }
+
+            // + Kitap Ekle Butonu
+            Button(
+                onClick = onAddBookClick,
+                modifier = Modifier
+                    .height(46.dp)
+                    .testTag("library_add_book_button"),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Kitap Ekle",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = "Kitap",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
             // Görünüm Modu Değiştir (Grid / Liste)
             Surface(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable { onViewModeToggle() }
                     .testTag("library_view_mode_toggle"),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
                 border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5064748B) else BirizBorder)
             ) {

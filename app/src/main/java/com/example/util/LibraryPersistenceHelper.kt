@@ -85,9 +85,7 @@ object LibraryPersistenceHelper {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString("$KEY_BOOKS_PREFIX$classId", null)
         if (jsonStr.isNullOrBlank()) {
-            val defaults = getInitialSampleBooks()
-            saveBooks(context, classId, defaults)
-            return defaults
+            return emptyList()
         }
 
         return try {
@@ -127,7 +125,15 @@ object LibraryPersistenceHelper {
                     )
                 )
             }
-            list.sortedBy { it.registrationNo }
+            val sampleNames = setOf(
+                "Küçük Prens", "Şeker Portakalı", "Dedemin Bakkalı",
+                "Pal Sokağı Çocukları", "Keloğlan Masalları", "Peter Pan", "Momo", "Pinokyo"
+            )
+            val cleanedList = list.filterNot { it.name.trim() in sampleNames }
+            if (cleanedList.size != list.size) {
+                saveBooks(context, classId, cleanedList)
+            }
+            cleanedList.sortedBy { it.registrationNo }
         } catch (_: Exception) {
             emptyList()
         }
@@ -651,21 +657,8 @@ object LibraryPersistenceHelper {
         return records.take(students.size).sumOf { it.earnedStars }
     }
 
-    /**
-     * İlk Kurulumda Sınıfa Özel Örnek Kitap Seti
-     */
     private fun getInitialSampleBooks(): List<Book> {
-        val now = System.currentTimeMillis()
-        return listOf(
-            Book(id = UUID.randomUUID().toString(), registrationNo = 1, name = "Küçük Prens", author = "Antoine de Saint-Exupéry", pageCount = 96, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 2, name = "Şeker Portakalı", author = "José Mauro de Vasconcelos", pageCount = 184, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 3, name = "Dedemin Bakkalı", author = "Şermin Yaşar", pageCount = 160, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 4, name = "Pal Sokağı Çocukları", author = "Ferenc Molnár", pageCount = 240, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 5, name = "Keloğlan Masalları", author = "Anonim", pageCount = 72, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 6, name = "Peter Pan", author = "J. M. Barrie", pageCount = 120, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 7, name = "Momo", author = "Michael Ende", pageCount = 304, status = "Rafta", createdAt = now),
-            Book(id = UUID.randomUUID().toString(), registrationNo = 8, name = "Pinokyo", author = "Carlo Collodi", pageCount = 112, status = "Rafta", createdAt = now)
-        )
+        return emptyList()
     }
 
     private fun uploadBooksToFirestore(context: Context, classId: String, books: List<Book>) {
