@@ -1,0 +1,1885 @@
+package com.example.ui.screens
+
+import android.content.Context
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.MilitaryTech
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.model.ActivityPreset
+import com.example.data.model.ClassRoom
+import com.example.data.model.Student
+import com.example.data.model.Tournament
+import com.example.data.model.TournamentMatch
+import com.example.data.model.TournamentMatchType
+import com.example.data.model.TournamentStanding
+import com.example.data.model.TournamentStarRewards
+import com.example.data.model.TournamentStatus
+import com.example.data.model.TournamentType
+import com.example.data.model.WinnerSelectionMethod
+import com.example.ui.theme.BirizBorder
+import com.example.ui.theme.BirizDarkBgBottom
+import com.example.ui.theme.BirizDarkBgTop
+import com.example.ui.theme.BirizDarkCardBorder
+import com.example.ui.theme.BirizDarkCardGlass
+import com.example.ui.theme.BirizDarkTextMuted
+import com.example.ui.theme.BirizDarkTextPrimary
+import com.example.ui.theme.BirizDarkTextSecondary
+import com.example.ui.theme.BirizError
+import com.example.ui.theme.BirizNavyDark
+import com.example.ui.theme.BirizNavyPrimary
+import com.example.ui.theme.BirizTextPrimary
+import com.example.ui.theme.BirizTextSecondary
+import com.example.ui.theme.BirizTurquoise
+import com.example.ui.viewmodel.DashboardSubPage
+import com.example.util.ExcelPdfHelper
+import com.example.util.TournamentEngine
+import com.example.util.TournamentPersistenceHelper
+
+private val BirizGold = Color(0xFFF59E0B)
+private val BirizSilver = Color(0xFF94A3B8)
+private val BirizBronze = Color(0xFFB45309)
+
+@Composable
+fun TournamentSubScreen(
+    classRoom: ClassRoom,
+    students: List<Student>,
+    currentSubPage: DashboardSubPage = DashboardSubPage.TURNUVA_DEVAM_EDENLER,
+    isDarkTheme: Boolean = false,
+    onSelectSubPage: (DashboardSubPage) -> Unit = {},
+    onBackToClassList: () -> Unit
+) {
+    val context = LocalContext.current
+
+    var tournaments by remember { mutableStateOf<List<Tournament>>(emptyList()) }
+    var selectedTournament by remember { mutableStateOf<Tournament?>(null) }
+    var selectedTournamentMatches by remember { mutableStateOf<List<TournamentMatch>>(emptyList()) }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var showCreateWizard by remember { mutableStateOf(false) }
+    var matchToScore by remember { mutableStateOf<TournamentMatch?>(null) }
+    var tournamentToDelete by remember { mutableStateOf<Tournament?>(null) }
+    var showPodiumDialog by remember { mutableStateOf(false) }
+
+    fun refreshData() {
+        tournaments = TournamentPersistenceHelper.loadTournaments(context, classRoom.id)
+        if (selectedTournament != null) {
+            val updatedT = tournaments.find { it.id == selectedTournament!!.id }
+            if (updatedT != null) {
+                selectedTournament = updatedT
+                selectedTournamentMatches = TournamentPersistenceHelper.loadMatches(context, updatedT.id)
+            } else {
+                selectedTournament = null
+                selectedTournamentMatches = emptyList()
+            }
+        }
+    }
+
+    LaunchedEffect(classRoom.id) {
+        refreshData()
+    }
+
+    // Geri tuşu yönetimi
+    BackHandler {
+        if (selectedTournament != null) {
+            selectedTournament = null
+        } else {
+            onBackToClassList()
+        }
+    }
+
+    val cardBg = if (isDarkTheme) BirizDarkCardGlass else Color.White
+    val cardBorder = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    val activeTournaments = tournaments.filter { it.status == TournamentStatus.DEVAM_EDIYOR }
+    val completedTournaments = tournaments.filter { it.status == TournamentStatus.TAMAMLANDI }
+
+    val displayTournaments = remember(tournaments, currentSubPage, searchQuery) {
+        val baseList = if (currentSubPage == DashboardSubPage.TURNUVA_TAMAMLANANLAR) completedTournaments else activeTournaments
+        if (searchQuery.isBlank()) baseList else {
+            baseList.filter {
+                it.name.contains(searchQuery, ignoreCase = true) ||
+                        it.description.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = if (isDarkTheme) listOf(BirizDarkBgTop, BirizDarkBgBottom) else listOf(Color(0xFFF8FAFC), Color(0xFFF1F5F9))
+                )
+            )
+            .testTag("tournament_sub_screen_root")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 68.dp) // Space for bottom dock
+        ) {
+            if (selectedTournament == null) {
+                // =========================================================
+                // TURNUVA LİSTESİ VE ÜST AKSİYON ÇUBUĞU
+                // =========================================================
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    // Arama & Turnuva Oluştur Satırı
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("tournament_search_input"),
+                            placeholder = { Text("Turnuva adı veya branş ara...", fontSize = 12.sp, maxLines = 1) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = "Ara", modifier = Modifier.size(17.dp))
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Temizle", modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                unfocusedBorderColor = if (isDarkTheme) Color(0x5064748B) else BirizBorder
+                            )
+                        )
+
+                        // + Turnuva Oluştur Butonu
+                        Button(
+                            onClick = { showCreateWizard = true },
+                            modifier = Modifier
+                                .height(46.dp)
+                                .testTag("tournament_create_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Turnuva Ekle", tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Turnuva Kur", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (displayTournaments.isEmpty()) {
+                        // Boş Ekran
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isDarkTheme) Color(0x25334E68) else Color.White,
+                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x40334E68) else BirizBorder),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(24.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE),
+                                        modifier = Modifier.size(64.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(text = "🏆", fontSize = 32.sp)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = if (searchQuery.isNotEmpty()) "Arama kriterine uygun turnuva bulunamadı" else if (currentSubPage == DashboardSubPage.TURNUVA_TAMAMLANANLAR) "Henüz Tamamlanan Turnuva Yok" else "Sınıfta Henüz Aktif Turnuva Yok",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = primaryText
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (searchQuery.isNotEmpty())
+                                            "Farklı bir turnuva adı ile tekrar arayabilirsiniz."
+                                        else
+                                            "Satranç, masa tenisi, mangala, futbol veya bilgi yarışması başlatın! Otomatik fikstür motoru, podyum ve yıldız ödülleri hazır.",
+                                        fontSize = 12.sp,
+                                        color = secondaryText,
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 17.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = { showCreateWizard = true },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("İlk Turnuvayı Başlat", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Turnuva Kartları Listesi
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(displayTournaments, key = { it.id }) { t ->
+                                TournamentCardItem(
+                                    tournament = t,
+                                    isDarkTheme = isDarkTheme,
+                                    onClick = {
+                                        selectedTournament = t
+                                        selectedTournamentMatches = TournamentPersistenceHelper.loadMatches(context, t.id)
+                                    },
+                                    onDelete = { tournamentToDelete = t }
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // =========================================================
+                // SEÇİLİ TURNUVA DETAY EKRANI (FİKSTÜR, PUAN DURUMU, PODYUM)
+                // =========================================================
+                TournamentDetailScreen(
+                    tournament = selectedTournament!!,
+                    matches = selectedTournamentMatches,
+                    students = students,
+                    isDarkTheme = isDarkTheme,
+                    onBack = { selectedTournament = null },
+                    onMatchClick = { matchToScore = it },
+                    onDelete = { tournamentToDelete = selectedTournament },
+                    onOpenPodium = { showPodiumDialog = true },
+                    onRefresh = { refreshData() }
+                )
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // DİYALOG: MAÇ SONUCU GİRİŞİ (SKOR / GALİP SEÇİMİ)
+    // -------------------------------------------------------------
+    if (matchToScore != null && selectedTournament != null) {
+        MatchScoreDialog(
+            tournament = selectedTournament!!,
+            match = matchToScore!!,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { matchToScore = null },
+            onSave = { s1, s2, winnerId ->
+                val (updatedT, updatedM) = TournamentPersistenceHelper.recordMatchResult(
+                    context = context,
+                    classRoomId = classRoom.id,
+                    tournamentId = selectedTournament!!.id,
+                    matchId = matchToScore!!.id,
+                    score1 = s1,
+                    score2 = s2,
+                    winnerId = winnerId
+                )
+                selectedTournament = updatedT
+                selectedTournamentMatches = updatedM
+                refreshData()
+                matchToScore = null
+                Toast.makeText(context, "⚽ Maç sonucu kaydedildi.", Toast.LENGTH_SHORT).show()
+                if (updatedT.status == TournamentStatus.TAMAMLANDI) {
+                    showPodiumDialog = true
+                }
+            }
+        )
+    }
+
+    // -------------------------------------------------------------
+    // DİYALOG: ŞAMPİYONLUK PODYUMU & KUTLAMA
+    // -------------------------------------------------------------
+    if (showPodiumDialog && selectedTournament != null) {
+        TournamentPodiumDialog(
+            tournament = selectedTournament!!,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showPodiumDialog = false }
+        )
+    }
+
+    // -------------------------------------------------------------
+    // DİYALOG: TURNUVA SİLME VE YILDIZ GERİ ALMA ONAYI
+    // -------------------------------------------------------------
+    if (tournamentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { tournamentToDelete = null },
+            title = { Text("Turnuvayı Sil?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = "\"${tournamentToDelete!!.name}\" turnuvasını ve tüm maç kayıtlarını silmek istediğinize emin misiniz?\n\n" +
+                            "⚠️ Güvenlik Notu: Bu turnuva için öğrencilere dağıtılmış olan tüm şampiyonluk ve katılım yıldızları öğrenci bakiyelerinden hatasız geri çekilecektir.",
+                    fontSize = 13.5.sp,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        TournamentPersistenceHelper.deleteTournament(context, classRoom.id, tournamentToDelete!!.id)
+                        if (selectedTournament?.id == tournamentToDelete!!.id) {
+                            selectedTournament = null
+                        }
+                        tournamentToDelete = null
+                        refreshData()
+                        Toast.makeText(context, "Turnuva silindi ve dağıtılan yıldızlar geri çekildi.", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BirizError)
+                ) {
+                    Text("Evet, Sil ve Yıldızları Geri Al", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { tournamentToDelete = null }) {
+                    Text("Vazgeç")
+                }
+            }
+        )
+    }
+
+    // -------------------------------------------------------------
+    // DİYALOG: TURNUVA OLUŞTURMA SİHİRBAZI
+    // -------------------------------------------------------------
+    if (showCreateWizard) {
+        TournamentCreateWizardDialog(
+            students = students,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showCreateWizard = false },
+            onCreate = { newTournament, participantsList ->
+                val created = TournamentPersistenceHelper.createTournament(
+                    context = context,
+                    classRoomId = classRoom.id,
+                    tournament = newTournament,
+                    participantsPairs = participantsList
+                )
+                refreshData()
+                showCreateWizard = false
+                selectedTournament = created
+                selectedTournamentMatches = TournamentPersistenceHelper.loadMatches(context, created.id)
+                Toast.makeText(context, "🏆 Turnuva ve fikstür başarıyla oluşturuldu!", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+}
+
+// -------------------------------------------------------------
+// BİLEŞEN: TURNUVA LİSTE KARTI
+// -------------------------------------------------------------
+@Composable
+private fun TournamentCardItem(
+    tournament: Tournament,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val matches = remember(tournament.id) { TournamentPersistenceHelper.loadMatches(context, tournament.id) }
+    val totalMatches = matches.size
+    val completedMatches = matches.count { it.status == "completed" }
+    val progress = if (totalMatches > 0) completedMatches.toFloat() / totalMatches else 0f
+
+    val isCompleted = tournament.status == TournamentStatus.TAMAMLANDI
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .testTag("tournament_card_${tournament.id}"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDarkTheme) BirizDarkCardGlass else Color.White
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (isCompleted) BirizGold.copy(alpha = 0.6f) else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = tournament.type.icon,
+                        fontSize = 24.sp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = tournament.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = primaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${tournament.type.displayName} • ${tournament.matchType.displayName}",
+                                fontSize = 11.sp,
+                                color = secondaryText
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isCompleted) BirizGold.copy(alpha = 0.15f) else if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE),
+                    border = BorderStroke(1.dp, if (isCompleted) BirizGold else if (isDarkTheme) BirizTurquoise else Color(0xFFBAE6FD))
+                ) {
+                    Text(
+                        text = if (isCompleted) "🏆 Tamamlandı" else "⚡ Devam Ediyor",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCompleted) Color(0xFFB45309) else if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // İlerleme Çubuğu ve Maç Sayısı
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "İlerleme: $completedMatches / $totalMatches Maç Tamamlandı",
+                    fontSize = 11.sp,
+                    color = secondaryText
+                )
+                Text(
+                    text = "${(progress * 100).toInt()}%",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isCompleted) BirizGold else BirizTurquoise
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (isCompleted) BirizGold else BirizTurquoise,
+                trackColor = if (isDarkTheme) Color(0x30334E68) else Color(0xFFE2E8F0)
+            )
+
+            // Şampiyon Rozeti (Tamamlandıysa)
+            if (isCompleted && tournament.winnerName != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = BirizGold.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, BirizGold.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🥇", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Şampiyon: ${tournament.winnerName}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color(0xFFB45309)
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = "+${tournament.starRewards.firstPlaceStars} ⭐",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.5.sp,
+                            color = BirizGold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// BİLEŞEN: SEÇİLİ TURNUVA DETAY GÖRÜNÜMÜ
+// -------------------------------------------------------------
+@Composable
+private fun TournamentDetailScreen(
+    tournament: Tournament,
+    matches: List<TournamentMatch>,
+    students: List<Student>,
+    isDarkTheme: Boolean,
+    onBack: () -> Unit,
+    onMatchClick: (TournamentMatch) -> Unit,
+    onDelete: () -> Unit,
+    onOpenPodium: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedDetailTab by remember { mutableIntStateOf(0) } // 0: Fikstür & Maçlar, 1: Puan Durumu, 2: Podyum & Ödüller
+
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    val totalMatches = matches.size
+    val completedMatches = matches.count { it.status == "completed" }
+    val isCompleted = tournament.status == TournamentStatus.TAMAMLANDI
+
+    // Turlar / Haftalar
+    val allRounds = remember(matches) { matches.map { it.round }.distinct().sorted() }
+    var selectedRound by remember(allRounds) { mutableIntStateOf(allRounds.firstOrNull() ?: 1) }
+
+    val roundMatches = remember(matches, selectedRound) {
+        matches.filter { it.round == selectedRound }
+    }
+
+    // Puan Durumu (Lig veya Gruplar için)
+    val standings = remember(matches, tournament) {
+        TournamentEngine.calculateStandings(
+            participants = tournament.participants.map { id ->
+                val name = if (id.startsWith("extra:")) id.removePrefix("extra:") else students.find { it.id == id }?.fullName ?: id
+                Pair(id, name)
+            },
+            matches = matches,
+            pointsWin = tournament.pointsWin,
+            pointsDraw = tournament.pointsDraw,
+            pointsLoss = tournament.pointsLoss
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Üst Başlık Kartı
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (isDarkTheme) Color(0x900E172A) else Color.White,
+            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri", tint = primaryText)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = "${tournament.type.icon} ${tournament.name}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.5.sp,
+                                color = primaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${tournament.type.displayName} • $completedMatches/$totalMatches Maç Tamamlandı",
+                                fontSize = 11.sp,
+                                color = secondaryText
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // PDF Rapor Butonu
+                        OutlinedButton(
+                            onClick = {
+                                val uri = ExcelPdfHelper.exportTournamentPdf(context, tournament, matches, standings)
+                                ExcelPdfHelper.shareFile(context, uri, "application/pdf", "${tournament.name} Resmi Fikstür ve Puan Tablosu")
+                            },
+                            modifier = Modifier.height(32.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("PDF", fontSize = 11.5.sp, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                        }
+
+                        // Silme Butonu
+                        IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Sil", tint = BirizError, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Detay İçi Sekmeler
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9))
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val tabs = listOf(
+                        Pair(0, "Maçlar & Fikstür"),
+                        Pair(1, "Puan Tablosu"),
+                        Pair(2, if (isCompleted) "🏆 Podyum" else "⭐ Ödüller")
+                    )
+
+                    tabs.forEach { (index, title) ->
+                        val isSelected = selectedDetailTab == index
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { selectedDetailTab = index },
+                            color = if (isSelected) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else Color.Transparent,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = title,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else secondaryText,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sekme İçerikleri
+        when (selectedDetailTab) {
+            0 -> {
+                // 1. FİKSTÜR & MAÇLAR
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    // Hafta / Tur Seçici Hapları
+                    if (allRounds.size > 1) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            allRounds.forEach { r ->
+                                val isSelected = selectedRound == r
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedRound = r },
+                                    label = {
+                                        Text(
+                                            text = if (tournament.type == TournamentType.ELEME) {
+                                                when {
+                                                    r == allRounds.last() -> "🏆 Final"
+                                                    r == allRounds.last() - 1 && allRounds.size > 2 -> "🥈 Yarı Final"
+                                                    else -> "$r. Tur"
+                                                }
+                                            } else {
+                                                "$r. Hafta"
+                                            },
+                                            fontSize = 11.5.sp
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    if (roundMatches.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Bu tur için planlanmış maç bulunmuyor.", color = secondaryText, fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(roundMatches, key = { it.id }) { match ->
+                                TournamentMatchCard(
+                                    tournament = tournament,
+                                    match = match,
+                                    isDarkTheme = isDarkTheme,
+                                    onClick = { onMatchClick(match) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            1 -> {
+                // 2. PUAN TABLOSU
+                TournamentStandingsView(
+                    standings = standings,
+                    isDarkTheme = isDarkTheme
+                )
+            }
+
+            2 -> {
+                // 3. PODYUM & ÖDÜLLER
+                TournamentPodiumView(
+                    tournament = tournament,
+                    isDarkTheme = isDarkTheme,
+                    onOpenPodiumModal = onOpenPodium
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// BİLEŞEN: MAÇ KARTI
+// -------------------------------------------------------------
+@Composable
+private fun TournamentMatchCard(
+    tournament: Tournament,
+    match: TournamentMatch,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit
+) {
+    val isCompleted = match.status == "completed"
+    val isTieBreaker = match.isTieBreaker
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .testTag("match_card_${match.matchCode}"),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDarkTheme) BirizDarkCardGlass else Color.White
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (isTieBreaker) Color(0xFFEF4444) else if (isCompleted) Color(0xFF10B981).copy(alpha = 0.4f) else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+        )
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Üst Satır: Maç Kodu & Grup/Tur Bilgisi
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${match.groupName?.let { "$it • " } ?: ""}${match.matchCode}${if (match.isDoubleMatch && match.matchCode.endsWith("-R")) " (Rövanş)" else ""}",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = secondaryText
+                )
+
+                if (isTieBreaker) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFEE2E2),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444))
+                    ) {
+                        Text(
+                            text = "⚖️ Karar Maçı (Tie-Breaker)",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF991B1B),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else if (isCompleted) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFD1FAE5)
+                    ) {
+                        Text(
+                            text = "✓ Tamamlandı",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF065F46),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
+                    ) {
+                        Text(
+                            text = "Oynanacak",
+                            fontSize = 10.sp,
+                            color = secondaryText,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 1. Oyuncu Satırı
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (match.winnerId == match.player1Id) "🏆" else "👤",
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = match.player1Name,
+                        fontWeight = if (match.winnerId == match.player1Id) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 13.sp,
+                        color = if (match.winnerId == match.player1Id) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE && match.score1 != null) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFF1F5F9),
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = "${match.score1}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = primaryText,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                } else if (match.winnerId == match.player1Id) {
+                    Text("Kazandı ✓", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 2. Oyuncu Satırı
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (match.winnerId == match.player2Id) "🏆" else "👤",
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = match.player2Name,
+                        fontWeight = if (match.winnerId == match.player2Id) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 13.sp,
+                        color = if (match.winnerId == match.player2Id) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else primaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE && match.score2 != null) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFF1F5F9),
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = "${match.score2}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = primaryText,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                } else if (match.winnerId == match.player2Id) {
+                    Text("Kazandı ✓", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// BİLEŞEN: PUAN DURUMU TABLOSU
+// -------------------------------------------------------------
+@Composable
+private fun TournamentStandingsView(
+    standings: List<TournamentStanding>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(14.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDarkTheme) BirizDarkCardGlass else Color.White
+            ),
+            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                // Tablo Başlık Satırı
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("#", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(22.dp), textAlign = TextAlign.Center)
+                    Text("Oyuncu", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.weight(1f))
+                    Text("O", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                    Text("G", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                    Text("B", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                    Text("M", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                    Text("AV", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+                    Text("P", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary, modifier = Modifier.width(32.dp), textAlign = TextAlign.Center)
+                }
+
+                HorizontalDivider(color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFE2E8F0))
+
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(standings.size) { idx ->
+                        val item = standings[idx]
+                        val isLeader = idx == 0
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${idx + 1}",
+                                fontSize = 11.sp,
+                                fontWeight = if (isLeader) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isLeader) BirizGold else secondaryText,
+                                modifier = Modifier.width(22.dp),
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = item.playerName,
+                                fontSize = 12.sp,
+                                fontWeight = if (isLeader) FontWeight.Bold else FontWeight.Medium,
+                                color = primaryText,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text("${item.played}", fontSize = 11.sp, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                            Text("${item.won}", fontSize = 11.sp, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                            Text("${item.drawn}", fontSize = 11.sp, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                            Text("${item.lost}", fontSize = 11.sp, color = secondaryText, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                            Text("${if (item.goalDiff > 0) "+${item.goalDiff}" else item.goalDiff}", fontSize = 11.sp, color = secondaryText, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+                            Text(
+                                text = "${item.points}",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                modifier = Modifier.width(32.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        if (idx < standings.size - 1) {
+                            HorizontalDivider(color = if (isDarkTheme) Color(0x20334E68) else Color(0xFFF1F5F9))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// BİLEŞEN: PODYUM & ÖDÜLLER GÖRÜNÜMÜ
+// -------------------------------------------------------------
+@Composable
+private fun TournamentPodiumView(
+    tournament: Tournament,
+    isDarkTheme: Boolean,
+    onOpenPodiumModal: () -> Unit
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    val rewards = tournament.starRewards
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(14.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Podyum Kürsüsü
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = if (isDarkTheme) Color(0x30334E68) else Color.White,
+            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("🏆 Turnuva Şampiyonluk Kürsüsü", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryText)
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    // 2. İkinci (Gümüş)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🥈", fontSize = 28.sp)
+                        Text(
+                            text = tournament.runnerUpName ?: "Henüz Belli Değil",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryText,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(75.dp),
+                            color = BirizSilver.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("2", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = BirizSilver)
+                            }
+                        }
+                    }
+
+                    // 1. Şampiyon (Altın Kupa)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1.2f)
+                    ) {
+                        Text("👑", fontSize = 32.sp)
+                        Text(
+                            text = tournament.winnerName ?: "Henüz Belli Değil",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = BirizGold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(105.dp),
+                            color = BirizGold.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("🏆", fontSize = 20.sp)
+                                    Text("1", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFB45309))
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Üçüncü (Bronz)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🥉", fontSize = 26.sp)
+                        Text(
+                            text = tournament.thirdPlaceName ?: "Henüz Belli Değil",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryText,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(55.dp),
+                            color = BirizBronze.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("3", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = BirizBronze)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Yıldızlar Sınıfı Ödül Tablosu
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = if (isDarkTheme) Color(0x30334E68) else Color.White,
+            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⭐", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Yıldızlar Sınıfı Turnuva Ödülleri", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = primaryText)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("🥇 1. Şampiyon Ödülü:", fontSize = 12.sp, color = secondaryText)
+                    Text("+${rewards.firstPlaceStars} ⭐", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = BirizGold)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("🥈 2. İkincilik Ödülü:", fontSize = 12.sp, color = secondaryText)
+                    Text("+${rewards.secondPlaceStars} ⭐", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = BirizSilver)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("🥉 3. Üçüncülük Ödülü:", fontSize = 12.sp, color = secondaryText)
+                    Text("+${rewards.thirdPlaceStars} ⭐", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = BirizBronze)
+                }
+                if (rewards.participationStars > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("🎖️ Katılım Ödülü (Her Öğrenci):", fontSize = 12.sp, color = secondaryText)
+                        Text("+${rewards.participationStars} ⭐", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = if (tournament.status == TournamentStatus.TAMAMLANDI)
+                        "✅ Turnuva tamamlandığında tüm ödül yıldızları öğrencilerin hesaplarına otomatik olarak aktarılmıştır."
+                    else
+                        "💡 Final maçı tamamlandığı an kazanan öğrencilerin hesaplarına yukarıdaki yıldızlar otomatik işlenecektir.",
+                    fontSize = 11.5.sp,
+                    color = secondaryText,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// DİYALOG: MAÇ SONUCU GİRİŞİ (SKOR / GALİP)
+// -------------------------------------------------------------
+@Composable
+private fun MatchScoreDialog(
+    tournament: Tournament,
+    match: TournamentMatch,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (score1: Int?, score2: Int?, winnerId: String?) -> Unit
+) {
+    var score1Str by remember { mutableStateOf(match.score1?.toString() ?: "") }
+    var score2Str by remember { mutableStateOf(match.score2?.toString() ?: "") }
+    var selectedWinnerId by remember { mutableStateOf(match.winnerId) }
+
+    val isScoreMode = tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Maç Sonucunu Gir", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(match.matchCode, fontSize = 12.sp, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (isScoreMode) {
+                    // Skor Girişi Modu
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(match.player1Name, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = score1Str,
+                                onValueChange = { score1Str = it.filter { ch -> ch.isDigit() } },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.width(65.dp),
+                                textStyle = androidx.compose.ui.text.TextStyle(textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            )
+                        }
+
+                        Text("—", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
+
+                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(match.player2Name, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = score2Str,
+                                onValueChange = { score2Str = it.filter { ch -> ch.isDigit() } },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.width(65.dp),
+                                textStyle = androidx.compose.ui.text.TextStyle(textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            )
+                        }
+                    }
+                } else {
+                    // Galip Seçim Modu
+                    Text("Kazanan oyuncuyu seçin:", fontSize = 12.sp)
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { selectedWinnerId = match.player1Id },
+                        color = if (selectedWinnerId == match.player1Id) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else Color.Transparent,
+                        border = BorderStroke(1.dp, if (selectedWinnerId == match.player1Id) BirizTurquoise else BirizBorder)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (selectedWinnerId == match.player1Id) "🏆" else "👤", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(match.player1Name, fontWeight = if (selectedWinnerId == match.player1Id) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp)
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { selectedWinnerId = match.player2Id },
+                        color = if (selectedWinnerId == match.player2Id) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else Color.Transparent,
+                        border = BorderStroke(1.dp, if (selectedWinnerId == match.player2Id) BirizTurquoise else BirizBorder)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (selectedWinnerId == match.player2Id) "🏆" else "👤", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(match.player2Name, fontWeight = if (selectedWinnerId == match.player2Id) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp)
+                        }
+                    }
+
+                    if (tournament.type == TournamentType.LIG || tournament.type == TournamentType.GRUP) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { selectedWinnerId = "DRAW" },
+                            color = if (selectedWinnerId == "DRAW") (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else Color.Transparent,
+                            border = BorderStroke(1.dp, if (selectedWinnerId == "DRAW") BirizTurquoise else BirizBorder)
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("🤝", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Berabere Bitti", fontWeight = if (selectedWinnerId == "DRAW") FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (isScoreMode) {
+                        val s1 = score1Str.toIntOrNull()
+                        val s2 = score2Str.toIntOrNull()
+                        val wId = when {
+                            s1 != null && s2 != null && s1 > s2 -> match.player1Id
+                            s1 != null && s2 != null && s2 > s1 -> match.player2Id
+                            else -> null
+                        }
+                        onSave(s1, s2, wId)
+                    } else {
+                        val wId = if (selectedWinnerId == "DRAW") null else selectedWinnerId
+                        onSave(null, null, wId)
+                    }
+                },
+                enabled = if (isScoreMode) score1Str.isNotBlank() && score2Str.isNotBlank() else selectedWinnerId != null
+            ) {
+                Text("Kaydet")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Vazgeç")
+            }
+        }
+    )
+}
+
+// -------------------------------------------------------------
+// DİYALOG: ŞAMPİYONLUK PODYUMU & KUTLAMA MODALI
+// -------------------------------------------------------------
+@Composable
+private fun TournamentPodiumDialog(
+    tournament: Tournament,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("🎉 ŞAMPİYONLUK KÜRSÜSÜ 🏆", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = BirizGold)
+                Text(tournament.name, fontSize = 12.sp, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Tebrikler! Turnuva başarıyla tamamlandı.", fontSize = 12.5.sp, textAlign = TextAlign.Center)
+
+                // 1. Şampiyon
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = BirizGold.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, BirizGold),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🥇", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("1. Şampiyon", fontSize = 11.sp, color = Color(0xFFB45309))
+                            Text(tournament.winnerName ?: "-", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                        }
+                        Text("+${tournament.starRewards.firstPlaceStars} ⭐", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = BirizGold)
+                    }
+                }
+
+                // 2. İkinci
+                tournament.runnerUpName?.let { rName ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = BirizSilver.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, BirizSilver),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🥈", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("2. İkinci", fontSize = 11.sp, color = Color(0xFF475569))
+                                Text(rName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Text("+${tournament.starRewards.secondPlaceStars} ⭐", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = BirizSilver)
+                        }
+                    }
+                }
+
+                // 3. Üçüncü
+                tournament.thirdPlaceName?.let { thName ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = BirizBronze.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, BirizBronze),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🥉", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("3. Üçüncü", fontSize = 11.sp, color = Color(0xFF78350F))
+                                Text(thName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Text("+${tournament.starRewards.thirdPlaceStars} ⭐", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = BirizBronze)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Harika!")
+            }
+        }
+    )
+}
+
+// -------------------------------------------------------------
+// DİYALOG: TURNUVA OLUŞTURMA SİHİRBAZI
+// -------------------------------------------------------------
+@Composable
+private fun TournamentCreateWizardDialog(
+    students: List<Student>,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit,
+    onCreate: (Tournament, List<Pair<String, String>>) -> Unit
+) {
+    var step by remember { mutableIntStateOf(1) } // 1: Şablon, 2: Ayarlar, 3: Katılımcılar, 4: Yıldızlar
+
+    // Form Değerleri
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var tournamentType by remember { mutableStateOf(TournamentType.ELEME) }
+    var matchType by remember { mutableStateOf(TournamentMatchType.TEK_MAC) }
+    var winnerMethod by remember { mutableStateOf(WinnerSelectionMethod.WINNER) }
+
+    var groupCount by remember { mutableIntStateOf(2) }
+    var groupNaming by remember { mutableStateOf("letters") }
+    var advancingPerGroup by remember { mutableIntStateOf(2) }
+
+    val selectedStudentIds = remember { mutableStateOf(students.map { it.id }.toSet()) }
+    var guestNameInput by remember { mutableStateOf("") }
+    val extraParticipants = remember { mutableStateOf<List<String>>(emptyList()) }
+
+    var starsEnabled by remember { mutableStateOf(true) }
+    var firstPlaceStarsStr by remember { mutableStateOf("10") }
+    var secondPlaceStarsStr by remember { mutableStateOf("6") }
+    var thirdPlaceStarsStr by remember { mutableStateOf("4") }
+    var participationStarsStr by remember { mutableStateOf("1") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Turnuva Kur (Adım $step/4)", fontWeight = FontWeight.Bold, fontSize = 15.5.sp)
+                Text(
+                    text = when (step) {
+                        1 -> "Branş Seçimi"
+                        2 -> "Format & Kurallar"
+                        3 -> "Katılımcılar"
+                        else -> "Ödül Yıldızları"
+                    },
+                    fontSize = 11.5.sp,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                when (step) {
+                    1 -> {
+                        // ADIM 1: HAZIR BRANŞ ŞABLONLARI
+                        Text("Popüler bir branş seçin veya özel turnuva adı belirleyin:", fontSize = 12.sp)
+
+                        ActivityPreset.PRESETS.forEach { preset ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        name = "${preset.title} Turnuvası"
+                                        description = preset.description
+                                        tournamentType = preset.defaultType
+                                        matchType = preset.defaultMatchType
+                                        winnerMethod = preset.defaultWinnerMethod
+                                    },
+                                color = if (name.startsWith(preset.title)) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else (if (isDarkTheme) Color(0x25334E68) else Color(0xFFF8FAFC)),
+                                border = BorderStroke(1.dp, if (name.startsWith(preset.title)) BirizTurquoise else BirizBorder)
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(preset.icon, fontSize = 24.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(preset.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(preset.description, fontSize = 10.5.sp, color = BirizDarkTextMuted)
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Özel Turnuva Adı *") },
+                            placeholder = { Text("Örn: Bahar Turnuvası") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    2 -> {
+                        // ADIM 2: FORMAT & KURALLAR
+                        Text("Format ve Eşleşme Parametreleri:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+                        // Format Seçimi
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TournamentType.values().forEach { tType ->
+                                FilterChip(
+                                    selected = tournamentType == tType,
+                                    onClick = { tournamentType = tType },
+                                    label = { Text("${tType.icon} ${tType.displayName}", fontSize = 11.sp) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        // Karşılaşma Biçimi (Tek Maç / Çift Maç)
+                        Text("Karşılaşma Biçimi:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TournamentMatchType.values().forEach { mType ->
+                                FilterChip(
+                                    selected = matchType == mType,
+                                    onClick = { matchType = mType },
+                                    label = { Text(mType.displayName, fontSize = 11.5.sp) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        // Kazanan Belirleme (Galip / Skor)
+                        Text("Kazanan Belirleme Yöntemi:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WinnerSelectionMethod.values().forEach { wMethod ->
+                                FilterChip(
+                                    selected = winnerMethod == wMethod,
+                                    onClick = { winnerMethod = wMethod },
+                                    label = { Text(wMethod.displayName, fontSize = 11.5.sp) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        if (tournamentType == TournamentType.GRUP || tournamentType == TournamentType.GRUP_ELEME) {
+                            Text("Grup Sayısı:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(2, 3, 4, 6, 8).forEach { gc ->
+                                    FilterChip(
+                                        selected = groupCount == gc,
+                                        onClick = { groupCount = gc },
+                                        label = { Text("$gc Grup", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    3 -> {
+                        // ADIM 3: KATILIMCILAR
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Katılımcılar (${selectedStudentIds.value.size + extraParticipants.value.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            TextButton(onClick = {
+                                selectedStudentIds.value = if (selectedStudentIds.value.size == students.size) emptySet() else students.map { it.id }.toSet()
+                            }) {
+                                Text(if (selectedStudentIds.value.size == students.size) "Seçimi Kaldır" else "Tümünü Seç", fontSize = 11.5.sp)
+                            }
+                        }
+
+                        // Öğrenci Listesi
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(students, key = { it.id }) { st ->
+                                val isSelected = selectedStudentIds.value.contains(st.id)
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val current = selectedStudentIds.value.toMutableSet()
+                                            if (isSelected) current.remove(st.id) else current.add(st.id)
+                                            selectedStudentIds.value = current
+                                        },
+                                    color = if (isSelected) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else Color.Transparent,
+                                    border = BorderStroke(1.dp, if (isSelected) BirizTurquoise else BirizBorder)
+                                ) {
+                                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = isSelected, onCheckedChange = { checked ->
+                                            val current = selectedStudentIds.value.toMutableSet()
+                                            if (checked) current.add(st.id) else current.remove(st.id)
+                                            selectedStudentIds.value = current
+                                        })
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("${st.studentNumber} - ${st.fullName}", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Misafir Oyuncu Ekleme
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = guestNameInput,
+                                onValueChange = { guestNameInput = it },
+                                placeholder = { Text("Misafir Katılımcı Adı...", fontSize = 11.5.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Button(onClick = {
+                                if (guestNameInput.isNotBlank()) {
+                                    extraParticipants.value = extraParticipants.value + guestNameInput.trim()
+                                    guestNameInput = ""
+                                }
+                            }) {
+                                Text("Ekle")
+                            }
+                        }
+
+                        if (extraParticipants.value.isNotEmpty()) {
+                            Text("Eklenen Misafirler: ${extraParticipants.value.joinToString(", ")}", fontSize = 11.sp, color = BirizTurquoise)
+                        }
+                    }
+
+                    4 -> {
+                        // ADIM 4: YILDIZLAR SINIFI ÖDÜL AYARLARI
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("⭐ Yıldızlar Sınıfı Ödülleri", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                            Switch(checked = starsEnabled, onCheckedChange = { starsEnabled = it })
+                        }
+
+                        if (starsEnabled) {
+                            OutlinedTextField(
+                                value = firstPlaceStarsStr,
+                                onValueChange = { firstPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("🥇 1. Şampiyon Yıldızı") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = secondPlaceStarsStr,
+                                onValueChange = { secondPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("🥈 2. İkincilik Yıldızı") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = thirdPlaceStarsStr,
+                                onValueChange = { thirdPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("🥉 3. Üçüncülük Yıldızı") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = participationStarsStr,
+                                onValueChange = { participationStarsStr = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("🎖️ Katılım Yıldızı (Her Öğrenciye)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (step < 4) {
+                Button(
+                    onClick = { step++ },
+                    enabled = (step != 1 || name.isNotBlank()) && (step != 3 || (selectedStudentIds.value.size + extraParticipants.value.size >= 2))
+                ) {
+                    Text("İleri")
+                }
+            } else {
+                Button(
+                    onClick = {
+                        val partPairs = mutableListOf<Pair<String, String>>()
+                        students.filter { selectedStudentIds.value.contains(it.id) }.forEach {
+                            partPairs.add(Pair(it.id, it.fullName))
+                        }
+                        extraParticipants.value.forEach { extra ->
+                            partPairs.add(Pair("extra:$extra", extra))
+                        }
+
+                        val starRewards = TournamentStarRewards(
+                            enabled = starsEnabled,
+                            firstPlaceStars = firstPlaceStarsStr.toIntOrNull() ?: 10,
+                            secondPlaceStars = secondPlaceStarsStr.toIntOrNull() ?: 6,
+                            thirdPlaceStars = thirdPlaceStarsStr.toIntOrNull() ?: 4,
+                            participationStars = participationStarsStr.toIntOrNull() ?: 1
+                        )
+
+                        val newT = Tournament(
+                            classRoomId = "",
+                            name = name.trim(),
+                            description = description.trim(),
+                            type = tournamentType,
+                            matchType = matchType,
+                            winnerSelectionMethod = winnerMethod,
+                            participants = partPairs.map { it.first },
+                            extraParticipants = extraParticipants.value,
+                            groupCount = groupCount,
+                            groupNaming = groupNaming,
+                            advancingPerGroup = advancingPerGroup,
+                            starRewards = starRewards
+                        )
+
+                        onCreate(newT, partPairs)
+                    }
+                ) {
+                    Text("Turnuvayı Başlat 🏆")
+                }
+            }
+        },
+        dismissButton = {
+            if (step > 1) {
+                TextButton(onClick = { step-- }) {
+                    Text("Geri")
+                }
+            } else {
+                TextButton(onClick = onDismiss) {
+                    Text("İptal")
+                }
+            }
+        }
+    )
+}

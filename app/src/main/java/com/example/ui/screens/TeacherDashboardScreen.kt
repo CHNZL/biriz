@@ -795,6 +795,18 @@ fun TeacherDashboardScreen(
                         )
                     }
 
+                    DashboardSubPage.TURNUVA_DEVAM_EDENLER,
+                    DashboardSubPage.TURNUVA_TAMAMLANANLAR -> {
+                        TournamentSubScreen(
+                            classRoom = classRoom,
+                            students = students,
+                            currentSubPage = currentSubPage,
+                            isDarkTheme = isDarkTheme,
+                            onSelectSubPage = onSelectSubPage,
+                            onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
+                        )
+                    }
+
                     else -> {
                         // Diğer Alt Sayfalar (Zengin Bento Mikro-Önizleme)
                         ModulePreviewsSubScreen(

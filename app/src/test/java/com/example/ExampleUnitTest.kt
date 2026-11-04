@@ -684,6 +684,202 @@ class ExampleUnitTest {
     assertEquals(200, totalPages)
     assertEquals(6 + 14, starsSum)
   }
+
+  @Test
+  fun testTournamentSmallestPowerOfTwo() {
+    val engine = com.example.util.TournamentEngine
+    assertEquals(2, engine.findSmallestPowerOfTwo(2))
+    assertEquals(4, engine.findSmallestPowerOfTwo(3))
+    assertEquals(4, engine.findSmallestPowerOfTwo(4))
+    assertEquals(8, engine.findSmallestPowerOfTwo(5))
+    assertEquals(8, engine.findSmallestPowerOfTwo(8))
+    assertEquals(16, engine.findSmallestPowerOfTwo(9))
+    assertEquals(16, engine.findSmallestPowerOfTwo(16))
+    assertEquals(32, engine.findSmallestPowerOfTwo(17))
+  }
+
+  @Test
+  fun testTournamentKnockoutFixtureWithBays() {
+    val engine = com.example.util.TournamentEngine
+    val participants = (1..5).map {
+      Pair("s$it", "Öğrenci $it")
+    }
+
+    val matches = engine.generateKnockoutFixture(
+      tournamentId = "t1",
+      participants = participants,
+      isDoubleMatch = false
+    )
+
+    // With 5 players, bracket size = 8.
+    // 3 BAY players go directly to R2.
+    // 1 match in R1 between the other 2 players.
+    // Total matches in bracket = 1 (R1) + 2 (Semis) + 1 (Final) = 4 matches!
+    assertEquals(4, matches.size)
+    val r1Matches = matches.filter { it.round == 1 }
+    assertEquals(1, r1Matches.size)
+  }
+
+  @Test
+  fun testTournamentRoundRobinBergerRotation() {
+    val engine = com.example.util.TournamentEngine
+    val participants = (1..4).map {
+      Pair("s$it", "Öğrenci $it")
+    }
+
+    // Tek maçlı lig
+    val singleMatches = engine.generateRoundRobinFixture(
+      tournamentId = "t2",
+      participants = participants,
+      isDoubleMatch = false
+    )
+
+    // 4 players: 3 rounds, 2 matches per round = 6 matches
+    assertEquals(6, singleMatches.size)
+    assertEquals(3, singleMatches.map { it.round }.distinct().size)
+
+    // Çift maçlı lig (rövanşlı)
+    val doubleMatches = engine.generateRoundRobinFixture(
+      tournamentId = "t2_double",
+      participants = participants,
+      isDoubleMatch = true
+    )
+    assertEquals(12, doubleMatches.size)
+    assertEquals(6, doubleMatches.map { it.round }.distinct().size)
+  }
+
+  @Test
+  fun testTournamentStandingsOrdering() {
+    val engine = com.example.util.TournamentEngine
+    val participants = listOf(
+      Pair("s1", "Ali"),
+      Pair("s2", "Barış"),
+      Pair("s3", "Can")
+    )
+
+    // Barış: 1 Win, +3 averaj
+    // Ali: 1 Win, +1 averaj
+    // Can: 2 Defeats
+    val matches = listOf(
+      com.example.data.model.TournamentMatch(
+        id = "m1",
+        tournamentId = "t_test",
+        round = 1,
+        matchCode = "M1",
+        player1Id = "s2",
+        player1Name = "Barış",
+        player2Id = "s3",
+        player2Name = "Can",
+        score1 = 4,
+        score2 = 1,
+        winnerId = "s2",
+        status = "completed"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "m2",
+        tournamentId = "t_test",
+        round = 2,
+        matchCode = "M2",
+        player1Id = "s1",
+        player1Name = "Ali",
+        player2Id = "s3",
+        player2Name = "Can",
+        score1 = 2,
+        score2 = 1,
+        winnerId = "s1",
+        status = "completed"
+      )
+    )
+
+    val standings = engine.calculateStandings(participants, matches)
+    assertEquals(3, standings.size)
+
+    // Barış must be 1st (+3 goal diff vs +1 for Ali)
+    assertEquals("s2", standings[0].playerId)
+    assertEquals(3, standings[0].points)
+    assertEquals(3, standings[0].goalDiff)
+
+    // Ali must be 2nd
+    assertEquals("s1", standings[1].playerId)
+    assertEquals(3, standings[1].points)
+    assertEquals(1, standings[1].goalDiff)
+
+    // Can must be 3rd
+    assertEquals("s3", standings[2].playerId)
+    assertEquals(0, standings[2].points)
+  }
+
+  @Test
+  fun testDoubleMatchTieBreakerDetection() {
+    val engine = com.example.util.TournamentEngine
+    val tournament = com.example.data.model.Tournament(
+      id = "t_tb",
+      classRoomId = "c1",
+      name = "Futbol Turnuvası",
+      matchType = com.example.data.model.TournamentMatchType.CIFT_MAC,
+      winnerSelectionMethod = com.example.data.model.WinnerSelectionMethod.SCORE
+    )
+
+    val leg1 = com.example.data.model.TournamentMatch(
+      id = "m1",
+      tournamentId = "t_tb",
+      round = 1,
+      matchCode = "P1-1",
+      player1Id = "s1",
+      player1Name = "Ali",
+      player2Id = "s2",
+      player2Name = "Veli",
+      score1 = 2,
+      score2 = 0,
+      winnerId = "s1",
+      isDoubleMatch = true,
+      pairCode = "PAIR-P1",
+      status = "completed"
+    )
+
+    val leg2Tied = com.example.data.model.TournamentMatch(
+      id = "m2",
+      tournamentId = "t_tb",
+      round = 2,
+      matchCode = "P1-2",
+      player1Id = "s2",
+      player1Name = "Veli",
+      player2Id = "s1",
+      player2Name = "Ali",
+      score1 = 2,
+      score2 = 0,
+      winnerId = "s2",
+      isDoubleMatch = true,
+      pairCode = "PAIR-P1",
+      status = "completed"
+    )
+
+    // Both won 1 game, aggregate 2-2 -> Needs tie-breaker!
+    val tieBreaker = engine.checkDoubleMatchTieBreaker(tournament, listOf(leg1, leg2Tied), leg2Tied)
+    assertNotNull(tieBreaker)
+    assertTrue(tieBreaker!!.isTieBreaker)
+
+    val leg2NotTied = com.example.data.model.TournamentMatch(
+      id = "m3",
+      tournamentId = "t_tb",
+      round = 2,
+      matchCode = "P1-2",
+      player1Id = "s2",
+      player1Name = "Veli",
+      player2Id = "s1",
+      player2Name = "Ali",
+      score1 = 1,
+      score2 = 0,
+      winnerId = "s2",
+      isDoubleMatch = true,
+      pairCode = "PAIR-P1",
+      status = "completed"
+    )
+
+    // Aggregate: Ali 2 - 1 Veli -> Ali wins, no tie-breaker needed!
+    val noTieBreaker = engine.checkDoubleMatchTieBreaker(tournament, listOf(leg1, leg2NotTied), leg2NotTied)
+    assertNull(noTieBreaker)
+  }
 }
 
 

@@ -27,6 +27,9 @@ import com.example.data.model.ScheduleTimelineItem
 import com.example.data.model.SeatingConfig
 import com.example.data.model.SeatingPlanState
 import com.example.data.model.Student
+import com.example.data.model.Tournament
+import com.example.data.model.TournamentMatch
+import com.example.data.model.TournamentStanding
 import com.example.data.model.WindowPosition
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
@@ -2491,6 +2494,412 @@ object ExcelPdfHelper {
         )
 
         pdfDocument.finishPage(page)
+
+        FileOutputStream(file).use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+    }
+
+    /**
+     * Turnuva fikstürü, puan durumu ve podyum sonuçlarını içeren resmi A4 PDF raporu üretir.
+     */
+    fun exportTournamentPdf(
+        context: Context,
+        tournament: Tournament,
+        matches: List<TournamentMatch>,
+        standings: List<TournamentStanding>
+    ): Uri {
+        val file = File(context.cacheDir, "turnuva_${tournament.id}_${System.currentTimeMillis()}.pdf")
+        val pdfDocument = PdfDocument()
+
+        val pageWidth = 595
+        val pageHeight = 842
+
+        val primaryColor = 0xFF1B365D.toInt()
+        val turquoiseColor = 0xFF0EA5E9.toInt()
+        val goldColor = 0xFFF59E0B.toInt()
+        val textColor = 0xFF1E293B.toInt()
+        val mutedTextColor = 0xFF64748B.toInt()
+        val zebraColor = 0xFFF8FAFC.toInt()
+        val borderColor = 0xFFE2E8F0.toInt()
+        val greenColor = 0xFF10B981.toInt()
+
+        val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+
+        // --- SAYFA 1: BAŞLIK, PODYUM / ÖZET VE PUAN TABLOSU (VEYA İLK MAÇLAR) ---
+        var pageNumber = 1
+        var pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        var page = pdfDocument.startPage(pageInfo)
+        var canvas = page.canvas
+
+        // 1. Logo ve Başlık Bloğu
+        val emblemBitmap = renderEmblemBitmap(context, 72)
+        if (emblemBitmap != null) {
+            canvas.drawBitmap(emblemBitmap, 36f, 32f, null)
+        }
+
+        val brandPaint = Paint().apply {
+            color = turquoiseColor
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        canvas.drawText("BİRİZ SINIF & ETKİNLİK YÖNETİM SİSTEMİ", 86f, 44f, brandPaint)
+
+        val titlePaint = Paint().apply {
+            color = primaryColor
+            textSize = 16f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val safeTitle = if (tournament.name.length > 36) tournament.name.take(34) + ".." else tournament.name
+        canvas.drawText("🏆 $safeTitle", 86f, 64f, titlePaint)
+
+        val subTitlePaint = Paint().apply {
+            color = mutedTextColor
+            textSize = 8.5f
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "Format: ${tournament.type.displayName}  |  Durum: ${tournament.status.displayName}  |  Tarih: $dateStr",
+            86f,
+            78f,
+            subTitlePaint
+        )
+
+        // Üst ayırıcı çizgi
+        val linePaint = Paint().apply {
+            color = borderColor
+            strokeWidth = 1f
+        }
+        canvas.drawLine(36f, 92f, (pageWidth - 36).toFloat(), 92f, linePaint)
+
+        // 2. Podyum / Özet Kartları
+        val cardPaint = Paint().apply {
+            color = zebraColor
+            style = Paint.Style.FILL
+        }
+        val cardBorderPaint = Paint().apply {
+            color = borderColor
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+        }
+
+        val cardWidth = (pageWidth - 72f - 16f) / 3f
+        val kpiY = 102f
+        val kpiH = 52f
+
+        val completedMatches = matches.count { it.status == "completed" }
+
+        val kpis = if (tournament.status == com.example.data.model.TournamentStatus.TAMAMLANDI && tournament.winnerName != null) {
+            listOf(
+                Triple("🥇 ŞAMPİYON", tournament.winnerName ?: "-", goldColor),
+                Triple("🥈 İKİNCİ", tournament.runnerUpName ?: "-", 0xFF64748B.toInt()),
+                Triple("🥉 ÜÇÜNCÜ", tournament.thirdPlaceName ?: "-", 0xFFB45309.toInt())
+            )
+        } else {
+            listOf(
+                Triple("KATILIMCI", "${tournament.participants.size} Öğrenci", primaryColor),
+                Triple("TOPLAM MAÇ", "${matches.size} Karşılaşma", turquoiseColor),
+                Triple("TAMAMLANAN", "$completedMatches / ${matches.size} Maç", greenColor)
+            )
+        }
+
+        kpis.forEachIndexed { idx, (label, value, valColor) ->
+            val cX = 36f + idx * (cardWidth + 8f)
+            val rect = RectF(cX, kpiY, cX + cardWidth, kpiY + kpiH)
+            canvas.drawRoundRect(rect, 6f, 6f, cardPaint)
+            canvas.drawRoundRect(rect, 6f, 6f, cardBorderPaint)
+
+            val labelP = Paint().apply {
+                color = mutedTextColor
+                textSize = 7.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            canvas.drawText(label, cX + 8f, kpiY + 16f, labelP)
+
+            val valP = Paint().apply {
+                color = valColor
+                textSize = 10.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val safeVal = if (value.length > 20) value.take(18) + ".." else value
+            canvas.drawText(safeVal, cX + 8f, kpiY + 36f, valP)
+        }
+
+        var currentY = 172f
+
+        // 3. PUAN TABLOSU (Varsa)
+        if (standings.isNotEmpty()) {
+            val sectionPaint = Paint().apply {
+                color = primaryColor
+                textSize = 11f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            canvas.drawText("📊 PUAN TABLOSU VE SIRALAMA", 36f, currentY, sectionPaint)
+            currentY += 12f
+
+            val thBg = Paint().apply {
+                color = primaryColor
+                style = Paint.Style.FILL
+            }
+            canvas.drawRect(36f, currentY, (pageWidth - 36).toFloat(), currentY + 18f, thBg)
+
+            val thText = Paint().apply {
+                color = Color.WHITE
+                textSize = 8f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            canvas.drawText("Sıra", 42f, currentY + 12f, thText)
+            canvas.drawText("Öğrenci", 70f, currentY + 12f, thText)
+            canvas.drawText("O", 280f, currentY + 12f, thText)
+            canvas.drawText("G", 315f, currentY + 12f, thText)
+            canvas.drawText("B", 350f, currentY + 12f, thText)
+            canvas.drawText("M", 385f, currentY + 12f, thText)
+            canvas.drawText("AG", 420f, currentY + 12f, thText)
+            canvas.drawText("YG", 455f, currentY + 12f, thText)
+            canvas.drawText("AV", 490f, currentY + 12f, thText)
+            canvas.drawText("P", 535f, currentY + 12f, thText)
+            currentY += 18f
+
+            val rowText = Paint().apply {
+                color = textColor
+                textSize = 8f
+                isAntiAlias = true
+            }
+            val zebraRow = Paint().apply {
+                color = zebraColor
+                style = Paint.Style.FILL
+            }
+
+            standings.forEachIndexed { idx, st ->
+                val rY = currentY + (idx * 17f)
+                if (idx % 2 == 1) {
+                    canvas.drawRect(36f, rY, (pageWidth - 36).toFloat(), rY + 17f, zebraRow)
+                }
+
+                val rank = idx + 1
+                val rankBadge = when (rank) {
+                    1 -> "🥇 1."
+                    2 -> "🥈 2."
+                    3 -> "🥉 3."
+                    else -> "$rank."
+                }
+                canvas.drawText(rankBadge, 42f, rY + 12f, rowText)
+
+                val nameCut = if (st.playerName.length > 26) st.playerName.take(24) + ".." else st.playerName
+                canvas.drawText(nameCut, 70f, rY + 12f, rowText)
+                canvas.drawText("${st.played}", 282f, rY + 12f, rowText)
+                canvas.drawText("${st.won}", 317f, rY + 12f, rowText)
+                canvas.drawText("${st.drawn}", 352f, rY + 12f, rowText)
+                canvas.drawText("${st.lost}", 387f, rY + 12f, rowText)
+                canvas.drawText("${st.goalsFor}", 422f, rY + 12f, rowText)
+                canvas.drawText("${st.goalsAgainst}", 457f, rY + 12f, rowText)
+                canvas.drawText("${if (st.goalDiff > 0) "+${st.goalDiff}" else "${st.goalDiff}"}", 490f, rY + 12f, rowText)
+
+                val pPaint = Paint(rowText).apply {
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    color = primaryColor
+                }
+                canvas.drawText("${st.points}", 535f, rY + 12f, pPaint)
+            }
+
+            currentY += (standings.size * 17f) + 16f
+        }
+
+        // 4. FİKSTÜR VE MAÇLAR BÖLÜMÜ (İlk Sayfa veya 2. Sayfa)
+        val sectionTitlePaint = Paint().apply {
+            color = primaryColor
+            textSize = 11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+
+        // Eğer mevcut Y 600'ü geçtiyse maçları Sayfa 2'den başlatalım
+        var matchIndex = 0
+        if (currentY < pageHeight - 120 && matchIndex < matches.size) {
+            canvas.drawText("⚔️ MAÇLAR VE SONUÇLAR", 36f, currentY, sectionTitlePaint)
+            currentY += 12f
+
+            // Maç Başlık Çubuğu
+            val mthBg = Paint().apply {
+                color = turquoiseColor
+                style = Paint.Style.FILL
+            }
+            canvas.drawRect(36f, currentY, (pageWidth - 36).toFloat(), currentY + 18f, mthBg)
+
+            val mthText = Paint().apply {
+                color = Color.WHITE
+                textSize = 8f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            canvas.drawText("Tur / Kod", 42f, currentY + 12f, mthText)
+            canvas.drawText("1. Oyuncu", 110f, currentY + 12f, mthText)
+            canvas.drawText("Skor", 270f, currentY + 12f, mthText)
+            canvas.drawText("2. Oyuncu", 320f, currentY + 12f, mthText)
+            canvas.drawText("Sonuç / Kazanan", 450f, currentY + 12f, mthText)
+            currentY += 18f
+
+            val mRowText = Paint().apply {
+                color = textColor
+                textSize = 8f
+                isAntiAlias = true
+            }
+            val mZebra = Paint().apply {
+                color = zebraColor
+                style = Paint.Style.FILL
+            }
+
+            while (matchIndex < matches.size && currentY + 17f < pageHeight - 40f) {
+                val match = matches[matchIndex]
+                val rY = currentY
+                if (matchIndex % 2 == 1) {
+                    canvas.drawRect(36f, rY, (pageWidth - 36).toFloat(), rY + 17f, mZebra)
+                }
+
+                val codeStr = "${match.groupName?.let { "$it-" } ?: ""}${match.matchCode}"
+                canvas.drawText(codeStr, 42f, rY + 12f, mRowText)
+
+                val p1Cut = if (match.player1Name.length > 20) match.player1Name.take(18) + ".." else match.player1Name
+                canvas.drawText(p1Cut, 110f, rY + 12f, mRowText)
+
+                val scoreStr = if (match.status == "completed") {
+                    if (match.score1 != null && match.score2 != null) {
+                        "${match.score1} - ${match.score2}"
+                    } else "Tamamlandı"
+                } else "Oynanacak"
+                canvas.drawText(scoreStr, 270f, rY + 12f, mRowText)
+
+                val p2Cut = if (match.player2Name.length > 20) match.player2Name.take(18) + ".." else match.player2Name
+                canvas.drawText(p2Cut, 320f, rY + 12f, mRowText)
+
+                val matchWinnerName = if (match.winnerId == match.player1Id) match.player1Name else if (match.winnerId == match.player2Id) match.player2Name else null
+                val isDraw = match.status == "completed" && match.score1 != null && match.score1 == match.score2 && match.winnerId == null
+                val winnerStr = if (matchWinnerName != null) {
+                    "🏆 ${if (matchWinnerName.length > 16) matchWinnerName.take(14) + ".." else matchWinnerName}"
+                } else if (isDraw) "Berabere" else "-"
+                canvas.drawText(winnerStr, 450f, rY + 12f, mRowText)
+
+                currentY += 17f
+                matchIndex++
+            }
+        }
+
+        // Sayfa 1 Alt Bilgi (Footer)
+        val footerP = Paint().apply {
+            color = mutedTextColor
+            textSize = 8f
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "BİRİZ Akıllı Sınıf & Turnuva Yönetimi | ${tournament.name} | Sayfa 1",
+            36f,
+            (pageHeight - 20).toFloat(),
+            footerP
+        )
+        pdfDocument.finishPage(page)
+
+        // Eğer kalan maçlar varsa Sayfa 2 ve sonrasını üret
+        while (matchIndex < matches.size) {
+            pageNumber++
+            val nextInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+            val nextPage = pdfDocument.startPage(nextInfo)
+            val nextCanvas = nextPage.canvas
+
+            var nY = 36f
+            val headerPaint = Paint().apply {
+                color = primaryColor
+                textSize = 12f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            nextCanvas.drawText("⚔️ ${tournament.name} - MAÇ LİSTESİ (Devam)", 36f, nY, headerPaint)
+            nY += 16f
+
+            // Başlık Çubuğu
+            val mthBg = Paint().apply {
+                color = turquoiseColor
+                style = Paint.Style.FILL
+            }
+            nextCanvas.drawRect(36f, nY, (pageWidth - 36).toFloat(), nY + 18f, mthBg)
+
+            val mthText = Paint().apply {
+                color = Color.WHITE
+                textSize = 8f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            nextCanvas.drawText("Tur / Kod", 42f, nY + 12f, mthText)
+            nextCanvas.drawText("1. Oyuncu", 110f, nY + 12f, mthText)
+            nextCanvas.drawText("Skor", 270f, nY + 12f, mthText)
+            nextCanvas.drawText("2. Oyuncu", 320f, nY + 12f, mthText)
+            nextCanvas.drawText("Sonuç / Kazanan", 450f, nY + 12f, mthText)
+            nY += 18f
+
+            val mRowText = Paint().apply {
+                color = textColor
+                textSize = 8f
+                isAntiAlias = true
+            }
+            val mZebra = Paint().apply {
+                color = zebraColor
+                style = Paint.Style.FILL
+            }
+
+            while (matchIndex < matches.size && nY + 17f < pageHeight - 40f) {
+                val match = matches[matchIndex]
+                val rY = nY
+                if (matchIndex % 2 == 1) {
+                    nextCanvas.drawRect(36f, rY, (pageWidth - 36).toFloat(), rY + 17f, mZebra)
+                }
+
+                val codeStr = "${match.groupName?.let { "$it-" } ?: ""}${match.matchCode}"
+                nextCanvas.drawText(codeStr, 42f, rY + 12f, mRowText)
+
+                val p1Cut = if (match.player1Name.length > 20) match.player1Name.take(18) + ".." else match.player1Name
+                nextCanvas.drawText(p1Cut, 110f, rY + 12f, mRowText)
+
+                val scoreStr = if (match.status == "completed") {
+                    if (match.score1 != null && match.score2 != null) {
+                        "${match.score1} - ${match.score2}"
+                    } else "Tamamlandı"
+                } else "Oynanacak"
+                nextCanvas.drawText(scoreStr, 270f, rY + 12f, mRowText)
+
+                val p2Cut = if (match.player2Name.length > 20) match.player2Name.take(18) + ".." else match.player2Name
+                nextCanvas.drawText(p2Cut, 320f, rY + 12f, mRowText)
+
+                val matchWinnerName = if (match.winnerId == match.player1Id) match.player1Name else if (match.winnerId == match.player2Id) match.player2Name else null
+                val isDraw = match.status == "completed" && match.score1 != null && match.score1 == match.score2 && match.winnerId == null
+                val winnerStr = if (matchWinnerName != null) {
+                    "🏆 ${if (matchWinnerName.length > 16) matchWinnerName.take(14) + ".." else matchWinnerName}"
+                } else if (isDraw) "Berabere" else "-"
+                nextCanvas.drawText(winnerStr, 450f, rY + 12f, mRowText)
+
+                nY += 17f
+                matchIndex++
+            }
+
+            nextCanvas.drawText(
+                "BİRİZ Akıllı Sınıf & Turnuva Yönetimi | ${tournament.name} | Sayfa $pageNumber",
+                36f,
+                (pageHeight - 20).toFloat(),
+                footerP
+            )
+            pdfDocument.finishPage(nextPage)
+        }
 
         FileOutputStream(file).use { out ->
             pdfDocument.writeTo(out)
