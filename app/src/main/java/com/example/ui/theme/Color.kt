@@ -34,8 +34,8 @@ val BirizDarkSurfaceGlass = Color(0xD0172649)
 val BirizDarkCardGlass = Color(0x35334E68)
 val BirizDarkCardBorder = Color(0x4064748B)
 val BirizDarkTextPrimary = Color(0xFFF8FAFC)
-val BirizDarkTextSecondary = Color(0xFF94A3B8)
-val BirizDarkTextMuted = Color(0xFF64748B)
+val BirizDarkTextSecondary = Color(0xFFCBD5E1)
+val BirizDarkTextMuted = Color(0xFF94A3B8)
 
 // Cam (Glassmorphism) Efektleri & Parlamalar
 val BirizLightGlassBg = Color(0xEEFFFFFF)
@@ -48,9 +48,9 @@ val BirizDockDark = Color(0xF20B162C)
 
 // Metin ve Çerçeveler
 val BirizTextPrimary = Color(0xFF0F172A)
-val BirizTextSecondary = Color(0xFF475569)
-val BirizTextMuted = Color(0xFF94A3B8)
-val BirizBorder = Color(0xFFE2E8F0)
+val BirizTextSecondary = Color(0xFF334155)
+val BirizTextMuted = Color(0xFF64748B)
+val BirizBorder = Color(0xFFCBD5E1)
 val BirizBorderFocused = Color(0xFF28B8C2)
 
 // Durum Renkleri
