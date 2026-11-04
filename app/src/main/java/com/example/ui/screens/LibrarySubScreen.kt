@@ -34,6 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -112,6 +114,7 @@ import com.example.util.ExcelPdfHelper
 import com.example.util.LibraryPersistenceHelper
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -719,25 +722,59 @@ private fun LibraryInventoryView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(32.dp),
+                    .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "📖", fontSize = 48.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = if (searchQuery.isNotEmpty()) "Arama kriterine uygun kitap bulunamadı." else "Kitaplıkta henüz kayıtlı kitap yok.",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = primaryText
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Sağ üstteki 'Kitap Ekle' butonuna basarak demirbaş kaydedebilirsiniz.",
-                        fontSize = 12.sp,
-                        color = secondaryText,
-                        textAlign = TextAlign.Center
-                    )
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDarkTheme) Color(0x25334E68) else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x40334E68) else BirizBorder),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE),
+                            modifier = Modifier.size(64.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "📚", fontSize = 30.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = if (searchQuery.isNotEmpty()) "Arama kriterine uygun kitap bulunamadı" else "Kitaplıkta Henüz Kitap Yok",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = primaryText
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (searchQuery.isNotEmpty())
+                                "Farklı bir kitap adı, yazar veya demirbaş numarası ile tekrar arayabilirsiniz."
+                            else
+                                "Sınıf kitaplığınızı oluşturmak için ilk kitabınızı ekleyin. Sıra numarası otomatik atanır ve sayfa hacmine göre yıldızlar hazır!",
+                            fontSize = 12.sp,
+                            color = secondaryText,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 17.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onAddBookClick,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            )
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("İlk Kitabı Ekle", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
                 }
             }
         } else if (viewMode == "GRID") {
@@ -1094,7 +1131,7 @@ private fun BookListItem(
                         }
                         if (book.pageCount > 0) {
                             Text(
-                                text = "${book.pageCount} s.",
+                                text = "${book.pageCount} s. (+${(book.pageCount / 10).coerceAtLeast(1)} ⭐)",
                                 fontSize = 11.sp,
                                 color = secondaryText
                             )
@@ -1807,6 +1844,144 @@ private fun KpiBentoCard(
 }
 
 // -------------------------------------------------------------
+// BİLEŞEN: KULLANIŞLI & ŞIK TARİH SEÇİCİ (BUGÜN / DÜN / TAKVİM)
+// -------------------------------------------------------------
+@Composable
+private fun BirizDatePickerField(
+    label: String,
+    dateStr: String,
+    onDateChange: (String) -> Unit,
+    isDarkTheme: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val todayStr = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date()) }
+    val yesterdayStr = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_MONTH, -1)
+        SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(cal.time)
+    }
+
+    val openCalendar = {
+        val cal = Calendar.getInstance()
+        try {
+            val parsed = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).parse(dateStr)
+            if (parsed != null) cal.time = parsed
+        } catch (_: Exception) {}
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val selectedCal = Calendar.getInstance()
+                selectedCal.set(year, month, dayOfMonth)
+                onDateChange(SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(selectedCal.time))
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = dateStr,
+            onValueChange = onDateChange,
+            label = { Text(label, fontSize = 12.sp) },
+            trailingIcon = {
+                IconButton(onClick = openCalendar) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = "Takvimden Seç",
+                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // Hızlı Tarih Seçim Butonları
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val isToday = dateStr == todayStr
+            val isYesterday = dateStr == yesterdayStr
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isToday) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else (if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9)),
+                border = BorderStroke(1.dp, if (isToday) Color.Transparent else if (isDarkTheme) Color(0x5064748B) else BirizBorder),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onDateChange(todayStr) }
+            ) {
+                Text(
+                    text = "📍 Bugün",
+                    fontSize = 11.5.sp,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isToday) Color.White else if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isYesterday) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else (if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9)),
+                border = BorderStroke(1.dp, if (isYesterday) Color.Transparent else if (isDarkTheme) Color(0x5064748B) else BirizBorder),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onDateChange(yesterdayStr) }
+            ) {
+                Text(
+                    text = "⏪ Dün",
+                    fontSize = 11.5.sp,
+                    fontWeight = if (isYesterday) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isYesterday) Color.White else if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isDarkTheme) Color(0x2506B6D4) else Color(0xFFE0F2FE),
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise.copy(alpha = 0.5f) else Color(0xFFBAE6FD)),
+                modifier = Modifier
+                    .weight(1.2f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = openCalendar)
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "🗓️ Takvim",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
 // DİYALOG: KİTAP EKLE / DÜZENLE
 // -------------------------------------------------------------
 @Composable
@@ -1822,11 +1997,14 @@ private fun AddEditBookDialog(
     var author by remember { mutableStateOf(bookToEdit?.author ?: "") }
     var pageCountStr by remember { mutableStateOf(if ((bookToEdit?.pageCount ?: 0) > 0) bookToEdit!!.pageCount.toString() else "") }
 
-    // Otomatik Demirbaş No
-    val defaultRegNo = remember(existingBooks, bookToEdit) {
+    // Otomatik Demirbaş No (Boşlukları arar ve en küçük boştaki numarayı atar)
+    val autoRegNo = remember(existingBooks, bookToEdit) {
         bookToEdit?.registrationNo ?: LibraryPersistenceHelper.findNextAvailableRegistrationNo(existingBooks)
     }
-    var registrationNoStr by remember { mutableStateOf(defaultRegNo.toString()) }
+
+    // Sayfa sayısı zorunlu kontrolü
+    val pageCount = pageCountStr.toIntOrNull() ?: 0
+    val isPageValid = pageCount > 0
 
     // Öğrenciye Hemen Ver Seçeneği
     var assignImmediately by remember { mutableStateOf(false) }
@@ -1834,7 +2012,7 @@ private fun AddEditBookDialog(
     val todayDateStr = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date()) }
     var assignmentDateStr by remember { mutableStateOf(todayDateStr) }
 
-    // Mükerrer Kontrolü (Büyük-küçük harf duyarsız)
+    // Mükerrer Kontrolü (Büyük-küçük harf duyarsız Türkçe)
     val isDuplicate = remember(name, bookToEdit, existingBooks) {
         val trimmed = name.trim()
         trimmed.isNotEmpty() && existingBooks.any { b ->
@@ -1853,47 +2031,63 @@ private fun AddEditBookDialog(
         }
     }
 
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                text = if (bookToEdit == null) "📚 Yeni Kitap Ekle" else "✏️ Kitabı Düzenle",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (bookToEdit == null) "📚 Yeni Kitap Ekle" else "✏️ Kitabı Düzenle",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+
+                // Otomatik Sıra No Rozeti
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE0F2FE),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise.copy(alpha = 0.4f) else Color(0xFFBAE6FD))
+                ) {
+                    Text(
+                        text = "Kitap No: #$autoRegNo",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
         },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Demirbaş No
-                OutlinedTextField(
-                    value = registrationNoStr,
-                    onValueChange = { registrationNoStr = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Demirbaş / Sıra Numarası") },
-                    supportingText = { Text("Boşluk doldurma algoritmasıyla otomatik atandı.") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Kitap Adı
+                // 1. Kitap Adı
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Kitap Adı *") },
+                    label = { Text("Kitap Adı * (Zorunlu)") },
                     isError = isDuplicate,
                     supportingText = {
                         if (isDuplicate) {
-                            Text("⚠️ Bu isimde bir kitap zaten kayıtlı!", color = BirizError)
+                            Text("⚠️ Bu isimde bir kitap kütüphanenizde zaten kayıtlı!", color = BirizError)
                         } else {
-                            Text("Örn: Küçük Prens")
+                            Text("Örn: Küçük Prens, Momo, Nutuk")
                         }
                     },
                     singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1919,29 +2113,86 @@ private fun AddEditBookDialog(
                     }
                 }
 
-                // Yazar
+                // 2. Yazar Adı
                 OutlinedTextField(
                     value = author,
                     onValueChange = { author = it },
                     label = { Text("Yazar Adı (İsteğe bağlı)") },
                     singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Sayfa Sayısı
+                // 3. Sayfa Sayısı (ZORUNLU)
                 OutlinedTextField(
                     value = pageCountStr,
                     onValueChange = { pageCountStr = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Sayfa Sayısı (İsteğe bağlı)") },
+                    label = { Text("Sayfa Sayısı * (Zorunlu)") },
+                    isError = pageCountStr.isNotBlank() && !isPageValid,
                     supportingText = {
-                        val pages = pageCountStr.toIntOrNull() ?: 0
-                        val stars = (pages / 10).coerceAtLeast(1)
-                        Text("Okunduğunda öğrenciye +$stars ⭐ kazandırır.")
+                        if (isPageValid) {
+                            val stars = (pageCount / 10).coerceAtLeast(1)
+                            Text("✨ Öğrenci okuyup iade ettiğinde +$stars ⭐ Kitap Kurdu yıldızı kazanır.", color = BirizTurquoise)
+                        } else if (pageCountStr.isNotBlank()) {
+                            Text("⚠️ Sayfa sayısı 0'dan büyük bir tam sayı olmalıdır.", color = BirizError)
+                        } else {
+                            Text("Zorunlu alan • Motivasyon yıldızları sayfa hacmine göre hesaplanır.", color = secondaryText)
+                        }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // CANLI KİTAP KARTI ÖNİZLEMESİ
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) Color(0x25334E68) else Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(36.dp, 44.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isDarkTheme) BirizNavyDark else Color(0xFF334E68)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("#$autoRegNo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (name.isBlank()) "Kitap Adı" else name,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                color = if (name.isBlank()) secondaryText else primaryText
+                            )
+                            Text(
+                                text = if (author.isBlank()) "Yazar belirtilmedi" else author,
+                                fontSize = 11.sp,
+                                color = secondaryText,
+                                maxLines = 1
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isPageValid) "$pageCount sayfa" else "Sayfa sayısı girilmeli",
+                                    fontSize = 10.5.sp,
+                                    color = if (isPageValid) primaryText else BirizError
+                                )
+                                if (isPageValid) {
+                                    Text(" • +${(pageCount / 10).coerceAtLeast(1)} ⭐", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = BirizGold)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Kitap Ekleme Anında Öğrenciye Hemen Ver
                 if (bookToEdit == null && students.isNotEmpty()) {
@@ -1970,6 +2221,7 @@ private fun AddEditBookDialog(
                             onValueChange = { studentFilterText = it },
                             placeholder = { Text("Öğrenci ara...", fontSize = 12.sp) },
                             singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -2011,6 +2263,14 @@ private fun AddEditBookDialog(
                                 }
                             }
                         }
+
+                        // Teslim Tarihi Seçici
+                        BirizDatePickerField(
+                            label = "Teslim Tarihi",
+                            dateStr = assignmentDateStr,
+                            onDateChange = { assignmentDateStr = it },
+                            isDarkTheme = isDarkTheme
+                        )
                     }
                 }
             }
@@ -2018,14 +2278,14 @@ private fun AddEditBookDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val pageCount = pageCountStr.toIntOrNull() ?: 0
-                    val regNo = registrationNoStr.toIntOrNull() ?: defaultRegNo
                     val assignId = if (assignImmediately) selectedStudentId else null
                     val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
-
-                    onSave(name, author, pageCount, regNo, assignId, assignDate)
+                    onSave(name.trim(), author.trim(), pageCount, autoRegNo, assignId, assignDate)
                 },
-                enabled = name.isNotBlank() && !isDuplicate
+                enabled = name.isNotBlank() && !isDuplicate && isPageValid,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
             ) {
                 Text(if (bookToEdit == null) "Kaydet" else "Güncelle")
             }
@@ -2066,23 +2326,53 @@ private fun BorrowBookDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Column {
-                Text(text = "📖 Kitap Teslim Et", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(
-                    text = "${book.name} (#${book.registrationNo})",
-                    fontSize = 12.5.sp,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "📖 Kitap Teslim Et", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        text = "${book.name} (${book.pageCount} Sayfa)",
+                        fontSize = 12.sp,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
+                ) {
+                    Text(
+                        text = "#${book.registrationNo}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Tarih Seçici Bileşeni
+                BirizDatePickerField(
+                    label = "Teslim / Veriliş Tarihi",
+                    dateStr = assignmentDate,
+                    onDateChange = { assignmentDate = it },
+                    isDarkTheme = isDarkTheme
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
                 Text(
-                    text = "Kitabı teslim alacak öğrenciyi seçin (Grup okuması için birden fazla seçilebilir):",
-                    fontSize = 12.sp
+                    text = "Kitabı teslim alacak öğrenciyi seçin (Grup için birden fazla seçilebilir):",
+                    fontSize = 11.5.sp
                 )
 
                 OutlinedTextField(
@@ -2090,6 +2380,7 @@ private fun BorrowBookDialog(
                     onValueChange = { searchQuery = it },
                     placeholder = { Text("Öğrenci adı veya numarası...", fontSize = 12.sp) },
                     singleLine = true,
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -2097,7 +2388,7 @@ private fun BorrowBookDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
+                        .height(170.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(filteredStudents, key = { it.id }) { st ->
@@ -2136,15 +2427,6 @@ private fun BorrowBookDialog(
                         }
                     }
                 }
-
-                // Veriliş Tarihi
-                OutlinedTextField(
-                    value = assignmentDate,
-                    onValueChange = { assignmentDate = it },
-                    label = { Text("Veriliş Tarihi") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         },
         confirmButton = {
@@ -2153,7 +2435,10 @@ private fun BorrowBookDialog(
                     val chosen = students.filter { selectedStudents.value.contains(it.id) }
                     onConfirm(chosen, assignmentDate)
                 },
-                enabled = selectedStudents.value.isNotEmpty()
+                enabled = selectedStudents.value.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
             ) {
                 Text("Teslim Et (${selectedStudents.value.size})")
             }
@@ -2191,16 +2476,45 @@ private fun ReturnBookDialog(
     val pageCount = book.pageCount
     val earnedStars = (pageCount / 10).coerceAtLeast(1)
 
+    val returnDateMs = remember(returnDateStr) {
+        try {
+            SimpleDateFormat("dd.MM.yyyy", Locale("tr")).parse(returnDateStr)?.time ?: System.currentTimeMillis()
+        } catch (_: Exception) { System.currentTimeMillis() }
+    }
+    val readingDays = remember(startDate, returnDateMs) {
+        calculateDateDiffDays(startDate, returnDateMs).coerceAtLeast(1)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Column {
-                Text(text = "📥 Kitap İade Al", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(
-                    text = "${book.name} (${book.pageCount} Sayfa)",
-                    fontSize = 12.sp,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "📥 Kitap İade Al", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        text = "${book.name} (${book.pageCount} Sayfa)",
+                        fontSize = 12.sp,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
+                ) {
+                    Text(
+                        text = "#${book.registrationNo}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         },
         text = {
@@ -2229,49 +2543,58 @@ private fun ReturnBookDialog(
                         }
                     }
                 } else {
-                    Text(
-                        text = "Öğrenci: $studentName",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.5.sp
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "👤 Okuyan Öğrenci: $studentName",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
                 }
 
-                Text(
-                    text = "Teslim Tarihi: ${formatTimestamp(startDate)}",
-                    fontSize = 12.sp
+                // İade Alınış Tarihi Seçici
+                BirizDatePickerField(
+                    label = "İade Alınış Tarihi",
+                    dateStr = returnDateStr,
+                    onDateChange = { returnDateStr = it },
+                    isDarkTheme = isDarkTheme
                 )
 
-                OutlinedTextField(
-                    value = returnDateStr,
-                    onValueChange = { returnDateStr = it },
-                    label = { Text("İade Alınış Tarihi") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Yıldız Teşvik Kutusu
+                // Süreç ve Yıldız Teşvik Kutusu
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = BirizGold.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(10.dp),
+                    color = BirizGold.copy(alpha = 0.12f),
                     border = BorderStroke(1.dp, BirizGold)
                 ) {
                     Row(
                         modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("⭐", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("⭐", fontSize = 28.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Kitap Kurdu Teşvik Yıldızı",
+                                text = "Kitap Kurdu Motivasyon Yıldızı",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.5.sp,
                                 color = Color(0xFFB45309)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "$studentName öğrencisinin hanesine +$earnedStars ⭐ eklenecektir.",
-                                fontSize = 11.5.sp,
+                                text = "Süreç: ${formatTimestamp(startDate)} ➔ $returnDateStr ($readingDays gün)",
+                                fontSize = 11.sp,
                                 color = Color(0xFF92400E)
+                            )
+                            Text(
+                                text = "Tebrikler! Öğrencinin hanesine +$earnedStars ⭐ eklenecektir.",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFB45309)
                             )
                         }
                     }
@@ -2285,7 +2608,7 @@ private fun ReturnBookDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
             ) {
-                Text("İade Al & Yıldızları Ver", color = Color.White)
+                Text("İade Al ve +$earnedStars ⭐ Ver", color = Color.White)
             }
         },
         dismissButton = {
@@ -2326,7 +2649,7 @@ private fun BatchClassReadDialog(
             ) {
                 Text(
                     text = "Bütün sınıfın birlikte okuduğu bir eseri tek tıkla tüm öğrencilerin (${students.size} öğrenci) karnesine işleyebilirsiniz.",
-                    fontSize = 12.5.sp
+                    fontSize = 12.sp
                 )
 
                 Text(text = "Okunan Kitap:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -2334,7 +2657,7 @@ private fun BatchClassReadDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(140.dp),
+                        .height(130.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(books) { book ->
@@ -2348,7 +2671,7 @@ private fun BatchClassReadDialog(
                             border = BorderStroke(1.dp, if (isSelected) BirizTurquoise else Color(0x3064748B))
                         ) {
                             Text(
-                                text = "${book.name} (${book.pageCount} Sayfa)",
+                                text = "#${book.registrationNo} - ${book.name} (${book.pageCount} Sayfa)",
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(8.dp),
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -2357,12 +2680,12 @@ private fun BatchClassReadDialog(
                     }
                 }
 
-                OutlinedTextField(
-                    value = readingDate,
-                    onValueChange = { readingDate = it },
-                    label = { Text("Okunma Tarihi") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                // Tarih Seçici Bileşeni
+                BirizDatePickerField(
+                    label = "Okunma Tarihi",
+                    dateStr = readingDate,
+                    onDateChange = { readingDate = it },
+                    isDarkTheme = isDarkTheme
                 )
 
                 if (selectedBook != null) {
@@ -2382,7 +2705,10 @@ private fun BatchClassReadDialog(
                         onConfirm(selectedBook, readingDate)
                     }
                 },
-                enabled = selectedBook != null
+                enabled = selectedBook != null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
             ) {
                 Text("Tüm Sınıfa Dağıt")
             }
