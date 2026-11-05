@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -2050,8 +2052,9 @@ private fun AddEditBookDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(vertical = 16.dp)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.90f)
+                .padding(vertical = 10.dp)
                 .clip(RoundedCornerShape(22.dp)),
             shape = RoundedCornerShape(22.dp),
             color = if (isDarkTheme) Color(0xFF0F1E38) else Color.White,
@@ -2060,10 +2063,10 @@ private fun AddEditBookDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 18.dp, vertical = 14.dp)
             ) {
-                // 1. ŞIK VE MODERN BAŞLIK
+                // 1. SABİT BAŞLIK (Her zaman en üstte sabit)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2077,24 +2080,24 @@ private fun AddEditBookDialog(
                             shape = RoundedCornerShape(12.dp),
                             color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
                             border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else Color(0xFF5EEAD4)),
-                            modifier = Modifier.size(42.dp)
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.MenuBook,
                                     contentDescription = null,
                                     tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E),
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Column {
                             Text(
                                 text = if (bookToEdit == null) "Yeni Kitap Ekle" else "Kitabı Düzenle",
-                                fontSize = 17.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = primaryText
                             )
@@ -2115,7 +2118,7 @@ private fun AddEditBookDialog(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Kapat",
                             tint = secondaryText,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
@@ -2123,16 +2126,16 @@ private fun AddEditBookDialog(
                 HorizontalDivider(
                     color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
                     thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 12.dp)
+                    modifier = Modifier.padding(vertical = 10.dp)
                 )
 
-                // 2. FORM ALANLARI
+                // 2. KAYDIRILABİLİR FORM GÖVDESİ (Ortada akıcı kaydırma)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
+                        .weight(1f)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Kitap Adı
                     Column {
@@ -2218,7 +2221,7 @@ private fun AddEditBookDialog(
                             value = pageCountStr,
                             onValueChange = { pageCountStr = it.filter { ch -> ch.isDigit() } },
                             label = { Text("Sayfa Sayısı * (Zorunlu)", fontWeight = FontWeight.SemiBold) },
-                            placeholder = { Text("Örn: 96", fontSize = 12.sp) },
+                            placeholder = { Text("Örn: 41", fontSize = 12.sp) },
                             leadingIcon = {
                                 Icon(Icons.Default.AutoStories, contentDescription = null, tint = BirizAmber, modifier = Modifier.size(19.dp))
                             },
@@ -2380,7 +2383,7 @@ private fun AddEditBookDialog(
                                         border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(125.dp)
+                                            .heightIn(min = 70.dp, max = 110.dp)
                                     ) {
                                         Column(
                                             modifier = Modifier
@@ -2448,7 +2451,18 @@ private fun AddEditBookDialog(
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                    if (selectedStudentId == null) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "👆 Lütfen yukarıdaki listeden kitabı teslim edeceğiniz öğrenciye dokunun.",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BirizAmber,
+                                            modifier = Modifier.padding(start = 4.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
 
                                     // Teslim Tarihi Seçici
                                     BirizDatePickerField(
@@ -2463,12 +2477,17 @@ private fun AddEditBookDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // 3. HER ZAMAN GÖRÜNÜR SABİT ALT BUTON ŞERİDİ (Pinned Bottom Actions)
+                HorizontalDivider(
+                    color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 10.dp)
+                )
 
-                // 3. AKSİYON BUTONLARI
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
@@ -2485,13 +2504,15 @@ private fun AddEditBookDialog(
                         )
                     }
 
+                    val canSave = name.isNotBlank() && !isDuplicate && isPageValid && (!assignImmediately || selectedStudentId != null)
+
                     Button(
                         onClick = {
                             val assignId = if (assignImmediately) selectedStudentId else null
                             val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
                             onSave(name.trim(), author.trim(), pageCount, autoRegNo, assignId, assignDate)
                         },
-                        enabled = name.isNotBlank() && !isDuplicate && isPageValid,
+                        enabled = canSave,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
