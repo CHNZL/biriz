@@ -177,7 +177,7 @@ class ClassRegistryRepository(
                 studentNumber = "45",
                 fullName = "SEMİH AHMET KAVAKOĞLU",
                 gender = "Erkek",
-                parentInviteCode = "BRZ-KAV-45",
+                parentInviteCode = "94K7P2MN",
                 parentName = "Ahmet Kavakoğlu",
                 parentEmail = "ahmet.kav@gmail.com",
                 parentLinkedAt = "12 Ekim 2026, 14:20",
@@ -201,15 +201,15 @@ class ClassRegistryRepository(
                     )
                 )
             ),
-            Student(id = "std_326", studentNumber = "326", fullName = "GÜNEŞ DEMİR", gender = "Kız", parentInviteCode = "BRZ-DMR-326", isPriority = true),
-            Student(id = "std_402", studentNumber = "402", fullName = "AHMET ASAF IŞIK", gender = "Erkek", parentInviteCode = "BRZ-ISK-402"),
-            Student(id = "std_407", studentNumber = "407", fullName = "EMİR ASAF AKKAŞ", gender = "Erkek", parentInviteCode = "BRZ-AKK-407"),
+            Student(id = "std_326", studentNumber = "326", fullName = "GÜNEŞ DEMİR", gender = "Kız", parentInviteCode = "7M3K8Q2P", isPriority = true),
+            Student(id = "std_402", studentNumber = "402", fullName = "AHMET ASAF IŞIK", gender = "Erkek", parentInviteCode = "TD8GDLU8"),
+            Student(id = "std_407", studentNumber = "407", fullName = "EMİR ASAF AKKAŞ", gender = "Erkek", parentInviteCode = "8K3N9P2X"),
             Student(
                 id = "std_408",
                 studentNumber = "408",
                 fullName = "KEVSER ÖZDEMİR",
                 gender = "Kız",
-                parentInviteCode = "BRZ-OZD-408",
+                parentInviteCode = "5H2L9R4T",
                 parentName = "Fatma Özdemir",
                 parentEmail = "fatma.ozdemir@gmail.com",
                 parentLinkedAt = "18 Ekim 2026, 10:00",
@@ -225,26 +225,26 @@ class ClassRegistryRepository(
                     )
                 )
             ),
-            Student(id = "std_409", studentNumber = "409", fullName = "MEHMET AKİF KILIÇ", gender = "Erkek", parentInviteCode = "BRZ-KLC-409"),
-            Student(id = "std_410", studentNumber = "410", fullName = "ELİF ZÜLAL YILMAZ", gender = "Kız", parentInviteCode = "BRZ-YLM-410"),
-            Student(id = "std_412", studentNumber = "412", fullName = "YUSUF KEREM KAYA", gender = "Erkek", parentInviteCode = "BRZ-KYA-412"),
-            Student(id = "std_415", studentNumber = "415", fullName = "ZEYNEP MİRA ÇETİN", gender = "Kız", parentInviteCode = "BRZ-CTN-415"),
-            Student(id = "std_418", studentNumber = "418", fullName = "YAĞIZ EFE DEMİRTAŞ", gender = "Erkek", parentInviteCode = "BRZ-DMT-418"),
-            Student(id = "std_420", studentNumber = "420", fullName = "ASYA ÇELİK", gender = "Kız", parentInviteCode = "BRZ-CLK-420"),
-            Student(id = "std_422", studentNumber = "422", fullName = "MEHMET EREN ŞAHİN", gender = "Erkek", parentInviteCode = "BRZ-SHN-422"),
-            Student(id = "std_425", studentNumber = "425", fullName = "ECRİN NAZLI KOÇ", gender = "Kız", parentInviteCode = "BRZ-KOC-425"),
-            Student(id = "std_428", studentNumber = "428", fullName = "MUSTAFA BURAK ARSLAN", gender = "Erkek", parentInviteCode = "BRZ-ARS-428"),
-            Student(id = "std_430", studentNumber = "430", fullName = "DEFNE ÖZTÜRK", gender = "Kız", parentInviteCode = "BRZ-OZT-430"),
-            Student(id = "std_433", studentNumber = "433", fullName = "BERAT ALİ YILDIZ", gender = "Erkek", parentInviteCode = "BRZ-YLD-433"),
-            Student(id = "std_435", studentNumber = "435", fullName = "MERYEM ADA AYDIN", gender = "Kız", parentInviteCode = "BRZ-AYD-435"),
-            Student(id = "std_438", studentNumber = "438", fullName = "ENES TALHA DOĞAN", gender = "Erkek", parentInviteCode = "BRZ-DGN-438"),
-            Student(id = "std_440", studentNumber = "440", fullName = "HİRANUR POLAT", gender = "Kız", parentInviteCode = "BRZ-PLT-440"),
-            Student(id = "std_442", studentNumber = "442", fullName = "ÖMER ASAF GÜLER", gender = "Erkek", parentInviteCode = "BRZ-GLR-442"),
-            Student(id = "std_445", studentNumber = "445", fullName = "BEREN SU ÇAKIR", gender = "Kız", parentInviteCode = "BRZ-CKR-445"),
-            Student(id = "std_448", studentNumber = "448", fullName = "ALPEREN KILIÇASLAN", gender = "Erkek", parentInviteCode = "BRZ-KLC-448"),
-            Student(id = "std_450", studentNumber = "450", fullName = "ZEHRA BETÜL KORKMAZ", gender = "Kız", parentInviteCode = "BRZ-KRK-450"),
-            Student(id = "std_452", studentNumber = "452", fullName = "BATUHAN YAVUZ", gender = "Erkek", parentInviteCode = "BRZ-YVZ-452"),
-            Student(id = "std_455", studentNumber = "455", fullName = "EYLÜL SARE TAŞKIN", gender = "Kız", parentInviteCode = "BRZ-TSK-455")
+            Student(id = "std_409", studentNumber = "409", fullName = "MEHMET AKİF KILIÇ", gender = "Erkek", parentInviteCode = "3V7W2X8Y"),
+            Student(id = "std_410", studentNumber = "410", fullName = "ELİF ZÜLAL YILMAZ", gender = "Kız", parentInviteCode = "6B4N9M1K"),
+            Student(id = "std_412", studentNumber = "412", fullName = "YUSUF KEREM KAYA", gender = "Erkek", parentInviteCode = "2P8Q5R3T"),
+            Student(id = "std_415", studentNumber = "415", fullName = "ZEYNEP MİRA ÇETİN", gender = "Kız", parentInviteCode = "9X1Y4Z7W"),
+            Student(id = "std_418", studentNumber = "418", fullName = "YAĞIZ EFE DEMİRTAŞ", gender = "Erkek", parentInviteCode = "4M6N8P2R"),
+            Student(id = "std_420", studentNumber = "420", fullName = "ASYA ÇELİK", gender = "Kız", parentInviteCode = "7T3K9L5Q"),
+            Student(id = "std_422", studentNumber = "422", fullName = "MEHMET EREN ŞAHİN", gender = "Erkek", parentInviteCode = "5R8W2V4X"),
+            Student(id = "std_425", studentNumber = "425", fullName = "ECRİN NAZLI KOÇ", gender = "Kız", parentInviteCode = "3N6P9Q1M"),
+            Student(id = "std_428", studentNumber = "428", fullName = "MUSTAFA BURAK ARSLAN", gender = "Erkek", parentInviteCode = "8K4L7R2T"),
+            Student(id = "std_430", studentNumber = "430", fullName = "DEFNE ÖZTÜRK", gender = "Kız", parentInviteCode = "2W5Y8Z3V"),
+            Student(id = "std_433", studentNumber = "433", fullName = "BERAT ALİ YILDIZ", gender = "Erkek", parentInviteCode = "6Q9M2N4P"),
+            Student(id = "std_435", studentNumber = "435", fullName = "MERYEM ADA AYDIN", gender = "Kız", parentInviteCode = "4T7R1K8L"),
+            Student(id = "std_438", studentNumber = "438", fullName = "ENES TALHA DOĞAN", gender = "Erkek", parentInviteCode = "9V2X5Y7Z"),
+            Student(id = "std_440", studentNumber = "440", fullName = "HİRANUR POLAT", gender = "Kız", parentInviteCode = "3P6Q8R1M"),
+            Student(id = "std_442", studentNumber = "442", fullName = "ÖMER ASAF GÜLER", gender = "Erkek", parentInviteCode = "7K4L9N2T"),
+            Student(id = "std_445", studentNumber = "445", fullName = "BEREN SU ÇAKIR", gender = "Kız", parentInviteCode = "5W8Y2Z4V"),
+            Student(id = "std_448", studentNumber = "448", fullName = "ALPEREN KILIÇASLAN", gender = "Erkek", parentInviteCode = "1M4P7Q9R"),
+            Student(id = "std_450", studentNumber = "450", fullName = "ZEHRA BETÜL KORKMAZ", gender = "Kız", parentInviteCode = "8T2K5L7N"),
+            Student(id = "std_452", studentNumber = "452", fullName = "BATUHAN YAVUZ", gender = "Erkek", parentInviteCode = "6V9X3Y1Z"),
+            Student(id = "std_455", studentNumber = "455", fullName = "EYLÜL SARE TAŞKIN", gender = "Kız", parentInviteCode = "2Q5R8M4P")
         )
 
         _students.value = sampleStudents
@@ -456,7 +456,8 @@ class ClassRegistryRepository(
                         val studentNo = (doc.getLong("studentNo") ?: 0L).toInt()
                         val fullName = doc.getString("fullName") ?: return@mapNotNull null
                         val gender = doc.getString("gender") ?: "Erkek"
-                        val parentCode = doc.getString("parentCode") ?: ""
+                        val rawCode = doc.getString("parentCode") ?: doc.getString("parentInviteCode")
+                        val parentCode = if (!rawCode.isNullOrBlank()) rawCode else TurkishTextHelper.generateVeliKatilimKodu()
                         val parentName = doc.getString("parentName")
                         val parentEmail = doc.getString("parentEmail")
                         val parentLinkedAt = doc.getString("parentLinkedAt")

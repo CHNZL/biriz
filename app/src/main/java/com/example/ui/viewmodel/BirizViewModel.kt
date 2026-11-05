@@ -778,13 +778,21 @@ class BirizViewModel(
     }
 
     fun linkStudentByParentCode(codeInput: String) {
-        val cleanCode = codeInput.trim().uppercase()
+        val sanitizedInput = codeInput.trim().replace("-", "").replace(" ", "").uppercase()
+        if (sanitizedInput.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = "⚠️ Lütfen 8 haneli veli katılım kodunu giriniz."
+            )
+            return
+        }
+
         val allStudentsList = repository.students.value
-        val matchedStudent = allStudentsList.firstOrNull {
-            it.parentInviteCode.equals(cleanCode, ignoreCase = true) ||
-            it.studentNumber.equals(cleanCode, ignoreCase = true) ||
-            it.id.equals(cleanCode, ignoreCase = true)
-        } ?: allStudentsList.firstOrNull()
+        val matchedStudent = allStudentsList.firstOrNull { student ->
+            val studentCode = student.parentInviteCode.replace("-", "").replace(" ", "").uppercase()
+            (studentCode.isNotBlank() && studentCode == sanitizedInput) ||
+            student.studentNumber.trim() == sanitizedInput ||
+            student.id.trim() == sanitizedInput
+        }
 
         if (matchedStudent != null) {
             val currentList = _uiState.value.linkedParentStudentIds.toMutableList()
@@ -798,7 +806,7 @@ class BirizViewModel(
             )
         } else {
             _uiState.value = _uiState.value.copy(
-                snackbarMessage = "❌ Girilen 8 haneli kod ile eşleşen öğrenci bulunamadı."
+                snackbarMessage = "❌ Girilen '$sanitizedInput' kodu ile eşleşen öğrenci bulunamadı. Lütfen 8 haneli katılım kodunu kontrol ediniz."
             )
         }
     }

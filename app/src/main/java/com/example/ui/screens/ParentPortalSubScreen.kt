@@ -263,27 +263,7 @@ fun ParentPortalSubScreen(
                                 }
                             }
 
-                            // Quick Demo Button
-                            Surface(
-                                onClick = {
-                                    val demoStudent = allStudents.firstOrNull()
-                                    if (demoStudent != null) {
-                                        onLinkStudentByCode(demoStudent.parentInviteCode.ifBlank { "BRZ-DEMO" })
-                                    } else {
-                                        onLinkStudentByCode("408")
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                color = BirizTurquoise,
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("🧪 Demo Öğrenciyi Bağla (#408 Kevser)", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = BirizNavyDark)
-                                }
-                            }
+                            // Quick Demo Button removed as requested by user
                         } else {
                             linkedStudents.forEach { student ->
                                 val isSelected = activeStudent?.id == student.id
