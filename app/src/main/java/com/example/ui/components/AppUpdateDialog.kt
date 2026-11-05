@@ -85,6 +85,7 @@ sealed interface UpdateDialogState {
 fun AppUpdateDialog(
     isDarkTheme: Boolean,
     initialInfo: UpdateInfo? = null,
+    autoStartDownload: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -101,6 +102,35 @@ fun AppUpdateDialog(
         )
     }
 
+    fun startDownloadAndInstall(info: UpdateInfo) {
+        if (!AppUpdateManager.canInstallPackages(context)) {
+            Toast.makeText(
+                context,
+                "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
+                Toast.LENGTH_LONG
+            ).show()
+            AppUpdateManager.requestInstallPermission(context)
+            return
+        }
+
+        state = UpdateDialogState.Downloading(info, 0f)
+        coroutineScope.launch {
+            val apk = AppUpdateManager.downloadApk(context, info.downloadUrl) { progress ->
+                state = UpdateDialogState.Downloading(info, progress)
+            }
+            if (apk != null && apk.exists()) {
+                // İndirme bittiğinde kullanıcıya ikinci kez buton sormadan DOĞRUDAN kurulumu başlat
+                AppUpdateNotificationHelper.cancelUpdateNotification(context)
+                AppUpdateManager.installApk(context, apk)
+                onDismiss()
+            } else {
+                state = UpdateDialogState.Error(
+                    "APK dosyası indirilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin."
+                )
+            }
+        }
+    }
+
     fun runCheck() {
         state = UpdateDialogState.Checking
         coroutineScope.launch {
@@ -113,6 +143,9 @@ fun AppUpdateDialog(
             } else if (result.isUpdateAvailable) {
                 state = UpdateDialogState.Available(result)
                 AppUpdateNotificationHelper.showUpdateNotification(context, result)
+                if (autoStartDownload) {
+                    startDownloadAndInstall(result)
+                }
             } else {
                 state = UpdateDialogState.UpToDate(result)
             }
@@ -122,6 +155,8 @@ fun AppUpdateDialog(
     LaunchedEffect(Unit) {
         if (initialInfo == null) {
             runCheck()
+        } else if (autoStartDownload && initialInfo.isUpdateAvailable) {
+            startDownloadAndInstall(initialInfo)
         }
     }
 
@@ -266,21 +301,7 @@ fun AppUpdateDialog(
                                 }
 
                                 Button(
-                                    onClick = {
-                                        state = UpdateDialogState.Downloading(info, 0f)
-                                        coroutineScope.launch {
-                                            val apk = AppUpdateManager.downloadApk(context, info.downloadUrl) { progress ->
-                                                state = UpdateDialogState.Downloading(info, progress)
-                                            }
-                                            if (apk != null && apk.exists()) {
-                                                state = UpdateDialogState.ReadyToInstall(info, apk)
-                                            } else {
-                                                state = UpdateDialogState.Error(
-                                                    "APK dosyası indirilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin."
-                                                )
-                                            }
-                                        }
-                                    },
+                                    onClick = { startDownloadAndInstall(info) },
                                     modifier = Modifier
                                         .weight(1.3f)
                                         .testTag("start_app_update_button"),

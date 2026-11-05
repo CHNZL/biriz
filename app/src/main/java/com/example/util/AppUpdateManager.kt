@@ -31,6 +31,7 @@ object AppUpdateManager {
 
     private const val PREFS_NAME = "biriz_update_prefs"
     private const val KEY_SAVED_REPO = "github_repo_owner_name"
+    const val DEFAULT_REPO = "CHNZL/biriz"
 
     /**
      * Kullanıcının kayıtlı veya varsayılan GitHub deposunu döner (örn: "kullanici/repo").
@@ -41,7 +42,9 @@ object AppUpdateManager {
         if (!saved.isNullOrEmpty()) return saved
 
         val buildRepo = BuildConfig.GITHUB_REPOSITORY.trim()
-        return buildRepo
+        if (buildRepo.isNotEmpty()) return buildRepo
+
+        return DEFAULT_REPO
     }
 
     /**
@@ -77,13 +80,15 @@ object AppUpdateManager {
 
     private fun fetchFromReleasesApi(repo: String, currentVersionName: String, currentVersionCode: Int): UpdateInfo? {
         return try {
-            val apiUrl = "https://api.github.com/repos/$repo/releases/latest"
+            val apiUrl = "https://api.github.com/repos/$repo/releases/latest?t=${System.currentTimeMillis()}"
             val connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
                 setRequestProperty("Accept", "application/vnd.github.v3+json")
                 setRequestProperty("User-Agent", "Biriz-Android-App")
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                setRequestProperty("Pragma", "no-cache")
             }
 
             if (connection.responseCode !in 200..299) {
@@ -139,12 +144,14 @@ object AppUpdateManager {
 
     private fun fetchFromRawVersionJson(repo: String, currentVersionName: String, currentVersionCode: Int): UpdateInfo? {
         return try {
-            val rawUrl = "https://raw.githubusercontent.com/$repo/main/version.json"
+            val rawUrl = "https://raw.githubusercontent.com/$repo/main/version.json?t=${System.currentTimeMillis()}"
             val connection = (URL(rawUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 8000
                 readTimeout = 8000
                 setRequestProperty("User-Agent", "Biriz-Android-App")
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                setRequestProperty("Pragma", "no-cache")
             }
 
             if (connection.responseCode !in 200..299) {
@@ -309,11 +316,35 @@ object AppUpdateManager {
     }
 
     /**
-     * İndirilen APK dosyasını sistem paket yükleyicisiyle açarak güncellemeyi başlatır.
+     * Cihazın bilinmeyen kaynaktan APK yükleme iznine sahip olup olmadığını kontrol eder.
+     */
+    fun canInstallPackages(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Kullanıcıyı doğrudan BİRİZ uygulamasının 'Bilinmeyen Uygulamaları Yükle' ayar ekranına yönlendirir.
+     */
+    fun requestInstallPermission(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${context.packageName}")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(permissionIntent)
+        }
+    }
+
+    /**
+     * İndirilen APK dosyasını doğrudan sistem paket yükleyicisine aktararak
+     * gereksiz soru ve onay adımları olmadan güncellemeyi başlatır.
      */
     fun installApk(context: Context, apkFile: File) {
         try {
-            // Android 8.0+ için bilinmeyen uygulama yükleme izni kontrolü
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
                     Toast.makeText(
@@ -321,11 +352,7 @@ object AppUpdateManager {
                         "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
                         Toast.LENGTH_LONG
                     ).show()
-                    val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(permissionIntent)
+                    requestInstallPermission(context)
                     return
                 }
             }
@@ -340,6 +367,9 @@ object AppUpdateManager {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                putExtra(Intent.EXTRA_RETURN_RESULT, true)
             }
 
             context.startActivity(installIntent)

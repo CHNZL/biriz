@@ -12,6 +12,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
@@ -366,11 +368,103 @@ fun BirizApp(viewModel: BirizViewModel) {
                 }
             }
 
+            // 🚀 Canlı Yayınlanan Güncelleme Bildirimi Banner'ı (Uygulama açıkken anında üstte görünür)
+            val showBanner = uiState.availableUpdateInfo?.isUpdateAvailable == true && !uiState.isUpdateBannerDismissed
+            AnimatedVisibility(
+                visible = showBanner,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                uiState.availableUpdateInfo?.let { updateInfo ->
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (uiState.isDarkTheme) Color(0xFF0F2942) else Color(0xFF0F172A),
+                        border = BorderStroke(1.2.dp, com.example.ui.theme.BirizTurquoise),
+                        shadowElevation = 10.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = com.example.ui.theme.BirizTurquoise.copy(alpha = 0.2f),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.SystemUpdate,
+                                            contentDescription = null,
+                                            tint = com.example.ui.theme.BirizTurquoise,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "🚀 Yeni BİRİZ v${updateInfo.latestVersionName} Yayında!",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Tek tıkla hemen güncelleyin",
+                                        fontSize = 10.5.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.openGlobalUpdateDialog(autoStartDownload = true)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Yükle", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.dismissUpdateBanner() },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Kapat",
+                                        tint = Color(0xFF94A3B8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Global Güncelleme Yükleme Penceresi (Bildirimden tıklandığında veya butonla açılır)
             if (uiState.isGlobalUpdateDialogOpen) {
                 AppUpdateDialog(
                     isDarkTheme = uiState.isDarkTheme,
                     initialInfo = uiState.availableUpdateInfo,
+                    autoStartDownload = uiState.isAutoDownloadOnOpen,
                     onDismiss = { viewModel.dismissGlobalUpdateDialog() }
                 )
             }

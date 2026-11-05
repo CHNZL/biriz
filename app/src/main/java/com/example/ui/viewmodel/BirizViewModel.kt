@@ -159,6 +159,7 @@ data class BirizUiState(
     // Uygulama Güncelleme Durumu (Arka planda & gezinirken otomatik tespit)
     val availableUpdateInfo: UpdateInfo? = null,
     val isGlobalUpdateDialogOpen: Boolean = false,
+    val isAutoDownloadOnOpen: Boolean = false,
     val isUpdateBannerDismissed: Boolean = false,
 
     // Akıllı Tahta Kumandası & Canlı Yansıtma Durumu
@@ -207,19 +208,25 @@ class BirizViewModel(
 
     /**
      * Kullanıcı programda gezinirken yeni bir sürüm çıktığında
-     * otomatik olarak algılar ve hem sistem bildirim çubuğuna bildirim atar
-     * hem de uygulama içi bildirim alanını günceller.
+     * anında otomatik olarak algılar (30 saniyede bir periyodik kontrol)
+     * hem sistem bildirim çubuğuna bildirim atar hem de uygulama içi bildirim alanını günceller.
      */
     fun startPeriodicUpdateChecker() {
         updateCheckJob?.cancel()
         updateCheckJob = viewModelScope.launch {
-            // İlk açılışta UI akıcılığını engellememek için kısa bir bekleme
-            delay(2500L)
+            // İlk açılışta 1.5 sn sonra hemen denetle
+            delay(1500L)
             while (isActive) {
                 checkUpdatesSilently()
-                // Programda gezinirken her 60 saniyede bir otomatik denetle
-                delay(60_000L)
+                // Program açıkken her 30 saniyede bir otomatik denetle (kullanıcı uygulamadayken anında haberdar olsun)
+                delay(30_000L)
             }
+        }
+    }
+
+    fun triggerLiveUpdateCheck() {
+        viewModelScope.launch {
+            checkUpdatesSilently(forceResendNotification = false)
         }
     }
 
@@ -260,15 +267,16 @@ class BirizViewModel(
         }
     }
 
-    fun openGlobalUpdateDialog(info: UpdateInfo? = null) {
+    fun openGlobalUpdateDialog(info: UpdateInfo? = null, autoStartDownload: Boolean = false) {
         _uiState.value = _uiState.value.copy(
             isGlobalUpdateDialogOpen = true,
+            isAutoDownloadOnOpen = autoStartDownload,
             availableUpdateInfo = info ?: _uiState.value.availableUpdateInfo
         )
     }
 
     fun dismissGlobalUpdateDialog() {
-        _uiState.value = _uiState.value.copy(isGlobalUpdateDialogOpen = false)
+        _uiState.value = _uiState.value.copy(isGlobalUpdateDialogOpen = false, isAutoDownloadOnOpen = false)
     }
 
     fun dismissUpdateBanner() {
