@@ -34,6 +34,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
@@ -45,10 +48,14 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +73,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -94,6 +103,7 @@ import com.example.data.model.Book
 import com.example.data.model.ClassRoom
 import com.example.data.model.ReadingRecord
 import com.example.data.model.Student
+import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkBgBottom
 import com.example.ui.theme.BirizDarkBgTop
@@ -958,7 +968,7 @@ private fun BookCardGridItem(
                         color = secondaryText
                     )
                     Text(
-                        text = "• +${(book.pageCount / 10).coerceAtLeast(1)} ⭐",
+                        text = "• +${LibraryPersistenceHelper.calculateReadingStars(book.pageCount)} ⭐",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = BirizGold
@@ -1131,7 +1141,7 @@ private fun BookListItem(
                         }
                         if (book.pageCount > 0) {
                             Text(
-                                text = "${book.pageCount} s. (+${(book.pageCount / 10).coerceAtLeast(1)} ⭐)",
+                                text = "${book.pageCount} s. (+${LibraryPersistenceHelper.calculateReadingStars(book.pageCount)} ⭐)",
                                 fontSize = 11.sp,
                                 color = secondaryText
                             )
@@ -1398,7 +1408,7 @@ private fun ReadingMovementsView(
                     }
 
                     items(filteredRecords, key = { it.id }) { record ->
-                        val stars = (record.pageCount / 10).coerceAtLeast(1)
+                        val stars = LibraryPersistenceHelper.calculateReadingStars(record.pageCount)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
@@ -1525,7 +1535,7 @@ private fun ReadingAnalyticsView(
             val stRecords = records.filter { it.studentId == student.id }
             val readCount = stRecords.size
             val pages = stRecords.sumOf { it.pageCount }
-            val stars = stRecords.sumOf { (it.pageCount / 10).coerceAtLeast(1) }
+            val stars = stRecords.sumOf { LibraryPersistenceHelper.calculateReadingStars(it.pageCount) }
             val isCurrentlyReading = books.any { b -> b.activeAssignments.any { it.studentId == student.id } }
             Triple(student, readCount, Pair(pages, stars)) to isCurrentlyReading
         }.sortedByDescending { it.first.second } // okunan kitap sayısına göre sırala
@@ -2034,268 +2044,480 @@ private fun AddEditBookDialog(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (bookToEdit == null) "📚 Yeni Kitap Ekle" else "✏️ Kitabı Düzenle",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                }
-
-                // Otomatik Sıra No Rozeti
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE0F2FE),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise.copy(alpha = 0.4f) else Color(0xFFBAE6FD))
-                ) {
-                    Text(
-                        text = "Kitap No: #$autoRegNo",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 16.dp)
+                .clip(RoundedCornerShape(22.dp)),
+            shape = RoundedCornerShape(22.dp),
+            color = if (isDarkTheme) Color(0xFF0F1E38) else Color.White,
+            border = BorderStroke(1.2.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
+            shadowElevation = 8.dp
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(20.dp)
             ) {
-                // 1. Kitap Adı
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Kitap Adı * (Zorunlu)") },
-                    isError = isDuplicate,
-                    supportingText = {
-                        if (isDuplicate) {
-                            Text("⚠️ Bu isimde bir kitap kütüphanenizde zaten kayıtlı!", color = BirizError)
-                        } else {
-                            Text("Örn: Küçük Prens, Momo, Nutuk")
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Öneri çipleri
-                if (nameSuggestions.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        nameSuggestions.forEach { suggestion ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0),
-                                modifier = Modifier.clickable { name = suggestion }
-                            ) {
-                                Text(
-                                    text = "💡 $suggestion",
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 2. Yazar Adı
-                OutlinedTextField(
-                    value = author,
-                    onValueChange = { author = it },
-                    label = { Text("Yazar Adı (İsteğe bağlı)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 3. Sayfa Sayısı (ZORUNLU)
-                OutlinedTextField(
-                    value = pageCountStr,
-                    onValueChange = { pageCountStr = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Sayfa Sayısı * (Zorunlu)") },
-                    isError = pageCountStr.isNotBlank() && !isPageValid,
-                    supportingText = {
-                        if (isPageValid) {
-                            val stars = (pageCount / 10).coerceAtLeast(1)
-                            Text("✨ Öğrenci okuyup iade ettiğinde +$stars ⭐ Kitap Kurdu yıldızı kazanır.", color = BirizTurquoise)
-                        } else if (pageCountStr.isNotBlank()) {
-                            Text("⚠️ Sayfa sayısı 0'dan büyük bir tam sayı olmalıdır.", color = BirizError)
-                        } else {
-                            Text("Zorunlu alan • Motivasyon yıldızları sayfa hacmine göre hesaplanır.", color = secondaryText)
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // CANLI KİTAP KARTI ÖNİZLEMESİ
-                Surface(
+                // 1. ŞIK VE MODERN BAŞLIK
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) Color(0x25334E68) else Color(0xFFF8FAFC),
-                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0))
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Surface(
-                            modifier = Modifier.size(36.dp, 44.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isDarkTheme) BirizNavyDark else Color(0xFF334E68)
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else Color(0xFF5EEAD4)),
+                            modifier = Modifier.size(42.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text("#$autoRegNo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (name.isBlank()) "Kitap Adı" else name,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                color = if (name.isBlank()) secondaryText else primaryText
-                            )
-                            Text(
-                                text = if (author.isBlank()) "Yazar belirtilmedi" else author,
-                                fontSize = 11.sp,
-                                color = secondaryText,
-                                maxLines = 1
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (isPageValid) "$pageCount sayfa" else "Sayfa sayısı girilmeli",
-                                    fontSize = 10.5.sp,
-                                    color = if (isPageValid) primaryText else BirizError
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = null,
+                                    tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E),
+                                    modifier = Modifier.size(22.dp)
                                 )
-                                if (isPageValid) {
-                                    Text(" • +${(pageCount / 10).coerceAtLeast(1)} ⭐", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = BirizGold)
-                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = if (bookToEdit == null) "Yeni Kitap Ekle" else "Kitabı Düzenle",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = primaryText
+                            )
+                            Text(
+                                text = if (bookToEdit == null) "Sınıf kütüphanesine yeni bir eser kazandırın" else "Kitap bilgilerini güncelleyin",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = secondaryText
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Kapat",
+                            tint = secondaryText,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 
-                // Kitap Ekleme Anında Öğrenciye Hemen Ver
-                if (bookToEdit == null && students.isNotEmpty()) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { assignImmediately = !assignImmediately }
-                    ) {
-                        Checkbox(
-                            checked = assignImmediately,
-                            onCheckedChange = { assignImmediately = it }
-                        )
-                        Text(
-                            text = "📖 Öğrenciye Hemen Ver (Ödünç Başlat)",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                HorizontalDivider(
+                    color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
 
-                    if (assignImmediately) {
-                        var studentFilterText by remember { mutableStateOf("") }
+                // 2. FORM ALANLARI
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Kitap Adı
+                    Column {
                         OutlinedTextField(
-                            value = studentFilterText,
-                            onValueChange = { studentFilterText = it },
-                            placeholder = { Text("Öğrenci ara...", fontSize = 12.sp) },
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Kitap Adı * (Zorunlu)", fontWeight = FontWeight.SemiBold) },
+                            placeholder = { Text("Örn: Küçük Prens, Momo, Nutuk", fontSize = 12.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Book, contentDescription = null, tint = BirizTurquoise, modifier = Modifier.size(19.dp))
+                            },
+                            isError = isDuplicate,
                             singleLine = true,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BirizTurquoise,
+                                unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
+                                focusedLabelColor = BirizTurquoise
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        val filteredSt = students.filter {
-                            studentFilterText.isBlank() ||
-                                    it.fullName.contains(studentFilterText, ignoreCase = true) ||
-                                    it.studentNumber.toString() == studentFilterText
+                        if (isDuplicate) {
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "⚠️ Bu isimde bir kitap kitaplığınızda zaten kayıtlı!",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BirizError,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
                         }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            filteredSt.forEach { st ->
-                                val isSelected = selectedStudentId == st.id
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .clickable { selectedStudentId = st.id },
-                                    color = if (isSelected) BirizTurquoise.copy(alpha = 0.2f) else Color.Transparent,
-                                    border = BorderStroke(1.dp, if (isSelected) BirizTurquoise else Color(0x2064748B))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                        // Öneri çipleri
+                        if (nameSuggestions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                nameSuggestions.forEach { suggestion ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE),
+                                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0x4038BDF8) else Color(0xFFBAE6FD)),
+                                        modifier = Modifier.clickable { name = suggestion }
                                     ) {
-                                        Text(if (isSelected) "🟢" else "⚪", fontSize = 10.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "${st.studentNumber} - ${st.fullName}",
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            text = "💡 $suggestion",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDarkTheme) Color(0xFF7DD3FC) else Color(0xFF0369A1),
+                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Teslim Tarihi Seçici
-                        BirizDatePickerField(
-                            label = "Teslim Tarihi",
-                            dateStr = assignmentDateStr,
-                            onDateChange = { assignmentDateStr = it },
-                            isDarkTheme = isDarkTheme
+                    // Yazar Adı
+                    OutlinedTextField(
+                        value = author,
+                        onValueChange = { author = it },
+                        label = { Text("Yazar Adı (İsteğe bağlı)", fontWeight = FontWeight.SemiBold) },
+                        placeholder = { Text("Örn: Antoine de Saint-Exupéry", fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.PersonOutline, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BirizTurquoise,
+                            unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
+                            focusedLabelColor = BirizTurquoise
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Sayfa Sayısı (ZORUNLU)
+                    Column {
+                        OutlinedTextField(
+                            value = pageCountStr,
+                            onValueChange = { pageCountStr = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Sayfa Sayısı * (Zorunlu)", fontWeight = FontWeight.SemiBold) },
+                            placeholder = { Text("Örn: 96", fontSize = 12.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.AutoStories, contentDescription = null, tint = BirizAmber, modifier = Modifier.size(19.dp))
+                            },
+                            isError = pageCountStr.isNotBlank() && !isPageValid,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BirizTurquoise,
+                                unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
+                                focusedLabelColor = BirizTurquoise
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (isPageValid) {
+                            val stars = LibraryPersistenceHelper.calculateReadingStars(pageCount)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB),
+                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x60F59E0B) else Color(0xFFFDE68A)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("⭐", fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "$pageCount sayfa için +$stars Kitap Kurdu yıldızı verilecektir.",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                                    )
+                                }
+                            }
+                        } else if (pageCountStr.isNotBlank()) {
+                            Text(
+                                text = "⚠️ Sayfa sayısı 0'dan büyük bir tam sayı olmalıdır.",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BirizError,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Zorunlu alan • Her 10 sayfaya 1 yıldız yukarı yuvarlanarak hesaplanır.",
+                                fontSize = 10.5.sp,
+                                color = secondaryText,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
+                    }
+
+                    // Kitap Ekleme Anında Öğrenciye Hemen Ver (Ödünç Başlat)
+                    if (bookToEdit == null && students.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (assignImmediately) {
+                                if (isDarkTheme) Color(0x300D9488) else Color(0xFFF0FDFA)
+                            } else {
+                                if (isDarkTheme) Color(0x18FFFFFF) else Color(0xFFF8FAFC)
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (assignImmediately) BirizTurquoise else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0))
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { assignImmediately = !assignImmediately }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (assignImmediately) BirizTurquoise else Color(0xFF94A3B8).copy(alpha = 0.2f),
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.BookmarkAdd,
+                                                    contentDescription = null,
+                                                    tint = if (assignImmediately) Color.White else Color.Gray,
+                                                    modifier = Modifier.size(17.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column {
+                                            Text(
+                                                text = "Öğrenciye Hemen Ödünç Ver",
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryText
+                                            )
+                                            Text(
+                                                text = "Kitap eklenirken ilk teslim kaydını başlatın",
+                                                fontSize = 10.5.sp,
+                                                color = secondaryText
+                                            )
+                                        }
+                                    }
+
+                                    Switch(
+                                        checked = assignImmediately,
+                                        onCheckedChange = { assignImmediately = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = BirizTurquoise
+                                        )
+                                    )
+                                }
+
+                                if (assignImmediately) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(
+                                        color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFE2E8F0),
+                                        thickness = 0.8.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    var studentFilterText by remember { mutableStateOf("") }
+                                    OutlinedTextField(
+                                        value = studentFilterText,
+                                        onValueChange = { studentFilterText = it },
+                                        placeholder = { Text("Öğrenci adı veya no ara...", fontSize = 11.5.sp) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp), tint = secondaryText)
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    val filteredSt = students.filter {
+                                        studentFilterText.isBlank() ||
+                                                it.fullName.contains(studentFilterText, ignoreCase = true) ||
+                                                it.studentNumber.toString() == studentFilterText
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isDarkTheme) Color(0x20000000) else Color.White,
+                                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(125.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .verticalScroll(rememberScrollState())
+                                        ) {
+                                            filteredSt.forEachIndexed { stIndex, st ->
+                                                val isSelected = selectedStudentId == st.id
+                                                val isGirl = st.gender.equals("KIZ", ignoreCase = true)
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .background(if (isSelected) BirizTurquoise.copy(alpha = 0.15f) else Color.Transparent)
+                                                        .clickable { selectedStudentId = st.id }
+                                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Surface(
+                                                                shape = CircleShape,
+                                                                color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                                                modifier = Modifier.size(24.dp)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text(
+                                                                        text = "#${st.studentNumber}",
+                                                                        fontSize = 9.5.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
+                                                                    )
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = st.fullName,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                                color = primaryText
+                                                            )
+                                                        }
+
+                                                        if (isSelected) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "Seçildi",
+                                                                tint = BirizTurquoise,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                if (stIndex < filteredSt.size - 1) {
+                                                    HorizontalDivider(
+                                                        color = if (isDarkTheme) Color(0x15FFFFFF) else Color(0xFFF1F5F9),
+                                                        thickness = 0.6.dp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Teslim Tarihi Seçici
+                                    BirizDatePickerField(
+                                        label = "Teslim Tarihi",
+                                        dateStr = assignmentDateStr,
+                                        onDateChange = { assignmentDateStr = it },
+                                        isDarkTheme = isDarkTheme
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 3. AKSİYON BUTONLARI
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    ) {
+                        Text(
+                            text = "Vazgeç",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = secondaryText
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            val assignId = if (assignImmediately) selectedStudentId else null
+                            val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
+                            onSave(name.trim(), author.trim(), pageCount, autoRegNo, assignId, assignDate)
+                        },
+                        enabled = name.isNotBlank() && !isDuplicate && isPageValid,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                            disabledContainerColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)
+                        ),
+                        modifier = Modifier
+                            .weight(1.4f)
+                            .height(44.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (bookToEdit == null) "Kitabı Kaydet" else "Güncelle",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val assignId = if (assignImmediately) selectedStudentId else null
-                    val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
-                    onSave(name.trim(), author.trim(), pageCount, autoRegNo, assignId, assignDate)
-                },
-                enabled = name.isNotBlank() && !isDuplicate && isPageValid,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
-            ) {
-                Text(if (bookToEdit == null) "Kaydet" else "Güncelle")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Vazgeç")
-            }
         }
-    )
+    }
 }
 
 // -------------------------------------------------------------
@@ -2474,7 +2696,7 @@ private fun ReturnBookDialog(
     val startDate: Long = activeItem?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
 
     val pageCount = book.pageCount
-    val earnedStars = (pageCount / 10).coerceAtLeast(1)
+    val earnedStars = LibraryPersistenceHelper.calculateReadingStars(pageCount)
 
     val returnDateMs = remember(returnDateStr) {
         try {
@@ -2635,7 +2857,7 @@ private fun BatchClassReadDialog(
     var readingDate by remember { mutableStateOf(todayDateStr) }
 
     val selectedBook = books.firstOrNull { it.id == selectedBookId }
-    val earnedStars = ((selectedBook?.pageCount ?: 0) / 10).coerceAtLeast(1)
+    val earnedStars = LibraryPersistenceHelper.calculateReadingStars(selectedBook?.pageCount ?: 0)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2745,11 +2967,11 @@ private fun ExportLibraryDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Kitaplık envanterini ve okuma hareketlerini resmi Excel tablosu veya yazdırılabilir A4 PDF belgesi olarak indirin:",
+                    text = "Kitaplık listesini ve okuma hareketlerini resmi Excel tablosu veya yazdırılabilir A4 PDF belgesi olarak indirin:",
                     fontSize = 12.5.sp
                 )
 
-                // 1. Excel Kitaplık Envanteri
+                // 1. Excel Kitaplık Listesi
                 OutlinedButton(
                     onClick = {
                         val uri = ExcelPdfHelper.exportBooksExcel(context, classRoom, books)
@@ -2757,14 +2979,14 @@ private fun ExportLibraryDialog(
                             context,
                             uri,
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "Kitaplık Envanteri Excel Tablosu"
+                            "Kitaplık Listesi Excel Tablosu"
                         )
                         onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("📊 Kitaplık Envanteri (Excel .xlsx)")
+                    Text("📊 Kitaplık Listesi (Excel .xlsx)")
                 }
 
                 // 2. Excel Okuma Geçmişi

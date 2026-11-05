@@ -750,7 +750,7 @@ private fun GroupCard(
                 }
             }
 
-            // ÖĞRENCİ LİSTESİ BÖLÜMÜ
+            // ÖĞRENCİ LİSTESİ BÖLÜMÜ (Bütüncül ve Sıkı Liste Görünümü)
             if (members.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -767,41 +767,32 @@ private fun GroupCard(
                 }
             } else {
                 Column(
-                    modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     members.forEachIndexed { index, student ->
                         val isLeader = student.id == group.leaderStudentId
                         val isGirl = student.gender.equals("KIZ", ignoreCase = true)
+                        val isEven = index % 2 == 1
+                        val rowBg = when {
+                            isLeader -> if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                            isEven -> if (isDarkTheme) Color(0x18FFFFFF) else Color(0xFFF8FAFC)
+                            else -> Color.Transparent
+                        }
 
-                        Surface(
-                            onClick = { onStudentClick(student.id) },
-                            shape = RoundedCornerShape(10.dp),
-                            color = when {
-                                isLeader -> if (isDarkTheme) Color(0x50F59E0B) else Color(0xFFFFFBEB)
-                                isGirl -> if (isDarkTheme) Color(0x30F472B6) else Color.White
-                                else -> if (isDarkTheme) Color(0x3038BDF8) else Color.White
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                when {
-                                    isLeader -> BirizAmber
-                                    isGirl -> if (isDarkTheme) Color(0xFFF472B6) else Color(0xFFFCE7F3)
-                                    else -> if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFFE0F2FE)
-                                }
-                            ),
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .background(rowBg)
+                                .clickable { onStudentClick(student.id) }
                                 .testTag("group_student_item_${student.studentNumber}")
+                                .padding(horizontal = 10.dp, vertical = 5.5.dp)
                         ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                // Sol: Sıra No + Öğrenci No + İsim
+                                // Sol: Sıra No + Kompakt Öğrenci Rozeti + İsim
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.weight(1f)
@@ -811,32 +802,57 @@ private fun GroupCard(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                                        modifier = Modifier.width(22.dp)
+                                        modifier = Modifier.width(20.dp)
                                     )
 
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
+                                        shape = CircleShape,
+                                        color = if (isDarkTheme) {
+                                            if (isGirl) Color(0x30DB2777) else Color(0x300284C7)
+                                        } else {
+                                            if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
+                                        },
+                                        border = BorderStroke(1.dp, if (isGirl) Color(0xFFF472B6) else Color(0xFF38BDF8)),
+                                        modifier = Modifier.size(28.dp)
                                     ) {
-                                        Text(
-                                            text = "#${student.studentNumber}",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "#${student.studentNumber}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
+                                            )
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
                                     Text(
                                         text = student.fullName,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isLeader) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = if (isLeader) FontWeight.ExtraBold else FontWeight.Bold,
                                         color = if (isDarkTheme) Color.White else Color(0xFF1E293B),
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
                                     )
+
+                                    if (isLeader) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = if (isDarkTheme) Color(0x40F59E0B) else Color(0xFFFEF3C7),
+                                            border = BorderStroke(1.dp, BirizAmber)
+                                        ) {
+                                            Text(
+                                                text = "Sözcü",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                 }
 
                                 // Sağ: Lider / Taç Butonu & Cinsiyet İkonu
@@ -844,7 +860,7 @@ private fun GroupCard(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    // Taç Butonu (Sözcü Seçimi)
+                                    // Taç Butonu (Sözcü / Lider Seçimi)
                                     Surface(
                                         onClick = { onToggleLeaderClick(student.id) },
                                         shape = CircleShape,
@@ -855,7 +871,7 @@ private fun GroupCard(
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
                                                 text = "👑",
-                                                fontSize = 12.sp
+                                                fontSize = 11.5.sp
                                             )
                                         }
                                     }
@@ -868,6 +884,13 @@ private fun GroupCard(
                                     )
                                 }
                             }
+                        }
+
+                        if (index < members.size - 1) {
+                            HorizontalDivider(
+                                color = if (isDarkTheme) Color(0x2064748B) else Color(0xFFF1F5F9),
+                                thickness = 0.8.dp
+                            )
                         }
                     }
                 }

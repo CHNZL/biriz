@@ -69,13 +69,12 @@ object LibraryPersistenceHelper {
     }
 
     /**
-     * Sayfa Hacmine Göre Kitap Kurdu Yıldız Hesabı:
-     * (pageCount / 10).coerceAtLeast(1)
-     * Örn: 35 sayfa -> 3-4 yıldız; 0 veya belirtilmemişse en az 1 yıldız
+     * Sayfa Hacmine Göre Kitap Kurdu Yıldız Hesabı (Tavan Yuvarlama / Ceil):
+     * Her 10 sayfaya 1 yıldız; 1-10 sayfa -> 1, 11-20 sayfa -> 2, 21-30 sayfa -> 3 vb.
      */
     fun calculateReadingStars(pageCount: Int): Int {
         if (pageCount <= 0) return 1
-        return (pageCount / 10).coerceAtLeast(1)
+        return ((pageCount + 9) / 10).coerceAtLeast(1)
     }
 
     /**

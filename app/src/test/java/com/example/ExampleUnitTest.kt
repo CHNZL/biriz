@@ -645,8 +645,14 @@ class ExampleUnitTest {
     assertEquals(1, helper.calculateReadingStars(9))
     // 10 pages -> 1 star
     assertEquals(1, helper.calculateReadingStars(10))
-    // 35 pages -> 3 stars
-    assertEquals(3, helper.calculateReadingStars(35))
+    // 11 pages -> 2 stars (tavan yuvarlama)
+    assertEquals(2, helper.calculateReadingStars(11))
+    // 21 pages -> 3 stars
+    assertEquals(3, helper.calculateReadingStars(21))
+    // 35 pages -> 4 stars
+    assertEquals(4, helper.calculateReadingStars(35))
+    // 45 pages -> 5 stars
+    assertEquals(5, helper.calculateReadingStars(45))
     // 120 pages -> 12 stars
     assertEquals(12, helper.calculateReadingStars(120))
   }
@@ -678,7 +684,7 @@ class ExampleUnitTest {
 
     val totalBooks = records.size
     val totalPages = records.sumOf { it.pageCount }
-    val starsSum = records.sumOf { (it.pageCount / 10).coerceAtLeast(1) }
+    val starsSum = records.sumOf { com.example.util.LibraryPersistenceHelper.calculateReadingStars(it.pageCount) }
 
     assertEquals(2, totalBooks)
     assertEquals(200, totalPages)

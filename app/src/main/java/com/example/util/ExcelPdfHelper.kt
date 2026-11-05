@@ -2271,7 +2271,7 @@ object ExcelPdfHelper {
         val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale("tr"))
         val headers = listOf("Sıra", "Öğrenci Adı", "Kitap Adı", "Sayfa Sayısı", "Başlangıç Tarihi", "İade Tarihi", "Kazanılan Yıldız")
         val rows = records.mapIndexed { index, record ->
-            val starsEarned = (record.pageCount / 10).coerceAtLeast(1)
+            val starsEarned = LibraryPersistenceHelper.calculateReadingStars(record.pageCount)
             val startStr = if (record.startDate > 0) dateFormat.format(Date(record.startDate)) else "-"
             val endStr = if (record.endDate > 0) dateFormat.format(Date(record.endDate)) else "-"
             listOf(
@@ -2295,7 +2295,7 @@ object ExcelPdfHelper {
     }
 
     /**
-     * Kitaplık Envanteri ve Okuma Takip Raporunu Resmi A4 PDF olarak üretir.
+     * Kitaplık Listesi ve Okuma Takip Raporunu Resmi A4 PDF olarak üretir.
      */
     fun exportLibraryPdf(
         context: Context,
