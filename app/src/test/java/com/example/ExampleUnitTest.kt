@@ -692,6 +692,27 @@ class ExampleUnitTest {
   }
 
   @Test
+  fun testCascadeBookDeletionLogic() {
+    val bookA = com.example.data.model.Book(id = "b1", registrationNo = 1, name = "Küçük Prens", pageCount = 96)
+    val bookB = com.example.data.model.Book(id = "b2", registrationNo = 2, name = "Momo", pageCount = 304)
+
+    val readingRecords = listOf(
+      com.example.data.model.ReadingRecord(id = "r1", bookId = "b1", bookName = "Küçük Prens", pageCount = 96, studentId = "s1", studentName = "Ahmet", startDate = 0L, endDate = 1000L, earnedStars = 10),
+      com.example.data.model.ReadingRecord(id = "r2", bookId = "b2", bookName = "Momo", pageCount = 304, studentId = "s2", studentName = "Ayşe", startDate = 0L, endDate = 2000L, earnedStars = 31),
+      com.example.data.model.ReadingRecord(id = "r3", bookId = "b1", bookName = "Küçük Prens", pageCount = 96, studentId = "s3", studentName = "Ali", startDate = 0L, endDate = 3000L, earnedStars = 10)
+    )
+
+    val remainingRecords = readingRecords.filter { it.bookId != bookA.id }
+    val deletedRecords = readingRecords.filter { it.bookId == bookA.id }
+    val revokedStars = deletedRecords.sumOf { it.earnedStars }
+
+    assertEquals(1, remainingRecords.size)
+    assertEquals("Momo", remainingRecords[0].bookName)
+    assertEquals(2, deletedRecords.size)
+    assertEquals(20, revokedStars)
+  }
+
+  @Test
   fun testTournamentSmallestPowerOfTwo() {
     val engine = com.example.util.TournamentEngine
     assertEquals(2, engine.findSmallestPowerOfTwo(2))

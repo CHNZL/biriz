@@ -312,22 +312,95 @@ object LibraryPersistenceHelper {
         }
     }
 
+    data class BookDeletionSummary(
+        val deletedBookName: String,
+        val deletedRecordsCount: Int,
+        val revokedStarsCount: Int,
+        val affectedStudentsCount: Int
+    )
+
     /**
-     * Kitap Sil
+     * Kitap Sil ve İlgili Okuma Geçmişi ile Kazanılan Yıldızları Temizle (Cascade / Kademeli Silme)
      */
-    fun deleteBook(context: Context, classRoomId: String, bookId: String) {
+    fun deleteBook(context: Context, classRoomId: String, bookId: String): BookDeletionSummary {
         val books = loadBooks(context, classRoomId).toMutableList()
+        val book = books.firstOrNull { it.id == bookId }
+        val bookName = book?.name ?: "Kitap"
         books.removeAll { it.id == bookId }
         saveBooks(context, classRoomId, books)
+
+        // 2. Bu kitaba ait tüm tamamlanmış okuma kayıtlarını (ReadingRecord) bul ve sil
+        val records = loadReadingRecords(context, classRoomId).toMutableList()
+        val relatedRecords = records.filter { it.bookId == bookId }
+        records.removeAll { it.bookId == bookId }
+        saveReadingRecords(context, classRoomId, records)
+
+        // 3. Yıldızlar Sınıfı kayıtlarından (StarRewardRecord) bu kitaba ait okuma yıldızlarını sil
+        val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
+        val starIdsToRemove = mutableSetOf<String>()
+        var revokedStars = 0
+        val affectedStudentIds = mutableSetOf<String>()
+
+        relatedRecords.forEach { rec ->
+            affectedStudentIds.add(rec.studentId)
+            val stars = if (rec.earnedStars > 0) rec.earnedStars else calculateReadingStars(rec.pageCount)
+            revokedStars += stars
+
+            val matchingStar = starRecords.firstOrNull { sr ->
+                !starIdsToRemove.contains(sr.id) &&
+                sr.studentId == rec.studentId &&
+                sr.categoryId == "cat_kitap_kurdu" &&
+                (sr.note.contains(bookName, ignoreCase = true) || Math.abs(sr.timestamp - rec.endDate) < 60000L)
+            }
+            if (matchingStar != null) {
+                starIdsToRemove.add(matchingStar.id)
+            }
+        }
+
+        // Eğer notunda doğrudan bookName geçen diğer Kitap Kurdu yıldızları varsa onları da ekle
+        starRecords.filter { sr ->
+            !starIdsToRemove.contains(sr.id) &&
+            sr.categoryId == "cat_kitap_kurdu" &&
+            sr.note.contains(bookName, ignoreCase = true)
+        }.forEach { sr ->
+            starIdsToRemove.add(sr.id)
+        }
+
+        if (starIdsToRemove.isNotEmpty()) {
+            StarRewardPersistenceHelper.deleteRecordsByIds(context, classRoomId, starIdsToRemove)
+        }
+
+        return BookDeletionSummary(
+            deletedBookName = bookName,
+            deletedRecordsCount = relatedRecords.size,
+            revokedStarsCount = revokedStars,
+            affectedStudentsCount = affectedStudentIds.size
+        )
     }
 
     /**
-     * Okuma Kaydı Sil
+     * Okuma Kaydı Sil ve İlgili Kitap Kurdu Yıldızını Geri Al
      */
-    fun deleteReadingRecord(context: Context, classRoomId: String, recordId: String) {
+    fun deleteReadingRecord(context: Context, classRoomId: String, recordId: String): Int {
         val records = loadReadingRecords(context, classRoomId).toMutableList()
+        val record = records.firstOrNull { it.id == recordId }
         records.removeAll { it.id == recordId }
         saveReadingRecords(context, classRoomId, records)
+
+        var revokedStars = 0
+        if (record != null) {
+            revokedStars = if (record.earnedStars > 0) record.earnedStars else calculateReadingStars(record.pageCount)
+            val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
+            val matching = starRecords.firstOrNull { sr ->
+                sr.studentId == record.studentId &&
+                sr.categoryId == "cat_kitap_kurdu" &&
+                (sr.note.contains(record.bookName, ignoreCase = true) || Math.abs(sr.timestamp - record.endDate) < 60000L)
+            }
+            if (matching != null) {
+                StarRewardPersistenceHelper.deleteStarRecord(context, classRoomId, matching.id)
+            }
+        }
+        return revokedStars
     }
 
     /**
