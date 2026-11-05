@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -945,8 +947,16 @@ fun ScheduleTableScreen(
         ScheduleHelper.calculateTimeline(config, currentDayLessons)
     }
 
-    // Canlı "Şu Anki Ders" & Teneffüs Durumunu Hesapla
-    val liveStatus = remember(config, lessons) {
+    // Canlı "Şu Anki Ders" & Teneffüs Durumunu Dinamik Yenile (5 saniyede bir)
+    var tickerTime by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5000L)
+            tickerTime++
+        }
+    }
+
+    val liveStatus = remember(config, lessons, tickerTime) {
         ScheduleHelper.calculateLiveScheduleStatus(config, lessons)
     }
 
@@ -1168,24 +1178,33 @@ fun ScheduleTableScreen(
         items(timelineItems) { item ->
             when (item) {
                 is ScheduleTimelineItem.LessonSlot -> {
+                    val isLive = liveStatus.isLive && liveStatus.activeLessonIndex != null && liveStatus.activeLessonIndex == item.lessonIndex
                     LessonSlotCard(
                         slot = item,
                         isDark = isDarkTheme,
+                        isLiveActive = isLive,
+                        remainingMinutes = if (isLive) (liveStatus.remainingMinutes ?: 0) else 0,
                         onEdit = { editingLessonSlot = item }
                     )
                 }
 
                 is ScheduleTimelineItem.RecessSlot -> {
+                    val isLive = liveStatus.isLive && liveStatus.activeRecessIndex != null && liveStatus.activeRecessIndex == item.recessIndex
                     RecessSlotBanner(
                         slot = item,
-                        isDark = isDarkTheme
+                        isDark = isDarkTheme,
+                        isLiveActive = isLive,
+                        remainingMinutes = if (isLive) (liveStatus.remainingMinutes ?: 0) else 0
                     )
                 }
 
                 is ScheduleTimelineItem.LunchBreakSlot -> {
+                    val isLive = liveStatus.isLive && (liveStatus.iconType == "LUNCH" || (liveStatus.activeRecessIndex != null && liveStatus.activeRecessIndex == item.afterLessonIndex))
                     LunchBreakBanner(
                         slot = item,
-                        isDark = isDarkTheme
+                        isDark = isDarkTheme,
+                        isLiveActive = isLive,
+                        remainingMinutes = if (isLive) (liveStatus.remainingMinutes ?: 0) else 0
                     )
                 }
             }
@@ -1219,6 +1238,8 @@ fun ScheduleTableScreen(
 fun LessonSlotCard(
     slot: ScheduleTimelineItem.LessonSlot,
     isDark: Boolean,
+    isLiveActive: Boolean = false,
+    remainingMinutes: Int = 0,
     onEdit: () -> Unit
 ) {
     val lesson = slot.lesson
@@ -1237,7 +1258,8 @@ fun LessonSlotCard(
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isLiveActive) 4.dp else 1.dp),
+        border = if (isLiveActive) BorderStroke(2.5.dp, Color(0xFF22C55E)) else null,
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onEdit() }
@@ -1268,15 +1290,32 @@ fun LessonSlotCard(
                     )
                 }
 
-                // Orta: Ders Sırası ve Adı (Örn: "1. Ders: Türkçe")
-                Text(
-                    text = "${slot.lessonIndex}. Ders: $subjectName",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
+                // Orta: Ders Sırası, Adı ve Canlı Rozeti
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${slot.lessonIndex}. Ders: $subjectName",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isLiveActive) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF15803D),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(
+                                text = "🟢 ŞU AN İŞLENİYOR • Teneffüse $remainingMinutes dk",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.5.dp)
+                            )
+                        }
+                    }
+                }
 
                 // Sağ: Düzenleme İkonu
                 IconButton(
@@ -1300,12 +1339,21 @@ fun LessonSlotCard(
 @Composable
 fun RecessSlotBanner(
     slot: ScheduleTimelineItem.RecessSlot,
-    isDark: Boolean
+    isDark: Boolean,
+    isLiveActive: Boolean = false,
+    remainingMinutes: Int = 0
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = if (isDark) Color(0x22E67E22) else Color(0xFFFEF3C7),
-        border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.35f)),
+        color = if (isLiveActive) {
+            if (isDark) Color(0x60F59E0B) else Color(0xFFFEF3C7)
+        } else {
+            if (isDark) Color(0x22E67E22) else Color(0xFFFEF3C7)
+        },
+        border = BorderStroke(
+            if (isLiveActive) 2.dp else 1.dp,
+            if (isLiveActive) Color(0xFFF59E0B) else BirizAmber.copy(alpha = 0.35f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 1.dp)
@@ -1313,7 +1361,7 @@ fun RecessSlotBanner(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 3.dp),
+                .padding(horizontal = 10.dp, vertical = if (isLiveActive) 5.dp else 3.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1322,15 +1370,25 @@ fun RecessSlotBanner(
                     imageVector = Icons.Default.Coffee,
                     contentDescription = null,
                     tint = BirizAmber,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Teneffüs (${slot.durationMinutes} dk)",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDark) Color(0xFFFBBF24) else Color(0xFF92400E)
-                )
+                Column {
+                    Text(
+                        text = if (isLiveActive) "☕ CANLI TENEFFÜS (${slot.durationMinutes} dk)" else "Teneffüs (${slot.durationMinutes} dk)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color(0xFFFBBF24) else Color(0xFF92400E)
+                    )
+                    if (isLiveActive) {
+                        Text(
+                            text = "Derse kalan: $remainingMinutes dak",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFFD97706)
+                        )
+                    }
+                }
             }
             Text(
                 text = "${slot.startTime} - ${slot.endTime}",
@@ -1345,12 +1403,21 @@ fun RecessSlotBanner(
 @Composable
 fun LunchBreakBanner(
     slot: ScheduleTimelineItem.LunchBreakSlot,
-    isDark: Boolean
+    isDark: Boolean,
+    isLiveActive: Boolean = false,
+    remainingMinutes: Int = 0
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = if (isDark) Color(0x3028B8C2) else Color(0xFFE0F2FE),
-        border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.5f)),
+        color = if (isLiveActive) {
+            if (isDark) Color(0x5028B8C2) else Color(0xFFBAE6FD)
+        } else {
+            if (isDark) Color(0x3028B8C2) else Color(0xFFE0F2FE)
+        },
+        border = BorderStroke(
+            if (isLiveActive) 2.dp else 1.dp,
+            if (isLiveActive) BirizTurquoise else BirizTurquoise.copy(alpha = 0.5f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
@@ -1358,7 +1425,7 @@ fun LunchBreakBanner(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 4.dp),
+                .padding(horizontal = 10.dp, vertical = if (isLiveActive) 5.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1367,20 +1434,30 @@ fun LunchBreakBanner(
                     imageVector = Icons.Default.Restaurant,
                     contentDescription = null,
                     tint = BirizTurquoise,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Öğle Arası (${slot.durationMinutes} dk)",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isDark) Color.White else BirizNavyPrimary
-                )
+                Column {
+                    Text(
+                        text = if (isLiveActive) "🍽️ CANLI ÖĞLE ARASI (${slot.durationMinutes} dk)" else "Öğle Arası (${slot.durationMinutes} dk)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isDark) Color.White else BirizNavyPrimary
+                    )
+                    if (isLiveActive) {
+                        Text(
+                            text = "Derse kalan: $remainingMinutes dak",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = BirizTurquoise
+                        )
+                    }
+                }
             }
             Text(
                 text = "${slot.startTime} - ${slot.endTime}",
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = if (isDark) BirizTurquoise else BirizNavyPrimary
             )
         }

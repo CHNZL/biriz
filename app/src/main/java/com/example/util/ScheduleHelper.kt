@@ -300,7 +300,9 @@ object ScheduleHelper {
                             title = "🔔 Şu An: ${item.lessonIndex}. Ders - $subject (Bitişe $remaining dk kaldı)",
                             subtitle = "Ders Aralığı: ${item.startTime} - ${item.endTime}",
                             iconType = "LESSON",
-                            isLive = true
+                            isLive = true,
+                            activeLessonIndex = item.lessonIndex,
+                            remainingMinutes = remaining
                         )
                     }
                 }
@@ -315,7 +317,9 @@ object ScheduleHelper {
                             title = "☕ Teneffüstesiniz ($nextLessonIdx. Dersin başlamasına $remaining dk kaldı)",
                             subtitle = "Gelecek Ders: $nextLesson (Giriş Zili: ${item.endTime})",
                             iconType = "RECESS",
-                            isLive = true
+                            isLive = true,
+                            activeRecessIndex = item.recessIndex,
+                            remainingMinutes = remaining
                         )
                     }
                 }
@@ -330,7 +334,8 @@ object ScheduleHelper {
                             title = "🍽️ Öğle Arasındasınız ($nextLessonIdx. Dersin başlamasına $remaining dk kaldı)",
                             subtitle = "Gelecek Ders: $nextLesson (Giriş Zili: ${item.endTime})",
                             iconType = "LUNCH",
-                            isLive = true
+                            isLive = true,
+                            remainingMinutes = remaining
                         )
                     }
                 }
@@ -350,5 +355,8 @@ data class LiveLessonStatus(
     val title: String,
     val subtitle: String,
     val iconType: String,
-    val isLive: Boolean
+    val isLive: Boolean,
+    val activeLessonIndex: Int? = null,
+    val activeRecessIndex: Int? = null,
+    val remainingMinutes: Int? = null
 )
