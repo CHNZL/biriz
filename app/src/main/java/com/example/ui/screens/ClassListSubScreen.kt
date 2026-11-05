@@ -72,6 +72,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -102,6 +103,7 @@ import com.example.ui.components.ParentDownloadQrDialog
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
+import com.example.ui.theme.BirizDarkCardGlass
 import com.example.ui.theme.BirizDarkSurfaceGlass
 import com.example.ui.theme.BirizDarkTextMuted
 import com.example.ui.theme.BirizDarkTextPrimary
@@ -236,12 +238,8 @@ fun ClassListSubScreen(
     // Veli İndirme Karekodu Diyaloğu State'i
     var showParentQrDialog by remember { mutableStateOf(false) }
 
-    // Üst Panel Sekme Tercihi: Tek satırda [4/D Sınıfı] ve [+ Öğrenci Ekle] sekmeleri
-    var activeTopTab by remember {
-        mutableStateOf(
-            if (students.isEmpty()) ClassListTopTab.STUDENT_REGISTRATION else ClassListTopTab.NONE
-        )
-    }
+    // Üst Panel Sekme Tercihi: Sayfaya ne zaman gelinirse gelinsin her zaman kapalı (NONE) başlar
+    var activeTopTab by remember { mutableStateOf(ClassListTopTab.NONE) }
 
     // Akıllı Sıralama & Filtreleme State'i
     var activeFilter by remember { mutableStateOf(StudentSortFilter.BY_NUMBER) }
@@ -1393,12 +1391,35 @@ fun ClassListSubScreen(
                 }
             }
         } else {
-            items(displayedStudents, key = { it.id }) { student ->
-                StudentBentoCardItem(
-                    student = student,
-                    isDark = isDarkTheme,
-                    onClick = { selectedStudentForDetail = student }
-                )
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        displayedStudents.forEachIndexed { index, student ->
+                            StudentRowItem(
+                                student = student,
+                                index = index,
+                                isDark = isDarkTheme,
+                                onClick = { selectedStudentForDetail = student }
+                            )
+                            if (index < displayedStudents.size - 1) {
+                                HorizontalDivider(
+                                    color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9),
+                                    thickness = 0.8.dp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1528,6 +1549,167 @@ fun ClassListSubScreen(
                 }
             }
         )
+    }
+}
+
+/**
+ * Liste Bütünlüğü Sağlayan Kompakt ve Bitişik Öğrenci Satırı Elemanı
+ * - Okul No Rozeti (#45 pembe/mavi)
+ * - Kalın & Belirgin Öğrenci Adı Soyadı
+ * - Veli Bağlı / Ön Sıra Rozetleri
+ * - Cinsiyet İkonu ve Detay Butonu
+ */
+@Composable
+fun StudentRowItem(
+    student: Student,
+    index: Int,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    val isKiz = student.gender.equals("Kız", ignoreCase = true)
+    val rowBg = if (index % 2 == 1) {
+        if (isDark) Color(0x18FFFFFF) else Color(0xFFF8FAFC)
+    } else {
+        Color.Transparent
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(rowBg)
+            .clickable(onClick = onClick)
+            .testTag("student_card_${student.studentNumber}")
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Sol: Okul No Rozeti + Ad Soyad + Rozetler
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                // Okul No Rozeti (Kız -> Pembe, Erkek -> Mavi)
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isKiz) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
+                ) {
+                    Text(
+                        text = "#${student.studentNumber}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // Adı Soyadı & Veli Bağlantı Rozeti
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = student.fullName,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color.White else Color(0xFF1E293B),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    if (student.isParentLinked) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isDark) Color(0x3010B981) else Color(0xFFDCFCE7),
+                            border = BorderStroke(0.8.dp, if (isDark) Color(0xFF10B981) else Color(0xFF86EFAC))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF10B981),
+                                    modifier = Modifier.size(5.dp)
+                                ) {}
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Veli Bağlı",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    color = if (isDark) Color(0xFF6EE7B7) else Color(0xFF15803D)
+                                )
+                            }
+                        }
+                    }
+
+                    if (student.isPriority) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isDark) Color(0x35F59E0B) else Color(0xFFFEF3C7),
+                            border = BorderStroke(0.8.dp, if (isDark) Color(0xFFF59E0B) else Color(0xFFFCD34D))
+                        ) {
+                            Text(
+                                text = "👓 Ön Sıra",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) BirizAmber else Color(0xFFB45309),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Sağ: Cinsiyet Simgesi (♀ / ♂) + Kompakt Detay Gör Rozeti
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = if (isKiz) "♀" else "♂",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isKiz) Color(0xFFEC4899) else Color(0xFF0284C7)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isDark) Color(0x25FFFFFF) else Color(0xFFF1F5F9),
+                    border = BorderStroke(0.8.dp, if (isDark) Color(0x30FFFFFF) else Color(0xFFCBD5E1))
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "Detay",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isDark) Color.White.copy(alpha = 0.9f) else BirizNavyPrimary
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Öğrenci Detayı",
+                            tint = if (isDark) BirizTurquoise else BirizNavyPrimary,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
