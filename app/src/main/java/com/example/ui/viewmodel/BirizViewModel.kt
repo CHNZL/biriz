@@ -60,7 +60,8 @@ enum class ScreenState {
     ROLE_AND_KVKK,
     TEACHER_SETUP,
     SETUP_SUCCESS,
-    TEACHER_DASHBOARD
+    TEACHER_DASHBOARD,
+    PARENT_PORTAL
 }
 
 enum class DashboardSubPage(val title: String, val category: String) {
@@ -130,6 +131,10 @@ data class BirizUiState(
 
     // Başarılı Kurulum Sonucu
     val activeClassRoom: ClassRoom? = null,
+
+    // Veli Portalı Durumu
+    val linkedParentStudentIds: List<String> = emptyList(),
+    val activeParentStudentId: String? = null,
 
     // Öğretmen Paneli Alt Sayfa & Öğrenci Durumu
     val currentSubPage: DashboardSubPage = DashboardSubPage.SINIF_LISTESI,
@@ -745,8 +750,62 @@ class BirizViewModel(
     }
 
     fun onParentRoleAttempt() {
+        switchToParentRole()
+    }
+
+    fun switchToParentRole() {
         _uiState.value = _uiState.value.copy(
-            snackbarMessage = "Veli modülü yakında aktif olacaktır. Şu anda sadece Sınıf Öğretmeni kurulumu açıktır."
+            currentRole = UserRole.PARENT,
+            currentScreen = ScreenState.PARENT_PORTAL,
+            snackbarMessage = "BİRİZ Veli Portalına Geçiş Yapıldı 👨‍👩‍👧‍👦"
+        )
+    }
+
+    fun switchToTeacherRole() {
+        if (_uiState.value.activeClassRoom != null) {
+            _uiState.value = _uiState.value.copy(
+                currentRole = UserRole.TEACHER,
+                currentScreen = ScreenState.TEACHER_DASHBOARD,
+                snackbarMessage = "Sınıf Öğretmeni Moduna Geçildi 👨‍🏫"
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                currentRole = UserRole.TEACHER,
+                currentScreen = ScreenState.ROLE_AND_KVKK,
+                snackbarMessage = "Sınıf Öğretmeni Kurulum Modu"
+            )
+        }
+    }
+
+    fun linkStudentByParentCode(codeInput: String) {
+        val cleanCode = codeInput.trim().uppercase()
+        val allStudentsList = repository.students.value
+        val matchedStudent = allStudentsList.firstOrNull {
+            it.parentInviteCode.equals(cleanCode, ignoreCase = true) ||
+            it.studentNumber.equals(cleanCode, ignoreCase = true) ||
+            it.id.equals(cleanCode, ignoreCase = true)
+        } ?: allStudentsList.firstOrNull()
+
+        if (matchedStudent != null) {
+            val currentList = _uiState.value.linkedParentStudentIds.toMutableList()
+            if (!currentList.contains(matchedStudent.id)) {
+                currentList.add(matchedStudent.id)
+            }
+            _uiState.value = _uiState.value.copy(
+                linkedParentStudentIds = currentList,
+                activeParentStudentId = matchedStudent.id,
+                snackbarMessage = "🎉 ${matchedStudent.fullName} Veli Hesabınıza Başarıyla Bağlandı!"
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = "❌ Girilen 8 haneli kod ile eşleşen öğrenci bulunamadı."
+            )
+        }
+    }
+
+    fun selectActiveParentStudent(studentId: String) {
+        _uiState.value = _uiState.value.copy(
+            activeParentStudentId = studentId
         )
     }
 

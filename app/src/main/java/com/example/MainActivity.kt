@@ -63,6 +63,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.repository.ClassRegistryRepository
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.screens.GoogleSignInScreen
+import com.example.ui.screens.ParentPortalSubScreen
 import com.example.ui.screens.RoleSelectionScreen
 import com.example.ui.screens.SetupSuccessScreen
 import com.example.ui.screens.TeacherDashboardScreen
@@ -365,6 +366,31 @@ fun BirizApp(viewModel: BirizViewModel) {
                     } else {
                         viewModel.resetToRoleSelection()
                     }
+                }
+
+                ScreenState.PARENT_PORTAL -> {
+                    val students by viewModel.students.collectAsStateWithLifecycle()
+                    val linkedStudents = students.filter { it.id in uiState.linkedParentStudentIds }
+                    val activeStudent = students.firstOrNull { it.id == uiState.activeParentStudentId } ?: linkedStudents.firstOrNull()
+
+                    ParentPortalSubScreen(
+                        classRoom = uiState.activeClassRoom,
+                        allStudents = students,
+                        linkedStudents = linkedStudents,
+                        activeStudent = activeStudent,
+                        announcements = uiState.announcements,
+                        chatMessages = uiState.chatMessages,
+                        scheduleConfig = uiState.scheduleConfig,
+                        scheduleLessons = uiState.scheduleLessons,
+                        seatingPlanState = uiState.seatingPlanState,
+                        isDarkTheme = uiState.isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() },
+                        onLinkStudentByCode = { viewModel.linkStudentByParentCode(it) },
+                        onSelectActiveStudent = { viewModel.selectActiveParentStudent(it) },
+                        onSwitchToTeacherMode = { viewModel.switchToTeacherRole() },
+                        onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, activeStudent?.fullName ?: "Veli") },
+                        onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) }
+                    )
                 }
             }
 
