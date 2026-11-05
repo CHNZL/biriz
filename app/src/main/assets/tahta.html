@@ -1392,15 +1392,31 @@
     }
 
     // 5. ŞANSLI ÖĞRENCİ ŞABLONU
+    function playSmartBoardAudioTone(freq = 440, durationMs = 100) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.value = 0.15;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        setTimeout(() => { osc.stop(); ctx.close(); }, durationMs);
+      } catch (e) {}
+    }
+
     // 5. ŞANSLI ÖĞRENCİ ŞABLONU (TAM YANSITMA - TUŞSUZ CANLI EKRAN)
     function generateLuckyStudentHtml(data) {
       const winner = data.luckyStudent;
       const isRolling = data.isRolling === true;
 
       if (isRolling) {
+        playSmartBoardAudioTone(600, 40);
         return `
           <div class="lucky-container">
-            <div style="font-size: 72px; animation: spin 0.8s linear infinite;">🎲</div>
+            <div style="font-size: 72px; animation: spin 0.6s linear infinite;">🎲</div>
             <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Şanslı Öğrenci Seçiliyor...</h2>
             <div style="font-size: 1.15rem; color: var(--text-secondary); font-weight: 600; max-width: 500px; line-height: 1.5;">
               Öğretmen telefonundan çekilişi başlattı! Kazanan öğrenci birazdan burada görünecek...
@@ -1411,13 +1427,14 @@
       }
 
       if (winner) {
+        playSmartBoardAudioTone(880, 250);
         return `
           <div class="lucky-container">
-            <div style="font-size: 72px;">🎉</div>
+            <div style="font-size: 32px; letter-spacing: 8px; margin-bottom: 8px;">🎉 ✨ ⭐ 🎊 🌟 🎈 🏆</div>
             <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
-            <div class="lucky-winner-box" style="animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); width: 100%; max-width: 620px;">
+            <div class="lucky-winner-box" style="animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); width: 100%; max-width: 620px; background: radial-gradient(circle, #FFFBEB 0%, #FFFFFF 100%); border: 3px solid var(--amber); box-shadow: 0 0 30px rgba(245,158,11,0.3);">
               <div style="font-size: 1.3rem; font-weight: 800; color: var(--turquoise);">OKUL NO: #${winner.studentNo || winner.studentNumber || ''}</div>
-              <div class="lucky-winner-name" style="font-size: 2.8rem; margin: 12px 0;">${winner.fullName}</div>
+              <div class="lucky-winner-name" style="font-size: 2.8rem; margin: 12px 0; color: #1E1B4B; text-shadow: 0 0 10px rgba(245,158,11,0.2);">${winner.fullName}</div>
               <div style="font-size: 1.3rem; color: var(--amber); font-weight: 800;">⭐ Tebrikler! Söz Hakkı Sende! ⭐</div>
             </div>
             <div style="font-size: 1rem; color: var(--text-secondary); font-weight: 600; margin-top: 12px;">

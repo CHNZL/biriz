@@ -23,7 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.example.util.SoundHelper
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,7 +97,8 @@ import kotlinx.coroutines.launch
 enum class LuckyDrawMode(val title: String, val icon: String, val subtitle: String) {
     ROULETTE("Şans Çarkı", "🎡", "Animasyonlu hızlı isim çarkı"),
     MYSTERY_CARDS("Gizemli Kartlar", "🎴", "Dokunarak açılan gizli kartlar"),
-    LIGHTNING("Şimşek Çekiliş", "⚡", "1 saniyede anında rastgele seçim")
+    LIGHTNING("Şimşek Çekiliş", "⚡", "1 saniyede anında rastgele seçim"),
+    TREASURE_CHEST("Hazine Sandığı", "🪙", "Dokunarak kapağı açılan gizemli altın sandıklar")
 }
 
 @Composable
@@ -206,7 +211,8 @@ fun LuckyStudentSubScreen(
         isSpinning = true
         coroutineScope.launch {
             if (isInstant) {
-                // Gizemli kartlar için anında, akıcı 250ms efekt
+                // Gizemli kartlar & Hazine sandığı için anında ses ve 200ms efekt
+                SoundHelper.playTickSound()
                 delay(200)
             } else {
                 val totalSteps = if (selectedMode == LuckyDrawMode.LIGHTNING) 7 else 20
@@ -216,6 +222,7 @@ fun LuckyStudentSubScreen(
                     val candidate = candidatePool.random()
                     displayedRollingName = candidate.fullName
                     displayedRollingNo = candidate.studentNumber
+                    SoundHelper.playTickSound()
                     val currentDelay = if (selectedMode == LuckyDrawMode.LIGHTNING) delayBase else delayBase + (i * i * 0.4f).toLong()
                     delay(currentDelay)
                 }
@@ -225,6 +232,7 @@ fun LuckyStudentSubScreen(
             val winner = candidatePool.random()
             displayedRollingName = winner.fullName
             displayedRollingNo = winner.studentNumber
+            SoundHelper.playFanfareSound()
 
             isSpinning = false
             activeFlippingCardIndex = null
@@ -335,6 +343,7 @@ fun LuckyStudentSubScreen(
                     LuckyDrawMode.ROULETTE -> BirizAmber.copy(alpha = 0.35f)
                     LuckyDrawMode.MYSTERY_CARDS -> BirizTurquoise.copy(alpha = 0.4f)
                     LuckyDrawMode.LIGHTNING -> Color(0xFFE11D48).copy(alpha = 0.35f)
+                    LuckyDrawMode.TREASURE_CHEST -> Color(0xFFF59E0B).copy(alpha = 0.45f)
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -621,6 +630,94 @@ fun LuckyStudentSubScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFE11D48)
                             )
+                        }
+
+                        // --- MOD 4: HAZİNE SANDIĞI (TREASURE CHEST) ---
+                        LuckyDrawMode.TREASURE_CHEST -> {
+                            Text(
+                                text = "🪙 Hazine Sandıkları",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "Sandıklardan birine dokunun; altın kapağın altındaki talihli açılsın!",
+                                fontSize = 11.sp,
+                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            if (candidatePool.isEmpty()) {
+                                Text(
+                                    text = "🎉 Havuzdaki tüm öğrenciler seçildi!",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BirizAmber
+                                )
+                            } else {
+                                val chestTitles = listOf("Altın Sandık #1", "Mücevher Sandığı #2", "Zafer Sandığı #3", "Kral Sandığı #4")
+                                val chestGradients = listOf(
+                                    listOf(Color(0xFFD97706), Color(0xFF78350F)),
+                                    listOf(Color(0xFFB45309), Color(0xFF451A03)),
+                                    listOf(Color(0xFFCA8A04), Color(0xFF713F12)),
+                                    listOf(Color(0xFFEAB308), Color(0xFF854D0E))
+                                )
+
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(210.dp)
+                                ) {
+                                    itemsIndexed(chestTitles) { idx, title ->
+                                        val gradient = chestGradients[idx % chestGradients.size]
+                                        Surface(
+                                            onClick = {
+                                                if (!isSpinning) {
+                                                    activeFlippingCardIndex = idx
+                                                    pickWinner(isInstant = true)
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = Color.Transparent,
+                                            border = BorderStroke(2.dp, Color(0xFFFDE047)),
+                                            shadowElevation = 4.dp,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(95.dp)
+                                                .testTag("treasure_chest_card_$idx")
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(Brush.verticalGradient(gradient)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(text = "🪙", fontSize = 28.sp)
+                                                    Spacer(modifier = Modifier.height(3.dp))
+                                                    Text(
+                                                        text = title,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = Color.White
+                                                    )
+                                                    Text(
+                                                        text = "Açmak için Dokun",
+                                                        fontSize = 9.5.sp,
+                                                        color = Color(0xFFFEF08A)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1051,12 +1148,32 @@ fun LuckyStudentSubScreen(
         val isKiz = winner.gender.equals("Kız", ignoreCase = true)
 
         Dialog(onDismissRequest = { showWinnerDialog = false }) {
-            BentoCard(
-                isDark = isDarkTheme,
-                glowColor = BirizAmber,
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Box(contentAlignment = Alignment.Center) {
+                // Confetti Particles Visual Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("🎉", "✨", "⭐", "🎊", "🌟", "🎈", "🏆").forEach { symbol ->
+                        Text(
+                            text = symbol,
+                            fontSize = 20.sp,
+                            modifier = Modifier.padding(1.dp)
+                        )
+                    }
+                }
+
+                BentoCard(
+                    isDark = isDarkTheme,
+                    glowColor = BirizAmber,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp)
+                ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1224,6 +1341,7 @@ fun LuckyStudentSubScreen(
                 }
             }
         }
+    }
     }
 
     // --- 7. TÜM SEÇİLENLERİ SIFIRLAMA ONAY DİYALOĞU ---
