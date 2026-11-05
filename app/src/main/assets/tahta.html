@@ -1482,25 +1482,67 @@
     // 7. GRUPLAR ŞABLONU
     function generateGroupsHtml(data) {
       const students = data.students || [];
-      const groups = [
-        { name: "1. GRUP - KARTALLAR", color: "#4F46E5", members: students.slice(0, 6) },
-        { name: "2. GRUP - ŞAHİNLER", color: "#10B981", members: students.slice(6, 12) },
-        { name: "3. GRUP - ASLANLAR", color: "#0284C7", members: students.slice(12, 18) },
-        { name: "4. GRUP - KAPLANLAR", color: "#D97706", members: students.slice(18, 24) }
-      ];
+      const studentMap = {};
+      students.forEach(s => { studentMap[s.id] = s; });
+
+      const rawGroups = (data.groups && data.groups.groups) ? data.groups.groups : (data.groups || []);
+      const themeColors = {
+        indigo: "#4F46E5", emerald: "#10B981", sky: "#0284C7", purple: "#9333EA",
+        amber: "#D97706", rose: "#E11D48", teal: "#0D9488", orange: "#EA580C"
+      };
+
+      let groups = [];
+      if (Array.isArray(rawGroups) && rawGroups.length > 0) {
+        groups = rawGroups.map(g => {
+          const color = themeColors[(g.colorTheme || "").toLowerCase()] || g.colorHex || "#4F46E5";
+          const members = (g.members || (g.studentIds || []).map(id => studentMap[id])).filter(Boolean);
+          return {
+            id: g.id,
+            name: g.name || "Grup",
+            color: color,
+            leaderStudentId: g.leaderStudentId,
+            members: members
+          };
+        });
+      } else {
+        groups = [
+          { name: "1. GRUP - KARTALLAR", color: "#4F46E5", leaderStudentId: students[0]?.id, members: students.slice(0, 6) },
+          { name: "2. GRUP - ŞAHİNLER", color: "#10B981", leaderStudentId: students[6]?.id, members: students.slice(6, 12) },
+          { name: "3. GRUP - ASLANLAR", color: "#0284C7", leaderStudentId: students[12]?.id, members: students.slice(12, 18) },
+          { name: "4. GRUP - KAPLANLAR", color: "#D97706", leaderStudentId: students[18]?.id, members: students.slice(18, 24) }
+        ];
+      }
+
+      window.currentGroupsData = groups;
 
       return `
-        <div class="groups-grid">
-          ${groups.map(g => `
-            <div class="group-card">
+        <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; background: white; padding: 14px 20px; border-radius: 16px; border: 2px solid var(--border);">
+          <div>
+            <h3 style="margin: 0; color: var(--primary); font-size: 1.2rem; font-weight: 800;">👥 Sınıf Grup Listeleri</h3>
+            <p style="margin: 4px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">Toplam ${groups.length} Grup • ${groups.reduce((a,b) => a + b.members.length, 0)} Öğrenci</p>
+          </div>
+          <button onclick="startSmartBoardLiveDraw()" style="background: linear-gradient(135deg, #6366F1, #8B5CF6); color: white; border: none; padding: 10px 18px; border-radius: 12px; font-weight: 800; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(99,102,241,0.35);">
+            🎡 CANLI KURA ÇEK
+          </button>
+        </div>
+
+        <div id="live-draw-ticker-stage" style="display: none; background: linear-gradient(135deg, #0F172A, #1E1B4B); border-radius: 20px; padding: 24px; text-align: center; border: 3px solid #818CF8; margin-bottom: 20px; color: white; box-shadow: 0 10px 30px rgba(15,23,42,0.5);">
+          <div style="font-size: 0.9rem; font-weight: 700; color: #A5B4FC; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;">🎲 HEYECANLI CANLI KURA ÇEKİLİYOR</div>
+          <div id="live-draw-current-target" style="font-size: 1.1rem; font-weight: 800; color: #FDE047; margin-bottom: 12px;">Sıradaki öğrenci belirleniyor...</div>
+          <div id="live-draw-name-slot" style="font-size: 2.2rem; font-weight: 900; background: rgba(255,255,255,0.1); padding: 16px 28px; border-radius: 16px; border: 2px dashed #818CF8; display: inline-block; min-width: 280px; text-shadow: 0 0 12px rgba(255,255,255,0.6);">⚡ ??? ⚡</div>
+        </div>
+
+        <div class="groups-grid" id="groups-container-grid">
+          ${groups.map((g, gIdx) => `
+            <div class="group-card" id="group-card-${gIdx}">
               <div class="group-header" style="background: ${g.color};">
                 <span>${g.name}</span>
                 <span>👥 ${g.members.length} Kişi</span>
               </div>
-              <div class="group-members">
-                ${g.members.map((m, idx) => `
+              <div class="group-members" id="group-members-${gIdx}">
+                ${g.members.map((m) => `
                   <div class="group-member-item">
-                    ${idx === 0 ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
+                    ${g.leaderStudentId && g.leaderStudentId === m.id ? '<span title="Grup Lideri / Sözcü">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
                     <span>${m.fullName}</span>
                   </div>
                 `).join('')}
@@ -1509,6 +1551,65 @@
           `).join('')}
         </div>
       `;
+    }
+
+    function startSmartBoardLiveDraw() {
+      const groups = window.currentGroupsData;
+      if (!groups || groups.length === 0) return;
+
+      const stage = document.getElementById('live-draw-ticker-stage');
+      const targetLabel = document.getElementById('live-draw-current-target');
+      const slotName = document.getElementById('live-draw-name-slot');
+      if (!stage || !slotName) return;
+
+      stage.style.display = 'block';
+
+      groups.forEach((g, gIdx) => {
+        const memEl = document.getElementById(`group-members-${gIdx}`);
+        if (memEl) memEl.innerHTML = '<div style="color:#94A3B8; font-size:0.85rem; padding:8px; text-align:center;">⏳ Çekiliş bekleniyor...</div>';
+      });
+
+      let queue = [];
+      groups.forEach((g, gIdx) => {
+        g.members.forEach(m => {
+          queue.push({ student: m, groupIdx: gIdx, group: g });
+        });
+      });
+
+      queue.sort(() => Math.random() - 0.5);
+
+      let step = 0;
+      let totalSteps = queue.length;
+
+      let interval = setInterval(() => {
+        if (step >= totalSteps) {
+          clearInterval(interval);
+          targetLabel.innerHTML = "🎉 TÜM GRUPLAR ÇEKİLDİ VE YERLEŞTİRİLDİ! 🎉";
+          slotName.innerHTML = "✨ TEBRİKLER! ✨";
+          slotName.style.background = "#22C55E";
+          slotName.style.color = "#FFFFFF";
+          setTimeout(() => { stage.style.display = 'none'; }, 4000);
+          return;
+        }
+
+        const currentItem = queue[step];
+        targetLabel.innerHTML = `🎲 ${currentItem.group.name} İçin Öğrenci Çekiliyor...`;
+        slotName.innerHTML = `⚡ ${currentItem.student.fullName} ⚡`;
+
+        const memEl = document.getElementById(`group-members-${currentItem.groupIdx}`);
+        if (memEl) {
+          if (memEl.innerHTML.includes('Çekiliş bekleniyor')) {
+            memEl.innerHTML = '';
+          }
+          const isLeader = currentItem.group.leaderStudentId && currentItem.group.leaderStudentId === currentItem.student.id;
+          const newItem = document.createElement('div');
+          newItem.className = 'group-member-item';
+          newItem.innerHTML = `${isLeader ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#22C55E;">✓</span>'} <strong>${currentItem.student.fullName}</strong>`;
+          memEl.appendChild(newItem);
+        }
+
+        step++;
+      }, 700);
     }
 
     // 8. KİTAPLIK YÖNETİMİ ŞABLONU

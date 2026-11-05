@@ -77,12 +77,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,6 +150,7 @@ fun GroupMakerSubScreen(
     var groupToRename by remember { mutableStateOf<GroupTeam?>(null) }
     var groupToChangeColor by remember { mutableStateOf<GroupTeam?>(null) }
     var showUnassignedDrawer by remember { mutableStateOf(false) }
+    var showLiveDrawDialog by remember { mutableStateOf(false) }
     var selectedUnassignedStudentForGroup by remember { mutableStateOf<Student?>(null) }
 
     // Geri tuşu kontrolü
@@ -328,7 +333,7 @@ fun GroupMakerSubScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 2. SATIR: Yeniden Karıştır, Rastgele Sözcü, Kalanları Dağıt ve Grup Ekle
+                    // 2. SATIR: Animasyonlu Canlı Kura, Yeniden Karıştır, Rastgele Sözcü, Kalanları Dağıt ve Grup Ekle
                     val row2Height = 36.dp
                     Row(
                         modifier = Modifier
@@ -337,7 +342,23 @@ fun GroupMakerSubScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. Yeniden Karıştır
+                        // 1. Animasyonlu Canlı Kura Çek
+                        Button(
+                            onClick = { showLiveDrawDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) Color(0xFF7C3AED) else Color(0xFF6366F1),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(row2Height)
+                                .testTag("btn_live_group_draw")
+                        ) {
+                            Text("🎡 Canlı Kura", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        }
+
+                        // 2. Yeniden Karıştır
                         OutlinedButton(
                             onClick = onReshuffle,
                             shape = RoundedCornerShape(10.dp),
@@ -602,6 +623,17 @@ fun GroupMakerSubScreen(
                     onMoveStudent(st.id, targetGroupId)
                     selectedUnassignedStudentForGroup = null
                 }
+            )
+        }
+
+        // G. Animasyonlu Canlı Kura Çekimi Dialogu
+        if (showLiveDrawDialog) {
+            LiveGroupDrawDialog(
+                groups = groupMakerState.groups,
+                students = students,
+                isDarkTheme = isDarkTheme,
+                onDismiss = { showLiveDrawDialog = false },
+                onReshuffleAndDraw = { onReshuffle() }
             )
         }
     }
@@ -1874,6 +1906,170 @@ private fun AssignToGroupDialog(
         },
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } }
+    )
+}
+
+/**
+ * Animasyonlu Canlı Kura Çekimi Dialogu
+ */
+@Composable
+private fun LiveGroupDrawDialog(
+    groups: List<GroupTeam>,
+    students: List<Student>,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit,
+    onReshuffleAndDraw: () -> Unit
+) {
+    val studentMap = remember(students) { students.associateBy { it.id } }
+    var isDrawing by remember { mutableStateOf(false) }
+    var currentDrawStudentName by remember { mutableStateOf("⚡ ÇEKİLİŞE HAZIR ⚡") }
+    var currentTargetGroupTitle by remember { mutableStateOf("Kura Çekimini Başlatın") }
+    var revealedMemberCount by remember { mutableIntStateOf(0) }
+    var drawSpeedMs by remember { mutableLongStateOf(600L) }
+
+    val allMembersToDraw = remember(groups) {
+        val list = mutableListOf<Pair<Student, GroupTeam>>()
+        groups.forEach { group ->
+            group.studentIds.forEach { sId ->
+                studentMap[sId]?.let { student ->
+                    list.add(Pair(student, group))
+                }
+            }
+        }
+        list.shuffled()
+    }
+
+    LaunchedEffect(isDrawing) {
+        if (isDrawing && allMembersToDraw.isNotEmpty()) {
+            revealedMemberCount = 0
+            for (i in 0 until allMembersToDraw.size) {
+                if (!isDrawing) break
+                val (student, group) = allMembersToDraw[i]
+                currentTargetGroupTitle = "🎲 ${group.name} İçin Öğrenci Çekiliyor..."
+
+                // Rapid slot ticker animation
+                for (t in 0..6) {
+                    val randomDummy = students.randomOrNull()?.fullName ?: "???"
+                    currentDrawStudentName = "⚡ $randomDummy ⚡"
+                    delay(50L)
+                }
+
+                currentDrawStudentName = "✨ ${student.fullName} ➔ ${group.name}"
+                revealedMemberCount = i + 1
+                delay(drawSpeedMs)
+            }
+            currentTargetGroupTitle = "🎉 TÜM GRUPLAR BAŞARIYLA ÇEKİLDİ!"
+            currentDrawStudentName = "✨ TEBRİKLER! ✨"
+            isDrawing = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "🎡 Canlı Kura Çekimi Sahnesi", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Ticker Stage Card
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFF1E1B4B),
+                    border = BorderStroke(2.dp, Color(0xFF818CF8)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = currentTargetGroupTitle,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFDE047)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, Color(0xFF818CF8))
+                        ) {
+                            Text(
+                                text = currentDrawStudentName,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Speed buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    listOf(
+                        Pair("⚡ Hızlı", 300L),
+                        Pair("🎡 Normal", 600L),
+                        Pair("🐢 Yavaş", 1200L)
+                    ).forEach { (label, speed) ->
+                        FilterChip(
+                            selected = drawSpeedMs == speed,
+                            onClick = { drawSpeedMs = speed },
+                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Action controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onReshuffleAndDraw()
+                            isDrawing = true
+                        },
+                        enabled = !isDrawing,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🚀 Kura Çek", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (isDrawing) {
+                        OutlinedButton(
+                            onClick = {
+                                isDrawing = false
+                                revealedMemberCount = allMembersToDraw.size
+                                currentTargetGroupTitle = "🎉 Kura Çekimi Tamamlandı!"
+                                currentDrawStudentName = "✨ Tüm Üyeler Açıklandı ✨"
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("⏭️ Tümünü Göster", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Tamamlandı")
+            }
+        }
     )
 }
 
