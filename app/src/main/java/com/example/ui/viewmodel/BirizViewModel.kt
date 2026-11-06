@@ -888,6 +888,36 @@ class BirizViewModel(
         saveParentSessionState()
     }
 
+    fun unlinkStudentFromParent(studentId: String) {
+        val currentList = _uiState.value.linkedParentStudentIds.toMutableList()
+        currentList.remove(studentId)
+
+        val nextActiveStudentId = if (_uiState.value.activeParentStudentId == studentId) {
+            currentList.firstOrNull()
+        } else {
+            _uiState.value.activeParentStudentId
+        }
+
+        val studentName = repository.students.value.firstOrNull { it.id == studentId }?.fullName ?: "Öğrenci"
+
+        _uiState.value = _uiState.value.copy(
+            linkedParentStudentIds = currentList,
+            activeParentStudentId = nextActiveStudentId,
+            snackbarMessage = "🗑️ $studentName veli profilinizden başarıyla kaldırıldı."
+        )
+
+        saveParentSessionState()
+
+        viewModelScope.launch {
+            val classId = _uiState.value.activeClassRoom?.id
+            repository.unlinkParentFromStudent(
+                classroomId = classId,
+                studentId = studentId,
+                parentEmail = _uiState.value.currentUser.email
+            )
+        }
+    }
+
     // --- Öğretmen Form Adımları ---
 
     fun onCitySelected(city: City) {

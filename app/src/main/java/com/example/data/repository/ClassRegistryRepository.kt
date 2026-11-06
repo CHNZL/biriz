@@ -815,6 +815,59 @@ class ClassRegistryRepository(
         }
     }
 
+    suspend fun unlinkParentFromStudent(
+        classroomId: String?,
+        studentId: String,
+        parentEmail: String
+    ) {
+        if (Firebase.auth.currentUser != null) {
+            try {
+                if (!classroomId.isNullOrBlank()) {
+                    val studentRef = db.collection("classrooms").document(classroomId).collection("students").document(studentId)
+                    studentRef.update(
+                        mapOf(
+                            "parentName" to null,
+                            "parentEmail" to null,
+                            "parentLinkedAt" to null,
+                            "parentLastLoginAt" to null,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } else {
+                    val classSnap = db.collection("classrooms").get().await()
+                    for (cDoc in classSnap.documents) {
+                        val studentRef = db.collection("classrooms").document(cDoc.id)
+                            .collection("students").document(studentId)
+                        val sDoc = studentRef.get().await()
+                        if (sDoc.exists()) {
+                            studentRef.update(
+                                mapOf(
+                                    "parentName" to null,
+                                    "parentEmail" to null,
+                                    "parentLinkedAt" to null,
+                                    "parentLastLoginAt" to null,
+                                    "updatedAt" to FieldValue.serverTimestamp()
+                                )
+                            ).await()
+                            break
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        _students.value = _students.value.map { current ->
+            if (current.id == studentId) {
+                current.copy(
+                    parentName = null,
+                    parentEmail = null,
+                    parentLinkedAt = null,
+                    parentLastLoginAt = null,
+                    linkedParents = current.linkedParents.filter { it.email != parentEmail }
+                )
+            } else current
+        }
+    }
+
     fun toggleStudentPriority(studentId: String): Boolean {
         var isNowPriority = false
         _students.value = _students.value.map { current ->
