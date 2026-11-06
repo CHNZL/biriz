@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.data.model.UserRole
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -49,6 +50,9 @@ import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
 import com.example.ui.components.NotificationCenterDialog
+import com.example.ui.components.UserAvatarCircle
+import com.example.ui.components.UserProfileMenuDialog
+import com.example.ui.viewmodel.AuthenticatedUser
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -203,12 +207,14 @@ fun TeacherDashboardScreen(
     onDeleteStudent: (Student) -> Unit,
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    currentUser: AuthenticatedUser = AuthenticatedUser()
 ) {
     val context = LocalContext.current
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
     var showDeleteRoleDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showProfileMenuDialog by remember { mutableStateOf(false) }
 
     val hasStudents = students.isNotEmpty()
 
@@ -333,22 +339,23 @@ fun TeacherDashboardScreen(
                             )
                         }
 
-                        // Sağ İkon Butonları: Akıllı Tahta + Tema Değiştirici + Bildirim + Profil + Çıkış
+                        // Sağ İkon Butonları: Akıllı Tahta (sol) + Bildirim (orta) + Kullanıcı Avatarı (sağ başta)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // 🖥️ Akıllı Tahta Kumandası Butonu
+                            // 🖥️ Akıllı Tahta Kumandası Butonu (Daire zemin içinde tek simge)
                             Surface(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .size(34.dp)
+                                    .clip(CircleShape)
                                     .clickable { onOpenSmartBoardDialog() }
                                     .testTag("dashboard_smart_board_button"),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = CircleShape,
                                 color = if (!connectedBoardSessionCode.isNullOrBlank()) {
                                     if (isLiveBoardMirrorActive) Color(0xFF059669) else Color(0xFFD97706)
                                 } else {
-                                    if (isDarkTheme) Color(0x35334E68) else Color(0x25FFFFFF)
+                                    if (isDarkTheme) Color(0x35334E68) else Color(0x20FFFFFF)
                                 },
                                 border = BorderStroke(
                                     1.dp,
@@ -359,35 +366,12 @@ fun TeacherDashboardScreen(
                                     }
                                 )
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = "🖥️", fontSize = 12.sp)
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = if (!connectedBoardSessionCode.isNullOrBlank()) {
-                                            if (isLiveBoardMirrorActive) "Canlı" else "Gizli"
-                                        } else {
-                                            "Tahta"
-                                        },
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(text = "🖥️", fontSize = 16.sp)
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(2.dp))
-
-                            // Açık / Koyu Tema Butonu
-                            ThemeToggleIconButton(
-                                isDark = isDarkTheme,
-                                onToggle = onToggleTheme,
-                                size = 34.dp
-                            )
-
-                            // Bildirim Rozeti (Duyurular & Veli Mesajları)
+                            // 🔔 Bildirim Rozeti (Profil Avatarının solunda)
                             val unreadNotificationsCount = notifications.count { !it.isRead }
                             Surface(
                                 modifier = Modifier
@@ -419,35 +403,13 @@ fun TeacherDashboardScreen(
                                 }
                             }
 
-                            // Profil Ayarları Butonu
-                            IconButton(
-                                onClick = { onSelectSubPage(DashboardSubPage.PROFIL_AYARLARI) },
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .testTag("dashboard_profile_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Profil",
-                                    tint = if (currentSubPage == DashboardSubPage.PROFIL_AYARLARI) BirizAmber else Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            // Çıkış Butonu
-                            IconButton(
-                                onClick = onLogout,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .testTag("dashboard_logout_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Logout,
-                                    contentDescription = "Çıkış Yap",
-                                    tint = Color.White.copy(alpha = 0.85f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                            // 👤 Sağ Başta Kullanıcı Avatarı (Google profil fotosu / baş harfler)
+                            UserAvatarCircle(
+                                user = currentUser,
+                                isDarkTheme = isDarkTheme,
+                                onClick = { showProfileMenuDialog = true },
+                                size = 34.dp
+                            )
                         }
                     }
                 }
@@ -1037,6 +999,22 @@ fun TeacherDashboardScreen(
                         )
                     }
                 }
+            )
+        }
+
+        // 5. Kullanıcı Profil & Hesap Ayarları Diyaloğu
+        if (showProfileMenuDialog) {
+            UserProfileMenuDialog(
+                currentUser = currentUser,
+                currentRole = UserRole.TEACHER,
+                classRoom = classRoom,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
+                onDeleteRole = onDeleteTeacherRoleAndClass,
+                onDeleteEntireAccount = onDeleteEntireAccount,
+                onCheckUpdate = onOpenUpdateDialog,
+                onLogout = onLogout,
+                onDismissRequest = { showProfileMenuDialog = false }
             )
         }
 

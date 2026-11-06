@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.data.model.UserRole
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -94,6 +95,8 @@ import com.example.data.model.Student
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
 import com.example.ui.components.ThemeToggleIconButton
+import com.example.ui.components.UserAvatarCircle
+import com.example.ui.components.UserProfileMenuDialog
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -141,7 +144,8 @@ fun ParentPortalSubScreen(
     onLinkStudentByCode: (String) -> Unit,
     onUnlinkStudent: (String) -> Unit = {},
     onSelectActiveStudent: (String) -> Unit,
-    onSwitchToTeacherMode: () -> Unit,
+    onDeleteRole: () -> Unit = {},
+    onDeleteEntireAccount: () -> Unit = {},
     onOpenNotificationCenter: () -> Unit,
     onLogout: () -> Unit = {},
     onVotePoll: (String, String) -> Unit,
@@ -150,7 +154,7 @@ fun ParentPortalSubScreen(
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.DASHBOARD) }
     var showLinkCodeDialog by remember { mutableStateOf(false) }
-    var showParentSettingsDialog by remember { mutableStateOf(false) }
+    var showProfileMenuDialog by remember { mutableStateOf(false) }
     var studentToUnlink by remember { mutableStateOf<Student?>(null) }
     var inviteCodeInput by remember { mutableStateOf("") }
     var chatInputText by remember { mutableStateOf("") }
@@ -181,7 +185,7 @@ fun ParentPortalSubScreen(
             .testTag("screen_parent_portal")
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // --- 1. ÜST HEADER: BENTO GLASSMORPHISM (ÖĞRETMEN ÜST ÇUBUĞU İLE BİREBİR AYNI DÜZEN) ---
+            // --- 1. ÜST HEADER: BENTO GLASSMORPHISM ---
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (isDarkTheme) BirizDarkSurfaceGlass else BirizNavyPrimary,
@@ -250,19 +254,12 @@ fun ParentPortalSubScreen(
                                 }
                             }
 
-                            // Sağ İkon Butonları: Tema + Bildirim + Ayarlar/Profil + Öğretmen Modu + Çıkış (Öğretmen üst çubuğu ile birebir eşleşme)
+                            // Sağ İkon Butonları: Bildirim (sol) + Kullanıcı Avatarı (sağ başta)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                // Açık / Koyu Tema Butonu
-                                ThemeToggleIconButton(
-                                    isDark = isDarkTheme,
-                                    onToggle = onToggleTheme,
-                                    size = 34.dp
-                                )
-
-                                // Bildirim Rozeti (Duyurular & Veli Mesajları)
+                                // 🔔 Bildirim Rozeti (Profil Avatarının solunda)
                                 val unreadNotificationsCount = notifications.count { !it.isRead }
                                 Surface(
                                     modifier = Modifier
@@ -294,50 +291,13 @@ fun ParentPortalSubScreen(
                                     }
                                 }
 
-                                // Profil & Veli Hesap Ayarları Butonu (Öğretmen ekranındaki Profil butonu)
-                                IconButton(
-                                    onClick = { showParentSettingsDialog = true },
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .testTag("parent_settings_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Veli Ayarları & Profil",
-                                        tint = if (showParentSettingsDialog) BirizAmber else Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                // Öğretmen Moduna Geçiş Butonu
-                                IconButton(
-                                    onClick = onSwitchToTeacherMode,
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .testTag("parent_to_teacher_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SupervisorAccount,
-                                        contentDescription = "Öğretmen Modu",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                // Çıkış Butonu (Öğretmen ekranındaki Logout butonu)
-                                IconButton(
-                                    onClick = onLogout,
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .testTag("parent_logout_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                                        contentDescription = "Çıkış Yap",
-                                        tint = Color.White.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                                // 👤 Sağ Başta Kullanıcı Avatarı (Google profil fotosu / baş harfler)
+                                UserAvatarCircle(
+                                    user = currentUser,
+                                    isDarkTheme = isDarkTheme,
+                                    onClick = { showProfileMenuDialog = true },
+                                    size = 34.dp
+                                )
                             }
                         }
 
@@ -948,107 +908,19 @@ fun ParentPortalSubScreen(
     }
 
     // --- VELİ PROFİLİ VE HESAP AYARLARI DİYALOĞU ---
-    if (showParentSettingsDialog) {
-        AlertDialog(
-            onDismissRequest = { showParentSettingsDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("⚙️", fontSize = 18.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Veli Profili ve Hesap Ayarları", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Kullanıcı Bilgisi Kartı
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9),
-                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(text = currentUser.fullName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(text = currentUser.email.ifBlank { "Veli Hesabı" }, fontSize = 12.sp, color = Color.Gray)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("KVKK Onaylı Veli Portalı", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-
-                    Text("Bağlı Öğrencilerim (${linkedStudents.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    if (linkedStudents.isEmpty()) {
-                        Text("Henüz bağlı bir öğrenciniz bulunmuyor.", fontSize = 12.sp, color = Color.Gray)
-                    } else {
-                        linkedStudents.forEach { s ->
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF8FAFC),
-                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = "${s.fullName} (#${s.studentNumber})", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                                        Text(text = classRoom?.let { "${it.gradeLevel}/${it.section} • ${it.teacherName}" } ?: "Sınıf Belirtilmedi", fontSize = 10.5.sp, color = Color.Gray)
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            studentToUnlink = s
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.DeleteOutline,
-                                            contentDescription = "Öğrenciyi Kaldır",
-                                            tint = Color(0xFFEF4444),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedButton(
-                        onClick = {
-                            showParentSettingsDialog = false
-                            showLinkCodeDialog = true
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Yeni Öğrenci / Kardeş Ekle", fontSize = 12.sp)
-                    }
-
-                    // Sürüm Bilgisi
-                    Text(
-                        text = "BİRİZ Mobil • v1.0.0 Güncel",
-                        fontSize = 10.5.sp,
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showParentSettingsDialog = false }) {
-                    Text("Kapat", fontWeight = FontWeight.Bold)
-                }
-            }
+    if (showProfileMenuDialog) {
+        UserProfileMenuDialog(
+            currentUser = currentUser,
+            currentRole = UserRole.PARENT,
+            classRoom = classRoom,
+            linkedStudents = linkedStudents,
+            isDarkTheme = isDarkTheme,
+            onToggleTheme = onToggleTheme,
+            onDeleteRole = onDeleteRole,
+            onDeleteEntireAccount = onDeleteEntireAccount,
+            onCheckUpdate = {},
+            onLogout = onLogout,
+            onDismissRequest = { showProfileMenuDialog = false }
         )
     }
 }

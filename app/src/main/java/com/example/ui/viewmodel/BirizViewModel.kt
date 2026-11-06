@@ -104,7 +104,8 @@ data class AuthenticatedUser(
     val fullName: String = "Öğretmen",
     val email: String = "",
     val provider: String = "Google Hesabı",
-    val avatarInitials: String = "Ö"
+    val avatarInitials: String = "Ö",
+    val photoUrl: String? = null
 )
 
 data class BirizUiState(
@@ -658,12 +659,14 @@ class BirizViewModel(
                 .joinToString("")
                 .ifEmpty { "Ö" }
 
+            val photoUrl = fbUser.photoUrl?.toString()
             _uiState.value = _uiState.value.copy(
                 currentUser = AuthenticatedUser(
                     fullName = name,
                     email = fbUser.email ?: "",
                     provider = if (fbUser.providerData.any { it.providerId == "google.com" }) "Google Hesabı" else "E-posta",
-                    avatarInitials = initials
+                    avatarInitials = initials,
+                    photoUrl = photoUrl
                 )
             )
 
@@ -1954,6 +1957,7 @@ class BirizViewModel(
                     selectedSection = null,
                     snackbarMessage = "Öğretmen rolünüz ve sınıf verileriniz veritabanından kalıcı olarak silindi. Rol Seçimine dönüldü."
                 )
+                saveParentSessionState()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isDeleting = false,
@@ -1961,6 +1965,17 @@ class BirizViewModel(
                 )
             }
         }
+    }
+
+    fun deleteParentRole() {
+        _uiState.value = _uiState.value.copy(
+            currentRole = UserRole.MEMBER,
+            currentScreen = ScreenState.ROLE_AND_KVKK,
+            linkedParentStudentIds = emptyList(),
+            activeParentStudentId = null,
+            snackbarMessage = "Veli rolünüz ve bağlı tüm öğrenciler başarıyla silindi. Rol Seçimine dönüldü."
+        )
+        saveParentSessionState()
     }
 
     fun deleteEntireAccount(context: android.content.Context? = null) {
