@@ -205,12 +205,20 @@ class BirizViewModel(
             val savedRoleCode = prefs.getString("key_saved_role", "")
             val savedLinkedIdsStr = prefs.getString("key_linked_student_ids", "")
             val savedActiveStudentId = prefs.getString("key_active_parent_student_id", "")
+            val savedClassroomId = prefs.getString("key_linked_classroom_id", "")
 
             val linkedList = if (!savedLinkedIdsStr.isNullOrBlank()) {
                 savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
             } else emptyList()
 
-            val restoredRole = if (savedRoleCode == UserRole.PARENT.code && linkedList.isNotEmpty()) {
+            if (!savedClassroomId.isNullOrBlank()) {
+                repository.observeStudents(savedClassroomId)
+                loadScheduleFromStorage(savedClassroomId)
+                loadSeatingPlanFromStorage(savedClassroomId)
+                loadCommunicationFromStorage(savedClassroomId)
+            }
+
+            val restoredRole = if (savedRoleCode == UserRole.PARENT.code) {
                 UserRole.PARENT
             } else {
                 _uiState.value.currentRole
@@ -244,6 +252,7 @@ class BirizViewModel(
             .putString("key_saved_role", state.currentRole.code)
             .putString("key_linked_student_ids", state.linkedParentStudentIds.joinToString(","))
             .putString("key_active_parent_student_id", state.activeParentStudentId ?: "")
+            .putString("key_linked_classroom_id", state.activeClassRoom?.id ?: "")
             .apply()
     }
 
@@ -663,6 +672,14 @@ class BirizViewModel(
                 val isTeacher = profile.role == "TEACHER" || profile.role == "OGRETMEN"
                 val assignedClassId = profile.assignedClassId
 
+                // Eğer kullanıcı Veli rolünde ise veli rolünü ve ekranını koru
+                if (_uiState.value.currentRole == UserRole.PARENT) {
+                    _uiState.value = _uiState.value.copy(
+                        isKvkkAccepted = true
+                    )
+                    return@launch
+                }
+
                 if (!assignedClassId.isNullOrBlank()) {
                     val assignedClass = repository.registeredClasses.value.firstOrNull { it.id == assignedClassId }
                     if (assignedClass != null) {
@@ -824,32 +841,43 @@ class BirizViewModel(
             return
         }
 
-        val allStudentsList = repository.students.value
-        val matchedStudent = allStudentsList.firstOrNull { student ->
-            val studentCode = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.parentInviteCode)
-            val studentNoNorm = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.studentNumber)
-            val studentIdNorm = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.id)
+        viewModelScope.launch {
+            val user = _uiState.value.currentUser
+            val result = repository.findAndLinkStudentByCode(
+                sanitizedCode = sanitizedInput,
+                currentUserEmail = user.email.ifBlank { "veli@biriz.app" },
+                currentUserFullName = user.fullName.ifBlank { "Öğrenci Velisi" }
+            )
 
-            (studentCode.isNotBlank() && studentCode == sanitizedInput) ||
-            studentNoNorm == sanitizedInput ||
-            studentIdNorm == sanitizedInput
-        }
+            if (result != null) {
+                val (matchedStudent, matchedClass) = result
+                val currentList = _uiState.value.linkedParentStudentIds.toMutableList()
+                if (!currentList.contains(matchedStudent.id)) {
+                    currentList.add(matchedStudent.id)
+                }
 
-        if (matchedStudent != null) {
-            val currentList = _uiState.value.linkedParentStudentIds.toMutableList()
-            if (!currentList.contains(matchedStudent.id)) {
-                currentList.add(matchedStudent.id)
+                val activeClass = matchedClass ?: _uiState.value.activeClassRoom ?: repository.defaultSampleClass
+                if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != activeClass.id) {
+                    _uiState.value = _uiState.value.copy(activeClassRoom = activeClass)
+                }
+                repository.observeStudents(activeClass.id)
+                loadScheduleFromStorage(activeClass.id)
+                loadSeatingPlanFromStorage(activeClass.id)
+                loadCommunicationFromStorage(activeClass.id)
+
+                _uiState.value = _uiState.value.copy(
+                    linkedParentStudentIds = currentList,
+                    activeParentStudentId = matchedStudent.id,
+                    currentRole = UserRole.PARENT,
+                    currentScreen = ScreenState.PARENT_PORTAL,
+                    snackbarMessage = "🎉 ${matchedStudent.fullName} Veli Hesabınıza Başarıyla Bağlandı!"
+                )
+                saveParentSessionState()
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    snackbarMessage = "❌ Girilen '$sanitizedInput' kodu ile eşleşen öğrenci bulunamadı. Lütfen 8 haneli katılım kodunu kontrol ediniz."
+                )
             }
-            _uiState.value = _uiState.value.copy(
-                linkedParentStudentIds = currentList,
-                activeParentStudentId = matchedStudent.id,
-                snackbarMessage = "🎉 ${matchedStudent.fullName} Veli Hesabınıza Başarıyla Bağlandı!"
-            )
-            saveParentSessionState()
-        } else {
-            _uiState.value = _uiState.value.copy(
-                snackbarMessage = "❌ Girilen '$sanitizedInput' kodu ile eşleşen öğrenci bulunamadı. Lütfen 8 haneli katılım kodunu kontrol ediniz."
-            )
         }
     }
 
