@@ -42,4 +42,28 @@ object TurkishTextHelper {
             .map { SAFE_CODE_CHARS.random() }
             .joinToString("")
     }
+
+    /**
+     * Veli Katılım Kodunu küçük/büyük harf, Türkçe karakter, tire ve boşluklardan bağımsız
+     * tam ve güvenli ASCII Büyük Harf biçimine dönüştürür.
+     */
+    fun normalizeVeliKatilimKodu(input: String): String {
+        return input.trim()
+            .replace("-", "")
+            .replace(" ", "")
+            .replace("i", "I")
+            .replace("İ", "I")
+            .replace("ı", "I")
+            .replace("ç", "C")
+            .replace("Ç", "C")
+            .replace("ğ", "G")
+            .replace("Ğ", "G")
+            .replace("ö", "O")
+            .replace("Ö", "O")
+            .replace("ş", "S")
+            .replace("Ş", "S")
+            .replace("ü", "U")
+            .replace("Ü", "U")
+            .uppercase(Locale.ROOT)
+    }
 }

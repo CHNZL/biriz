@@ -778,7 +778,7 @@ class BirizViewModel(
     }
 
     fun linkStudentByParentCode(codeInput: String) {
-        val sanitizedInput = codeInput.trim().replace("-", "").replace(" ", "").uppercase()
+        val sanitizedInput = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(codeInput)
         if (sanitizedInput.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 snackbarMessage = "⚠️ Lütfen 8 haneli veli katılım kodunu giriniz."
@@ -788,10 +788,13 @@ class BirizViewModel(
 
         val allStudentsList = repository.students.value
         val matchedStudent = allStudentsList.firstOrNull { student ->
-            val studentCode = student.parentInviteCode.replace("-", "").replace(" ", "").uppercase()
+            val studentCode = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.parentInviteCode)
+            val studentNoNorm = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.studentNumber)
+            val studentIdNorm = com.example.util.TurkishTextHelper.normalizeVeliKatilimKodu(student.id)
+
             (studentCode.isNotBlank() && studentCode == sanitizedInput) ||
-            student.studentNumber.trim() == sanitizedInput ||
-            student.id.trim() == sanitizedInput
+            studentNoNorm == sanitizedInput ||
+            studentIdNorm == sanitizedInput
         }
 
         if (matchedStudent != null) {

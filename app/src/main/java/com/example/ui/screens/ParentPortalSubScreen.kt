@@ -730,8 +730,9 @@ fun ParentPortalSubScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = inviteCodeInput,
-                        onValueChange = { inviteCodeInput = it.uppercase() },
-                        placeholder = { Text("Örn: 8K3N-9P2X veya 408", fontSize = 12.sp) },
+                        onValueChange = { inviteCodeInput = TurkishTextHelper.normalizeVeliKatilimKodu(it) },
+                        placeholder = { Text("Örn: TD8GDLU8 veya 8K3N9P2X", fontSize = 12.sp) },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
