@@ -78,7 +78,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.model.Announcement
+import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
 import com.example.data.model.ClassRoom
 import com.example.data.model.ScheduleConfig
@@ -87,6 +89,7 @@ import com.example.data.model.SeatingPlanState
 import com.example.data.model.Student
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
+import com.example.ui.components.ThemeToggleIconButton
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -97,8 +100,11 @@ import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
+import com.example.ui.viewmodel.AuthenticatedUser
+import com.example.util.LibraryPersistenceHelper
 import com.example.util.ScheduleHelper
 import com.example.util.TurkishTextHelper
+import androidx.compose.ui.res.painterResource
 
 enum class ParentPortalTab(val title: String, val icon: String) {
     DASHBOARD("Gelişim & Yıldızlar", "🌟"),
@@ -122,11 +128,14 @@ fun ParentPortalSubScreen(
     scheduleConfig: ScheduleConfig,
     scheduleLessons: List<ScheduleLesson>,
     seatingPlanState: SeatingPlanState,
+    currentUser: AuthenticatedUser,
+    notifications: List<BirizNotification>,
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onLinkStudentByCode: (String) -> Unit,
     onSelectActiveStudent: (String) -> Unit,
     onSwitchToTeacherMode: () -> Unit,
+    onOpenNotificationCenter: () -> Unit,
     onVotePoll: (String, String) -> Unit,
     onSendChatMessage: (String, String) -> Unit
 ) {
@@ -178,60 +187,95 @@ fun ParentPortalSubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "👨‍👩‍👧‍👦", fontSize = 20.sp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
+                                    .padding(3.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = painterResource(id = R.drawable.ic_biriz_emblem),
+                                    contentDescription = "BİRİZ Amblem",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "BİRİZ Veli Portalı",
-                                    fontSize = 16.sp,
+                                    text = "${currentUser.fullName} 👋",
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White
+                                    fontSize = 14.5.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "🔒 Güvenli Öğrenci Gelişim Takibi",
+                                    text = "BİRİZ Veli Modülü",
                                     fontSize = 10.sp,
                                     color = Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            com.example.ui.components.ThemeToggleIconButton(
+                                isDark = isDarkTheme,
+                                onToggle = onToggleTheme,
+                                size = 34.dp
+                            )
+
+                            val unreadNotificationsCount = notifications.count { !it.isRead }
+                            Surface(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onOpenNotificationCenter() }
+                                    .testTag("parent_notification_bell"),
+                                shape = CircleShape,
+                                color = if (isDarkTheme) Color(0x35334E68) else Color(0x20FFFFFF),
+                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x4064748B) else Color(0x30FFFFFF))
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Notifications,
+                                        contentDescription = "Bildirimler",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    if (unreadNotificationsCount > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(top = 3.dp, end = 3.dp)
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(BirizAmber)
+                                        )
+                                    }
+                                }
+                            }
+
                             IconButton(
-                                onClick = onToggleTheme,
-                                modifier = Modifier.size(36.dp)
+                                onClick = onSwitchToTeacherMode,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .testTag("parent_to_teacher_button")
                             ) {
                                 Icon(
-                                    imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = "Tema Değiştir",
-                                    tint = Color.White
+                                    imageVector = Icons.Default.SupervisorAccount,
+                                    contentDescription = "Öğretmen Modu",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                onClick = onSwitchToTeacherMode,
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.2f),
-                                modifier = Modifier.height(34.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SupervisorAccount,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Öğretmen Modu",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
                             }
                         }
                     }
@@ -523,22 +567,37 @@ fun ParentPortalSubScreen(
                     // TAB 2: KİTAPLIK & OKUMA
                     if (activeTab == ParentPortalTab.READING) {
                         item {
+                            val studentReadingRecords = remember(activeStudent, classRoom) {
+                                if (activeStudent != null && classRoom != null) {
+                                    LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
+                                        .filter { it.studentId == activeStudent.id }
+                                } else emptyList()
+                            }
                             BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Text(text = "📖 Okuma Değerlendirmeleri ve Kitap Geçmişi", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    listOf(
-                                        Pair("Okuma Hızı ve Akıcılığı", "⭐⭐⭐⭐⭐ (%90)"),
-                                        Pair("Anlatma / Özetleme Başarısı", "⭐⭐⭐⭐⭐ (%95)"),
-                                        Pair("Yazılı Değerlendirme Puanı", "88 / 100"),
-                                        Pair("Kitap Sınavı Ortalaması", "92 Puan")
-                                    ).forEach { (label, valStr) ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                            Text(text = valStr, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BirizTurquoise)
+                                    if (studentReadingRecords.isEmpty()) {
+                                        Text(text = "Henüz öğretmen tarafından kitap okuma kaydı girilmedi.", fontSize = 12.sp, color = Color.Gray)
+                                    } else {
+                                        studentReadingRecords.forEach { rec ->
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Text(text = rec.bookName, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                        Text(text = "+${rec.earnedStars} ⭐", fontSize = 12.sp, fontWeight = FontWeight.Black, color = BirizAmber)
+                                                    }
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(text = "Sayfa: ${rec.pageCount} • Tamamlandı", fontSize = 11.sp, color = Color.Gray)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -553,28 +612,7 @@ fun ParentPortalSubScreen(
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Text(text = "📊 Ders Sınavları & Kazanım Analizi", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    listOf(
-                                        Triple("Türkçe 1. Yazılı", "90 Puan", "18 Doğru, 2 Yanlış • Sınıf Ort.: 82"),
-                                        Triple("Matematik 1. Yazılı", "85 Puan", "17 Doğru, 3 Yanlış • Sınıf Ort.: 78"),
-                                        Triple("Fen Bilimleri 1. Yazılı", "95 Puan", "19 Doğru, 1 Yanlış • Sınıf Ort.: 80")
-                                    ).forEach { (exam, score, detail) ->
-                                        Surface(
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Text(text = exam, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                                                    Text(text = score, fontSize = 13.sp, fontWeight = FontWeight.Black, color = BirizTurquoise)
-                                                }
-                                                Text(text = detail, fontSize = 10.5.sp, color = Color.Gray)
-                                            }
-                                        }
-                                    }
+                                    Text(text = "Henüz öğretmen tarafından sınav veya kazanım değerlendirmesi girilmedi.", fontSize = 12.sp, color = Color.Gray)
                                 }
                             }
                         }
@@ -604,6 +642,14 @@ fun ParentPortalSubScreen(
                     // TAB 5: OTURMA PLANI
                     if (activeTab == ParentPortalTab.SEATING) {
                         item {
+                            val seatEntry = seatingPlanState.assignments.entries.firstOrNull { it.value == activeStudent?.id }
+                            val seatDesc = if (seatEntry != null) {
+                                val parts = seatEntry.key.split("-")
+                                val g = if (parts.isNotEmpty()) (parts[0].removePrefix("g").toIntOrNull() ?: 0) + 1 else 1
+                                val r = if (parts.size > 1) (parts[1].removePrefix("r").toIntOrNull() ?: 0) + 1 else 1
+                                "Grup $g, Sıra $r"
+                            } else null
+
                             BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Text(text = "🪑 Çocuğunuzun Sınıftaki Oturma Yeri", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
@@ -621,8 +667,12 @@ fun ParentPortalSubScreen(
                                             Text(text = "📍", fontSize = 24.sp)
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Column {
-                                                Text(text = "${activeStudent.fullName} (Sıra Konumu)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
-                                                Text(text = "2. Küme • Sol Sıra • Ön-Orta Bölge", fontSize = 11.sp, color = Color(0xFF166534))
+                                                Text(text = "${activeStudent?.fullName ?: ""} (Sıra Konumu)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
+                                                Text(
+                                                    text = seatDesc ?: "Sınıf oturma planında henüz yerleştirilmedi.",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF166534)
+                                                )
                                             }
                                         }
                                     }

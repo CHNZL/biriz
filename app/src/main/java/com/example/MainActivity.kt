@@ -383,11 +383,14 @@ fun BirizApp(viewModel: BirizViewModel) {
                         scheduleConfig = uiState.scheduleConfig,
                         scheduleLessons = uiState.scheduleLessons,
                         seatingPlanState = uiState.seatingPlanState,
+                        currentUser = uiState.currentUser,
+                        notifications = uiState.notifications,
                         isDarkTheme = uiState.isDarkTheme,
                         onToggleTheme = { viewModel.toggleTheme() },
                         onLinkStudentByCode = { viewModel.linkStudentByParentCode(it) },
                         onSelectActiveStudent = { viewModel.selectActiveParentStudent(it) },
                         onSwitchToTeacherMode = { viewModel.switchToTeacherRole() },
+                        onOpenNotificationCenter = { viewModel.setNotificationCenterOpen(true) },
                         onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, activeStudent?.fullName ?: "Veli") },
                         onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) }
                     )

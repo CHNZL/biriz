@@ -201,14 +201,50 @@ class BirizViewModel(
             val savedDark = prefs.getBoolean("key_is_dark_theme", false)
             val savedSession = SmartBoardHelper.getSavedSessionCode(appContext)
             val savedMirror = SmartBoardHelper.isMirrorActive(appContext)
+
+            val savedRoleCode = prefs.getString("key_saved_role", "")
+            val savedLinkedIdsStr = prefs.getString("key_linked_student_ids", "")
+            val savedActiveStudentId = prefs.getString("key_active_parent_student_id", "")
+
+            val linkedList = if (!savedLinkedIdsStr.isNullOrBlank()) {
+                savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
+            } else emptyList()
+
+            val restoredRole = if (savedRoleCode == UserRole.PARENT.code && linkedList.isNotEmpty()) {
+                UserRole.PARENT
+            } else {
+                _uiState.value.currentRole
+            }
+
+            val restoredScreen = if (restoredRole == UserRole.PARENT) {
+                ScreenState.PARENT_PORTAL
+            } else {
+                _uiState.value.currentScreen
+            }
+
             _uiState.value = _uiState.value.copy(
                 isDarkTheme = savedDark,
                 connectedBoardSessionCode = savedSession,
-                isLiveBoardMirrorActive = savedMirror
+                isLiveBoardMirrorActive = savedMirror,
+                currentRole = restoredRole,
+                currentScreen = restoredScreen,
+                linkedParentStudentIds = linkedList,
+                activeParentStudentId = if (savedActiveStudentId.isNullOrBlank()) linkedList.firstOrNull() else savedActiveStudentId
             )
         }
         refreshCurrentUser()
         startPeriodicUpdateChecker()
+    }
+
+    private fun saveParentSessionState() {
+        if (appContext == null) return
+        val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+        val state = _uiState.value
+        prefs.edit()
+            .putString("key_saved_role", state.currentRole.code)
+            .putString("key_linked_student_ids", state.linkedParentStudentIds.joinToString(","))
+            .putString("key_active_parent_student_id", state.activeParentStudentId ?: "")
+            .apply()
     }
 
     /**
@@ -757,8 +793,9 @@ class BirizViewModel(
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.PARENT,
             currentScreen = ScreenState.PARENT_PORTAL,
-            snackbarMessage = "BİRİZ Veli Portalına Geçiş Yapıldı 👨‍👩‍👧‍👦"
+            snackbarMessage = "BİRİZ Veli Modülüne Geçiş Yapıldı 👨‍👩‍👧‍👦"
         )
+        saveParentSessionState()
     }
 
     fun switchToTeacherRole() {
@@ -775,6 +812,7 @@ class BirizViewModel(
                 snackbarMessage = "Sınıf Öğretmeni Kurulum Modu"
             )
         }
+        saveParentSessionState()
     }
 
     fun linkStudentByParentCode(codeInput: String) {
@@ -807,6 +845,7 @@ class BirizViewModel(
                 activeParentStudentId = matchedStudent.id,
                 snackbarMessage = "🎉 ${matchedStudent.fullName} Veli Hesabınıza Başarıyla Bağlandı!"
             )
+            saveParentSessionState()
         } else {
             _uiState.value = _uiState.value.copy(
                 snackbarMessage = "❌ Girilen '$sanitizedInput' kodu ile eşleşen öğrenci bulunamadı. Lütfen 8 haneli katılım kodunu kontrol ediniz."
@@ -818,6 +857,7 @@ class BirizViewModel(
         _uiState.value = _uiState.value.copy(
             activeParentStudentId = studentId
         )
+        saveParentSessionState()
     }
 
     // --- Öğretmen Form Adımları ---
