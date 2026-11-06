@@ -252,8 +252,7 @@ class ClassRegistryRepository(
             val code = TurkishTextHelper.normalizeVeliKatilimKodu(s.parentInviteCode)
             val no = TurkishTextHelper.normalizeVeliKatilimKodu(s.studentNumber)
             val id = TurkishTextHelper.normalizeVeliKatilimKodu(s.id)
-            code == sanitizedCode || no == sanitizedCode || id == sanitizedCode ||
-            (sanitizedCode == "TD8GDLU8" && s.studentNumber == "402")
+            code == sanitizedCode || no == sanitizedCode || id == sanitizedCode
         }
         return if (match != null) Pair(match, defaultSampleClass) else null
     }
@@ -271,8 +270,7 @@ class ClassRegistryRepository(
             val sc = TurkishTextHelper.normalizeVeliKatilimKodu(s.parentInviteCode)
             val no = TurkishTextHelper.normalizeVeliKatilimKodu(s.studentNumber)
             val id = TurkishTextHelper.normalizeVeliKatilimKodu(s.id)
-            sc == normTarget || no == normTarget || id == normTarget ||
-            (normTarget == "TD8GDLU8" && s.studentNumber == "402")
+            sc == normTarget || no == normTarget || id == normTarget
         }
         if (inMemoryMatch != null) {
             val matchedClass = _registeredClasses.value.firstOrNull() ?: defaultSampleClass
@@ -292,15 +290,16 @@ class ClassRegistryRepository(
                         val studentNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
                         val fullName = sDoc.getString("fullName") ?: ""
                         val gender = sDoc.getString("gender") ?: "Erkek"
-                        val rawCode = sDoc.getString("parentCode") ?: sDoc.getString("parentInviteCode")
+                        val rawCode = sDoc.getString("parentCode")
+                            ?: sDoc.getString("parentInviteCode")
+                            ?: sDoc.getString("veliKodu")
+                            ?: sDoc.getString("code")
                         val normCode = TurkishTextHelper.normalizeVeliKatilimKodu(rawCode ?: "")
                         val sNoStr = studentNo.toString()
 
                         val isMatch = (normCode.isNotBlank() && normCode == normTarget) ||
                                 (sNoStr == normTarget) ||
-                                (sDoc.id == normTarget) ||
-                                (normTarget == "TD8GDLU8" && studentNo == 402) ||
-                                (normTarget.contains("402") && studentNo == 402)
+                                (sDoc.id == normTarget)
 
                         if (isMatch) {
                             val finalCode = if (normCode.isNotBlank()) normCode else normTarget
@@ -577,11 +576,14 @@ class ClassRegistryRepository(
                         val studentNo = (doc.getLong("studentNo") ?: 0L).toInt()
                         val fullName = doc.getString("fullName") ?: return@mapNotNull null
                         val gender = doc.getString("gender") ?: "Erkek"
-                        val rawCode = doc.getString("parentCode") ?: doc.getString("parentInviteCode")
+                        val rawCode = doc.getString("parentCode")
+                            ?: doc.getString("parentInviteCode")
+                            ?: doc.getString("veliKodu")
+                            ?: doc.getString("code")
                         val parentCode = if (!rawCode.isNullOrBlank()) {
                             rawCode
                         } else {
-                            val stable = if (studentNo == 402) "TD8GDLU8" else TurkishTextHelper.generateVeliKatilimKodu()
+                            val stable = TurkishTextHelper.generateVeliKatilimKodu()
                             scope.launch {
                                 try {
                                     doc.reference.update(

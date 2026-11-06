@@ -870,7 +870,7 @@ class BirizViewModel(
                     activeParentStudentId = matchedStudent.id,
                     currentRole = UserRole.PARENT,
                     currentScreen = ScreenState.PARENT_PORTAL,
-                    snackbarMessage = "🎉 ${matchedStudent.fullName} Veli Hesabınıza Başarıyla Bağlandı!"
+                    snackbarMessage = "🎉 ${matchedStudent.fullName} (${activeClass.gradeLevel}/${activeClass.section} - Öğr: ${activeClass.teacherName}) Veli Hesabınıza Başarıyla Bağlandı!"
                 )
                 saveParentSessionState()
             } else {
