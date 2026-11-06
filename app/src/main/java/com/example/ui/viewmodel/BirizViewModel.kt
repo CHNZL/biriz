@@ -651,19 +651,30 @@ class BirizViewModel(
 
         val fbUser = Firebase.auth.currentUser
         if (fbUser != null) {
-            val name = fbUser.displayName ?: "Öğretmen"
+            val userEmail = (fbUser.email ?: "").ifBlank { "cihan.ozel10@gmail.com" }
+            var name = fbUser.displayName
+            if (name.isNullOrBlank() || name == "Öğretmen") {
+                name = userEmail.substringBefore("@")
+                    .replace(".", " ")
+                    .replace("_", " ")
+                    .split(" ")
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ") { it.replaceFirstChar { c -> c.uppercaseChar() } }
+                    .ifBlank { "Cihan Özel" }
+            }
+
             val initials = name.split(" ")
                 .filter { it.isNotBlank() }
                 .take(2)
                 .map { it.first().uppercaseChar() }
                 .joinToString("")
-                .ifEmpty { "Ö" }
+                .ifEmpty { "CÖ" }
 
             val photoUrl = fbUser.photoUrl?.toString()
             _uiState.value = _uiState.value.copy(
                 currentUser = AuthenticatedUser(
                     fullName = name,
-                    email = fbUser.email ?: "",
+                    email = userEmail,
                     provider = if (fbUser.providerData.any { it.providerId == "google.com" }) "Google Hesabı" else "E-posta",
                     avatarInitials = initials,
                     photoUrl = photoUrl

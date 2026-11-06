@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -59,6 +60,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import com.example.BuildConfig
 import com.example.data.model.ClassRoom
 import com.example.data.model.Student
 import com.example.ui.theme.BirizAmber
@@ -87,15 +90,45 @@ fun UserAvatarCircle(
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (!user.photoUrl.isNullOrBlank()) {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = user.photoUrl,
                     contentDescription = "Kullanıcı Profil Resmi",
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop,
-                    error = rememberVectorPainter(Icons.Default.Person),
-                    placeholder = rememberVectorPainter(Icons.Default.Person)
+                    loading = {
+                        Surface(
+                            shape = CircleShape,
+                            color = BirizAmber,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = user.avatarInitials.ifBlank { "CÖ" },
+                                    fontSize = (size.value * 0.4).sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    },
+                    error = {
+                        Surface(
+                            shape = CircleShape,
+                            color = BirizAmber,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = user.avatarInitials.ifBlank { "CÖ" },
+                                    fontSize = (size.value * 0.4).sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
                 )
             } else {
                 Surface(
@@ -105,7 +138,7 @@ fun UserAvatarCircle(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = user.avatarInitials,
+                            text = user.avatarInitials.ifBlank { "CÖ" },
                             fontSize = (size.value * 0.4).sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White
@@ -281,19 +314,32 @@ fun UserProfileMenuDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Person, contentDescription = null, tint = BirizAmber, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = currentUser.fullName, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = if (currentUser.fullName == "Öğretmen" && currentUser.email.isNotBlank()) {
+                                        currentUser.email.substringBefore("@").replace(".", " ").split(" ")
+                                            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercaseChar() } }
+                                    } else currentUser.fullName,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = currentUser.email.ifBlank { "Google Hesabı Bağlı" },
-                                fontSize = 11.5.sp,
-                                color = Color.Gray
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Email, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = currentUser.email.ifBlank { "cihan.ozel10@gmail.com" },
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("KVKK Onaylı Güvenli Oturum", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
+                                Text("Google Hesabı Bağlı • KVKK Onaylı Güvenli Oturum", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -326,9 +372,11 @@ fun UserProfileMenuDialog(
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isDarkTheme) Color.White else BirizNavyPrimary
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${classRoom.gradeLevel}/${classRoom.section} Sınıfı • Kod: ${classRoom.inviteCode}",
-                                        fontSize = 11.sp,
+                                        text = "${classRoom.gradeLevel}/${classRoom.section} Sınıfı",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
                                         color = Color.Gray
                                     )
                                 } else {
@@ -447,7 +495,7 @@ fun UserProfileMenuDialog(
                                 color = if (isDarkTheme) Color.White else BirizNavyPrimary
                             )
                             Text(
-                                text = "BİRİZ Mobil v1.0.0 (Güncel)",
+                                text = "BİRİZ Mobil v${BuildConfig.VERSION_NAME} (#${BuildConfig.VERSION_CODE})",
                                 fontSize = 11.sp,
                                 color = Color.Gray
                             )
