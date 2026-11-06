@@ -1016,6 +1016,119 @@ class ClassRegistryRepository(
         )
     }
 
+    suspend fun fetchClassroomById(classroomId: String): ClassRoom? {
+        val cached = _registeredClasses.value.firstOrNull { it.id == classroomId }
+        if (cached != null) return cached
+
+        if (Firebase.auth.currentUser == null) return null
+        return try {
+            val doc = db.collection("classrooms").document(classroomId).get().await()
+            if (doc != null && doc.exists()) {
+                val cityName = doc.getString("cityName") ?: ""
+                val districtName = doc.getString("districtName") ?: ""
+                val schoolName = doc.getString("schoolName") ?: ""
+                val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
+                val section = doc.getString("section") ?: "A"
+                val teacherName = doc.getString("teacherName") ?: ""
+                val teacherEmail = doc.getString("teacherEmail") ?: ""
+                val inviteCode = doc.getString("inviteCode") ?: ""
+
+                val room = ClassRoom(
+                    id = doc.id,
+                    cityName = cityName,
+                    districtName = districtName,
+                    schoolName = schoolName,
+                    gradeLevel = gradeLevel,
+                    section = section,
+                    teacherName = teacherName,
+                    teacherEmail = teacherEmail,
+                    inviteCode = inviteCode,
+                    isOccupied = true
+                )
+                if (_registeredClasses.value.none { it.id == doc.id }) {
+                    _registeredClasses.value = _registeredClasses.value + room
+                }
+                room
+            } else null
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, "classrooms/$classroomId")
+            null
+        }
+    }
+
+    suspend fun findTeacherClassroom(uid: String, teacherEmail: String): ClassRoom? {
+        // 1. Check in currently cached registered classes
+        val cached = _registeredClasses.value.firstOrNull {
+            it.teacherId == uid ||
+            (teacherEmail.isNotBlank() && it.teacherEmail.equals(teacherEmail.trim(), ignoreCase = true))
+        }
+        if (cached != null) return cached
+
+        if (Firebase.auth.currentUser == null) return null
+
+        // 2. Query Firestore classrooms by teacherId
+        try {
+            val byUidSnapshot = db.collection("classrooms")
+                .whereEqualTo("teacherId", uid)
+                .limit(1)
+                .get()
+                .await()
+            val doc = byUidSnapshot.documents.firstOrNull()
+            if (doc != null && doc.exists()) {
+                val room = ClassRoom(
+                    id = doc.id,
+                    cityName = doc.getString("cityName") ?: "",
+                    districtName = doc.getString("districtName") ?: "",
+                    schoolName = doc.getString("schoolName") ?: "",
+                    gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt(),
+                    section = doc.getString("section") ?: "A",
+                    teacherId = doc.getString("teacherId") ?: uid,
+                    teacherName = doc.getString("teacherName") ?: "",
+                    teacherEmail = doc.getString("teacherEmail") ?: teacherEmail,
+                    inviteCode = doc.getString("inviteCode") ?: "",
+                    isOccupied = true
+                )
+                if (_registeredClasses.value.none { it.id == doc.id }) {
+                    _registeredClasses.value = _registeredClasses.value + room
+                }
+                return room
+            }
+        } catch (_: Exception) {}
+
+        // 3. Query Firestore classrooms by teacherEmail
+        if (teacherEmail.isNotBlank()) {
+            try {
+                val byEmailSnapshot = db.collection("classrooms")
+                    .whereEqualTo("teacherEmail", teacherEmail.trim())
+                    .limit(1)
+                    .get()
+                    .await()
+                val doc = byEmailSnapshot.documents.firstOrNull()
+                if (doc != null && doc.exists()) {
+                    val room = ClassRoom(
+                        id = doc.id,
+                        cityName = doc.getString("cityName") ?: "",
+                        districtName = doc.getString("districtName") ?: "",
+                        schoolName = doc.getString("schoolName") ?: "",
+                        gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt(),
+                        section = doc.getString("section") ?: "A",
+                        teacherId = doc.getString("teacherId") ?: uid,
+                        teacherName = doc.getString("teacherName") ?: "",
+                        teacherEmail = doc.getString("teacherEmail") ?: teacherEmail,
+                        inviteCode = doc.getString("inviteCode") ?: "",
+                        isOccupied = true
+                    )
+                    if (_registeredClasses.value.none { it.id == doc.id }) {
+                        _registeredClasses.value = _registeredClasses.value + room
+                    }
+                    return room
+                }
+            } catch (_: Exception) {}
+        }
+
+        return null
+    }
+
     suspend fun updateKvkkConsent(uid: String, accepted: Boolean) {
         if (Firebase.auth.currentUser != null) {
             val userRef = db.collection("users").document(uid)

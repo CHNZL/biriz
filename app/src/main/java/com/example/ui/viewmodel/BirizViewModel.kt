@@ -682,35 +682,50 @@ class BirizViewModel(
             )
 
             viewModelScope.launch {
-                val profile = repository.ensureUserProfile(fbUser.uid, name, fbUser.email ?: "")
+                val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
                 val isTeacher = profile.role == "TEACHER" || profile.role == "OGRETMEN"
                 val assignedClassId = profile.assignedClassId
 
-                // Eğer kullanıcı Veli rolünde ise veli rolünü ve ekranını koru
-                if (_uiState.value.currentRole == UserRole.PARENT) {
+                // 1. Öğretmen rolü veya tanımlı sınıf kontrolü (Firestore'dan öncelikli geri yükleme)
+                var resolvedClass: ClassRoom? = null
+                if (!assignedClassId.isNullOrBlank()) {
+                    resolvedClass = repository.fetchClassroomById(assignedClassId)
+                }
+
+                if (resolvedClass == null) {
+                    resolvedClass = repository.findTeacherClassroom(fbUser.uid, userEmail)
+                }
+
+                if (resolvedClass != null) {
+                    repository.observeStudents(resolvedClass.id)
+                    loadScheduleFromStorage(resolvedClass.id)
+                    loadSeatingPlanFromStorage(resolvedClass.id)
+                    loadCommunicationFromStorage(resolvedClass.id)
+                    loadGroupMakerFromStorage(resolvedClass.id)
+
                     _uiState.value = _uiState.value.copy(
-                        isKvkkAccepted = true
+                        activeClassRoom = resolvedClass,
+                        currentRole = UserRole.TEACHER,
+                        isKvkkAccepted = true,
+                        currentScreen = ScreenState.TEACHER_DASHBOARD,
+                        currentSubPage = DashboardSubPage.SINIF_LISTESI
                     )
+                    saveParentSessionState()
                     return@launch
                 }
 
-                if (!assignedClassId.isNullOrBlank()) {
-                    val assignedClass = repository.registeredClasses.value.firstOrNull { it.id == assignedClassId }
-                    if (assignedClass != null) {
-                        repository.observeStudents(assignedClass.id)
-                        loadScheduleFromStorage(assignedClass.id)
-                        loadSeatingPlanFromStorage(assignedClass.id)
-                        loadCommunicationFromStorage(assignedClass.id)
-                        _uiState.value = _uiState.value.copy(
-                            activeClassRoom = assignedClass,
-                            currentRole = UserRole.TEACHER,
-                            isKvkkAccepted = profile.kvkkAccepted,
-                            currentScreen = ScreenState.TEACHER_DASHBOARD
-                        )
-                        return@launch
-                    }
+                // 2. Veli rolünde ise veya önceden kayıtlı veli ise
+                if (profile.role == "PARENT" || profile.role == "VELI" || _uiState.value.currentRole == UserRole.PARENT) {
+                    _uiState.value = _uiState.value.copy(
+                        currentRole = UserRole.PARENT,
+                        isKvkkAccepted = true,
+                        currentScreen = ScreenState.PARENT_PORTAL
+                    )
+                    saveParentSessionState()
+                    return@launch
                 }
 
+                // 3. Henüz sınıfı bulunmayan yeni kullanıcılar için
                 _uiState.value = _uiState.value.copy(
                     currentRole = if (isTeacher) UserRole.TEACHER else UserRole.MEMBER,
                     isKvkkAccepted = profile.kvkkAccepted,
