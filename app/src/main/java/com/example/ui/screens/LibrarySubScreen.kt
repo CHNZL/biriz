@@ -126,7 +126,9 @@ import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.DashboardSubPage
 import com.example.util.ExcelPdfHelper
+import com.example.util.LibraryPdfReportsHelper
 import com.example.util.LibraryPersistenceHelper
+import com.example.util.TurkishTextHelper
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -327,12 +329,14 @@ fun LibrarySubScreen(
                 isDarkTheme = isDarkTheme,
                 onDismiss = { showAddEditDialog = false },
                 onSave = { name, author, pageCount, registrationNo, assignStudentId, assignDate ->
+                    val titleCasedName = TurkishTextHelper.toTurkishTitleCase(name)
+                    val titleCasedAuthor = TurkishTextHelper.toTurkishTitleCase(author)
                     if (bookToEdit == null) {
                         LibraryPersistenceHelper.addBook(
                             context = context,
                             classRoomId = classRoom.id,
-                            name = name,
-                            author = author,
+                            name = titleCasedName,
+                            author = titleCasedAuthor,
                             pageCount = pageCount,
                             registrationNo = registrationNo,
                             initialStudentId = assignStudentId,
@@ -342,8 +346,8 @@ fun LibrarySubScreen(
                         Toast.makeText(context, "✨ Kitap başarıyla kaydedildi.", Toast.LENGTH_SHORT).show()
                     } else {
                         val updated = bookToEdit!!.copy(
-                            name = name.trim(),
-                            author = author.trim(),
+                            name = titleCasedName,
+                            author = titleCasedAuthor,
                             pageCount = pageCount,
                             registrationNo = registrationNo
                         )
@@ -625,6 +629,7 @@ fun LibrarySubScreen(
                 classRoom = classRoom,
                 books = books,
                 records = records,
+                students = students,
                 isDarkTheme = isDarkTheme,
                 onDismiss = { showExportDialog = false }
             )
@@ -832,18 +837,27 @@ private fun LibraryInventoryView(
                 }
             }
 
-            // Toplu Dağıt Butonu
-            TextButton(
+            // Sınıfça Okuduk Butonu (Şık Buton Görünümü)
+            Surface(
                 onClick = onBatchClassReadClick,
-                modifier = Modifier.testTag("batch_class_read_button"),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                shape = RoundedCornerShape(20.dp),
+                color = if (isDarkTheme) Color(0x35007A78) else Color(0xFFEFF6FF),
+                border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else Color(0xFF3B82F6)),
+                modifier = Modifier.testTag("batch_class_read_button")
             ) {
-                Text(
-                    text = "👥 Sınıfça Okuduk",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("👥", fontSize = 11.5.sp)
+                    Text(
+                        text = "Sınıfça Okuduk",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isDarkTheme) BirizTurquoise else Color(0xFF1D4ED8)
+                    )
+                }
             }
         }
 
@@ -1057,7 +1071,7 @@ private fun BookCardGridItem(
 
             // Kitap Başlığı & Yazar
             Text(
-                text = book.name,
+                text = TurkishTextHelper.toTurkishTitleCase(book.name),
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
                 color = primaryText,
@@ -1137,19 +1151,6 @@ private fun BookCardGridItem(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // İade Al Butonu
-                Button(
-                    onClick = onReturnClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("📥 İade Al", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-            } else {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
@@ -1165,24 +1166,51 @@ private fun BookCardGridItem(
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-                // Ödünç Ver Butonu
+            // Aksiyon Butonları: Yan yana "Ödünç Ver" ve "İade Al"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 OutlinedButton(
                     onClick = onBorrowClick,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .height(32.dp),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(
-                        text = "📖 Ödünç Ver",
-                        fontSize = 11.5.sp,
+                        text = "Ödünç Ver",
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                }
+
+                Button(
+                    onClick = onReturnClick,
+                    enabled = isReading,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFD97706),
+                        disabledContainerColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
+                    ),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = "İade Al",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isReading) Color.White else Color.Gray
                     )
                 }
             }
@@ -1243,9 +1271,9 @@ private fun BookListItem(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = book.name,
+                        text = TurkishTextHelper.toTurkishTitleCase(book.name),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                         color = primaryText,
@@ -1268,58 +1296,81 @@ private fun BookListItem(
                                 color = secondaryText
                             )
                         }
-                        if (isReading) {
-                            val reader = book.activeAssignments.firstOrNull()?.studentName ?: book.currentStudentName.orEmpty()
-                            Text(" • 👤 $reader", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFD97706))
+                    }
+                    if (isReading) {
+                        val reader = book.activeAssignments.firstOrNull()?.studentName ?: book.currentStudentName.orEmpty()
+                        val days = calculateDaysAgo(book.activeAssignments.firstOrNull()?.assignmentDate ?: book.assignmentDate)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text("👤 ", fontSize = 11.sp)
+                            Text(
+                                text = "$reader ($days. gün)",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFD97706)
+                            )
                         }
                     }
                 }
             }
 
-            // Aksiyon Butonları
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Aksiyon Butonları: Yan yana "Ödünç Ver" ve "İade Al"
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isReading) {
-                    Button(
-                        onClick = onReturnClick,
-                        modifier = Modifier.height(30.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text("İade Al", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onBorrowClick,
-                        modifier = Modifier.height(30.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text(
-                            text = "Ver",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                        )
-                    }
+                // 1. Ödünç Ver Butonu (Her zaman mevcut; kitap birden fazla öğrenciye de verilebilir)
+                OutlinedButton(
+                    onClick = onBorrowClick,
+                    modifier = Modifier.height(30.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = "Ödünç Ver",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                }
+
+                // 2. İade Al Butonu (Rafta ise pasif/disabled, öğrencide ise aktif)
+                Button(
+                    onClick = onReturnClick,
+                    enabled = isReading,
+                    modifier = Modifier.height(30.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFD97706),
+                        disabledContainerColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = "İade Al",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isReading) Color.White else Color.Gray
+                    )
                 }
 
                 IconButton(
                     onClick = onEditClick,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Edit, contentDescription = "Düzenle", modifier = Modifier.size(16.dp), tint = secondaryText)
+                    Icon(imageVector = Icons.Default.Edit, contentDescription = "Düzenle", modifier = Modifier.size(15.dp), tint = secondaryText)
                 }
 
                 IconButton(
                     onClick = onDeleteClick,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Sil", modifier = Modifier.size(16.dp), tint = BirizError)
+                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Sil", modifier = Modifier.size(15.dp), tint = BirizError)
                 }
             }
         }
@@ -3156,6 +3207,7 @@ private fun ExportLibraryDialog(
     classRoom: ClassRoom,
     books: List<Book>,
     records: List<ReadingRecord>,
+    students: List<Student>,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit
 ) {
@@ -3164,78 +3216,298 @@ private fun ExportLibraryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(text = "📤 Kitaplık Raporu & Dışa Aktarma", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "📑 Kitaplık ve Okuma Raporları", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Kitaplık listesini ve okuma hareketlerini resmi Excel tablosu veya yazdırılabilir A4 PDF belgesi olarak indirin:",
-                    fontSize = 12.5.sp
+                    text = "Aşağıdaki resmi ve analiz raporlarını doğrudan A4 PDF belgesi olarak oluşturup görüntüleyebilir veya paylaşabilirsiniz:",
+                    fontSize = 12.sp,
+                    color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
                 )
 
-                // 1. Excel Kitaplık Listesi
+                // Kategori: Takip Defterleri (A4 Şablonu)
+                Text(
+                    text = "📋 Okuma Takip Defterleri (A4 Şablon)",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                // 1. Sınıf Kitap Okuma Takip Defteri (PDF)
                 OutlinedButton(
                     onClick = {
-                        val uri = ExcelPdfHelper.exportBooksExcel(context, classRoom, books)
-                        ExcelPdfHelper.shareFile(
-                            context,
-                            uri,
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "Kitaplık Listesi Excel Tablosu"
-                        )
+                        val uri = LibraryPdfReportsHelper.exportClassroomReadingTrackerSheetPdf(context, classRoom)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Sınıf Kitap Okuma Takip Defteri")
                         onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFF007A78)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isDarkTheme) Color(0x25007A78) else Color(0xFFF0FDF4))
                 ) {
-                    Text("📊 Kitaplık Listesi (Excel .xlsx)")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("📖", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Sınıf Kitap Okuma Takip Defteri (PDF)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF007A78))
+                            Text("İsimsiz 20 satırlı boş sınıf defteri şablonu", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
                 }
 
-                // 2. Excel Okuma Geçmişi
+                // 2. Bireysel Kitap Okuma Takip Defteri (PDF)
                 OutlinedButton(
                     onClick = {
-                        val uri = ExcelPdfHelper.exportReadingRecordsExcel(context, classRoom, records)
-                        ExcelPdfHelper.shareFile(
-                            context,
-                            uri,
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "Okuma Geçmişi Excel Tablosu"
-                        )
+                        val uri = LibraryPdfReportsHelper.exportIndividualReadingTrackerDefterPdf(context, classRoom, students)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Bireysel Kitap Okuma Takip Defteri")
                         onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.2.dp, Color(0xFF0284C7)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isDarkTheme) Color(0x250284C7) else Color(0xFFF0F9FF))
                 ) {
-                    Text("📋 Okuma & İade Geçmişi (Excel .xlsx)")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("👤", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Bireysel Kitap Okuma Takip Defteri (PDF)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0284C7))
+                            Text("Sınıftaki tüm öğrencilerin adına özel A4 sayfaları", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
                 }
 
-                // 3. Resmi A4 PDF Raporu
-                Button(
+                // Kategori: Envanter & Hareket Listeleri
+                Text(
+                    text = "📚 Envanter ve Okuma Hareketleri",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                // 3. Kitaplık Listesi (PDF ve Kitap No Sıralı)
+                OutlinedButton(
                     onClick = {
-                        val uri = ExcelPdfHelper.exportLibraryPdf(context, classRoom, books, records)
-                        ExcelPdfHelper.shareFile(
-                            context,
-                            uri,
-                            "application/pdf",
-                            "Sınıf Kitaplığı ve Okuma Raporu (PDF)"
-                        )
+                        val uri = LibraryPdfReportsHelper.exportBooksListPdf(context, classRoom, books)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Kitaplık Listesi")
                         onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("📄 Resmi A4 Kitaplık Raporu (PDF Yazdır)", color = Color.White)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("📚", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Kitaplık Listesi (PDF - Sıra No Sıralı)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 4. Okuma & İade Listesi (PDF ve Tarihsel Sıralı)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportReadAndReturnHistoryPdf(context, classRoom, records)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Okuma ve İade Listesi")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("⏳", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Okuma & İade Listesi (PDF - Kronolojik)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 5. Öğrencinin Okuduğu Kitaplar Listesi (PDF)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportStudentReadingLogsPdf(context, classRoom, records, students)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Öğrencinin Okuduğu Kitaplar Listesi")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("🧒", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Öğrencinin Okuduğu Kitaplar Listesi (PDF)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 6. Kitabı Okuyan Öğrenciler Listesi (PDF)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportBookReadersLogPdf(context, classRoom, books, records)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Kitabı Okuyan Öğrenciler Listesi")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("📖", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Kitabı Okuyan Öğrenciler Listesi (PDF)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // Kategori: Başarı & Analitik Raporları
+                Text(
+                    text = "🏆 Başarı ve Analitik Raporları",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                // 7. En Çok Kitap Okuyan Öğrenciler Listesi (PDF)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportTopBookReadersPdf(context, classRoom, records, students)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "En Çok Kitap Okuyan Öğrenciler")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("🥇", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("En Çok Kitap Okuyan Öğrenciler Listesi (PDF)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 8. En Çok Sayfa Okuyan Öğrenciler Listesi (PDF)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportTopPageReadersPdf(context, classRoom, records, students)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "En Çok Sayfa Okuyan Öğrenciler")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("📑", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("En Çok Sayfa Okuyan Öğrenciler Listesi (PDF)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // 9. Günlük Ortalama Okunan Sayfa Sayısı Listesi (PDF)
+                OutlinedButton(
+                    onClick = {
+                        val uri = LibraryPdfReportsHelper.exportDailyAveragePagesPdf(context, classRoom, records, students)
+                        ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Günlük Ortalama Okunan Sayfa Sayısı")
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Text("⚡", fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Günlük Ortalama Okunan Sayfa Listesi (PDF)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                // Kategori: Excel Çıktıları
+                Text(
+                    text = "📊 Excel Dosyaları",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val uri = ExcelPdfHelper.exportBooksExcel(context, classRoom, books)
+                            ExcelPdfHelper.shareFile(context, uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Kitaplık Listesi Excel Tablosu")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                    ) {
+                        Text("Kitaplık (.xlsx)", fontSize = 11.sp, maxLines = 1)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val uri = ExcelPdfHelper.exportReadingRecordsExcel(context, classRoom, records)
+                            ExcelPdfHelper.shareFile(context, uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Okuma Geçmişi Excel Tablosu")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                    ) {
+                        Text("Okumalar (.xlsx)", fontSize = 11.sp, maxLines = 1)
+                    }
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Kapat")
+                Text("Kapat", fontWeight = FontWeight.Bold)
             }
         }
     )

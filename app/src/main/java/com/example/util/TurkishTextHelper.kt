@@ -66,4 +66,20 @@ object TurkishTextHelper {
             .replace("Ü", "U")
             .uppercase(Locale.ROOT)
     }
+
+    /**
+     * Başlık Formatı (Her kelimenin ilk harfi büyük, geri kalanı küçük)
+     * Türkçe karakter duyarlı: i -> İ / ı -> I vb.
+     */
+    fun toTurkishTitleCase(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return ""
+        return trimmed.split("\\s+".toRegex()).joinToString(" ") { word ->
+            if (word.isNotEmpty()) {
+                val firstChar = word.substring(0, 1).uppercase(TR_LOCALE)
+                val rest = if (word.length > 1) word.substring(1).lowercase(TR_LOCALE) else ""
+                "$firstChar$rest"
+            } else ""
+        }
+    }
 }
