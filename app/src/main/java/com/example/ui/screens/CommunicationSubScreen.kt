@@ -1508,7 +1508,7 @@ private fun CreateOrEditAnnouncementDialog(
                                                         color = if (isKiz) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                                                     ) {
                                                         Text(
-                                                            text = "#${student.studentNumber}",
+                                                            text = student.studentNumber,
                                                             fontSize = 10.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7),
@@ -1721,7 +1721,7 @@ private fun CreateOrEditAnnouncementDialog(
 
                             val targetStudentNames = if (targetType == AnnouncementTargetType.SPECIFIC_STUDENTS) {
                                 students.filter { selectedStudentIds.contains(it.id) }
-                                    .map { "#${it.studentNumber} ${it.fullName}" }
+                                    .map { "${it.studentNumber} ${it.fullName}" }
                             } else emptyList()
 
                             val poll = if (isPollEnabled && pollQuestion.isNotBlank()) {
@@ -2020,7 +2020,7 @@ private fun InactiveStudentRowItem(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = "#${student.studentNumber}",
+                        text = student.studentNumber,
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
@@ -2171,7 +2171,7 @@ private fun ActiveStudentChatCard(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = "#${student.studentNumber}",
+                            text = student.studentNumber,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
                             color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7)
@@ -2513,7 +2513,7 @@ private fun InactiveStudentCodeDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "#${student.studentNumber} ${student.fullName}",
+                    text = "${student.studentNumber} ${student.fullName}",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (isDarkTheme) BirizTurquoise else Color(0xFF0284C7)
@@ -2678,7 +2678,7 @@ private fun OneOnOneChatView(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = "#${student.studentNumber}",
+                            text = student.studentNumber,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -2705,7 +2705,7 @@ private fun OneOnOneChatView(
                         )
                     }
                     Text(
-                        text = "${parentAccount.email} • #${student.studentNumber} ${student.fullName} Velisi",
+                        text = "${parentAccount.email} • ${student.studentNumber} ${student.fullName} Velisi",
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         color = Color.White.copy(alpha = 0.85f),

@@ -429,7 +429,7 @@ fun PlannedSeatingWizardDialog(
                                                 modifier = Modifier.fillMaxWidth().height(36.dp)
                                             ) {
                                                 Text(
-                                                    text = selectedIncompatStudent1?.let { "#${it.studentNumber} ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" } ?: "1. Öğrenci",
+                                                    text = selectedIncompatStudent1?.let { "${it.studentNumber} ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" } ?: "1. Öğrenci",
                                                     fontSize = 11.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
@@ -441,7 +441,7 @@ fun PlannedSeatingWizardDialog(
                                             ) {
                                                 students.forEach { s ->
                                                     DropdownMenuItem(
-                                                        text = { Text("#${s.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(s.fullName)}") },
+                                                        text = { Text("${s.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(s.fullName)}") },
                                                         onClick = {
                                                             selectedIncompatStudent1 = s
                                                             showIncompatMenu1 = false
@@ -461,7 +461,7 @@ fun PlannedSeatingWizardDialog(
                                                 modifier = Modifier.fillMaxWidth().height(36.dp)
                                             ) {
                                                 Text(
-                                                    text = selectedIncompatStudent2?.let { "#${it.studentNumber} ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" } ?: "2. Öğrenci",
+                                                    text = selectedIncompatStudent2?.let { "${it.studentNumber} ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" } ?: "2. Öğrenci",
                                                     fontSize = 11.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
@@ -473,7 +473,7 @@ fun PlannedSeatingWizardDialog(
                                             ) {
                                                 students.forEach { s ->
                                                     DropdownMenuItem(
-                                                        text = { Text("#${s.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(s.fullName)}") },
+                                                        text = { Text("${s.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(s.fullName)}") },
                                                         onClick = {
                                                             selectedIncompatStudent2 = s
                                                             showIncompatMenu2 = false
@@ -598,7 +598,7 @@ fun PlannedSeatingWizardDialog(
                                         Icon(imageVector = Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = selectedFixedStudent?.let { "#${it.studentNumber} - ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" }
+                                            text = selectedFixedStudent?.let { "${it.studentNumber} - ${TurkishTextHelper.toTurkishUpperCase(it.fullName)}" }
                                                 ?: "Öğrenci Seçin (${availableForFix.size} serbest)",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
@@ -614,7 +614,7 @@ fun PlannedSeatingWizardDialog(
                                         availableForFix.forEach { student ->
                                             DropdownMenuItem(
                                                 text = {
-                                                    Text("#${student.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(student.fullName)} (${student.gender})")
+                                                    Text("${student.studentNumber} • ${TurkishTextHelper.toTurkishUpperCase(student.fullName)} (${student.gender})")
                                                 },
                                                 onClick = {
                                                     selectedFixedStudent = student
@@ -905,7 +905,7 @@ fun PlannedSeatingWizardDialog(
                                                             color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                                                         ) {
                                                             Text(
-                                                                text = "#${student.studentNumber}",
+                                                                text = student.studentNumber,
                                                                 fontSize = 10.sp,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),

@@ -1949,7 +1949,7 @@ object ExcelPdfHelper {
 
                 val prefix = "${mIdx + 1}. "
                 val leaderTag = if (isLeader) " 👑 (Sözcü)" else ""
-                val lineText = "$prefix#${student.studentNumber} ${student.fullName}$leaderTag"
+                val lineText = "$prefix${student.studentNumber} ${student.fullName}$leaderTag"
                 canvas.drawText(lineText, cardLeft + 8f, currentStudentY, paint)
                 currentStudentY += 13f
             }

@@ -386,7 +386,7 @@ fun UserProfileMenuDialog(
                                 if (linkedStudents.isNotEmpty()) {
                                     linkedStudents.forEach { s ->
                                         Text(
-                                            text = "• ${s.fullName} (#${s.studentNumber}) - ${classRoom?.let { "${it.gradeLevel}/${it.section}" } ?: "Sınıf"}",
+                                            text = "• ${s.fullName} (${s.studentNumber}) - ${classRoom?.let { "${it.gradeLevel}/${it.section}" } ?: "Sınıf"}",
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )

@@ -410,7 +410,7 @@ fun LuckyStudentSubScreen(
                                             modifier = Modifier.padding(horizontal = 16.dp)
                                         ) {
                                             Text(
-                                                text = "NO: #${displayedRollingNo ?: ""}",
+                                                text = "NO: ${displayedRollingNo ?: ""}",
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = BirizTurquoise
@@ -908,7 +908,7 @@ fun LuckyStudentSubScreen(
                                     color = if (isKiz) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                                 ) {
                                     Text(
-                                        text = "#${student.studentNumber}",
+                                        text = student.studentNumber,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7),
@@ -1063,7 +1063,7 @@ fun LuckyStudentSubScreen(
                                 color = if (isKiz) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                             ) {
                                 Text(
-                                    text = "#${student.studentNumber}",
+                                    text = student.studentNumber,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7),
@@ -1232,7 +1232,7 @@ fun LuckyStudentSubScreen(
                                 color = if (isKiz) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                             ) {
                                 Text(
-                                    text = "OKUL NO: #${winner.studentNumber}",
+                                    text = "OKUL NO: ${winner.studentNumber}",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = if (isKiz) Color(0xFFBE185D) else Color(0xFF0284C7),

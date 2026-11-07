@@ -1214,7 +1214,7 @@ private fun SeatItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "#${student.studentNumber}",
+                        text = student.studentNumber,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 11.sp,
                         color = if (isGirl) {
@@ -1340,7 +1340,7 @@ private fun UnassignedStudentsSection(
                                 color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                             ) {
                                 Text(
-                                    text = "#${student.studentNumber}",
+                                    text = student.studentNumber,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),
@@ -1945,7 +1945,7 @@ private fun AssignStudentDialog(
                                         color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                                     ) {
                                         Text(
-                                            text = "#${student.studentNumber}",
+                                            text = student.studentNumber,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),

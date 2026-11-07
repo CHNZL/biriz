@@ -1207,7 +1207,7 @@ fun AllClassStarRankingDialog(
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = "#${student.studentNumber}",
+                                                text = student.studentNumber,
                                                 fontSize = if (student.studentNumber.length > 3) 9.sp else 10.5.sp,
                                                 fontWeight = FontWeight.Black,
                                                 color = if (isGirl) Color(0xFFDB2777) else Color(0xFF2563EB)
@@ -1360,7 +1360,7 @@ private fun StudentStarRowItem(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = "#${student.studentNumber}",
+                            text = student.studentNumber,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7)
@@ -1510,7 +1510,7 @@ private fun StudentStarCardItem(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = "#${student.studentNumber}",
+                        text = student.studentNumber,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Black,
                         color = if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7)
@@ -2127,7 +2127,7 @@ private fun IndividualStarAwardDialog(
                                 color = if (isDarkTheme) Color.White else Color(0xFF0F172A)
                             )
                             Text(
-                                text = "#${student.studentNumber} ${student.fullName}",
+                                text = "${student.studentNumber} ${student.fullName}",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isDarkTheme) BirizTurquoise else Color(0xFF0284C7)
@@ -3313,7 +3313,7 @@ private fun ActivityStarWizardDialog(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text(
-                                                text = "#${student.studentNumber}",
+                                                text = student.studentNumber,
                                                 fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Black,
                                                 color = if (isSelected) Color(0xFFC7D2FE) else (if (isKiz) Color(0xFFDB2777) else Color(0xFF0284C7))
@@ -3558,7 +3558,7 @@ private fun ActivityStarWizardDialog(
                     )
 
                     Text(
-                        text = "Okul No: #${lucky.studentNumber}",
+                        text = "Okul No: ${lucky.studentNumber}",
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF64748B)

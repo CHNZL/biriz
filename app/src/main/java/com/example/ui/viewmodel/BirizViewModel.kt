@@ -567,7 +567,7 @@ class BirizViewModel(
         val notif = BirizNotification(
             id = "notif_${System.currentTimeMillis()}",
             title = "Yeni Veli Mesajı 💬",
-            message = "$resolvedParentName (#${student?.studentNumber} ${student?.fullName}): $replyText",
+            message = "$resolvedParentName (${student?.studentNumber} ${student?.fullName}): $replyText",
             timestamp = System.currentTimeMillis(),
             type = NotificationType.MESSAGE,
             targetSubPageName = "ILETISIM_MESAJLAR",

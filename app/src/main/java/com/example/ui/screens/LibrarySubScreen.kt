@@ -2343,13 +2343,13 @@ private fun AddEditBookDialog(
                         modifier = Modifier.padding(vertical = 10.dp)
                     )
 
-                    // 2. KAYDIRILABİLİR FORM GÖVDESİ (Ortada akıcı kaydırma)
+                    // 2. KAYDIRILABİLİR FORM GÖVDESİ (Daha derli toplu ve bütüncül boşluklar)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(11.dp)
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
                         // Kitap Adı
                         Column {
@@ -2363,7 +2363,7 @@ private fun AddEditBookDialog(
                                 },
                                 isError = isDuplicate,
                                 singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = BirizTurquoise,
                                     unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
@@ -2373,7 +2373,7 @@ private fun AddEditBookDialog(
                             )
 
                             if (isDuplicate) {
-                                Spacer(modifier = Modifier.height(3.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "⚠️ Bu isimde bir kitap kitaplığınızda zaten kayıtlı!",
                                     fontSize = 11.sp,
@@ -2385,14 +2385,14 @@ private fun AddEditBookDialog(
 
                             // Öneri çipleri
                             if (nameSuggestions.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Row(
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     nameSuggestions.forEach { suggestion ->
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(10.dp),
                                             color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE),
                                             border = BorderStroke(1.dp, if (isDarkTheme) Color(0x4038BDF8) else Color(0xFFBAE6FD)),
                                             modifier = Modifier.clickable { name = suggestion }
@@ -2402,7 +2402,7 @@ private fun AddEditBookDialog(
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 color = if (isDarkTheme) Color(0xFF7DD3FC) else Color(0xFF0369A1),
-                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                             )
                                         }
                                     }
@@ -2420,7 +2420,7 @@ private fun AddEditBookDialog(
                                 Icon(Icons.Default.PersonOutline, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = BirizTurquoise,
                                 unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
@@ -2442,7 +2442,7 @@ private fun AddEditBookDialog(
                                 isError = pageCountStr.isNotBlank() && !isPageValid,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = BirizTurquoise,
                                     unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
@@ -2451,25 +2451,25 @@ private fun AddEditBookDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
 
                             if (isPageValid) {
                                 val stars = LibraryPersistenceHelper.calculateReadingStars(pageCount)
                                 Surface(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(8.dp),
                                     color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB),
                                     border = BorderStroke(1.dp, if (isDarkTheme) Color(0x60F59E0B) else Color(0xFFFDE68A)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("⭐", fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("⭐", fontSize = 13.sp)
+                                        Spacer(modifier = Modifier.width(5.dp))
                                         Text(
                                             text = "$pageCount sayfa için +$stars Kitap Kurdu yıldızı verilecektir.",
-                                            fontSize = 11.5.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
                                         )
@@ -2496,7 +2496,7 @@ private fun AddEditBookDialog(
                         // Kitap Ekleme Anında Öğrenciye Hemen Ver (Ödünç Başlat)
                         if (bookToEdit == null && students.isNotEmpty()) {
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = if (assignImmediately) {
                                     if (isDarkTheme) Color(0x300D9488) else Color(0xFFF0FDFA)
                                 } else {
@@ -2508,7 +2508,7 @@ private fun AddEditBookDialog(
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                                Column(modifier = Modifier.padding(9.dp)) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -2523,30 +2523,30 @@ private fun AddEditBookDialog(
                                             Surface(
                                                 shape = CircleShape,
                                                 color = if (assignImmediately) BirizTurquoise else Color(0xFF94A3B8).copy(alpha = 0.2f),
-                                                modifier = Modifier.size(32.dp)
+                                                modifier = Modifier.size(28.dp)
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Icon(
                                                         imageVector = Icons.Default.BookmarkAdd,
                                                         contentDescription = null,
                                                         tint = if (assignImmediately) Color.White else Color.Gray,
-                                                        modifier = Modifier.size(17.dp)
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
 
                                             Column {
                                                 Text(
                                                     text = "Öğrenciye Hemen Ödünç Ver",
-                                                    fontSize = 12.5.sp,
+                                                    fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = primaryText
                                                 )
                                                 Text(
                                                     text = "Kitap eklenirken ilk teslim kaydını başlatın",
-                                                    fontSize = 10.5.sp,
+                                                    fontSize = 10.sp,
                                                     color = secondaryText
                                                 )
                                             }
@@ -2563,19 +2563,19 @@ private fun AddEditBookDialog(
                                     }
 
                                     if (assignImmediately) {
-                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
                                         HorizontalDivider(
                                             color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFE2E8F0),
                                             thickness = 0.8.dp
                                         )
-                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
 
                                         val selectedStudent = students.firstOrNull { it.id == selectedStudentId }
 
                                         if (selectedStudent != null) {
                                             // Seçilmiş Öğrenci Kartı (Kompakt ve şık görünüm)
                                             Surface(
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = RoundedCornerShape(8.dp),
                                                 color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
                                                 border = BorderStroke(1.dp, BirizTurquoise),
                                                 modifier = Modifier.fillMaxWidth()
@@ -2583,7 +2583,7 @@ private fun AddEditBookDialog(
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                        .padding(horizontal = 8.dp, vertical = 6.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
@@ -2596,7 +2596,7 @@ private fun AddEditBookDialog(
                                                         ) {
                                                             Box(contentAlignment = Alignment.Center) {
                                                                 Text(
-                                                                    text = "#${selectedStudent.studentNumber}",
+                                                                    text = selectedStudent.studentNumber,
                                                                     fontSize = 9.5.sp,
                                                                     fontWeight = FontWeight.Bold,
                                                                     color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
@@ -2621,9 +2621,9 @@ private fun AddEditBookDialog(
 
                                                     TextButton(
                                                         onClick = { selectedStudentId = null },
-                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                                     ) {
-                                                        Text("Değiştir", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = BirizTurquoise)
+                                                        Text("Değiştir", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BirizTurquoise)
                                                     }
                                                 }
                                             }
@@ -2638,7 +2638,7 @@ private fun AddEditBookDialog(
                                                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp), tint = secondaryText)
                                                 },
                                                 singleLine = true,
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = RoundedCornerShape(8.dp),
                                                 modifier = Modifier.fillMaxWidth()
                                             )
 
@@ -2648,15 +2648,15 @@ private fun AddEditBookDialog(
                                                         it.studentNumber.toString() == studentFilterText
                                             }
 
-                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Spacer(modifier = Modifier.height(4.dp))
 
                                             Surface(
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = RoundedCornerShape(8.dp),
                                                 color = if (isDarkTheme) Color(0x20000000) else Color.White,
                                                 border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .heightIn(min = 60.dp, max = 130.dp)
+                                                    .heightIn(min = 50.dp, max = 120.dp)
                                             ) {
                                                 Column(
                                                     modifier = Modifier
@@ -2672,7 +2672,7 @@ private fun AddEditBookDialog(
                                                                 .fillMaxWidth()
                                                                 .background(if (isSelected) BirizTurquoise.copy(alpha = 0.15f) else Color.Transparent)
                                                                 .clickable { selectedStudentId = st.id }
-                                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                                .padding(horizontal = 8.dp, vertical = 5.dp)
                                                         ) {
                                                             Row(
                                                                 verticalAlignment = Alignment.CenterVertically,
@@ -2683,21 +2683,21 @@ private fun AddEditBookDialog(
                                                                     Surface(
                                                                         shape = CircleShape,
                                                                         color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                                                                        modifier = Modifier.size(24.dp)
+                                                                        modifier = Modifier.size(22.dp)
                                                                     ) {
                                                                         Box(contentAlignment = Alignment.Center) {
                                                                             Text(
-                                                                                text = "#${st.studentNumber}",
-                                                                                fontSize = 9.5.sp,
+                                                                                text = st.studentNumber,
+                                                                                fontSize = 9.sp,
                                                                                 fontWeight = FontWeight.Bold,
                                                                                 color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
                                                                             )
                                                                         }
                                                                     }
-                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Spacer(modifier = Modifier.width(7.dp))
                                                                     Text(
                                                                         text = st.fullName,
-                                                                        fontSize = 12.sp,
+                                                                        fontSize = 11.5.sp,
                                                                         fontWeight = FontWeight.Medium,
                                                                         color = primaryText
                                                                     )
@@ -2705,7 +2705,7 @@ private fun AddEditBookDialog(
 
                                                                 Text(
                                                                     text = "Seç",
-                                                                    fontSize = 11.sp,
+                                                                    fontSize = 10.5.sp,
                                                                     fontWeight = FontWeight.Bold,
                                                                     color = BirizTurquoise
                                                                 )
@@ -2722,17 +2722,17 @@ private fun AddEditBookDialog(
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Spacer(modifier = Modifier.height(3.dp))
                                             Text(
                                                 text = "👆 Listeden kitabı teslim edeceğiniz öğrenciye dokunun.",
-                                                fontSize = 11.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = BirizAmber,
                                                 modifier = Modifier.padding(start = 4.dp)
                                             )
                                         }
 
-                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
 
                                         // Ödünç Veriliş Tarihi Seçici
                                         BirizDatePickerField(
@@ -2751,7 +2751,7 @@ private fun AddEditBookDialog(
                     HorizontalDivider(
                         color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
                         thickness = 1.dp,
-                        modifier = Modifier.padding(top = 10.dp, bottom = 10.dp)
+                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
                     )
 
                     Row(
@@ -3018,7 +3018,7 @@ private fun BorrowBookDialog(
                                         modifier = Modifier.widthIn(min = 34.dp)
                                     ) {
                                         Text(
-                                            text = "#${st.studentNumber}",
+                                            text = st.studentNumber,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isChecked) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else Color.Gray,

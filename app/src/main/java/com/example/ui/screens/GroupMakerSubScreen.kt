@@ -849,7 +849,7 @@ private fun GroupCard(
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = "#${student.studentNumber}",
+                                                text = student.studentNumber,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Black,
                                                 color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
@@ -1161,7 +1161,7 @@ private fun StudentTouchModal(
                                         ) {
                                             Column {
                                                 Text(
-                                                    text = "#${targetStudent.studentNumber} ${targetStudent.fullName}",
+                                                    text = "${targetStudent.studentNumber} ${targetStudent.fullName}",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -1488,7 +1488,7 @@ private fun DistributionWizardDialog(
                                         color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
                                     ) {
                                         Text(
-                                            text = "#${student.studentNumber}",
+                                            text = student.studentNumber,
                                             fontSize = 9.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),
@@ -1839,7 +1839,7 @@ private fun UnassignedStudentsDialog(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "#${student.studentNumber}",
+                                        text = student.studentNumber,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = BirizTurquoise

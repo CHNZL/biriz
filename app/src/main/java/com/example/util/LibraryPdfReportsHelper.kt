@@ -279,7 +279,7 @@ object LibraryPdfReportsHelper {
             val page = pdf.startPage(pageInfo)
             val canvas = page.canvas
 
-            val stLabel = "${st.fullName} (#${st.studentNumber})"
+            val stLabel = "${st.fullName} (${st.studentNumber})"
             drawCustomDefterSheet(
                 canvas = canvas,
                 context = context,
@@ -711,7 +711,7 @@ object LibraryPdfReportsHelper {
             val page = pdf.startPage(pageInfo)
             val canvas = page.canvas
 
-            var y = drawDocumentHeader(canvas, context, classRoom, "Öğrenci Kitap Okuma Geçmişi", "${st.fullName} (#${st.studentNumber})")
+            var y = drawDocumentHeader(canvas, context, classRoom, "Öğrenci Kitap Okuma Geçmişi", "${st.fullName} (${st.studentNumber})")
 
             // Öğrenci Özet Kutusu
             val totalBooks = stRecords.size
@@ -1080,7 +1080,7 @@ object LibraryPdfReportsHelper {
             }
             canvas.drawText(medal, 42f, y + 13f, if (i < 3) medalPaint else tdTextPaint)
             canvas.drawText(st.fullName, 100f, y + 13f, tdTextPaint)
-            canvas.drawText("#${st.studentNumber}", 280f, y + 13f, tdTextPaint)
+            canvas.drawText(st.studentNumber, 280f, y + 13f, tdTextPaint)
             canvas.drawText("$bookCount Kitap", 370f, y + 13f, tdTextPaint)
             canvas.drawText("$pageCount Sayfa", 480f, y + 13f, tdTextPaint)
             y += 18f
@@ -1143,7 +1143,7 @@ object LibraryPdfReportsHelper {
             }
             canvas.drawText(medal, 42f, y + 13f, if (i < 3) medalPaint else tdTextPaint)
             canvas.drawText(st.fullName, 100f, y + 13f, tdTextPaint)
-            canvas.drawText("#${st.studentNumber}", 280f, y + 13f, tdTextPaint)
+            canvas.drawText(st.studentNumber, 280f, y + 13f, tdTextPaint)
             canvas.drawText("$pageCount Sayfa", 370f, y + 13f, tdTextPaint)
             canvas.drawText("$bookCount Kitap", 490f, y + 13f, tdTextPaint)
             y += 18f
@@ -1209,7 +1209,7 @@ object LibraryPdfReportsHelper {
             }
             canvas.drawText("${i + 1}.", 42f, y + 13f, tdTextPaint)
             canvas.drawText(item.student.fullName, 85f, y + 13f, tdTextPaint)
-            canvas.drawText("#${item.student.studentNumber}", 250f, y + 13f, tdTextPaint)
+            canvas.drawText(item.student.studentNumber, 250f, y + 13f, tdTextPaint)
 
             val avgStr = String.format(Locale("tr"), "%.1f sayfa/gün", item.dailyAverage)
             canvas.drawText(avgStr, 320f, y + 13f, avgPaint)

@@ -343,7 +343,7 @@ fun ParentPortalSubScreen(
                                             Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 14.sp)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
-                                                text = "${student.fullName} (#${student.studentNumber})",
+                                                text = "${student.fullName} (${student.studentNumber})",
                                                 fontSize = 11.5.sp,
                                                 fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                                                 color = if (isSelected) BirizNavyDark else Color.White
@@ -522,7 +522,7 @@ fun ParentPortalSubScreen(
                                                 color = BirizTurquoise
                                             ) {
                                                 Text(
-                                                    text = "NO: #${activeStudent.studentNumber}",
+                                                    text = "NO: ${activeStudent.studentNumber}",
                                                     fontSize = 10.5.sp,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     color = BirizNavyDark,
@@ -874,7 +874,7 @@ fun ParentPortalSubScreen(
             text = {
                 Column {
                     Text(
-                        text = "${s.fullName} (#${s.studentNumber}) adlı öğrencinin veli takip bağlantısını kaldırmak istediğinize emin misiniz?",
+                        text = "${s.fullName} (${s.studentNumber}) adlı öğrencinin veli takip bağlantısını kaldırmak istediğinize emin misiniz?",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.SemiBold
                     )
