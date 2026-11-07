@@ -981,7 +981,7 @@ private fun BookCardGridItem(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty()
+    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -1114,17 +1114,23 @@ private fun BookCardGridItem(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Durum Rozeti ve Okuyan Bilgisi
-            if (isReading) {
-                val readers = book.activeAssignments
-                val readerText = when {
-                    readers.isNotEmpty() -> {
+            // Durum Rozeti (Ödünçte ise okuyan(lar), değilse sadece Rafta)
+            val readers = book.activeAssignments
+            val isGivenToStudents = readers.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
+
+            if (isGivenToStudents) {
+                val isMultiple = readers.size > 1
+                val displayText = when {
+                    isMultiple -> "👥 ${readers.size} Kişide Okunuyor"
+                    readers.size == 1 -> {
                         val first = readers.first()
                         val days = calculateDaysAgo(first.assignmentDate)
-                        "${first.studentName} ($days. gün)"
+                        "👤 ${first.studentName} ($days. gün)"
                     }
-                    !book.currentStudentName.isNullOrBlank() -> book.currentStudentName
-                    else -> "Öğrencide"
+                    else -> {
+                        val days = calculateDaysAgo(book.assignmentDate)
+                        "👤 ${book.currentStudentName} ($days. gün)"
+                    }
                 }
 
                 Surface(
@@ -1133,24 +1139,23 @@ private fun BookCardGridItem(
                     color = Color(0xFFFEF3C7),
                     border = BorderStroke(1.dp, Color(0xFFFCD34D))
                 ) {
-                    Column(modifier = Modifier.padding(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("👤", fontSize = 10.sp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = readerText,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF92400E),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = displayText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF92400E),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
+            } else {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
@@ -1158,12 +1163,12 @@ private fun BookCardGridItem(
                     border = BorderStroke(1.dp, if (isDarkTheme) Color(0x50059669) else Color(0xFFA7F3D0))
                 ) {
                     Text(
-                        text = "🟢 Rafta (Müsait)",
+                        text = "🟢 Rafta",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF065F46),
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 6.dp)
                     )
                 }
             }
@@ -1236,7 +1241,7 @@ private fun BookListItem(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty()
+    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1297,19 +1302,48 @@ private fun BookListItem(
                             )
                         }
                     }
-                    if (isReading) {
-                        val reader = book.activeAssignments.firstOrNull()?.studentName ?: book.currentStudentName.orEmpty()
-                        val days = calculateDaysAgo(book.activeAssignments.firstOrNull()?.assignmentDate ?: book.assignmentDate)
+                    val readers = book.activeAssignments
+                    val isGivenToStudents = readers.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
+
+                    if (isGivenToStudents) {
+                        val isMultiple = readers.size > 1
+                        val (icon, readerText) = when {
+                            isMultiple -> "👥 " to "${readers.size} Kişide Okunuyor"
+                            readers.size == 1 -> {
+                                val first = readers.first()
+                                val days = calculateDaysAgo(first.assignmentDate)
+                                "👤 " to "${first.studentName} ($days. gün)"
+                            }
+                            else -> {
+                                val days = calculateDaysAgo(book.assignmentDate)
+                                "👤 " to "${book.currentStudentName} ($days. gün)"
+                            }
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            Text("👤 ", fontSize = 11.sp)
+                            Text(icon, fontSize = 11.sp)
                             Text(
-                                text = "$reader ($days. gün)",
+                                text = readerText,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFD97706)
+                                color = Color(0xFFD97706),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text("🟢 ", fontSize = 10.sp)
+                            Text(
+                                text = "Rafta",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF059669)
                             )
                         }
                     }
