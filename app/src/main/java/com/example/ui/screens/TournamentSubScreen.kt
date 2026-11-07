@@ -9,8 +9,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,9 +34,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FileDownload
@@ -46,6 +53,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -58,8 +66,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import com.example.ui.theme.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1554,7 +1565,7 @@ private fun TournamentCreateWizardDialog(
     onDismiss: () -> Unit,
     onCreate: (Tournament, List<Pair<String, String>>) -> Unit
 ) {
-    var step by remember { mutableIntStateOf(1) } // 1: Şablon, 2: Ayarlar, 3: Katılımcılar, 4: Yıldızlar
+    var step by remember { mutableIntStateOf(1) } // 1: Branş, 2: Format & Kurallar, 3: Katılımcılar, 4: Yıldızlar
 
     // Form Değerleri
     var name by remember { mutableStateOf("") }
@@ -1577,309 +1588,824 @@ private fun TournamentCreateWizardDialog(
     var thirdPlaceStarsStr by remember { mutableStateOf("4") }
     var participationStarsStr by remember { mutableStateOf("1") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Turnuva Kur (Adım $step/4)", fontWeight = FontWeight.Bold, fontSize = 15.5.sp)
-                Text(
-                    text = when (step) {
-                        1 -> "Branş Seçimi"
-                        2 -> "Format & Kurallar"
-                        3 -> "Katılımcılar"
-                        else -> "Ödül Yıldızları"
-                    },
-                    fontSize = 11.5.sp,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
-            }
-        },
-        text = {
-            Column(
+    val primaryTextColor = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+    val secondaryTextColor = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    Dialog(onDismissRequest = onDismiss) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .padding(horizontal = 10.dp, vertical = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val maxDialogHeight = maxHeight * 0.92f
+
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .heightIn(max = maxDialogHeight),
+                shape = RoundedCornerShape(22.dp),
+                color = if (isDarkTheme) Color(0xFF0F1E38) else Color.White,
+                border = BorderStroke(1.2.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
+                shadowElevation = 10.dp
             ) {
-                when (step) {
-                    1 -> {
-                        // ADIM 1: HAZIR BRANŞ ŞABLONLARI
-                        Text("Popüler bir branş seçin veya özel turnuva adı belirleyin:", fontSize = 12.sp)
-
-                        ActivityPreset.PRESETS.forEach { preset ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    // 1. SABİT ÜST BAŞLIK & ADIM BİLGİSİ
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        name = "${preset.title} Turnuvası"
-                                        description = preset.description
-                                        tournamentType = preset.defaultType
-                                        matchType = preset.defaultMatchType
-                                        winnerMethod = preset.defaultWinnerMethod
-                                    },
-                                color = if (name.startsWith(preset.title)) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else (if (isDarkTheme) Color(0x25334E68) else Color(0xFFF8FAFC)),
-                                border = BorderStroke(1.dp, if (name.startsWith(preset.title)) BirizTurquoise else BirizBorder)
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
+                                border = BorderStroke(1.dp, if (isDarkTheme) BirizAmber else Color(0xFFFDE68A)),
+                                modifier = Modifier.size(38.dp)
                             ) {
-                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(preset.icon, fontSize = 24.sp)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Text(preset.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(preset.description, fontSize = 10.5.sp, color = BirizDarkTextMuted)
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("🏆", fontSize = 20.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Turnuva Kur",
+                                        fontSize = 15.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = primaryTextColor
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFE0F2FE)
+                                    ) {
+                                        Text(
+                                            text = "Adım $step/4",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = when (step) {
+                                        1 -> "Popüler Branş veya Özel Turnuva Adı"
+                                        2 -> "Format, Eşleşme & Kural Seçimi"
+                                        3 -> "Katılımcı Öğrenci & Misafir Seçimi"
+                                        else -> "Kazanılacak Yıldızlar Sınıfı Ödülleri"
+                                    },
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = secondaryTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Kapat",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // 4 Aşamalı İlerleme Çubuğu (Step Progress Indicator)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (i in 1..4) {
+                            val isCompletedOrCurrent = i <= step
+                            val barColor = when {
+                                i == step -> BirizTurquoise
+                                i < step -> if (isDarkTheme) Color(0xFF0284C7) else Color(0xFF0284C7)
+                                else -> if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(3.5.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(barColor)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+
+                    // 2. ORTA FORMLAR (Minimum Dikey Boşluk, Kaydırılabilir İçerik)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        when (step) {
+                            1 -> {
+                                // ADIM 1: BRANŞ SEÇİMİ
+                                Text(
+                                    text = "1. Popüler Bir Branş Seçin:",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+
+                                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    ActivityPreset.PRESETS.forEach { preset ->
+                                        val isSelected = name.startsWith(preset.title)
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    name = "${preset.title} Turnuvası"
+                                                    description = preset.description
+                                                    tournamentType = preset.defaultType
+                                                    matchType = preset.defaultMatchType
+                                                    winnerMethod = preset.defaultWinnerMethod
+                                                },
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (isSelected) {
+                                                if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)
+                                            } else {
+                                                if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC)
+                                            },
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) BirizTurquoise else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0))
+                                            )
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(34.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(if (isSelected) BirizTurquoise.copy(alpha = 0.2f) else Color.Transparent),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(preset.icon, fontSize = 20.sp)
+                                                }
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = preset.title,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 12.5.sp,
+                                                        color = primaryTextColor
+                                                    )
+                                                    Text(
+                                                        text = preset.description,
+                                                        fontSize = 10.sp,
+                                                        color = secondaryTextColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = BirizTurquoise,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Text(
+                                    text = "2. Turnuva Adını Belirleyin / Özelleştirin:",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { name = it },
+                                    label = { Text("Turnuva Adı * (Zorunlu)", fontSize = 11.5.sp) },
+                                    placeholder = { Text("Örn: 4/D Bahar Satranç Turnuvası", fontSize = 12.sp) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = BirizTurquoise,
+                                        unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            2 -> {
+                                // ADIM 2: FORMAT & KURALLAR (Kompakt ve profesyonel kart blokları)
+                                // 1. Turnuva Formatı Kartı
+                                SelectionGroupCard(
+                                    title = "Turnuva Formatı",
+                                    icon = "🏆",
+                                    isDarkTheme = isDarkTheme
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        TournamentType.values().forEach { tType ->
+                                            val isSelected = tournamentType == tType
+                                            CompactOptionButton(
+                                                title = "${tType.icon} ${tType.displayName}",
+                                                isSelected = isSelected,
+                                                isDarkTheme = isDarkTheme,
+                                                modifier = Modifier.weight(1f),
+                                                onClick = { tournamentType = tType }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Grup formatı seçilmişse: Grup Sayısı
+                                if (tournamentType == TournamentType.GRUP || tournamentType == TournamentType.GRUP_ELEME) {
+                                    SelectionGroupCard(
+                                        title = "Grup Sayısı",
+                                        icon = "👥",
+                                        isDarkTheme = isDarkTheme
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            listOf(2, 3, 4, 6).forEach { gc ->
+                                                val isSelected = groupCount == gc
+                                                CompactOptionButton(
+                                                    title = "$gc Grup",
+                                                    isSelected = isSelected,
+                                                    isDarkTheme = isDarkTheme,
+                                                    modifier = Modifier.weight(1f),
+                                                    onClick = { groupCount = gc }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. Karşılaşma Biçimi Kartı
+                                SelectionGroupCard(
+                                    title = "Karşılaşma Biçimi",
+                                    icon = "⚔️",
+                                    isDarkTheme = isDarkTheme
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        TournamentMatchType.values().forEach { mType ->
+                                            val isSelected = matchType == mType
+                                            CompactOptionButton(
+                                                title = mType.displayName,
+                                                isSelected = isSelected,
+                                                isDarkTheme = isDarkTheme,
+                                                modifier = Modifier.weight(1f),
+                                                onClick = { matchType = mType }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // 3. Kazanan Belirleme Yöntemi Kartı
+                                SelectionGroupCard(
+                                    title = "Kazanan Belirleme Yöntemi",
+                                    icon = "🎯",
+                                    isDarkTheme = isDarkTheme
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        WinnerSelectionMethod.values().forEach { wMethod ->
+                                            val isSelected = winnerMethod == wMethod
+                                            CompactOptionButton(
+                                                title = wMethod.displayName,
+                                                isSelected = isSelected,
+                                                isDarkTheme = isDarkTheme,
+                                                modifier = Modifier.weight(1f),
+                                                onClick = { winnerMethod = wMethod }
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text("Özel Turnuva Adı *") },
-                            placeholder = { Text("Örn: Bahar Turnuvası") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                            3 -> {
+                                // ADIM 3: KATILIMCILAR
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Katılımcı Listesi",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            color = primaryTextColor
+                                        )
+                                        Text(
+                                            text = "Toplam: ${selectedStudentIds.value.size + extraParticipants.value.size} katılımcı seçili",
+                                            fontSize = 10.5.sp,
+                                            color = if (selectedStudentIds.value.size + extraParticipants.value.size >= 2) BirizTurquoise else BirizError
+                                        )
+                                    }
 
-                    2 -> {
-                        // ADIM 2: FORMAT & KURALLAR
-                        Text("Format ve Eşleşme Parametreleri:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-
-                        // Format Seçimi
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TournamentType.values().forEach { tType ->
-                                FilterChip(
-                                    selected = tournamentType == tType,
-                                    onClick = { tournamentType = tType },
-                                    label = { Text("${tType.icon} ${tType.displayName}", fontSize = 11.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                        }
-
-                        // Karşılaşma Biçimi (Tek Maç / Çift Maç)
-                        Text("Karşılaşma Biçimi:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TournamentMatchType.values().forEach { mType ->
-                                FilterChip(
-                                    selected = matchType == mType,
-                                    onClick = { matchType = mType },
-                                    label = { Text(mType.displayName, fontSize = 11.5.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                        }
-
-                        // Kazanan Belirleme (Galip / Skor)
-                        Text("Kazanan Belirleme Yöntemi:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            WinnerSelectionMethod.values().forEach { wMethod ->
-                                FilterChip(
-                                    selected = winnerMethod == wMethod,
-                                    onClick = { winnerMethod = wMethod },
-                                    label = { Text(wMethod.displayName, fontSize = 11.5.sp) },
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                            }
-                        }
-
-                        if (tournamentType == TournamentType.GRUP || tournamentType == TournamentType.GRUP_ELEME) {
-                            Text("Grup Sayısı:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(2, 3, 4, 6, 8).forEach { gc ->
-                                    FilterChip(
-                                        selected = groupCount == gc,
-                                        onClick = { groupCount = gc },
-                                        label = { Text("$gc Grup", fontSize = 11.sp) }
-                                    )
+                                    TextButton(
+                                        onClick = {
+                                            selectedStudentIds.value = if (selectedStudentIds.value.size == students.size) emptySet() else students.map { it.id }.toSet()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = if (selectedStudentIds.value.size == students.size) "Seçimi Kaldır" else "Tümünü Seç",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BirizTurquoise
+                                        )
+                                    }
                                 }
-                            }
-                        }
-                    }
 
-                    3 -> {
-                        // ADIM 3: KATILIMCILAR
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Katılımcılar (${selectedStudentIds.value.size + extraParticipants.value.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            TextButton(onClick = {
-                                selectedStudentIds.value = if (selectedStudentIds.value.size == students.size) emptySet() else students.map { it.id }.toSet()
-                            }) {
-                                Text(if (selectedStudentIds.value.size == students.size) "Seçimi Kaldır" else "Tümünü Seç", fontSize = 11.5.sp)
-                            }
-                        }
-
-                        // Öğrenci Listesi
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(students, key = { it.id }) { st ->
-                                val isSelected = selectedStudentIds.value.contains(st.id)
+                                // Sınıf Öğrenci Listesi
                                 Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC),
+                                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            val current = selectedStudentIds.value.toMutableSet()
-                                            if (isSelected) current.remove(st.id) else current.add(st.id)
-                                            selectedStudentIds.value = current
-                                        },
-                                    color = if (isSelected) (if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)) else Color.Transparent,
-                                    border = BorderStroke(1.dp, if (isSelected) BirizTurquoise else BirizBorder)
+                                        .heightIn(min = 90.dp, max = 150.dp)
                                 ) {
-                                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = isSelected, onCheckedChange = { checked ->
-                                            val current = selectedStudentIds.value.toMutableSet()
-                                            if (checked) current.add(st.id) else current.remove(st.id)
-                                            selectedStudentIds.value = current
-                                        })
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("${st.studentNumber} - ${st.fullName}", fontSize = 12.sp)
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        items(students, key = { it.id }) { st ->
+                                            val isSelected = selectedStudentIds.value.contains(st.id)
+                                            val isGirl = st.gender.equals("KIZ", ignoreCase = true)
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        val current = selectedStudentIds.value.toMutableSet()
+                                                        if (isSelected) current.remove(st.id) else current.add(st.id)
+                                                        selectedStudentIds.value = current
+                                                    },
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSelected) {
+                                                    if (isDarkTheme) Color(0x3506B6D4) else Color(0xFFE0F2FE)
+                                                } else Color.Transparent,
+                                                border = BorderStroke(
+                                                    0.8.dp,
+                                                    if (isSelected) BirizTurquoise else Color.Transparent
+                                                )
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Checkbox(
+                                                        checked = isSelected,
+                                                        onCheckedChange = { checked ->
+                                                            val current = selectedStudentIds.value.toMutableSet()
+                                                            if (checked) current.add(st.id) else current.remove(st.id)
+                                                            selectedStudentIds.value = current
+                                                        },
+                                                        colors = CheckboxDefaults.colors(checkedColor = BirizTurquoise),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                                                        modifier = Modifier.size(20.dp)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Text(
+                                                                text = st.studentNumber,
+                                                                fontSize = 8.5.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = st.fullName,
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = primaryTextColor
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Misafir Katılımcı Ekleme
+                                Text(
+                                    text = "Misafir / Ek Katılımcı Ekle:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = guestNameInput,
+                                        onValueChange = { guestNameInput = it },
+                                        placeholder = { Text("Misafir Adı (Örn: Ahmet Öğretmen)...", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f).height(42.dp)
+                                    )
+                                    Button(
+                                        onClick = {
+                                            if (guestNameInput.isNotBlank()) {
+                                                extraParticipants.value = extraParticipants.value + guestNameInput.trim()
+                                                guestNameInput = ""
+                                            }
+                                        },
+                                        enabled = guestNameInput.isNotBlank(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(42.dp)
+                                    ) {
+                                        Text("Ekle", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (extraParticipants.value.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        extraParticipants.value.forEach { extra ->
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
+                                                border = BorderStroke(1.dp, BirizTurquoise)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(text = "👤 $extra", fontSize = 10.5.sp, color = BirizTurquoise, fontWeight = FontWeight.SemiBold)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Sil",
+                                                        tint = BirizTurquoise,
+                                                        modifier = Modifier
+                                                            .size(13.dp)
+                                                            .clickable {
+                                                                extraParticipants.value = extraParticipants.value.filter { it != extra }
+                                                            }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            4 -> {
+                                // ADIM 4: YILDIZLAR SINIFI ÖDÜL AYARLARI
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (starsEnabled) {
+                                        if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                                    } else {
+                                        if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC)
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (starsEnabled) BirizAmber else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0))
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { starsEnabled = !starsEnabled }
+                                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("⭐", fontSize = 16.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Yıldızlar Sınıfı Başarı Puanları",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp,
+                                                    color = primaryTextColor
+                                                )
+                                                Text(
+                                                    text = "Turnuva bitiminde dereceye girenlere otomatik yıldız verir",
+                                                    fontSize = 10.sp,
+                                                    color = secondaryTextColor
+                                                )
+                                            }
+                                        }
+                                        Switch(
+                                            checked = starsEnabled,
+                                            onCheckedChange = { starsEnabled = it },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = BirizAmber
+                                            )
+                                        )
+                                    }
+                                }
+
+                                if (starsEnabled) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        StarRewardInputField(
+                                            label = "🥇 1. Şampiyon Yıldızı",
+                                            value = firstPlaceStarsStr,
+                                            onValueChange = { firstPlaceStarsStr = it },
+                                            isDarkTheme = isDarkTheme
+                                        )
+                                        StarRewardInputField(
+                                            label = "🥈 2. İkincilik Yıldızı",
+                                            value = secondPlaceStarsStr,
+                                            onValueChange = { secondPlaceStarsStr = it },
+                                            isDarkTheme = isDarkTheme
+                                        )
+                                        StarRewardInputField(
+                                            label = "🥉 3. Üçüncülük Yıldızı",
+                                            value = thirdPlaceStarsStr,
+                                            onValueChange = { thirdPlaceStarsStr = it },
+                                            isDarkTheme = isDarkTheme
+                                        )
+                                        StarRewardInputField(
+                                            label = "🎖️ Katılım Yıldızı (Tüm Öğrencilere)",
+                                            value = participationStarsStr,
+                                            onValueChange = { participationStarsStr = it },
+                                            isDarkTheme = isDarkTheme
+                                        )
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Misafir Oyuncu Ekleme
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = guestNameInput,
-                                onValueChange = { guestNameInput = it },
-                                placeholder = { Text("Misafir Katılımcı Adı...", fontSize = 11.5.sp) },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Button(onClick = {
-                                if (guestNameInput.isNotBlank()) {
-                                    extraParticipants.value = extraParticipants.value + guestNameInput.trim()
-                                    guestNameInput = ""
-                                }
-                            }) {
-                                Text("Ekle")
+                    // 3. SABİT ALT AKSİYON ŞERİDİ (Her Zaman Görünür)
+                    HorizontalDivider(
+                        color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (step > 1) {
+                            OutlinedButton(
+                                onClick = { step-- },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Geri", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Text("Vazgeç", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
 
-                        if (extraParticipants.value.isNotEmpty()) {
-                            Text("Eklenen Misafirler: ${extraParticipants.value.joinToString(", ")}", fontSize = 11.sp, color = BirizTurquoise)
+                        if (step < 4) {
+                            val isStepValid = when (step) {
+                                1 -> name.isNotBlank()
+                                3 -> (selectedStudentIds.value.size + extraParticipants.value.size) >= 2
+                                else -> true
+                            }
+
+                            Button(
+                                onClick = { step++ },
+                                enabled = isStepValid,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("İleri", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    val partPairs = mutableListOf<Pair<String, String>>()
+                                    students.filter { selectedStudentIds.value.contains(it.id) }.forEach {
+                                        partPairs.add(Pair(it.id, it.fullName))
+                                    }
+                                    extraParticipants.value.forEach { extra ->
+                                        partPairs.add(Pair("extra:$extra", extra))
+                                    }
+
+                                    val starRewards = TournamentStarRewards(
+                                        enabled = starsEnabled,
+                                        firstPlaceStars = firstPlaceStarsStr.toIntOrNull() ?: 10,
+                                        secondPlaceStars = secondPlaceStarsStr.toIntOrNull() ?: 6,
+                                        thirdPlaceStars = thirdPlaceStarsStr.toIntOrNull() ?: 4,
+                                        participationStars = participationStarsStr.toIntOrNull() ?: 1
+                                    )
+
+                                    val newT = Tournament(
+                                        classRoomId = "",
+                                        name = name.trim(),
+                                        description = description.trim(),
+                                        type = tournamentType,
+                                        matchType = matchType,
+                                        winnerSelectionMethod = winnerMethod,
+                                        participants = partPairs.map { it.first },
+                                        extraParticipants = extraParticipants.value,
+                                        groupCount = groupCount,
+                                        groupNaming = groupNaming,
+                                        advancingPerGroup = advancingPerGroup,
+                                        starRewards = starRewards
+                                    )
+
+                                    onCreate(newT, partPairs)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("Turnuvayı Başlat 🏆", fontSize = 12.5.sp, fontWeight = FontWeight.Black, color = Color.White)
+                            }
                         }
                     }
-
-                    4 -> {
-                        // ADIM 4: YILDIZLAR SINIFI ÖDÜL AYARLARI
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("⭐ Yıldızlar Sınıfı Ödülleri", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-                            Switch(checked = starsEnabled, onCheckedChange = { starsEnabled = it })
-                        }
-
-                        if (starsEnabled) {
-                            OutlinedTextField(
-                                value = firstPlaceStarsStr,
-                                onValueChange = { firstPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("🥇 1. Şampiyon Yıldızı") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = secondPlaceStarsStr,
-                                onValueChange = { secondPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("🥈 2. İkincilik Yıldızı") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = thirdPlaceStarsStr,
-                                onValueChange = { thirdPlaceStarsStr = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("🥉 3. Üçüncülük Yıldızı") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = participationStarsStr,
-                                onValueChange = { participationStarsStr = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("🎖️ Katılım Yıldızı (Her Öğrenciye)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (step < 4) {
-                Button(
-                    onClick = { step++ },
-                    enabled = (step != 1 || name.isNotBlank()) && (step != 3 || (selectedStudentIds.value.size + extraParticipants.value.size >= 2))
-                ) {
-                    Text("İleri")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        val partPairs = mutableListOf<Pair<String, String>>()
-                        students.filter { selectedStudentIds.value.contains(it.id) }.forEach {
-                            partPairs.add(Pair(it.id, it.fullName))
-                        }
-                        extraParticipants.value.forEach { extra ->
-                            partPairs.add(Pair("extra:$extra", extra))
-                        }
-
-                        val starRewards = TournamentStarRewards(
-                            enabled = starsEnabled,
-                            firstPlaceStars = firstPlaceStarsStr.toIntOrNull() ?: 10,
-                            secondPlaceStars = secondPlaceStarsStr.toIntOrNull() ?: 6,
-                            thirdPlaceStars = thirdPlaceStarsStr.toIntOrNull() ?: 4,
-                            participationStars = participationStarsStr.toIntOrNull() ?: 1
-                        )
-
-                        val newT = Tournament(
-                            classRoomId = "",
-                            name = name.trim(),
-                            description = description.trim(),
-                            type = tournamentType,
-                            matchType = matchType,
-                            winnerSelectionMethod = winnerMethod,
-                            participants = partPairs.map { it.first },
-                            extraParticipants = extraParticipants.value,
-                            groupCount = groupCount,
-                            groupNaming = groupNaming,
-                            advancingPerGroup = advancingPerGroup,
-                            starRewards = starRewards
-                        )
-
-                        onCreate(newT, partPairs)
-                    }
-                ) {
-                    Text("Turnuvayı Başlat 🏆")
-                }
-            }
-        },
-        dismissButton = {
-            if (step > 1) {
-                TextButton(onClick = { step-- }) {
-                    Text("Geri")
-                }
-            } else {
-                TextButton(onClick = onDismiss) {
-                    Text("İptal")
                 }
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun SelectionGroupCard(
+    title: String,
+    icon: String,
+    isDarkTheme: Boolean,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 5.dp)
+            ) {
+                Text(icon, fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = title,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun CompactOptionButton(
+    title: String,
+    isSelected: Boolean,
+    isDarkTheme: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bgColor = if (isSelected) {
+        if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1)
+    } else {
+        if (isDarkTheme) Color(0x20334E68) else Color.White
+    }
+    val borderColor = if (isSelected) BirizTurquoise else (if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1))
+    val textColor = if (isSelected) {
+        if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E)
+    } else {
+        if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier.height(34.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 4.dp)) {
+            Text(
+                text = title,
+                fontSize = 10.5.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = textColor,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun StarRewardInputField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    isDarkTheme: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC))
+            .border(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isDarkTheme) Color.White else Color(0xFF1E293B),
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = { onValueChange(it.filter { ch -> ch.isDigit() }) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.width(65.dp).height(38.dp)
+        )
+    }
 }
