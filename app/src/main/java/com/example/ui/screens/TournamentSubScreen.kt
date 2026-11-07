@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -83,8 +85,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -2184,7 +2188,7 @@ private fun TournamentCreateWizardDialog(
                                             isDarkTheme = isDarkTheme
                                         )
                                         StarRewardInputField(
-                                            label = "🎖️ Katılım Yıldızı (Tüm Öğrencilere)",
+                                            label = "🎖️ Katılım Yıldızı (Tümüne)",
                                             value = participationStarsStr,
                                             onValueChange = { participationStarsStr = it },
                                             isDarkTheme = isDarkTheme
@@ -2382,30 +2386,113 @@ private fun StarRewardInputField(
     onValueChange: (String) -> Unit,
     isDarkTheme: Boolean
 ) {
+    val currentInt = value.toIntOrNull() ?: 0
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isDarkTheme) Color(0x181E293B) else Color(0xFFF8FAFC))
-            .border(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isDarkTheme) Color(0x221E293B) else Color(0xFFF8FAFC))
+            .border(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
-            fontSize = 11.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = if (isDarkTheme) Color.White else Color(0xFF1E293B),
             modifier = Modifier.weight(1f)
         )
-        OutlinedTextField(
-            value = value,
-            onValueChange = { onValueChange(it.filter { ch -> ch.isDigit() }) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            shape = RoundedCornerShape(6.dp),
-            modifier = Modifier.width(65.dp).height(38.dp)
-        )
+
+        // Modern, son derece net Stepper (Eksi - Sayı/Yıldız - Artı)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            // Eksi Butonu
+            Surface(
+                onClick = {
+                    val nextVal = (currentInt - 1).coerceAtLeast(0)
+                    onValueChange(nextVal.toString())
+                },
+                shape = RoundedCornerShape(8.dp),
+                color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0),
+                border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF475569) else Color(0xFFCBD5E1)),
+                modifier = Modifier.size(32.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "−",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+                    )
+                }
+            }
+
+            // Sayı Alanı: Hem tıklanıp yazılabilir hem de net, büyük ve asla kırpılmayan değer
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isDarkTheme) Color(0xFF0F1E38) else Color.White,
+                border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else BirizAmber),
+                modifier = Modifier
+                    .width(70.dp)
+                    .height(34.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { newVal ->
+                            val digitsOnly = newVal.filter { it.isDigit() }
+                            onValueChange(digitsOnly)
+                        },
+                        textStyle = TextStyle(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) BirizAmberLight else BirizNavyPrimary,
+                            textAlign = TextAlign.Center
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(if (isDarkTheme) BirizTurquoise else BirizAmber),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.widthIn(min = 18.dp, max = 36.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "⭐",
+                        fontSize = 11.5.sp
+                    )
+                }
+            }
+
+            // Artı Butonu
+            Surface(
+                onClick = {
+                    val nextVal = currentInt + 1
+                    onValueChange(nextVal.toString())
+                },
+                shape = RoundedCornerShape(8.dp),
+                color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0),
+                border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF475569) else Color(0xFFCBD5E1)),
+                modifier = Modifier.size(32.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "+",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+                    )
+                }
+            }
+        }
     }
 }
