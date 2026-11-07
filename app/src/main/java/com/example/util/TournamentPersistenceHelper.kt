@@ -335,42 +335,58 @@ object TournamentPersistenceHelper {
         )
         currentMatches[mIdx] = updatedMatch
 
-        // 1. Eleme Ağacında Kazananı İlerlet
-        val winningId = winnerId ?: when {
-            score1 != null && score2 != null && score1 > score2 -> match.player1Id
-            score1 != null && score2 != null && score2 > score1 -> match.player2Id
-            else -> null
-        }
-
-        val winningName = when (winningId) {
-            match.player1Id -> match.player1Name
-            match.player2Id -> match.player2Name
-            else -> ""
-        }
-
         var refreshedMatches = currentMatches.toList()
-        if (winningId != null && (tournament.type == TournamentType.ELEME || (tournament.type == TournamentType.GRUP_ELEME && match.stage == "knockout"))) {
-            if (!match.isDoubleMatch) {
-                refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
-                    refreshedMatches,
-                    match.matchCode,
-                    winningId,
-                    winningName
-                )
-            }
-        }
+        val isKnockoutStage = tournament.type == TournamentType.ELEME || (tournament.type == TournamentType.GRUP_ELEME && match.stage == "knockout")
 
-        // 2. Çift Maç Beraberlik Bozma (Tie-Breaker) Kontrolü
-        if (match.isDoubleMatch) {
-            val tieBreaker = TournamentEngine.checkDoubleMatchTieBreaker(tournament, refreshedMatches, updatedMatch)
-            if (tieBreaker != null) {
-                refreshedMatches = refreshedMatches + tieBreaker
-            } else {
-                // Rövanş tamamlandı ve galip belli olduysa eleme ağacında ilerlet
-                if (winningId != null && (tournament.type == TournamentType.ELEME || match.stage == "knockout")) {
+        if (isKnockoutStage) {
+            val baseCode = TournamentEngine.getBaseMatchCode(match.matchCode)
+
+            if (match.isTieBreaker) {
+                // Karar Maçı (Tie-Breaker) tamamlandı -> Kazananı üst tura çıkart
+                val winningId = winnerId ?: when {
+                    score1 != null && score2 != null && score1 > score2 -> match.player1Id
+                    score1 != null && score2 != null && score2 > score1 -> match.player2Id
+                    else -> null
+                }
+                if (winningId != null) {
+                    val winningName = if (winningId == match.player1Id) match.player1Name else match.player2Name
                     refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
                         refreshedMatches,
-                        match.matchCode.removeSuffix("-R"),
+                        baseCode,
+                        winningId,
+                        winningName
+                    )
+                }
+            } else if (match.isDoubleMatch) {
+                // Çift maçlı (Rövanşlı) karşılaşma
+                val tieBreaker = TournamentEngine.checkDoubleMatchTieBreaker(tournament, refreshedMatches, updatedMatch)
+                if (tieBreaker != null) {
+                    refreshedMatches = refreshedMatches + tieBreaker
+                } else {
+                    val pairCode = updatedMatch.pairCode ?: updatedMatch.id
+                    val legMatches = refreshedMatches.filter { it.pairCode == pairCode && !it.isTieBreaker }
+                    val overallWinner = TournamentEngine.getDoubleMatchOverallWinner(tournament, legMatches)
+                    if (overallWinner != null) {
+                        refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
+                            refreshedMatches,
+                            baseCode,
+                            overallWinner.first,
+                            overallWinner.second
+                        )
+                    }
+                }
+            } else {
+                // Tek maçlı eleme
+                val winningId = winnerId ?: when {
+                    score1 != null && score2 != null && score1 > score2 -> match.player1Id
+                    score1 != null && score2 != null && score2 > score1 -> match.player2Id
+                    else -> null
+                }
+                if (winningId != null) {
+                    val winningName = if (winningId == match.player1Id) match.player1Name else match.player2Name
+                    refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
+                        refreshedMatches,
+                        baseCode,
                         winningId,
                         winningName
                     )

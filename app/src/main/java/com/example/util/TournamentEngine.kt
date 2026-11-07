@@ -31,12 +31,14 @@ object TournamentEngine {
     }
 
     /**
-     * 1. ELEME USULÜ (KNOCKOUT) FİKSTÜR ÜRETİMİ (BAY ALGORİTMASI İLE)
-     * - Toplam katılımcı sayısı N.
-     * - En yakın 2'nin kuvveti M = 2^k.
-     * - 1. Turda oynanacak maç sayısı: N - M/2.
-     * - 1. Turda maç yapacak öğrenci sayısı: 2 * (N - M/2).
-     * - BAY geçen (doğrudan 2. tura yükselen) öğrenci sayısı: M - N.
+     * 1. ELEME USULÜ (KNOCKOUT) FİKSTÜR ÜRETİMİ (2^n VE ÖN ELEME ALGORİTMASI)
+     * - Eğer N tam 2'nin kuvveti ise (Örn: 16, 8, 4): Ön elemesiz doğrudan N/2 maç oluşturulur.
+     * - Eğer N tam 2'nin kuvveti değilse (Örn: N = 25):
+     *   - En yakın alt 2'nin kuvveti P (Örn: P = 16).
+     *   - Ön Eleme Maç Sayısı: M_pre = N - P (Örn: 25 - 16 = 9 maç).
+     *   - Ön Elemeye Katılan Oyuncu Sayısı: 2 * M_pre = 18 öğrenci.
+     *   - Ön Elemede BAY Geçen (Doğrudan Son 16'ya Yükselen) Öğrenci Sayısı: B = 2*P - N (Örn: 32 - 25 = 7 öğrenci).
+     *   - 2. Tur (Son 16): 7 BAY geçen öğrenci + 9 Ön Eleme galibi = 16 Öğrenci (8 Maç).
      */
     fun generateKnockoutFixture(
         tournamentId: String,
@@ -48,16 +50,13 @@ object TournamentEngine {
         if (n < 2) return emptyList()
 
         val shuffled = participants.shuffled()
-        val m = findSmallestPowerOfTwo(n)
-        val round1MatchCount = n - (m / 2)
-        val byeCount = m - n
-
         val matches = mutableListOf<TournamentMatch>()
 
-        if (byeCount == 0) {
-            // Tam 2'nin kuvveti: Herkes 1. Turda maç yapar
+        // Tam 2'nin kuvveti kontrolü (2, 4, 8, 16, 32...)
+        val isExactPowerOfTwo = (n and (n - 1)) == 0
+
+        if (isExactPowerOfTwo) {
             val pairCount = n / 2
-            val r1Matches = mutableListOf<TournamentMatch>()
             for (i in 0 until pairCount) {
                 val p1 = shuffled[i * 2]
                 val p2 = shuffled[i * 2 + 1]
@@ -74,11 +73,9 @@ object TournamentEngine {
                     pairCode = if (isDoubleMatch) "PAIR-R1-M${i + 1}" else null,
                     stage = "knockout"
                 )
-                r1Matches.add(match)
                 matches.add(match)
 
                 if (isDoubleMatch) {
-                    // Rövanş Maçı
                     matches.add(
                         TournamentMatch(
                             tournamentId = tournamentId,
@@ -96,18 +93,28 @@ object TournamentEngine {
                 }
             }
 
-            if (allTree) {
-                generateSubsequentKnockoutRounds(tournamentId, m / 2, isDoubleMatch, matches)
+            if (allTree && pairCount > 1) {
+                generateSubsequentKnockoutRounds(tournamentId, pairCount, isDoubleMatch, matches)
             }
         } else {
-            // BAY Algoritması: İlk round1MatchCount * 2 kişi 1. Turda karşılaşır, kalan byeCount kişi 2. tura çıkar
-            val r1Players = shuffled.take(round1MatchCount * 2)
-            val byePlayers = shuffled.drop(round1MatchCount * 2) // Doğrudan 2. tura geçer
+            // N 2'nin kuvveti değil: Ön Eleme oynatıp ana eleme ağacına eşitliyoruz
+            var p = 1
+            while (p * 2 < n) {
+                p *= 2
+            }
 
-            val r1Matches = mutableListOf<TournamentMatch>()
-            for (i in 0 until round1MatchCount) {
-                val p1 = r1Players[i * 2]
-                val p2 = r1Players[i * 2 + 1]
+            val preMatchCount = n - p               // Ön eleme maç sayısı (Örn: 25 - 16 = 9)
+            val prePlayerCount = preMatchCount * 2     // Ön elemeye katılanlar (Örn: 18)
+            val byeCount = n - prePlayerCount       // Ön elemeyi BAY geçenler (Örn: 25 - 18 = 7)
+
+            val prePlayers = shuffled.take(prePlayerCount)
+            val byePlayers = shuffled.drop(prePlayerCount)
+
+            // 1. TUR: Ön Eleme Maçları
+            val preWinnerPlaceholders = mutableListOf<Pair<String, String>>()
+            for (i in 0 until preMatchCount) {
+                val p1 = prePlayers[i * 2]
+                val p2 = prePlayers[i * 2 + 1]
                 val matchCode = "R1-M${i + 1}"
                 val match = TournamentMatch(
                     tournamentId = tournamentId,
@@ -121,7 +128,6 @@ object TournamentEngine {
                     pairCode = if (isDoubleMatch) "PAIR-R1-M${i + 1}" else null,
                     stage = "knockout"
                 )
-                r1Matches.add(match)
                 matches.add(match)
 
                 if (isDoubleMatch) {
@@ -140,25 +146,34 @@ object TournamentEngine {
                         )
                     )
                 }
+
+                preWinnerPlaceholders.add(Pair("WINNER_OF_R1-M${i + 1}", "Ön Eleme Galibi ${i + 1}"))
             }
 
-            // 2. Tur Maçlarını oluştur: byeCount kadar oyuncu + 1. Tur galipleri (m / 4 maç)
+            // 2. TUR: Ana Eleme Ağacı (P oyuncu -> P/2 maç)
+            // BAY geçenler ile Ön Eleme Galiplerini dengeli birleştiriyoruz
             val r2Slots = mutableListOf<Pair<String, String>>()
-            // Önce BAY geçen oyuncuları yerleştir
-            byePlayers.forEach { byeP ->
-                r2Slots.add(Pair(byeP.first, byeP.second))
+            val minPairs = minOf(byePlayers.size, preWinnerPlaceholders.size)
+
+            for (i in 0 until minPairs) {
+                r2Slots.add(byePlayers[i])
+                r2Slots.add(preWinnerPlaceholders[i])
             }
-            // 1. Tur maçlarının galipleri için yer tutucu
-            for (i in 0 until round1MatchCount) {
-                r2Slots.add(Pair("WINNER_OF_R1-M${i + 1}", "1. Tur Galibi ${i + 1}"))
+            if (byePlayers.size > minPairs) {
+                for (i in minPairs until byePlayers.size) {
+                    r2Slots.add(byePlayers[i])
+                }
+            }
+            if (preWinnerPlaceholders.size > minPairs) {
+                for (i in minPairs until preWinnerPlaceholders.size) {
+                    r2Slots.add(preWinnerPlaceholders[i])
+                }
             }
 
-            // 2. Tur Eşleşmeleri
-            val r2MatchCount = r2Slots.size / 2
-            val r2Matches = mutableListOf<TournamentMatch>()
+            val r2MatchCount = p / 2
             for (i in 0 until r2MatchCount) {
-                val s1 = r2Slots[i * 2]
-                val s2 = r2Slots[i * 2 + 1]
+                val s1 = r2Slots.getOrElse(i * 2) { Pair("BYE", "BAY") }
+                val s2 = r2Slots.getOrElse(i * 2 + 1) { Pair("BYE", "BAY") }
                 val matchCode = "R2-M${i + 1}"
                 val match = TournamentMatch(
                     tournamentId = tournamentId,
@@ -172,7 +187,6 @@ object TournamentEngine {
                     pairCode = if (isDoubleMatch) "PAIR-R2-M${i + 1}" else null,
                     stage = "knockout"
                 )
-                r2Matches.add(match)
                 matches.add(match)
 
                 if (isDoubleMatch) {
@@ -194,7 +208,7 @@ object TournamentEngine {
             }
 
             if (allTree && r2MatchCount > 1) {
-                // 3. Tur ve devamını Final aşamasına kadar türet
+                // 3. Tur ve devamını türet
                 generateSubsequentKnockoutRounds(
                     tournamentId = tournamentId,
                     startRoundSlots = r2MatchCount,
@@ -693,6 +707,58 @@ object TournamentEngine {
     }
 
     /**
+     * Maç kodunun kök halini temizler (PAIR-, KO-, -R, -T eklerini kaldırır)
+     */
+    fun getBaseMatchCode(matchCode: String): String {
+        return matchCode
+            .removePrefix("PAIR-")
+            .removePrefix("KO-")
+            .removeSuffix("-R")
+            .removeSuffix("-T")
+    }
+
+    /**
+     * Çift maçlı (Rövanşlı) karşılaşmalarda iki ayağın genel galibini tespit eder.
+     */
+    fun getDoubleMatchOverallWinner(
+        tournament: Tournament,
+        legMatches: List<TournamentMatch>
+    ): Pair<String, String>? {
+        val m1 = legMatches.find { !it.matchCode.endsWith("-R") && !it.isTieBreaker } ?: return null
+        val m2 = legMatches.find { it.matchCode.endsWith("-R") && !it.isTieBreaker } ?: return null
+
+        if (m1.status != "completed" || m2.status != "completed") return null
+
+        if (tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE) {
+            val p1Total = (m1.score1 ?: 0) + (m2.score2 ?: 0)
+            val p2Total = (m1.score2 ?: 0) + (m2.score1 ?: 0)
+            return when {
+                p1Total > p2Total -> Pair(m1.player1Id, m1.player1Name)
+                p2Total > p1Total -> Pair(m1.player2Id, m1.player2Name)
+                else -> null
+            }
+        } else {
+            val w1 = m1.winnerId
+            val w2 = m2.winnerId
+            return when {
+                w1 != null && w1 == w2 -> {
+                    val name = if (w1 == m1.player1Id) m1.player1Name else m1.player2Name
+                    Pair(w1, name)
+                }
+                w1 != null && w2 == null -> {
+                    val name = if (w1 == m1.player1Id) m1.player1Name else m1.player2Name
+                    Pair(w1, name)
+                }
+                w2 != null && w1 == null -> {
+                    val name = if (w2 == m1.player1Id) m1.player1Name else m1.player2Name
+                    Pair(w2, name)
+                }
+                else -> null
+            }
+        }
+    }
+
+    /**
      * 6. ELEME AĞACINDA GALİBİ BİR SONRAKİ TURA İLERLETME
      */
     fun advanceWinnerToNextMatch(
@@ -702,14 +768,16 @@ object TournamentEngine {
         winnerName: String
     ): List<TournamentMatch> {
         val updated = matches.toMutableList()
-        val placeholder = "WINNER_OF_$completedMatchCode"
+        val baseCode = getBaseMatchCode(completedMatchCode)
+        val placeholder = "WINNER_OF_$baseCode"
 
         for (i in updated.indices) {
             val m = updated[i]
-            if (m.player1Id == placeholder) {
-                updated[i] = m.copy(player1Id = winnerId, player1Name = winnerName)
-            } else if (m.player2Id == placeholder) {
-                updated[i] = m.copy(player2Id = winnerId, player2Name = winnerName)
+            if (m.player1Id == placeholder || getBaseMatchCode(m.player1Id) == placeholder) {
+                updated[i] = updated[i].copy(player1Id = winnerId, player1Name = winnerName)
+            }
+            if (m.player2Id == placeholder || getBaseMatchCode(m.player2Id) == placeholder) {
+                updated[i] = updated[i].copy(player2Id = winnerId, player2Name = winnerName)
             }
         }
         return updated

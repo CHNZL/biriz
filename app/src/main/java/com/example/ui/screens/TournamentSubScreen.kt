@@ -801,11 +801,15 @@ private fun TournamentDetailScreen(
                                     selected = isSelected,
                                     onClick = { selectedRound = r },
                                     label = {
+                                        val maxR = allRounds.maxOrNull() ?: 1
                                         Text(
                                             text = if (tournament.type == TournamentType.ELEME) {
                                                 when {
-                                                    r == allRounds.last() -> "🏆 Final"
-                                                    r == allRounds.last() - 1 && allRounds.size > 2 -> "🥈 Yarı Final"
+                                                    r == maxR -> "🏆 Final"
+                                                    r == maxR - 1 && maxR >= 2 -> "🥈 Yarı Final"
+                                                    r == maxR - 2 && maxR >= 3 -> "🥉 Çeyrek Final"
+                                                    r == maxR - 3 && maxR >= 4 -> "Son 16"
+                                                    r == 1 && allRounds.size > 1 -> "⚡ Ön Eleme"
                                                     else -> "$r. Tur"
                                                 }
                                             } else {
@@ -1217,7 +1221,8 @@ private fun TournamentEliminationsView(
                 r == maxRound -> "🏆 Final"
                 r == maxRound - 1 && maxRound >= 2 -> "🥈 Yarı Final"
                 r == maxRound - 2 && maxRound >= 3 -> "🥉 Çeyrek Final"
-                r == maxRound - 3 && maxRound >= 4 -> "Son 16 (4. Eleme)"
+                r == maxRound - 3 && maxRound >= 4 -> "Son 16 (1. Eleme)"
+                r == 1 && rounds.size > 1 -> "⚡ Ön Eleme Turu"
                 else -> "$r. Eleme Turu"
             }
             val completedCount = roundMatches.count { it.status == "completed" }
