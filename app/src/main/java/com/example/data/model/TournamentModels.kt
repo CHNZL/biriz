@@ -6,9 +6,9 @@ import java.util.UUID
  * Turnuva Türleri
  */
 enum class TournamentType(val displayName: String, val icon: String) {
-    ELEME("Eleme Usulü", "🏆"),
-    LIG("Lig Usulü", "📊"),
-    GRUP("Grup Usulü", "👥"),
+    ELEME("Eleme", "🏆"),
+    LIG("Lig", "📊"),
+    GRUP("Grup", "👥"),
     GRUP_ELEME("Grup + Eleme", "🌍")
 }
 
@@ -149,7 +149,7 @@ data class ActivityPreset(
                 defaultType = TournamentType.ELEME,
                 defaultMatchType = TournamentMatchType.TEK_MAC,
                 defaultWinnerMethod = WinnerSelectionMethod.WINNER,
-                description = "Eleme usulü, tek maç, doğrudan kazanan seçimi"
+                description = "Eleme formatı, tek maç, doğrudan kazanan seçimi"
             ),
             ActivityPreset(
                 id = "table_tennis",
@@ -158,7 +158,7 @@ data class ActivityPreset(
                 defaultType = TournamentType.ELEME,
                 defaultMatchType = TournamentMatchType.TEK_MAC,
                 defaultWinnerMethod = WinnerSelectionMethod.SCORE,
-                description = "Eleme usulü, tek maç, set skoru girişi"
+                description = "Eleme formatı, tek maç, set skoru girişi"
             ),
             ActivityPreset(
                 id = "mangala",
@@ -167,7 +167,7 @@ data class ActivityPreset(
                 defaultType = TournamentType.LIG,
                 defaultMatchType = TournamentMatchType.TEK_MAC,
                 defaultWinnerMethod = WinnerSelectionMethod.WINNER,
-                description = "Lig usulü, herkes herkesle, doğrudan galip seçimi"
+                description = "Lig formatı, herkes herkesle, doğrudan galip seçimi"
             ),
             ActivityPreset(
                 id = "mind_games",
@@ -194,7 +194,7 @@ data class ActivityPreset(
                 defaultType = TournamentType.ELEME,
                 defaultMatchType = TournamentMatchType.TEK_MAC,
                 defaultWinnerMethod = WinnerSelectionMethod.SCORE,
-                description = "Eleme usulü, tek maç, puan/soru sayısı girişi"
+                description = "Eleme formatı, tek maç, puan/soru sayısı girişi"
             )
         )
     }

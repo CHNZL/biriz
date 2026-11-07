@@ -9,6 +9,7 @@ import com.example.data.model.TournamentMatch
 import com.example.data.model.TournamentMatchType
 import com.example.data.model.TournamentStarRewards
 import com.example.data.model.TournamentStatus
+import com.example.data.model.TournamentStanding
 import com.example.data.model.TournamentType
 import com.example.data.model.WinnerSelectionMethod
 import com.example.data.repository.StarRewardPersistenceHelper
@@ -411,6 +412,57 @@ object TournamentPersistenceHelper {
         saveTournaments(context, classRoomId, tournaments)
 
         return Pair(updatedTournament, refreshedMatches)
+    }
+
+    /**
+     * Grup + Eleme formatında, grup maçları tamamlandıktan sonra
+     * lider ve ikincilerden eleme (play-off) ağacı maçlarını türetir ve kaydeder.
+     */
+    fun generateAndSaveKnockoutFromGroups(
+        context: Context,
+        classRoomId: String,
+        tournamentId: String
+    ): List<TournamentMatch> {
+        val tournaments = loadTournaments(context, classRoomId)
+        val tournament = tournaments.find { it.id == tournamentId } ?: return emptyList()
+        val currentMatches = loadMatches(context, tournamentId)
+
+        // Zaten knockout maçları varsa tekrar üretme
+        val existingKnockouts = currentMatches.filter { it.stage == "knockout" }
+        if (existingKnockouts.isNotEmpty()) {
+            return currentMatches
+        }
+
+        // Grup maçlarını grupla
+        val groupMatchesMap = currentMatches.filter { it.stage != "knockout" }
+            .groupBy { it.groupId ?: it.groupName ?: "G1" }
+        val groupStandingsMap = mutableMapOf<String, List<TournamentStanding>>()
+
+        groupMatchesMap.forEach { (gId, gMatches) ->
+            val groupParticipants = gMatches.flatMap {
+                listOf(Pair(it.player1Id, it.player1Name), Pair(it.player2Id, it.player2Name))
+            }.filter { it.first.isNotBlank() && it.first != "BYE" }.distinctBy { it.first }
+
+            val standings = TournamentEngine.calculateStandings(
+                participants = groupParticipants,
+                matches = gMatches,
+                pointsWin = tournament.pointsWin,
+                pointsDraw = tournament.pointsDraw,
+                pointsLoss = tournament.pointsLoss
+            )
+            groupStandingsMap[gId] = standings
+        }
+
+        val isDouble = tournament.matchType == TournamentMatchType.CIFT_MAC
+        val knockoutMatches = TournamentEngine.generateKnockoutFromGroups(
+            tournament = tournament,
+            groupStandingsMap = groupStandingsMap,
+            isDoubleMatch = isDouble
+        )
+
+        val updatedMatches = currentMatches + knockoutMatches
+        saveMatches(context, tournamentId, updatedMatches)
+        return updatedMatches
     }
 
     // -------------------------------------------------------------
