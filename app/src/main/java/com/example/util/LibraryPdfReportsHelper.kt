@@ -63,6 +63,12 @@ object LibraryPdfReportsHelper {
         return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
+    private fun calculateDateDiffDays(startDate: Long, endDate: Long): Int {
+        if (startDate <= 0L || endDate <= 0L) return 1
+        val diffMs = endDate - startDate
+        return ((diffMs / (1000 * 60 * 60 * 24)).toInt()).coerceAtLeast(1)
+    }
+
     private fun drawDocumentHeader(
         canvas: Canvas,
         context: Context,
@@ -756,62 +762,269 @@ object LibraryPdfReportsHelper {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // 6. KİTABI OKUYAN ÖĞRENCİLER LİSTESİ (PDF ve Kitap Bazında Eskiden Yeniye)
+    // 6. KİTABI OKUYAN ÖĞRENCİLER LİSTESİ (PDF - Kitap Bazında Detaylı ve Şık Tablo Dökümü)
     // ---------------------------------------------------------------------------------------------
     fun exportBookReadersLogPdf(
         context: Context,
         classRoom: ClassRoom,
         books: List<Book>,
-        records: List<ReadingRecord>
+        records: List<ReadingRecord>,
+        students: List<Student> = emptyList()
     ): Uri {
         val file = createPdfFile(context, "Kitabi_Okuyan_Ogrenciler_Listesi", classRoom)
         val pdf = PdfDocument()
 
         val recordsByBook = records.groupBy { it.bookId.ifBlank { it.bookName.trim().lowercase(Locale("tr")) } }
         val sortedBooks = books.sortedBy { it.registrationNo }
+        val studentMap = students.associateBy { it.id }
 
-        val thBgPaint = Paint().apply { color = navyTheme; style = Paint.Style.FILL }
-        val thTextPaint = Paint().apply { color = Color.WHITE; textSize = 9f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
-        val tdTextPaint = Paint().apply { color = darkText; textSize = 8.5f; isAntiAlias = true }
-        val zebraPaint = Paint().apply { color = zebraColor; style = Paint.Style.FILL }
-
-        val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
-        val page = pdf.startPage(pageInfo)
-        val canvas = page.canvas
-
-        var y = drawDocumentHeader(canvas, context, classRoom, "Kitabı Okuyan Öğrenciler Listesi", "Kitap Bazında Okuma Dökümü")
-
-        canvas.drawRect(36f, y, (PAGE_WIDTH - 36).toFloat(), y + 20f, thBgPaint)
-        canvas.drawText("No", 42f, y + 14f, thTextPaint)
-        canvas.drawText("Kitap Adı", 75f, y + 14f, thTextPaint)
-        canvas.drawText("Okuyan Öğrenciler (Tarihsel Sıralı)", 260f, y + 14f, thTextPaint)
-        canvas.drawText("Toplam", 520f, y + 14f, thTextPaint)
-        y += 20f
-
-        sortedBooks.take(32).forEachIndexed { idx, book ->
-            val key = book.id.ifBlank { book.name.trim().lowercase(Locale("tr")) }
-            val readList = recordsByBook[key]?.sortedBy { it.endDate } ?: emptyList()
-
-            if (idx % 2 == 1) {
-                canvas.drawRect(36f, y, (PAGE_WIDTH - 36).toFloat(), y + 18f, zebraPaint)
-            }
-
-            canvas.drawText("#${book.registrationNo}", 42f, y + 13f, tdTextPaint)
-            val nameCut = if (book.name.length > 24) book.name.take(22) + ".." else book.name
-            canvas.drawText(nameCut, 75f, y + 13f, tdTextPaint)
-
-            val readersSummary = if (readList.isNotEmpty()) {
-                readList.joinToString(", ") { "${it.studentName} (${SimpleDateFormat("dd.MM", Locale("tr")).format(Date(it.endDate))})" }
-            } else "-"
-            val summaryCut = if (readersSummary.length > 44) readersSummary.take(42) + ".." else readersSummary
-            canvas.drawText(summaryCut, 260f, y + 13f, tdTextPaint)
-
-            canvas.drawText("${readList.size} kez", 520f, y + 13f, tdTextPaint)
-            y += 18f
+        val studentSubThBg = 0xFF334E68.toInt()
+        val studentSubThTextPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 7.8f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        val studentTdTextPaint = Paint().apply {
+            color = darkText
+            textSize = 8f
+            isAntiAlias = true
+        }
+        val zebraSubPaint = Paint().apply {
+            color = zebraColor
+            style = Paint.Style.FILL
+        }
+        val linePaint = Paint().apply {
+            color = 0xFFE2E8F0.toInt()
+            strokeWidth = 0.5f
+        }
+        val noReaderPaint = Paint().apply {
+            color = mutedText
+            textSize = 8f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+            isAntiAlias = true
         }
 
-        drawFooter(canvas, 1, 1)
-        pdf.finishPage(page)
+        val bookBannerBg = Paint().apply {
+            color = 0xFFF1F5F9.toInt()
+            style = Paint.Style.FILL
+        }
+        val bookBannerBorder = Paint().apply {
+            color = 0xFFCBD5E1.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = 0.8f
+        }
+        val bookRegBadgeBg = Paint().apply {
+            color = navyTheme
+            style = Paint.Style.FILL
+        }
+        val bookRegBadgeText = Paint().apply {
+            color = Color.WHITE
+            textSize = 8.5f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        val bookTitlePaint = Paint().apply {
+            color = navyTheme
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        val bookMetaPaint = Paint().apply {
+            color = 0xFF475569.toInt()
+            textSize = 8.5f
+            isAntiAlias = true
+        }
+        val bookCountBadgeBg = Paint().apply {
+            color = 0xFFE0F2FE.toInt()
+            style = Paint.Style.FILL
+        }
+        val bookCountBadgeText = Paint().apply {
+            color = 0xFF0284C7.toInt()
+            textSize = 8f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+
+        val maxContentY = (PAGE_HEIGHT - 38).toFloat()
+
+        // Sayfa yönetim değişkenleri
+        var currentPageNum = 1
+        var currentPageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, currentPageNum).create()
+        var currentPage = pdf.startPage(currentPageInfo)
+        var canvas = currentPage.canvas
+
+        var y = drawDocumentHeader(canvas, context, classRoom, "Kitabı Okuyan Öğrenciler Listesi", "Kitap Bazında Okuma Geçmişi ve Detay Dökümü")
+
+        fun startNewPage() {
+            drawFooter(canvas, currentPageNum)
+            pdf.finishPage(currentPage)
+            currentPageNum++
+            currentPageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, currentPageNum).create()
+            currentPage = pdf.startPage(currentPageInfo)
+            canvas = currentPage.canvas
+            y = drawDocumentHeader(canvas, context, classRoom, "Kitabı Okuyan Öğrenciler Listesi", "Kitap Bazında Okuma Geçmişi (Devamı)")
+        }
+
+        val leftMargin = 36f
+        val rightMargin = (PAGE_WIDTH - 36).toFloat()
+        val totalWidth = rightMargin - leftMargin
+
+        for (book in sortedBooks) {
+            val key = book.id.ifBlank { book.name.trim().lowercase(Locale("tr")) }
+            // Öğrencileri öğrenci numarasına göre (varsa), yoksa bitiş tarihine göre sıralayalım
+            val readList = (recordsByBook[key] ?: emptyList()).sortedWith(
+                compareBy<ReadingRecord> { rec ->
+                    val stNum = rec.studentNumber.toIntOrNull()
+                        ?: studentMap[rec.studentId]?.studentNumber?.toIntOrNull()
+                        ?: 999
+                    stNum
+                }.thenBy { it.endDate }
+            )
+
+            val studentCount = readList.size
+            val bannerHeight = 22f
+            val tableThHeight = 16f
+            val rowHeight = 16f
+            val emptyNoticeHeight = 17f
+
+            val blockHeight = if (studentCount == 0) {
+                bannerHeight + emptyNoticeHeight + 8f
+            } else {
+                bannerHeight + tableThHeight + (studentCount * rowHeight) + 8f
+            }
+
+            // Sayfada yer yoksa ve bu sayfanın ilk öğesi değilsek yeni sayfaya geç
+            if (y + blockHeight > maxContentY && y > 140f) {
+                startNewPage()
+            }
+
+            // 1. Kitap Başlık Şeridi (Banner)
+            val bannerRect = RectF(leftMargin, y, rightMargin, y + bannerHeight)
+            canvas.drawRoundRect(bannerRect, 4f, 4f, bookBannerBg)
+            canvas.drawRoundRect(bannerRect, 4f, 4f, bookBannerBorder)
+
+            // Kitap No Rozeti
+            val badgeWidth = 32f
+            val badgeRect = RectF(leftMargin + 4f, y + 3f, leftMargin + 4f + badgeWidth, y + bannerHeight - 3f)
+            canvas.drawRoundRect(badgeRect, 3f, 3f, bookRegBadgeBg)
+            val regText = "#${book.registrationNo}"
+            val regTextWidth = bookRegBadgeText.measureText(regText)
+            canvas.drawText(regText, badgeRect.left + (badgeWidth - regTextWidth) / 2f, y + 14.5f, bookRegBadgeText)
+
+            // Kitap Adı
+            val bookTitle = TurkishTextHelper.toTurkishTitleCase(book.name)
+            val titleCut = if (bookTitle.length > 38) bookTitle.take(36) + ".." else bookTitle
+            canvas.drawText(titleCut, leftMargin + 42f, y + 14.5f, bookTitlePaint)
+
+            // Yazar & Sayfa Bilgisi
+            val authorStr = if (book.author.isNotBlank()) " • Yazar: ${TurkishTextHelper.toTurkishTitleCase(book.author)}" else ""
+            val pageStr = if (book.pageCount > 0) " • ${book.pageCount} Sayfa" else ""
+            val metaInfo = "$pageStr$authorStr"
+            val metaCut = if (metaInfo.length > 32) metaInfo.take(30) + ".." else metaInfo
+            canvas.drawText(metaCut, leftMargin + 245f, y + 14.5f, bookMetaPaint)
+
+            // Toplam Okuma Rozeti (Sağda)
+            val countStr = if (studentCount > 0) "$studentCount Öğrenci Okudu" else "Henüz Okunmadı"
+            val countWidth = bookCountBadgeText.measureText(countStr) + 12f
+            val countRect = RectF(rightMargin - countWidth - 4f, y + 3.5f, rightMargin - 4f, y + bannerHeight - 3.5f)
+            canvas.drawRoundRect(countRect, 3f, 3f, bookCountBadgeBg)
+            canvas.drawText(countStr, countRect.left + 6f, y + 14.5f, bookCountBadgeText)
+
+            y += bannerHeight
+
+            if (studentCount == 0) {
+                // Henüz okuyan yok uyarısı
+                canvas.drawRect(leftMargin, y, rightMargin, y + emptyNoticeHeight, zebraSubPaint)
+                canvas.drawLine(leftMargin, y + emptyNoticeHeight, rightMargin, y + emptyNoticeHeight, linePaint)
+                canvas.drawLine(leftMargin, y, leftMargin, y + emptyNoticeHeight, bookBannerBorder)
+                canvas.drawLine(rightMargin, y, rightMargin, y + emptyNoticeHeight, bookBannerBorder)
+                canvas.drawText("Bu kitap henüz sınıftaki öğrenciler tarafından ödünç alınıp okunmamıştır.", leftMargin + 14f, y + 11.5f, noReaderPaint)
+                y += emptyNoticeHeight + 8f
+            } else {
+                // Öğrenci Tablo Başlığı
+                val c0 = leftMargin
+                val c1 = c0 + 26f   // Sıra
+                val c2 = c1 + 42f   // Okul No
+                val c3 = c2 + 160f  // Öğrenci Adı Soyadı
+                val c4 = c3 + 70f   // Başlama Tarihi
+                val c5 = c4 + 70f   // Bitiş / İade
+                val c6 = c5 + 65f   // Süre (Gün)
+                val c7 = rightMargin // Yıldız
+
+                val thSubRect = RectF(c0, y, c7, y + tableThHeight)
+                val thPaint = Paint().apply { color = studentSubThBg; style = Paint.Style.FILL }
+                canvas.drawRect(thSubRect, thPaint)
+
+                canvas.drawText("Sıra", c0 + 6f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("No", c1 + 8f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("Öğrenci Adı Soyadı", c2 + 8f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("Başlama", c3 + 8f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("İade Tarihi", c4 + 8f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("Okuma Süresi", c5 + 6f, y + 11.5f, studentSubThTextPaint)
+                canvas.drawText("Yıldız", c6 + 12f, y + 11.5f, studentSubThTextPaint)
+                y += tableThHeight
+
+                readList.forEachIndexed { sIdx, rec ->
+                    if (y + rowHeight > maxContentY) {
+                        startNewPage()
+                        // Sayfa başında tablo başlığını tekrar çiz
+                        canvas.drawRect(c0, y, c7, y + tableThHeight, thPaint)
+                        canvas.drawText("Sıra", c0 + 6f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("No", c1 + 8f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("Öğrenci Adı Soyadı ($titleCut)", c2 + 8f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("Başlama", c3 + 8f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("İade Tarihi", c4 + 8f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("Okuma Süresi", c5 + 6f, y + 11.5f, studentSubThTextPaint)
+                        canvas.drawText("Yıldız", c6 + 12f, y + 11.5f, studentSubThTextPaint)
+                        y += tableThHeight
+                    }
+
+                    if (sIdx % 2 == 1) {
+                        canvas.drawRect(c0, y, c7, y + rowHeight, zebraSubPaint)
+                    }
+                    canvas.drawLine(c0, y + rowHeight, c7, y + rowHeight, linePaint)
+                    // Dış yan kenarlıklar
+                    canvas.drawLine(c0, y, c0, y + rowHeight, linePaint)
+                    canvas.drawLine(c7, y, c7, y + rowHeight, linePaint)
+
+                    // 1. Sıra No
+                    canvas.drawText("${sIdx + 1}", c0 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 2. Okul No
+                    val stNo = rec.studentNumber.ifBlank { studentMap[rec.studentId]?.studentNumber ?: "-" }
+                    canvas.drawText(stNo, c1 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 3. Öğrenci Adı Soyadı
+                    val stName = TurkishTextHelper.toTurkishTitleCase(rec.studentName)
+                    val stNameCut = if (stName.length > 28) stName.take(26) + ".." else stName
+                    canvas.drawText(stNameCut, c2 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 4. Başlama Tarihi
+                    val startStr = if (rec.startDate > 0) SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(rec.startDate)) else "-"
+                    canvas.drawText(startStr, c3 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 5. İade Tarihi
+                    val endStr = if (rec.endDate > 0) SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(rec.endDate)) else "-"
+                    canvas.drawText(endStr, c4 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 6. Okuma Süresi (Gün)
+                    val days = calculateDateDiffDays(rec.startDate, rec.endDate)
+                    val durationStr = if (rec.startDate > 0 && rec.endDate > 0) "$days gün" else "-"
+                    canvas.drawText(durationStr, c5 + 8f, y + 11.5f, studentTdTextPaint)
+
+                    // 7. Yıldız
+                    val starsStr = "+${rec.earnedStars} ⭐"
+                    canvas.drawText(starsStr, c6 + 12f, y + 11.5f, studentTdTextPaint)
+
+                    y += rowHeight
+                }
+                y += 8f // Her kitap bloğu sonrası boşluk
+            }
+        }
+
+        drawFooter(canvas, currentPageNum)
+        pdf.finishPage(currentPage)
 
         FileOutputStream(file).use { pdf.writeTo(it) }
         pdf.close()

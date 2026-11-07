@@ -3504,7 +3504,7 @@ private fun ExportLibraryDialog(
                     themeColor = Color(0xFF059669), // Emerald
                     isDarkTheme = isDarkTheme,
                     onClick = {
-                        val uri = LibraryPdfReportsHelper.exportBookReadersLogPdf(context, classRoom, books, records)
+                        val uri = LibraryPdfReportsHelper.exportBookReadersLogPdf(context, classRoom, books, records, students)
                         ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Kitabı Okuyan Öğrenciler Listesi")
                         onDismiss()
                     }
