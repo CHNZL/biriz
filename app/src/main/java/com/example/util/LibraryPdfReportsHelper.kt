@@ -125,6 +125,38 @@ object LibraryPdfReportsHelper {
         canvas.drawText(rightText, PAGE_WIDTH - 36f - rightWidth, (PAGE_HEIGHT - 22).toFloat(), footerPaint)
     }
 
+    private fun drawDefterFooter(canvas: Canvas, outerMargin: Float = 32f) {
+        val footerPaint = Paint().apply {
+            color = mutedText
+            textSize = 8.5f
+            typeface = Typeface.DEFAULT
+            isAntiAlias = true
+        }
+        val leftText = "BİRİZ Akıllı Sınıf & Okuma Takip Sistemi"
+        val yPos = (PAGE_HEIGHT - 22).toFloat()
+        canvas.drawText(leftText, outerMargin, yPos, footerPaint)
+
+        // Sağ Kısım: "Sayfa " + İçi Boş Daire (Öğretmenin sayfa no yazabilmesi için)
+        val rightLabel = "Sayfa "
+        val labelWidth = footerPaint.measureText(rightLabel)
+        val circleRadius = 7f
+        val circleMargin = 4f
+        val totalBlockWidth = labelWidth + circleMargin + circleRadius * 2
+
+        val startX = PAGE_WIDTH - outerMargin - totalBlockWidth
+        canvas.drawText(rightLabel, startX, yPos, footerPaint)
+
+        val circlePaint = Paint().apply {
+            color = mutedText
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+            isAntiAlias = true
+        }
+        val circleCenterX = startX + labelWidth + circleMargin + circleRadius
+        val circleCenterY = yPos - 3.5f
+        canvas.drawCircle(circleCenterX, circleCenterY, circleRadius, circlePaint)
+    }
+
     // ---------------------------------------------------------------------------------------------
     // 1. KİTAPLIK LİSTESİ (PDF ve Kitap No Sıralı)
     // ---------------------------------------------------------------------------------------------
@@ -281,6 +313,8 @@ object LibraryPdfReportsHelper {
         val outerMargin = 32f
         val tableRight = PAGE_WIDTH - outerMargin
         val headerTop = 32f
+        val headerBottom = 96f
+        val headerHeight = headerBottom - headerTop
 
         val borderPaint = Paint().apply {
             color = tealTheme
@@ -294,24 +328,39 @@ object LibraryPdfReportsHelper {
             strokeWidth = 0.8f
             isAntiAlias = true
         }
-        val emblem = renderEmblemBitmap(context, 70)
 
         // 1. Üst Başlık Kutusu (Header Box)
-        val headerBottom = 96f
         canvas.drawRect(outerMargin, headerTop, tableRight, headerBottom, borderPaint)
 
-        // Dikey bölücüler
-        val col1Divider = tableRight - 160f // Sınıf / Şube kutusu sol sınırı
-        val col2Divider = tableRight - 85f  // Ay / Yıl kutusu sol sınırı
-        canvas.drawLine(col1Divider, headerTop, col1Divider, headerBottom, borderPaint)
-        canvas.drawLine(col2Divider, headerTop, col2Divider, headerBottom, borderPaint)
+        // Dikey bölücüler: Bireysel defterde Ay/Yıl kutusu yok (kullanıcı talebi)
+        val col1Divider: Float
+        val col2Divider: Float?
 
-        // Sol Kısım: Amblem + Okul Adı + Kitap Okuma Takip Defteri
-        emblem?.let {
-            canvas.drawBitmap(it, outerMargin + 10f, headerTop + 10f, null)
+        if (isIndividual) {
+            // Sadece Sınıf / Şube kutusu var (Genişlik: 90 pt)
+            col1Divider = tableRight - 90f
+            col2Divider = null
+            canvas.drawLine(col1Divider, headerTop, col1Divider, headerBottom, borderPaint)
+        } else {
+            // Sınıf / Şube kutusu + Ay / Yıl kutusu
+            col1Divider = tableRight - 150f
+            col2Divider = tableRight - 75f
+            canvas.drawLine(col1Divider, headerTop, col1Divider, headerBottom, borderPaint)
+            canvas.drawLine(col2Divider, headerTop, col2Divider, headerBottom, borderPaint)
         }
 
-        val textStartX = if (emblem != null) outerMargin + 65f else outerMargin + 14f
+        // Sol Kısım: Amblem + Okul Adı + Başlık (+ Öğrenci)
+        val emblemSize = 48f
+        val emblemX = outerMargin + 10f
+        val emblemY = headerTop + (headerHeight - emblemSize) / 2f
+        val emblem = renderEmblemBitmap(context, emblemSize.toInt())
+        emblem?.let {
+            canvas.drawBitmap(it, emblemX, emblemY, null)
+        }
+
+        // Amblem ile metin arasında net ve ferah boşluk (asla üst üste binmez)
+        val textStartX = if (emblem != null) emblemX + emblemSize + 12f else outerMargin + 14f
+
         val schoolPaint = Paint().apply {
             color = tealTheme
             textSize = 12f
@@ -320,28 +369,35 @@ object LibraryPdfReportsHelper {
         }
         val docTitlePaint = Paint().apply {
             color = navyTheme
-            textSize = 11f
+            textSize = 10.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
-        val subStudentPaint = Paint().apply {
+        val studentPaint = Paint().apply {
             color = 0xFFD97706.toInt()
-            textSize = 9.5f
+            textSize = 10.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
 
-        val schoolName = classRoom.schoolName.ifBlank { "İL VE İLÇE MİLLİ EĞİTİM MÜDÜRLÜĞÜ" }.uppercase(Locale("tr"))
-        canvas.drawText(schoolName, textStartX, headerTop + 24f, schoolPaint)
-
-        val mainTitle = if (isIndividual) "BİREYSEL KİTAP OKUMA TAKİP DEFTERİ" else "KİTAP OKUMA TAKİP DEFTERİ"
-        canvas.drawText(mainTitle, textStartX, headerTop + 42f, docTitlePaint)
-
-        if (isIndividual && !studentNameTitle.isNullOrBlank()) {
-            canvas.drawText("ÖĞRENCİ: $studentNameTitle", textStartX, headerTop + 58f, subStudentPaint)
+        val schoolName = classRoom.schoolName.ifBlank { "T.C. MİLLİ EĞİTİM BAKANLIĞI" }.uppercase(Locale("tr"))
+        // Okul ismi çok uzunsa bölücüye taşmaması için font boyutunu dinamik sığdır
+        val maxSchoolWidth = col1Divider - textStartX - 10f
+        while (schoolPaint.measureText(schoolName) > maxSchoolWidth && schoolPaint.textSize > 8f) {
+            schoolPaint.textSize -= 0.5f
         }
 
-        // Orta Kısım: Sınıf / Şube
+        if (isIndividual) {
+            canvas.drawText(schoolName, textStartX, headerTop + 22f, schoolPaint)
+            canvas.drawText("BİREYSEL KİTAP OKUMA TAKİP DEFTERİ", textStartX, headerTop + 39f, docTitlePaint)
+            if (!studentNameTitle.isNullOrBlank()) {
+                canvas.drawText("ÖĞRENCİ: $studentNameTitle", textStartX, headerTop + 55f, studentPaint)
+            }
+        } else {
+            canvas.drawText(schoolName, textStartX, headerTop + 28f, schoolPaint)
+            canvas.drawText("KİTAP OKUMA TAKİP DEFTERİ", textStartX, headerTop + 48f, docTitlePaint)
+        }
+
         val metaLabelPaint = Paint().apply {
             color = mutedText
             textSize = 7.5f
@@ -354,40 +410,28 @@ object LibraryPdfReportsHelper {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
-        canvas.drawText("SINIF /", col1Divider + 16f, headerTop + 18f, metaLabelPaint)
-        canvas.drawText("ŞUBE", col1Divider + 18f, headerTop + 28f, metaLabelPaint)
-        canvas.drawText("${classRoom.gradeLevel} / ${classRoom.section}", col1Divider + 18f, headerTop + 52f, metaValPaint)
 
-        // Sağ Kısım: Ay / Yıl
-        canvas.drawText("AY / YIL", col2Divider + 12f, headerTop + 18f, metaLabelPaint)
-        val curYear = SimpleDateFormat("yyyy", Locale("tr")).format(Date())
-        val curMonth = SimpleDateFormat("MMMM", Locale("tr")).format(Date())
-        canvas.drawText("$curMonth /", col2Divider + 12f, headerTop + 36f, metaLabelPaint)
-        canvas.drawText(curYear, col2Divider + 12f, headerTop + 50f, metaLabelPaint)
+        if (isIndividual) {
+            // Sınıf / Şube (Orta-Sağ)
+            canvas.drawText("SINIF / ŞUBE", col1Divider + 14f, headerTop + 22f, metaLabelPaint)
+            canvas.drawText("${classRoom.gradeLevel} / ${classRoom.section}", col1Divider + 22f, headerTop + 48f, metaValPaint)
+        } else {
+            // Sınıf / Şube (Orta)
+            canvas.drawText("SINIF /", col1Divider + 14f, headerTop + 18f, metaLabelPaint)
+            canvas.drawText("ŞUBE", col1Divider + 16f, headerTop + 28f, metaLabelPaint)
+            canvas.drawText("${classRoom.gradeLevel} / ${classRoom.section}", col1Divider + 16f, headerTop + 52f, metaValPaint)
+
+            // Ay / Yıl (Sağ) - İçeriği boş bırakılır, öğretmen doldurur
+            col2Divider?.let { div ->
+                canvas.drawText("AY / YIL", div + 14f, headerTop + 22f, metaLabelPaint)
+                // İçerik boş bırakıldı (öğretmen dolduracak)
+            }
+        }
 
         // 2. Tablo Başlıkları (Column Headers)
         val tableTop = 112f
         val tableHeaderHeight = 36f
         val tableHeaderBottom = tableTop + tableHeaderHeight
-
-        // Sütun koordinatları (Toplam genişlik: tableRight - outerMargin = 531 pt)
-        // Sıra No (35pt), Öğrenci Adı Soyadı (130pt), Kitabın Adı (176pt), Sayfa Sayısı (46pt), Başlama Tarihi (52pt), Bitiş Tarihi (52pt), Sisteme İşlendi (40pt)
-        val c0 = outerMargin               // 32
-        val c1 = c0 + 35f                  // 67 (Sıra No)
-        val c2 = c1 + 130f                 // 197 (Öğrenci Adı Soyadı)
-        val c3 = c2 + 176f                 // 373 (Kitabın Adı)
-        val c4 = c3 + 46f                  // 419 (Sayfa Sayısı)
-        val c5 = c4 + 52f                  // 471 (Başlama Tarihi)
-        val c6 = c5 + 52f                  // 523 (Bitiş Tarihi)
-        val c7 = tableRight                // 563 (Sisteme İşlendi)
-
-        // Tablo başlığı dış kutu
-        canvas.drawRect(c0, tableTop, c7, tableHeaderBottom, borderPaint)
-
-        // Başlık dikey çizgileri
-        listOf(c1, c2, c3, c4, c5, c6).forEach { x ->
-            canvas.drawLine(x, tableTop, x, tableHeaderBottom, borderPaint)
-        }
 
         val thPaint = Paint().apply {
             color = navyTheme
@@ -395,75 +439,171 @@ object LibraryPdfReportsHelper {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
-
-        canvas.drawText("Sıra", c0 + 8f, tableTop + 16f, thPaint)
-        canvas.drawText("No", c0 + 10f, tableTop + 27f, thPaint)
-
-        val col2Title = if (isIndividual) "Öğrenci / İmza" else "Öğrenci Adı Soyadı"
-        canvas.drawText(col2Title, c1 + 14f, tableTop + 22f, thPaint)
-
-        canvas.drawText("Kitabın Adı", c2 + 45f, tableTop + 22f, thPaint)
-
-        canvas.drawText("Sayfa", c3 + 9f, tableTop + 16f, thPaint)
-        canvas.drawText("Sayısı", c3 + 8f, tableTop + 27f, thPaint)
-
-        canvas.drawText("Başlama", c4 + 8f, tableTop + 16f, thPaint)
-        canvas.drawText("Tarihi", c4 + 11f, tableTop + 27f, thPaint)
-
-        canvas.drawText("Bitiş", c5 + 14f, tableTop + 16f, thPaint)
-        canvas.drawText("Tarihi", c5 + 11f, tableTop + 27f, thPaint)
-
-        canvas.drawText("Sisteme", c6 + 4f, tableTop + 14f, thPaint)
-        canvas.drawText("İşlendi", c6 + 5f, tableTop + 24f, thPaint)
-        canvas.drawText("mi?", c6 + 12f, tableTop + 33f, thPaint)
-
-        // 3. Tablo Satırları (Tam 20 Satır - A4 Defter Sayfası)
-        val rowCount = 20
-        val rowHeight = 31f // 20 * 31 = 620 pt + 148 pt üst bilgi = ~768 pt (A4 sayfasına kusursuz oturur)
-        var curY = tableHeaderBottom
-
-        val noPaint = Paint().apply {
-            color = 0xFF007A78.toInt()
-            textSize = 9.5f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            isAntiAlias = true
-        }
-        val checkboxPaint = Paint().apply {
-            color = 0xFF94A3B8.toInt()
-            style = Paint.Style.STROKE
-            strokeWidth = 1f
+        val subDatePaint = Paint().apply {
+            color = mutedText
+            textSize = 6.8f
+            typeface = Typeface.DEFAULT
             isAntiAlias = true
         }
 
-        for (r in 1..rowCount) {
-            val nextY = curY + rowHeight
+        val c0 = outerMargin
+        val cEnd = tableRight
 
-            // Yatay alt çizgi
-            canvas.drawLine(c0, nextY, c7, nextY, if (r == rowCount) borderPaint else gridLinePaint)
+        if (isIndividual) {
+            // Bireysel Defter Sütunları:
+            // "Öğrenci / İmza" sütunu kaldırıldı, alanı "Kitabın Adı" sütununa aktarıldı (306 pt!)
+            val c1 = c0 + 35f   // Sıra No (35 pt)
+            val c2 = c1 + 306f  // Kitabın Adı (306 pt geniş alan!)
+            val c3 = c2 + 46f   // Sayfa Sayısı (46 pt)
+            val c4 = c3 + 52f   // Başlama Tarihi (52 pt)
+            val c5 = c4 + 52f   // Bitiş Tarihi (52 pt)
+            val c6 = cEnd       // Sisteme İşlendi mi? (40 pt)
 
-            // Dikey çizgiler
-            listOf(c0, c1, c2, c3, c4, c5, c6, c7).forEach { x ->
-                canvas.drawLine(x, curY, x, nextY, if (x == c0 || x == c7) borderPaint else gridLinePaint)
+            // Dış çerçeve ve dikey çizgiler
+            canvas.drawRect(c0, tableTop, c6, tableHeaderBottom, borderPaint)
+            listOf(c1, c2, c3, c4, c5).forEach { x ->
+                canvas.drawLine(x, tableTop, x, tableHeaderBottom, borderPaint)
             }
 
-            // Sıra No (01, 02, ... 20)
-            val noStr = if (r < 10) "0$r" else "$r"
-            canvas.drawText(noStr, c0 + 10f, curY + 20f, noPaint)
+            canvas.drawText("Sıra", c0 + 8f, tableTop + 16f, thPaint)
+            canvas.drawText("No", c0 + 10f, tableTop + 27f, thPaint)
 
-            // Sisteme İşlendi Checkbox kutucuğu (Kare)
-            val boxSize = 11f
-            val boxX = c6 + (c7 - c6 - boxSize) / 2f
-            val boxY = curY + (rowHeight - boxSize) / 2f
-            canvas.drawRect(boxX, boxY, boxX + boxSize, boxY + boxSize, checkboxPaint)
+            canvas.drawText("Kitabın Adı", c1 + 115f, tableTop + 22f, thPaint)
 
-            curY = nextY
+            canvas.drawText("Sayfa", c2 + 9f, tableTop + 16f, thPaint)
+            canvas.drawText("Sayısı", c2 + 8f, tableTop + 27f, thPaint)
+
+            canvas.drawText("Başlama", c3 + 7f, tableTop + 13f, thPaint)
+            canvas.drawText("Tarihi", c3 + 11f, tableTop + 23f, thPaint)
+            canvas.drawText("(Gün / Ay)", c3 + 4f, tableTop + 32f, subDatePaint)
+
+            canvas.drawText("Bitiş", c4 + 13f, tableTop + 13f, thPaint)
+            canvas.drawText("Tarihi", c4 + 11f, tableTop + 23f, thPaint)
+            canvas.drawText("(Gün / Ay)", c4 + 4f, tableTop + 32f, subDatePaint)
+
+            canvas.drawText("Sisteme", c5 + 4f, tableTop + 13f, thPaint)
+            canvas.drawText("İşlendi", c5 + 5f, tableTop + 23f, thPaint)
+            canvas.drawText("mi?", c5 + 12f, tableTop + 32f, thPaint)
+
+            // 3. Tablo Satırları (Tam 20 Satır)
+            val rowCount = 20
+            val rowHeight = 31f
+            var curY = tableHeaderBottom
+
+            val noPaint = Paint().apply {
+                color = 0xFF007A78.toInt()
+                textSize = 9.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val checkboxPaint = Paint().apply {
+                color = 0xFF94A3B8.toInt()
+                style = Paint.Style.STROKE
+                strokeWidth = 1f
+                isAntiAlias = true
+            }
+
+            for (r in 1..rowCount) {
+                val nextY = curY + rowHeight
+
+                canvas.drawLine(c0, nextY, c6, nextY, if (r == rowCount) borderPaint else gridLinePaint)
+                listOf(c0, c1, c2, c3, c4, c5, c6).forEach { x ->
+                    canvas.drawLine(x, curY, x, nextY, if (x == c0 || x == c6) borderPaint else gridLinePaint)
+                }
+
+                val noStr = if (r < 10) "0$r" else "$r"
+                canvas.drawText(noStr, c0 + 10f, curY + 20f, noPaint)
+
+                val boxSize = 11f
+                val boxX = c5 + (c6 - c5 - boxSize) / 2f
+                val boxY = curY + (rowHeight - boxSize) / 2f
+                canvas.drawRect(boxX, boxY, boxX + boxSize, boxY + boxSize, checkboxPaint)
+
+                curY = nextY
+            }
+
+            canvas.drawRect(c0, tableTop, c6, curY, borderPaint)
+
+        } else {
+            // Sınıf Defteri Sütunları (7 Sütun)
+            val c1 = c0 + 35f   // Sıra No (35 pt)
+            val c2 = c1 + 130f  // Öğrenci Adı Soyadı (130 pt)
+            val c3 = c2 + 176f  // Kitabın Adı (176 pt)
+            val c4 = c3 + 46f   // Sayfa Sayısı (46 pt)
+            val c5 = c4 + 52f   // Başlama Tarihi (52 pt)
+            val c6 = c5 + 52f   // Bitiş Tarihi (52 pt)
+            val c7 = cEnd       // Sisteme İşlendi mi? (40 pt)
+
+            // Dış çerçeve ve dikey çizgiler
+            canvas.drawRect(c0, tableTop, c7, tableHeaderBottom, borderPaint)
+            listOf(c1, c2, c3, c4, c5, c6).forEach { x ->
+                canvas.drawLine(x, tableTop, x, tableHeaderBottom, borderPaint)
+            }
+
+            canvas.drawText("Sıra", c0 + 8f, tableTop + 16f, thPaint)
+            canvas.drawText("No", c0 + 10f, tableTop + 27f, thPaint)
+
+            canvas.drawText("Öğrenci Adı Soyadı", c1 + 14f, tableTop + 22f, thPaint)
+
+            canvas.drawText("Kitabın Adı", c2 + 45f, tableTop + 22f, thPaint)
+
+            canvas.drawText("Sayfa", c3 + 9f, tableTop + 16f, thPaint)
+            canvas.drawText("Sayısı", c3 + 8f, tableTop + 27f, thPaint)
+
+            canvas.drawText("Başlama", c4 + 7f, tableTop + 13f, thPaint)
+            canvas.drawText("Tarihi", c4 + 11f, tableTop + 23f, thPaint)
+            canvas.drawText("(Gün / Ay)", c4 + 4f, tableTop + 32f, subDatePaint)
+
+            canvas.drawText("Bitiş", c5 + 13f, tableTop + 13f, thPaint)
+            canvas.drawText("Tarihi", c5 + 11f, tableTop + 23f, thPaint)
+            canvas.drawText("(Gün / Ay)", c5 + 4f, tableTop + 32f, subDatePaint)
+
+            canvas.drawText("Sisteme", c6 + 4f, tableTop + 13f, thPaint)
+            canvas.drawText("İşlendi", c6 + 5f, tableTop + 23f, thPaint)
+            canvas.drawText("mi?", c6 + 12f, tableTop + 32f, thPaint)
+
+            // 3. Tablo Satırları (Tam 20 Satır)
+            val rowCount = 20
+            val rowHeight = 31f
+            var curY = tableHeaderBottom
+
+            val noPaint = Paint().apply {
+                color = 0xFF007A78.toInt()
+                textSize = 9.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val checkboxPaint = Paint().apply {
+                color = 0xFF94A3B8.toInt()
+                style = Paint.Style.STROKE
+                strokeWidth = 1f
+                isAntiAlias = true
+            }
+
+            for (r in 1..rowCount) {
+                val nextY = curY + rowHeight
+
+                canvas.drawLine(c0, nextY, c7, nextY, if (r == rowCount) borderPaint else gridLinePaint)
+                listOf(c0, c1, c2, c3, c4, c5, c6, c7).forEach { x ->
+                    canvas.drawLine(x, curY, x, nextY, if (x == c0 || x == c7) borderPaint else gridLinePaint)
+                }
+
+                val noStr = if (r < 10) "0$r" else "$r"
+                canvas.drawText(noStr, c0 + 10f, curY + 20f, noPaint)
+
+                val boxSize = 11f
+                val boxX = c6 + (c7 - c6 - boxSize) / 2f
+                val boxY = curY + (rowHeight - boxSize) / 2f
+                canvas.drawRect(boxX, boxY, boxX + boxSize, boxY + boxSize, checkboxPaint)
+
+                curY = nextY
+            }
+
+            canvas.drawRect(c0, tableTop, c7, curY, borderPaint)
         }
 
-        // Dış çerçeve garanti çizgisi
-        canvas.drawRect(c0, tableTop, c7, curY, borderPaint)
-
-        // Alt Bilgi (Footer)
-        drawFooter(canvas, pageNumber, totalPages)
+        // Alt Bilgi: Sayfa yazısı ve öğretmenin sayfa numarası yazabilmesi için içi boş daire
+        drawDefterFooter(canvas, outerMargin)
     }
 
     // ---------------------------------------------------------------------------------------------
