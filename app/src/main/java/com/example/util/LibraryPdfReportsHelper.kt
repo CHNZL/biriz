@@ -70,21 +70,22 @@ object LibraryPdfReportsHelper {
         docTitle: String,
         subTitle: String? = null
     ): Float {
-        val emblem = renderEmblemBitmap(context, 76)
+        val emblemSize = 48f
+        val emblem = renderEmblemBitmap(context, emblemSize.toInt())
         emblem?.let {
-            canvas.drawBitmap(it, 36f, 30f, null)
+            canvas.drawBitmap(it, 36f, 32f, null)
         }
 
-        val textStartX = if (emblem != null) 118f else 36f
+        val textStartX = if (emblem != null) 36f + emblemSize + 14f else 36f
         val schoolPaint = Paint().apply {
             color = navyTheme
-            textSize = 14f
+            textSize = 13.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
         val titlePaint = Paint().apply {
             color = tealTheme
-            textSize = 12.5f
+            textSize = 11.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
@@ -96,19 +97,24 @@ object LibraryPdfReportsHelper {
         }
 
         val schoolHeader = "${classRoom.schoolName.uppercase(Locale("tr"))} - ${classRoom.gradeLevel}/${classRoom.section} SINIFI"
-        canvas.drawText(schoolHeader, textStartX, 44f, schoolPaint)
-        canvas.drawText(docTitle.uppercase(Locale("tr")), textStartX, 62f, titlePaint)
+        val maxHeaderWidth = (PAGE_WIDTH - 36).toFloat() - textStartX
+        while (schoolPaint.measureText(schoolHeader) > maxHeaderWidth && schoolPaint.textSize > 9f) {
+            schoolPaint.textSize -= 0.5f
+        }
+
+        canvas.drawText(schoolHeader, textStartX, 46f, schoolPaint)
+        canvas.drawText(docTitle.uppercase(Locale("tr")), textStartX, 63f, titlePaint)
 
         val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date())
         val teacherStr = if (classRoom.teacherName.isNotBlank()) "Öğretmen: ${classRoom.teacherName} | " else ""
-        canvas.drawText("$teacherStr$dateStr ${subTitle?.let { " | $it" } ?: ""}", textStartX, 76f, metaPaint)
+        canvas.drawText("$teacherStr$dateStr ${subTitle?.let { " | $it" } ?: ""}", textStartX, 78f, metaPaint)
 
         val linePaint = Paint().apply {
             color = 0xFFCBD5E1.toInt()
             strokeWidth = 1f
         }
-        canvas.drawLine(36f, 92f, (PAGE_WIDTH - 36).toFloat(), 92f, linePaint)
-        return 106f
+        canvas.drawLine(36f, 90f, (PAGE_WIDTH - 36).toFloat(), 90f, linePaint)
+        return 104f
     }
 
     private fun drawFooter(canvas: Canvas, pageNum: Int, totalPages: Int = 1) {
@@ -180,14 +186,12 @@ object LibraryPdfReportsHelper {
 
             var y = drawDocumentHeader(canvas, context, classRoom, "Sınıf Kitaplığı Demirbaş Listesi", "Toplam ${books.size} Kitap")
 
-            // Table Header
+            // Table Header (Demirbaş No, Kitap Adı, Yazar, Sayfa Sayısı)
             canvas.drawRect(36f, y, (PAGE_WIDTH - 36).toFloat(), y + 20f, thBgPaint)
             canvas.drawText("No", 42f, y + 14f, thTextPaint)
-            canvas.drawText("Kitap Adı", 85f, y + 14f, thTextPaint)
-            canvas.drawText("Yazar", 280f, y + 14f, thTextPaint)
-            canvas.drawText("Sayfa", 410f, y + 14f, thTextPaint)
-            canvas.drawText("Durum", 460f, y + 14f, thTextPaint)
-            canvas.drawText("Okuyan Öğrenci", 515f, y + 14f, thTextPaint)
+            canvas.drawText("Kitap Adı", 88f, y + 14f, thTextPaint)
+            canvas.drawText("Yazar", 345f, y + 14f, thTextPaint)
+            canvas.drawText("Sayfa", 495f, y + 14f, thTextPaint)
             y += 20f
 
             val startIndex = p * itemsPerPage
@@ -201,25 +205,15 @@ object LibraryPdfReportsHelper {
                 canvas.drawLine(36f, y + 18f, (PAGE_WIDTH - 36).toFloat(), y + 18f, linePaint)
 
                 canvas.drawText("#${b.registrationNo}", 42f, y + 13f, tdTextPaint)
-                val nameCut = if (b.name.length > 36) b.name.take(34) + ".." else b.name
-                canvas.drawText(nameCut, 85f, y + 13f, tdTextPaint)
+                val titleCasedName = TurkishTextHelper.toTurkishTitleCase(b.name)
+                val nameCut = if (titleCasedName.length > 50) titleCasedName.take(48) + ".." else titleCasedName
+                canvas.drawText(nameCut, 88f, y + 13f, tdTextPaint)
 
-                val authorCut = if (b.author.length > 22) b.author.take(20) + ".." else b.author.ifBlank { "-" }
-                canvas.drawText(authorCut, 280f, y + 13f, tdTextPaint)
+                val authorName = if (b.author.isNotBlank()) TurkishTextHelper.toTurkishTitleCase(b.author) else "-"
+                val authorCut = if (authorName.length > 30) authorName.take(28) + ".." else authorName
+                canvas.drawText(authorCut, 345f, y + 13f, tdTextPaint)
 
-                canvas.drawText(if (b.pageCount > 0) "${b.pageCount} s." else "-", 410f, y + 13f, tdTextPaint)
-
-                val isReading = b.status == "Okunuyor" || b.activeAssignments.isNotEmpty()
-                val statusText = if (isReading) "Okunuyor" else "Rafta"
-                canvas.drawText(statusText, 460f, y + 13f, tdTextPaint)
-
-                val reader = when {
-                    b.activeAssignments.isNotEmpty() -> b.activeAssignments.first().studentName
-                    !b.currentStudentName.isNullOrBlank() -> b.currentStudentName
-                    else -> "-"
-                }
-                val readerCut = if (reader.length > 12) reader.take(10) + ".." else reader
-                canvas.drawText(readerCut, 515f, y + 13f, tdTextPaint)
+                canvas.drawText(if (b.pageCount > 0) "${b.pageCount} s." else "-", 495f, y + 13f, tdTextPaint)
 
                 y += 18f
             }

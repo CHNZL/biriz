@@ -2229,21 +2229,13 @@ object ExcelPdfHelper {
         val fileName = "${safeSchool}_${classRoom.gradeLevel}${classRoom.section}_Kitaplik_Envanteri.xlsx"
         val file = File(context.cacheDir, fileName)
 
-        val headers = listOf("Demirbaş No", "Kitap Adı", "Yazar", "Sayfa Sayısı", "Durum", "Şu An Okuyan(lar)", "Veriliş Tarihi")
+        val headers = listOf("Demirbaş No", "Kitap Adı", "Yazar", "Sayfa Sayısı")
         val rows = books.sortedBy { it.registrationNo }.map { book ->
-            val readersText = when {
-                book.activeAssignments.isNotEmpty() -> book.activeAssignments.joinToString(", ") { it.studentName }
-                !book.currentStudentName.isNullOrBlank() -> book.currentStudentName
-                else -> "-"
-            }
             listOf(
                 book.registrationNo.toString(),
-                book.name,
-                book.author.ifBlank { "-" },
-                if (book.pageCount > 0) book.pageCount.toString() else "-",
-                book.status,
-                readersText,
-                book.assignmentDate?.let { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(it)) } ?: "-"
+                TurkishTextHelper.toTurkishTitleCase(book.name),
+                if (book.author.isNotBlank()) TurkishTextHelper.toTurkishTitleCase(book.author) else "-",
+                if (book.pageCount > 0) book.pageCount.toString() else "-"
             )
         }
 
@@ -2323,31 +2315,31 @@ object ExcelPdfHelper {
         val accentOrange = 0xFFD97706.toInt()
 
         // 1. Üst Başlık & BİRİZ Amblemi
-        val emblemBitmap = renderEmblemBitmap(context, 70)
+        val emblemBitmap = renderEmblemBitmap(context, 48)
         emblemBitmap?.let {
-            canvas.drawBitmap(it, 36f, 32f, null)
+            canvas.drawBitmap(it, 36f, 34f, null)
         }
 
         val titlePaint = Paint().apply {
             color = primaryColor
-            textSize = 17f
+            textSize = 15f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
         val subTitlePaint = Paint().apply {
             color = textColor
-            textSize = 12f
+            textSize = 11.5f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
         val textPaint = Paint().apply {
             color = mutedTextColor
-            textSize = 9.5f
+            textSize = 9f
             typeface = Typeface.DEFAULT
             isAntiAlias = true
         }
 
-        val startX = if (emblemBitmap != null) 116f else 36f
+        val startX = if (emblemBitmap != null) 36f + 48f + 14f else 36f
         canvas.drawText("${classRoom.schoolName} - ${classRoom.gradeLevel}/${classRoom.section} SINIFI", startX, 48f, titlePaint)
         canvas.drawText("AKILLI SINIF KİTAPLIĞI VE OKUMA RAPORU", startX, 66f, subTitlePaint)
         val currentDateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date())
@@ -2434,11 +2426,9 @@ object ExcelPdfHelper {
             isAntiAlias = true
         }
         canvas.drawText("No", 42f, currentY + 14f, thTextPaint)
-        canvas.drawText("Kitap Adı", 80f, currentY + 14f, thTextPaint)
-        canvas.drawText("Yazar", 250f, currentY + 14f, thTextPaint)
-        canvas.drawText("Sayfa", 370f, currentY + 14f, thTextPaint)
-        canvas.drawText("Durum", 420f, currentY + 14f, thTextPaint)
-        canvas.drawText("Okuyan Öğrenci", 480f, currentY + 14f, thTextPaint)
+        canvas.drawText("Kitap Adı", 88f, currentY + 14f, thTextPaint)
+        canvas.drawText("Yazar", 345f, currentY + 14f, thTextPaint)
+        canvas.drawText("Sayfa", 495f, currentY + 14f, thTextPaint)
         currentY += 20f
 
         val rowTextPaint = Paint().apply {
@@ -2460,24 +2450,13 @@ object ExcelPdfHelper {
                 canvas.drawRect(36f, rowY, (pageWidth - 36).toFloat(), rowY + 19f, zebraPaint)
             }
             canvas.drawText("#${book.registrationNo}", 42f, rowY + 13f, rowTextPaint)
-            val titleCut = if (book.name.length > 30) book.name.take(28) + ".." else book.name
-            canvas.drawText(titleCut, 80f, rowY + 13f, rowTextPaint)
-            val authorCut = if (book.author.length > 20) book.author.take(18) + ".." else book.author.ifBlank { "-" }
-            canvas.drawText(authorCut, 250f, rowY + 13f, rowTextPaint)
-            canvas.drawText(if (book.pageCount > 0) "${book.pageCount} s." else "-", 370f, rowY + 13f, rowTextPaint)
-
-            val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty()
-            rowTextPaint.color = if (isReading) accentOrange else accentGreen
-            canvas.drawText(if (isReading) "Okunuyor" else "Rafta", 420f, rowY + 13f, rowTextPaint)
-
-            rowTextPaint.color = textColor
-            val readerName = when {
-                book.activeAssignments.isNotEmpty() -> book.activeAssignments.first().studentName
-                !book.currentStudentName.isNullOrBlank() -> book.currentStudentName
-                else -> "-"
-            }
-            val readerCut = if (readerName.length > 16) readerName.take(14) + ".." else readerName
-            canvas.drawText(readerCut, 480f, rowY + 13f, rowTextPaint)
+            val titleCased = TurkishTextHelper.toTurkishTitleCase(book.name)
+            val titleCut = if (titleCased.length > 46) titleCased.take(44) + ".." else titleCased
+            canvas.drawText(titleCut, 88f, rowY + 13f, rowTextPaint)
+            val authorCased = if (book.author.isNotBlank()) TurkishTextHelper.toTurkishTitleCase(book.author) else "-"
+            val authorCut = if (authorCased.length > 28) authorCased.take(26) + ".." else authorCased
+            canvas.drawText(authorCut, 345f, rowY + 13f, rowTextPaint)
+            canvas.drawText(if (book.pageCount > 0) "${book.pageCount} s." else "-", 495f, rowY + 13f, rowTextPaint)
         }
 
         // Alt Bilgi (Footer)
