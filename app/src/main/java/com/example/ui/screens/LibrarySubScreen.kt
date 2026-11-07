@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -274,7 +276,7 @@ fun LibrarySubScreen(
                         onCancelAssignment = { book, studentId ->
                             LibraryPersistenceHelper.cancelAssignment(context, classRoom.id, book.id, studentId)
                             refreshData()
-                            Toast.makeText(context, "Teslimat iptal edildi, kitap rafa döndü.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Ödünç kaydı iptal edildi, kitap rafa döndü.", Toast.LENGTH_SHORT).show()
                         },
                         onBatchClassReadClick = {
                             showBatchClassReadDialog = true
@@ -296,7 +298,7 @@ fun LibrarySubScreen(
                         onCancelAssignment = { book, studentId ->
                             LibraryPersistenceHelper.cancelAssignment(context, classRoom.id, book.id, studentId)
                             refreshData()
-                            Toast.makeText(context, "Teslimat iptal edildi.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Ödünç kaydı iptal edildi.", Toast.LENGTH_SHORT).show()
                         },
                         onDeleteRecord = { record ->
                             recordToDelete = record
@@ -360,7 +362,7 @@ fun LibrarySubScreen(
             )
         }
 
-        // 2. Kitap Ödünç Verme (Teslim Et) Diyaloğu
+        // 2. Kitap Ödünç Verme Diyaloğu
         if (showBorrowDialog && bookToBorrow != null) {
             BorrowBookDialog(
                 book = bookToBorrow!!,
@@ -384,7 +386,7 @@ fun LibrarySubScreen(
                     refreshData()
                     showBorrowDialog = false
                     bookToBorrow = null
-                    Toast.makeText(context, "📖 Kitap teslim edildi.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "📖 Kitap başarıyla ödünç verildi.", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -1044,7 +1046,7 @@ private fun BookCardGridItem(
                         )
                         if (isReading && book.activeAssignments.isNotEmpty()) {
                             DropdownMenuItem(
-                                text = { Text("Teslimatı İptal Et (Rafa Al)") },
+                                text = { Text("Ödünç Kaydını İptal Et (Rafa Al)") },
                                 onClick = {
                                     showMenu = false
                                     val firstStudentId = book.activeAssignments.firstOrNull()?.studentId ?: book.currentStudentId.orEmpty()
@@ -2732,9 +2734,9 @@ private fun AddEditBookDialog(
 
                                         Spacer(modifier = Modifier.height(8.dp))
 
-                                        // Teslim Tarihi Seçici
+                                        // Ödünç Veriliş Tarihi Seçici
                                         BirizDatePickerField(
-                                            label = "Teslim Tarihi",
+                                            label = "Ödünç Veriliş Tarihi",
                                             dateStr = assignmentDateStr,
                                             onDateChange = { assignmentDateStr = it },
                                             isDarkTheme = isDarkTheme
@@ -2811,7 +2813,7 @@ private fun AddEditBookDialog(
 }
 
 // -------------------------------------------------------------
-// DİYALOG: KİTAP ÖDÜNÇ VER (TESLİM ET)
+// DİYALOG: KİTAP ÖDÜNÇ VER
 // -------------------------------------------------------------
 @Composable
 private fun BorrowBookDialog(
@@ -2825,6 +2827,8 @@ private fun BorrowBookDialog(
     val selectedStudents = remember { mutableStateOf<Set<String>>(emptySet()) }
     val todayDateStr = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date()) }
     var assignmentDate by remember { mutableStateOf(todayDateStr) }
+
+    val earnedStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
 
     val filteredStudents = remember(students, searchQuery) {
         if (searchQuery.isBlank()) students else {
@@ -2844,9 +2848,9 @@ private fun BorrowBookDialog(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "📖 Kitap Teslim Et", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(text = "📤 Kitap Ödünç Ver", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        text = "${book.name} (${book.pageCount} Sayfa)",
+                        text = "${TurkishTextHelper.toTurkishTitleCase(book.name)} (${book.pageCount} Sayfa)",
                         fontSize = 12.sp,
                         color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                         maxLines = 1,
@@ -2872,68 +2876,195 @@ private fun BorrowBookDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Tarih Seçici Bileşeni
+                // Ödünç Veriliş Tarihi Seçici Bileşeni
                 BirizDatePickerField(
-                    label = "Teslim / Veriliş Tarihi",
+                    label = "Ödünç Veriliş Tarihi",
                     dateStr = assignmentDate,
                     onDateChange = { assignmentDate = it },
                     isDarkTheme = isDarkTheme
                 )
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                // Canlı Motivasyon & Teşvik Kartı (İade Al penceresiyle uyumlu)
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = BirizGold.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, BirizGold)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("⭐", fontSize = 26.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Kitap Kurdu Ödünç Kaydı",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = Color(0xFFB45309)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Kitap okunduktan sonra iade edildiğinde öğrenci hanesine +$earnedStars ⭐ eklenecektir.",
+                                fontSize = 11.sp,
+                                color = Color(0xFF92400E)
+                            )
+                        }
+                    }
+                }
 
                 Text(
-                    text = "Kitabı teslim alacak öğrenciyi seçin (Grup için birden fazla seçilebilir):",
-                    fontSize = 11.5.sp
+                    text = "Kitabı ödünç alacak öğrenciyi seçin (Grup için birden fazla seçilebilir):",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Öğrenci adı veya numarası...", fontSize = 12.sp) },
+                    placeholder = { Text("Öğrenci adı veya numarası ile ara...", fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Gray)
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Temizle", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Öğrenci Listesi
-                LazyColumn(
+                // Bütüncül ve Aralıksız Öğrenci Listesi (Kompakt Tablo Görünümü)
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .heightIn(max = 200.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5064748B) else Color(0xFFCBD5E1)),
+                    color = if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
                 ) {
-                    items(filteredStudents, key = { it.id }) { st ->
-                        val isChecked = selectedStudents.value.contains(st.id)
-                        Surface(
+                    if (filteredStudents.isEmpty()) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    val current = selectedStudents.value.toMutableSet()
-                                    if (isChecked) current.remove(st.id) else current.add(st.id)
-                                    selectedStudents.value = current
-                                },
-                            color = if (isChecked) BirizTurquoise.copy(alpha = 0.15f) else Color.Transparent,
-                            border = BorderStroke(1.dp, if (isChecked) BirizTurquoise else Color(0x3064748B))
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = { checked ->
-                                        val current = selectedStudents.value.toMutableSet()
-                                        if (checked) current.add(st.id) else current.remove(st.id)
-                                        selectedStudents.value = current
+                            Text(
+                                text = "Arama kriterine uygun öğrenci bulunamadı",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(filteredStudents, key = { it.id }) { st ->
+                                val isChecked = selectedStudents.value.contains(st.id)
+                                val isAlreadyReading = book.activeAssignments.any { it.studentId == st.id }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            if (isChecked) {
+                                                if (isDarkTheme) BirizTurquoise.copy(alpha = 0.22f) else Color(0xFFE0F2FE)
+                                            } else Color.Transparent
+                                        )
+                                        .clickable {
+                                            val current = selectedStudents.value.toMutableSet()
+                                            if (isChecked) current.remove(st.id) else current.add(st.id)
+                                            selectedStudents.value = current
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Özel Kompakt Checkbox
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .background(
+                                                color = if (isChecked) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else Color.Transparent,
+                                                shape = RoundedCornerShape(4.dp)
+                                            )
+                                            .border(
+                                                width = 1.5.dp,
+                                                color = if (isChecked) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else (if (isDarkTheme) Color(0xFF64748B) else Color(0xFF94A3B8)),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isChecked) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
                                     }
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "${st.studentNumber} - ${st.fullName}",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Normal
+
+                                    Spacer(modifier = Modifier.width(9.dp))
+
+                                    // Numara Rozeti
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isDarkTheme) Color(0x3564748B) else Color(0xFFE2E8F0),
+                                        modifier = Modifier.widthIn(min = 34.dp)
+                                    ) {
+                                        Text(
+                                            text = "#${st.studentNumber}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isChecked) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else Color.Gray,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Öğrenci Adı
+                                    Text(
+                                        text = st.fullName,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isDarkTheme) {
+                                            if (isChecked) Color.White else BirizDarkTextPrimary
+                                        } else {
+                                            if (isChecked) BirizNavyPrimary else BirizTextPrimary
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    if (isAlreadyReading) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFFFEF3C7)
+                                        ) {
+                                            Text(
+                                                text = "Şu an okuyor",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFFB45309),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    } else if (isChecked) {
+                                        Text("✓", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                                    }
+                                }
+
+                                HorizontalDivider(
+                                    thickness = 0.5.dp,
+                                    color = if (isDarkTheme) Color(0x2064748B) else Color(0xFFE2E8F0)
                                 )
                             }
                         }
@@ -2949,15 +3080,21 @@ private fun BorrowBookDialog(
                 },
                 enabled = selectedStudents.value.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
+                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                    disabledContainerColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFCBD5E1)
+                ),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Teslim Et (${selectedStudents.value.size})")
+                Text(
+                    text = if (selectedStudents.value.isEmpty()) "Ödünç Ver (0)" else "Ödünç Ver (${selectedStudents.value.size})",
+                    fontWeight = FontWeight.Bold,
+                    color = if (selectedStudents.value.isEmpty()) Color.Gray else Color.White
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("İptal")
+                Text("Vazgeç")
             }
         }
     )
