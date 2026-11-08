@@ -972,6 +972,200 @@ class ExampleUnitTest {
     assertEquals(completedS1.player1Id, syncedThird.player1Id)
     assertEquals(completedS2.player2Id, syncedThird.player2Id)
   }
+
+  @Test
+  fun testPodiumChampionshipAndThirdPlaceTieBreakers() {
+    val engine = com.example.util.TournamentEngine
+    val tournament = com.example.data.model.Tournament(
+      id = "t_mangala",
+      classRoomId = "c1",
+      name = "Mangala Turnuvası",
+      type = com.example.data.model.TournamentType.ELEME,
+      matchType = com.example.data.model.TournamentMatchType.CIFT_MAC,
+      winnerSelectionMethod = com.example.data.model.WinnerSelectionMethod.WINNER,
+      participants = listOf("p_elif", "p_defne", "p_aras", "p_gunes")
+    )
+
+    // User scenario:
+    // Final matches (Round 5):
+    // R5-M1 (Elif vs Defne) -> Elif wins
+    // R5-M1-R (Defne vs Elif) -> Defne wins
+    // PAIR-R5-M1-T (Tie-Breaker: Elif vs Defne) -> Elif wins!
+    val finalM1 = com.example.data.model.TournamentMatch(
+      id = "m_f1",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_elif",
+      player2Id = "p_defne",
+      player1Name = "ELİF YAZICI",
+      player2Name = "DEFNE YARAMIŞ",
+      matchCode = "R5-M1",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M1",
+      isThirdPlaceMatch = false,
+      status = "completed",
+      winnerId = "p_elif",
+      stage = "knockout"
+    )
+    val finalM2 = com.example.data.model.TournamentMatch(
+      id = "m_f2",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_defne",
+      player2Id = "p_elif",
+      player1Name = "DEFNE YARAMIŞ",
+      player2Name = "ELİF YAZICI",
+      matchCode = "R5-M1-R",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M1",
+      isThirdPlaceMatch = false,
+      status = "completed",
+      winnerId = "p_defne",
+      stage = "knockout"
+    )
+    val finalTieBreaker = com.example.data.model.TournamentMatch(
+      id = "m_f_t",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_elif",
+      player2Id = "p_defne",
+      player1Name = "ELİF YAZICI",
+      player2Name = "DEFNE YARAMIŞ",
+      matchCode = "PAIR-R5-M1-T",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M1",
+      isTieBreaker = true,
+      isThirdPlaceMatch = false,
+      status = "completed",
+      winnerId = "p_elif",
+      stage = "knockout"
+    )
+
+    // 3.lük matches (Round 5):
+    // R5-M-3RD (Güneş vs Aras) -> Güneş wins
+    // R5-M-3RD-R (Aras vs Güneş) -> Aras wins
+    // PAIR-R5-M-3RD-T (Tie-Breaker: Aras vs Güneş) -> Aras wins!
+    val thirdM1 = com.example.data.model.TournamentMatch(
+      id = "m_3_1",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_gunes",
+      player2Id = "p_aras",
+      player1Name = "GÜNEŞ DEMİR",
+      player2Name = "ARAS GÖKKAYA",
+      matchCode = "R5-M-3RD",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M-3RD",
+      isThirdPlaceMatch = true,
+      status = "completed",
+      winnerId = "p_gunes",
+      stage = "knockout"
+    )
+    val thirdM2 = com.example.data.model.TournamentMatch(
+      id = "m_3_2",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_aras",
+      player2Id = "p_gunes",
+      player1Name = "ARAS GÖKKAYA",
+      player2Name = "GÜNEŞ DEMİR",
+      matchCode = "R5-M-3RD-R",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M-3RD",
+      isThirdPlaceMatch = true,
+      status = "completed",
+      winnerId = "p_aras",
+      stage = "knockout"
+    )
+    val thirdTieBreaker = com.example.data.model.TournamentMatch(
+      id = "m_3_t",
+      tournamentId = tournament.id,
+      round = 5,
+      player1Id = "p_aras",
+      player2Id = "p_gunes",
+      player1Name = "ARAS GÖKKAYA",
+      player2Name = "GÜNEŞ DEMİR",
+      matchCode = "PAIR-R5-M-3RD-T",
+      isDoubleMatch = true,
+      pairCode = "PAIR-R5-M-3RD",
+      isTieBreaker = true,
+      isThirdPlaceMatch = true,
+      status = "completed",
+      winnerId = "p_aras",
+      stage = "knockout"
+    )
+
+    val allMatches = listOf(thirdTieBreaker, thirdM2, thirdM1, finalTieBreaker, finalM2, finalM1)
+
+    val podium = engine.determinePodium(tournament, allMatches, emptyList())
+
+    // 1. Şampiyon: Final maçı galibi ELİF YAZICI olmalıdır!
+    assertNotNull(podium.first)
+    assertEquals("p_elif", podium.first!!.first)
+    assertEquals("ELİF YAZICI", podium.first!!.second)
+
+    // 2. İkinci: Final maçı mağlubu DEFNE YARAMIŞ olmalıdır!
+    assertNotNull(podium.second)
+    assertEquals("p_defne", podium.second!!.first)
+    assertEquals("DEFNE YARAMIŞ", podium.second!!.second)
+
+    // 3. Üçüncü: 3.lük maçı galibi ARAS GÖKKAYA olmalıdır!
+    assertNotNull(podium.third)
+    assertEquals("p_aras", podium.third!!.first)
+    assertEquals("ARAS GÖKKAYA", podium.third!!.second)
+
+    // GÜNEŞ DEMİR (3.lük maçı kaybedeni) kürsüde OLMAMALIDIR!
+    val podiumIds = listOf(podium.first?.first, podium.second?.first, podium.third?.first)
+    assertFalse(podiumIds.contains("p_gunes"))
+  }
+
+  @Test
+  fun testPreviousRoundsLockedWhenSubsequentRoundPlayed() {
+    val engine = com.example.util.TournamentEngine
+    val mR1_1 = com.example.data.model.TournamentMatch(
+      id = "r1_m1",
+      tournamentId = "t1",
+      round = 1,
+      player1Id = "p1",
+      player2Id = "p2",
+      matchCode = "R1-M1",
+      status = "completed",
+      stage = "knockout"
+    )
+    val mR1_2 = com.example.data.model.TournamentMatch(
+      id = "r1_m2",
+      tournamentId = "t1",
+      round = 1,
+      player1Id = "p3",
+      player2Id = "p4",
+      matchCode = "R1-M2",
+      status = "completed",
+      stage = "knockout"
+    )
+    val mR2_1 = com.example.data.model.TournamentMatch(
+      id = "r2_m1",
+      tournamentId = "t1",
+      round = 2,
+      player1Id = "p1",
+      player2Id = "p3",
+      matchCode = "R2-M1",
+      status = "pending",
+      stage = "knockout"
+    )
+
+    // Henüz 2. turda hiçbir maç tamamlanmadı -> 1. tur maçları KİLİTLİ DEĞİLDİR
+    assertFalse(engine.isMatchLocked(mR1_1, listOf(mR1_1, mR1_2, mR2_1)))
+    assertFalse(engine.isMatchLocked(mR2_1, listOf(mR1_1, mR1_2, mR2_1)))
+
+    // 2. turda bir maç tamamlandığında -> 1. turun maçları KİLİTLENİR!
+    val mR2_1_completed = mR2_1.copy(status = "completed", winnerId = "p1")
+    val allWithR2Played = listOf(mR1_1, mR1_2, mR2_1_completed)
+
+    assertTrue(engine.isMatchLocked(mR1_1, allWithR2Played))
+    assertTrue(engine.isMatchLocked(mR1_2, allWithR2Played))
+    // 2. turun kendisi kilitli değildir çünkü 3. tur henüz oynanmadı
+    assertFalse(engine.isMatchLocked(mR2_1_completed, allWithR2Played))
+  }
 }
 
 

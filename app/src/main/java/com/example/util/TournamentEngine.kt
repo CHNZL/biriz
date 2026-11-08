@@ -735,6 +735,7 @@ object TournamentEngine {
                     isDoubleMatch = true,
                     pairCode = pairCode,
                     isTieBreaker = true,
+                    isThirdPlaceMatch = m1.isThirdPlaceMatch,
                     stage = m1.stage
                 )
             }
@@ -755,6 +756,7 @@ object TournamentEngine {
                     isDoubleMatch = true,
                     pairCode = pairCode,
                     isTieBreaker = true,
+                    isThirdPlaceMatch = m1.isThirdPlaceMatch,
                     stage = m1.stage
                 )
             }
@@ -1015,23 +1017,29 @@ object TournamentEngine {
                 val knockoutMatches = matches.filter { it.stage == "knockout" }
                 val maxRound = knockoutMatches.maxOfOrNull { it.round } ?: 1
 
-                // Final Maçı (isThirdPlaceMatch == false olan ve en üst round'daki maçlar)
-                val finalMatches = knockoutMatches.filter { it.round == maxRound && !it.isThirdPlaceMatch }
-                val finalBaseCode = finalMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: ""
+                // Final Maçı (isThirdPlaceMatch == false ve maç kodunda "3RD" geçmeyen en üst round'daki maçlar)
+                val finalMatches = knockoutMatches.filter { 
+                    it.round == maxRound && !it.isThirdPlaceMatch && !it.matchCode.contains("3RD", ignoreCase = true) && it.pairCode?.contains("3RD", ignoreCase = true) != true 
+                }
+                val finalBaseCode = finalMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: "R$maxRound-M1"
                 val finalOutcome = determineMatchupResult(finalBaseCode, knockoutMatches, tournament.winnerSelectionMethod)
 
-                // 3.lük Maçı (isThirdPlaceMatch == true olan maçlar)
-                val thirdPlaceMatches = knockoutMatches.filter { it.isThirdPlaceMatch }
-                val thirdBaseCode = thirdPlaceMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: ""
-                val thirdOutcome = if (thirdBaseCode.isNotEmpty()) determineMatchupResult(thirdBaseCode, knockoutMatches, tournament.winnerSelectionMethod) else null
+                // 3.lük Maçı (isThirdPlaceMatch == true olan veya maç kodunda "3RD" geçen maçlar)
+                val thirdPlaceMatches = knockoutMatches.filter { 
+                    it.round == maxRound && (it.isThirdPlaceMatch || it.matchCode.contains("3RD", ignoreCase = true) || it.pairCode?.contains("3RD", ignoreCase = true) == true)
+                }
+                val thirdBaseCode = thirdPlaceMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: "R$maxRound-M-3RD"
+                val thirdOutcome = if (thirdPlaceMatches.isNotEmpty()) determineMatchupResult(thirdBaseCode, knockoutMatches, tournament.winnerSelectionMethod) else null
 
                 if (!finalOutcome.isCompleted || finalOutcome.winnerId == null) {
                     Triple(null, null, null)
                 } else {
+                    // 1. Şampiyon: Final maçı galibi
                     val first = Pair(finalOutcome.winnerId, finalOutcome.winnerName ?: "Şampiyon")
+                    // 2. İkinci: Final maçı mağlubu
                     val second = if (finalOutcome.loserId != null) Pair(finalOutcome.loserId, finalOutcome.loserName ?: "İkinci") else null
 
-                    // 3.lük: 3.lük maçı galibi
+                    // 3. Üçüncü: 3.lük maçı galibi (3.lük maçını kaybeden kürsüye çıkmaz!)
                     val third = if (thirdOutcome != null && thirdOutcome.isCompleted && thirdOutcome.winnerId != null) {
                         Pair(thirdOutcome.winnerId, thirdOutcome.winnerName ?: "Üçüncü")
                     } else {
@@ -1049,6 +1057,21 @@ object TournamentEngine {
                     Triple(first, second, third)
                 }
             }
+        }
+    }
+
+    /**
+     * Mevcut turda herhangi bir oyun oynandığı (tamamlandığı) anda,
+     * önceki turlardaki maçların skor ve sonuç düzenlemesini kilitler.
+     */
+    fun isMatchLocked(match: TournamentMatch, allMatches: List<TournamentMatch>): Boolean {
+        // Kendisinden sonraki bir turda herhangi bir maç tamamlanmışsa bu maç kilitlidir
+        return allMatches.any { other ->
+            other.id != match.id &&
+            other.round > match.round &&
+            other.stage == match.stage &&
+            (match.groupName == null || other.groupName == match.groupName) &&
+            other.status == "completed"
         }
     }
 }

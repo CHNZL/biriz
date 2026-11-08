@@ -110,6 +110,45 @@ object TournamentPersistenceHelper {
                     )
                 )
             }
+
+            // Tamamlanmış turnuvalarda podyum derecelerinin doğruluğunu otomatik kontrol et ve onar
+            var hasPodiumRepair = false
+            for (idx in list.indices) {
+                val t = list[idx]
+                if (t.status == TournamentStatus.TAMAMLANDI) {
+                    val mList = loadMatches(context, t.id)
+                    if (mList.isNotEmpty()) {
+                        val standings = TournamentEngine.calculateStandings(
+                            participants = t.participants.map { Pair(it, it) },
+                            matches = mList,
+                            pointsWin = t.pointsWin,
+                            pointsDraw = t.pointsDraw,
+                            pointsLoss = t.pointsLoss
+                        )
+                        val podium = TournamentEngine.determinePodium(t, mList, standings)
+                        if (podium.first != null && (t.winnerId != podium.first?.first || t.runnerUpId != podium.second?.first || t.thirdPlaceId != podium.third?.first)) {
+                            val corrected = t.copy(
+                                winnerId = podium.first?.first,
+                                winnerName = podium.first?.second,
+                                runnerUpId = podium.second?.first,
+                                runnerUpName = podium.second?.second,
+                                thirdPlaceId = podium.third?.first,
+                                thirdPlaceName = podium.third?.second,
+                                starRewards = t.starRewards.copy(distributed = true)
+                            )
+                            list[idx] = corrected
+                            hasPodiumRepair = true
+                            if (corrected.starRewards.enabled) {
+                                distributeTournamentStars(context, classId, corrected, forceUpdate = true)
+                            }
+                        }
+                    }
+                }
+            }
+            if (hasPodiumRepair) {
+                saveTournaments(context, classId, list)
+            }
+
             list.sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading tournaments", e)
@@ -386,11 +425,15 @@ object TournamentPersistenceHelper {
                 runnerUpId = podium.second?.first,
                 runnerUpName = podium.second?.second,
                 thirdPlaceId = podium.third?.first,
-                thirdPlaceName = podium.third?.second
+                thirdPlaceName = podium.third?.second,
+                starRewards = updatedTournament.starRewards.copy(
+                    distributed = true,
+                    distributedAt = System.currentTimeMillis()
+                )
             )
 
             // Yıldızları Dağıt
-            distributeTournamentStars(context, classRoomId, updatedTournament)
+            distributeTournamentStars(context, classRoomId, updatedTournament, forceUpdate = true)
         }
 
         tournaments[tIdx] = updatedTournament
@@ -453,8 +496,26 @@ object TournamentPersistenceHelper {
     // -------------------------------------------------------------
     // YILDIZ ÖDÜLLERİNİ DAĞITMA & SİLME GERİ ALMA (ROLLBACK)
     // -------------------------------------------------------------
-    fun distributeTournamentStars(context: Context, classRoomId: String, tournament: Tournament) {
-        if (!tournament.starRewards.enabled || tournament.starRewards.distributed) return
+    fun distributeTournamentStars(
+        context: Context,
+        classRoomId: String,
+        tournament: Tournament,
+        forceUpdate: Boolean = false
+    ) {
+        if (!tournament.starRewards.enabled) return
+        if (tournament.starRewards.distributed && !forceUpdate) return
+
+        if (forceUpdate) {
+            // Önceki ödül kayıtlarını temizle (derece güncellenirken mükerrer yıldız olmaması için)
+            val existing = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId).toMutableList()
+            val prefix = "Turnuva Ödülü: [${tournament.name}]"
+            val participationPrefix = "Turnuva Katılım Ödülü: [${tournament.name}]"
+            val countBefore = existing.size
+            existing.removeAll { it.note.startsWith(prefix) || it.note.startsWith(participationPrefix) }
+            if (existing.size != countBefore) {
+                StarRewardPersistenceHelper.saveStarRecords(context, classRoomId, existing)
+            }
+        }
 
         val rewards = tournament.starRewards
         val starRecords = mutableListOf<StarRewardRecord>()
