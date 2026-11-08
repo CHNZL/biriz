@@ -106,6 +106,9 @@ data class TournamentMatch(
     val isDoubleMatch: Boolean = false,                        // Rövanşlı maç bayrağı
     val pairCode: String? = null,                              // Çift maçları birbirine bağlayan kod
     val isTieBreaker: Boolean = false,                         // Beraberlik bozma maçı mı?
+    val isThirdPlaceMatch: Boolean = false,                    // 3.lük maçı mı? (Yarı final mağlupları)
+    val player1Source: String? = null,                         // Örn: "WINNER:R1-M1", "LOSER:R2-M1"
+    val player2Source: String? = null,                         // Örn: "WINNER:R1-M2", "LOSER:R2-M2"
     val groupId: String? = null,                               // Ait olduğu grup ID'si (G1, G2...)
     val groupName: String? = null,                             // Ait olduğu grup adı (A Grubu, Kırmızı...)
     val stage: String = "knockout",                            // 'group' | 'knockout'

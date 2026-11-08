@@ -738,13 +738,14 @@ class ExampleUnitTest {
       isDoubleMatch = false
     )
 
-    // With 5 players, bracket size = 8.
-    // 3 BAY players go directly to R2.
-    // 1 match in R1 between the other 2 players.
-    // Total matches in bracket = 1 (R1) + 2 (Semis) + 1 (Final) = 4 matches!
-    assertEquals(4, matches.size)
+    // With 5 players:
+    // 1 match in R1 (Ön eleme) between 2 players.
+    // 2 matches in R2 (Yarı Final).
+    // 2 matches in R3 (1 Bronz Madalya / 3.lük maçı + 1 Şampiyonluk Finali) = 5 matches!
+    assertEquals(5, matches.size)
     val r1Matches = matches.filter { it.round == 1 }
     assertEquals(1, r1Matches.size)
+    assertTrue(matches.any { it.isThirdPlaceMatch })
   }
 
   @Test
@@ -906,6 +907,70 @@ class ExampleUnitTest {
     // Aggregate: Ali 2 - 1 Veli -> Ali wins, no tie-breaker needed!
     val noTieBreaker = engine.checkDoubleMatchTieBreaker(tournament, listOf(leg1, leg2NotTied), leg2NotTied)
     assertNull(noTieBreaker)
+  }
+
+  @Test
+  fun testKnockoutAdvancementWithDecidingMatchAndThirdPlace() {
+    val engine = com.example.util.TournamentEngine
+    val tournament = com.example.data.model.Tournament(
+      id = "t_ko",
+      classRoomId = "c1",
+      name = "Satranç",
+      type = com.example.data.model.TournamentType.ELEME,
+      matchType = com.example.data.model.TournamentMatchType.TEK_MAC,
+      winnerSelectionMethod = com.example.data.model.WinnerSelectionMethod.WINNER
+    )
+
+    val participants = listOf(
+      Pair("s1", "Ahmet"),
+      Pair("s2", "Mehmet"),
+      Pair("s3", "Ayşe"),
+      Pair("s4", "Fatma")
+    )
+
+    val matches = engine.generateKnockoutFixture(
+      tournamentId = "t_ko",
+      participants = participants,
+      isDoubleMatch = false
+    )
+
+    // 4 participants -> 2 Semis (R1), 1 3rd place match (R2), 1 Final (R2) = 4 matches
+    assertEquals(4, matches.size)
+    val thirdPlaceMatch = matches.find { it.isThirdPlaceMatch }
+    assertNotNull(thirdPlaceMatch)
+
+    // Complete semi-finals
+    val s1Match = matches.find { it.matchCode == "R1-M1" }!!
+    val s2Match = matches.find { it.matchCode == "R1-M2" }!!
+
+    val completedS1 = s1Match.copy(
+      status = "completed",
+      winnerId = s1Match.player2Id // player 2 wins, player 1 loses
+    )
+    val completedS2 = s2Match.copy(
+      status = "completed",
+      winnerId = s2Match.player1Id // player 1 wins, player 2 loses
+    )
+
+    val matchesWithSemis = matches.map {
+      when (it.id) {
+        completedS1.id -> completedS1
+        completedS2.id -> completedS2
+        else -> it
+      }
+    }
+
+    val synced = engine.syncKnockoutTree(matchesWithSemis, tournament.winnerSelectionMethod)
+
+    // Check Final: Winners of semi-finals advanced!
+    val finalMatch = synced.find { it.round == 2 && !it.isThirdPlaceMatch }!!
+    assertEquals(completedS1.player2Id, finalMatch.player1Id)
+    assertEquals(completedS2.player1Id, finalMatch.player2Id)
+
+    // Check 3rd place match: Losers of semi-finals placed!
+    val syncedThird = synced.find { it.isThirdPlaceMatch }!!
+    assertEquals(completedS1.player1Id, syncedThird.player1Id)
+    assertEquals(completedS2.player2Id, syncedThird.player2Id)
   }
 }
 

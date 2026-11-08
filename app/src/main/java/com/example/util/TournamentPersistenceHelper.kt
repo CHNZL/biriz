@@ -202,6 +202,9 @@ object TournamentPersistenceHelper {
                         isDoubleMatch = obj.optBoolean("isDoubleMatch", false),
                         pairCode = obj.optString("pairCode", "").takeIf { it.isNotEmpty() },
                         isTieBreaker = obj.optBoolean("isTieBreaker", false),
+                        isThirdPlaceMatch = obj.optBoolean("isThirdPlaceMatch", false),
+                        player1Source = obj.optString("player1Source", "").takeIf { it.isNotEmpty() },
+                        player2Source = obj.optString("player2Source", "").takeIf { it.isNotEmpty() },
                         groupId = obj.optString("groupId", "").takeIf { it.isNotEmpty() },
                         groupName = obj.optString("groupName", "").takeIf { it.isNotEmpty() },
                         stage = obj.optString("stage", "knockout"),
@@ -236,6 +239,9 @@ object TournamentPersistenceHelper {
                 put("isDoubleMatch", m.isDoubleMatch)
                 m.pairCode?.let { put("pairCode", it) }
                 put("isTieBreaker", m.isTieBreaker)
+                put("isThirdPlaceMatch", m.isThirdPlaceMatch)
+                m.player1Source?.let { put("player1Source", it) }
+                m.player2Source?.let { put("player2Source", it) }
                 m.groupId?.let { put("groupId", it) }
                 m.groupName?.let { put("groupName", it) }
                 put("stage", m.stage)
@@ -341,57 +347,20 @@ object TournamentPersistenceHelper {
         if (isKnockoutStage) {
             val baseCode = TournamentEngine.getBaseMatchCode(match.matchCode)
 
-            if (match.isTieBreaker) {
-                // Karar Maçı (Tie-Breaker) tamamlandı -> Kazananı üst tura çıkart
-                val winningId = winnerId ?: when {
-                    score1 != null && score2 != null && score1 > score2 -> match.player1Id
-                    score1 != null && score2 != null && score2 > score1 -> match.player2Id
-                    else -> null
-                }
-                if (winningId != null) {
-                    val winningName = if (winningId == match.player1Id) match.player1Name else match.player2Name
-                    refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
-                        refreshedMatches,
-                        baseCode,
-                        winningId,
-                        winningName
-                    )
-                }
-            } else if (match.isDoubleMatch) {
-                // Çift maçlı (Rövanşlı) karşılaşma
+            if (match.isDoubleMatch) {
+                // Çift maçlı (Rövanşlı) karşılaşmada beraberlik bozma maçı kontrolü
                 val tieBreaker = TournamentEngine.checkDoubleMatchTieBreaker(tournament, refreshedMatches, updatedMatch)
                 if (tieBreaker != null) {
                     refreshedMatches = refreshedMatches + tieBreaker
-                } else {
-                    val pairCode = updatedMatch.pairCode ?: updatedMatch.id
-                    val legMatches = refreshedMatches.filter { it.pairCode == pairCode && !it.isTieBreaker }
-                    val overallWinner = TournamentEngine.getDoubleMatchOverallWinner(tournament, legMatches)
-                    if (overallWinner != null) {
-                        refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
-                            refreshedMatches,
-                            baseCode,
-                            overallWinner.first,
-                            overallWinner.second
-                        )
-                    }
-                }
-            } else {
-                // Tek maçlı eleme
-                val winningId = winnerId ?: when {
-                    score1 != null && score2 != null && score1 > score2 -> match.player1Id
-                    score1 != null && score2 != null && score2 > score1 -> match.player2Id
-                    else -> null
-                }
-                if (winningId != null) {
-                    val winningName = if (winningId == match.player1Id) match.player1Name else match.player2Name
-                    refreshedMatches = TournamentEngine.advanceWinnerToNextMatch(
-                        refreshedMatches,
-                        baseCode,
-                        winningId,
-                        winningName
-                    )
                 }
             }
+
+            // Eleme ağacını kesin ve hatasız senkronize et:
+            // Kaybeden değil daima kazanan tur atlar, 3.lük maçına ise yarı final mağlupları yerleşir.
+            refreshedMatches = TournamentEngine.syncKnockoutTree(
+                matches = refreshedMatches,
+                selectionMethod = tournament.winnerSelectionMethod
+            )
         }
 
         saveMatches(context, tournamentId, refreshedMatches)

@@ -175,6 +175,9 @@ object TournamentEngine {
                 val s1 = r2Slots.getOrElse(i * 2) { Pair("BYE", "BAY") }
                 val s2 = r2Slots.getOrElse(i * 2 + 1) { Pair("BYE", "BAY") }
                 val matchCode = "R2-M${i + 1}"
+                val p1Source = if (s1.first.startsWith("WINNER_OF_")) "WINNER:" + s1.first.removePrefix("WINNER_OF_") else null
+                val p2Source = if (s2.first.startsWith("WINNER_OF_")) "WINNER:" + s2.first.removePrefix("WINNER_OF_") else null
+
                 val match = TournamentMatch(
                     tournamentId = tournamentId,
                     round = 2,
@@ -185,6 +188,8 @@ object TournamentEngine {
                     matchCode = matchCode,
                     isDoubleMatch = isDoubleMatch,
                     pairCode = if (isDoubleMatch) "PAIR-R2-M${i + 1}" else null,
+                    player1Source = p1Source,
+                    player2Source = p2Source,
                     stage = "knockout"
                 )
                 matches.add(match)
@@ -201,6 +206,8 @@ object TournamentEngine {
                             matchCode = "R2-M${i + 1}-R",
                             isDoubleMatch = true,
                             pairCode = "PAIR-R2-M${i + 1}",
+                            player1Source = p2Source,
+                            player2Source = p1Source,
                             stage = "knockout"
                         )
                     )
@@ -237,6 +244,54 @@ object TournamentEngine {
 
         while (currentSlots > 1) {
             val nextSlots = currentSlots / 2
+
+            // Eğer yarı finalden finale geçiyorsak (currentSlots == 2, nextSlots == 1),
+            // Kullanıcı isteği: Finalden önce 3.lük maçını ekle!
+            if (currentSlots == 2) {
+                val thirdMatchCode = "R$curRound-M-3RD"
+                val p1LoserId = "LOSER_OF_R$prevRound-M1"
+                val p2LoserId = "LOSER_OF_R$prevRound-M2"
+                val p1LoserName = "Yarı Final 1 Mağlubu"
+                val p2LoserName = "Yarı Final 2 Mağlubu"
+
+                val thirdMatch = TournamentMatch(
+                    tournamentId = tournamentId,
+                    round = curRound,
+                    player1Id = p1LoserId,
+                    player2Id = p2LoserId,
+                    player1Name = p1LoserName,
+                    player2Name = p2LoserName,
+                    matchCode = thirdMatchCode,
+                    isDoubleMatch = isDoubleMatch,
+                    pairCode = if (isDoubleMatch) "PAIR-$thirdMatchCode" else null,
+                    isThirdPlaceMatch = true,
+                    player1Source = "LOSER:R$prevRound-M1",
+                    player2Source = "LOSER:R$prevRound-M2",
+                    stage = "knockout"
+                )
+                matches.add(thirdMatch)
+
+                if (isDoubleMatch) {
+                    matches.add(
+                        TournamentMatch(
+                            tournamentId = tournamentId,
+                            round = curRound,
+                            player1Id = p2LoserId,
+                            player2Id = p1LoserId,
+                            player1Name = p2LoserName,
+                            player2Name = p1LoserName,
+                            matchCode = "$thirdMatchCode-R",
+                            isDoubleMatch = true,
+                            pairCode = "PAIR-$thirdMatchCode",
+                            isThirdPlaceMatch = true,
+                            player1Source = "LOSER:R$prevRound-M2",
+                            player2Source = "LOSER:R$prevRound-M1",
+                            stage = "knockout"
+                        )
+                    )
+                }
+            }
+
             for (i in 0 until nextSlots) {
                 val mCode = "R$curRound-M${i + 1}"
                 val p1Id = "WINNER_OF_R$prevRound-M${i * 2 + 1}"
@@ -254,6 +309,9 @@ object TournamentEngine {
                     matchCode = mCode,
                     isDoubleMatch = isDoubleMatch,
                     pairCode = if (isDoubleMatch) "PAIR-R$curRound-M${i + 1}" else null,
+                    isThirdPlaceMatch = false,
+                    player1Source = "WINNER:R$prevRound-M${i * 2 + 1}",
+                    player2Source = "WINNER:R$prevRound-M${i * 2 + 2}",
                     stage = "knockout"
                 )
                 matches.add(match)
@@ -270,6 +328,9 @@ object TournamentEngine {
                             matchCode = "$mCode-R",
                             isDoubleMatch = true,
                             pairCode = "PAIR-R$curRound-M${i + 1}",
+                            isThirdPlaceMatch = false,
+                            player1Source = "WINNER:R$prevRound-M${i * 2 + 2}",
+                            player2Source = "WINNER:R$prevRound-M${i * 2 + 1}",
                             stage = "knockout"
                         )
                     )
@@ -646,12 +707,8 @@ object TournamentEngine {
         val existingTieBreaker = matches.find { it.pairCode == pairCode && it.isTieBreaker }
         if (existingTieBreaker != null) return null
 
-        val m1 = legMatches[0]
-        val m2 = legMatches[1]
-
-        // Toplam skor veya galibiyet hesabı
-        var p1TotalScore = 0
-        var p2TotalScore = 0
+        val m1 = legMatches.find { !it.matchCode.endsWith("-R") } ?: legMatches[0]
+        val m2 = legMatches.find { it.matchCode.endsWith("-R") } ?: legMatches[1]
 
         val p1Id = m1.player1Id
         val p2Id = m1.player2Id
@@ -659,11 +716,11 @@ object TournamentEngine {
         if (tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE) {
             val m1Score1 = m1.score1 ?: 0
             val m1Score2 = m1.score2 ?: 0
-            val m2Score1 = m2.score1 ?: 0 // m2'de player1Id m1'in player2Id'sidir
+            val m2Score1 = m2.score1 ?: 0 // m2'de player1Id = m1'in player2Id'sidir
             val m2Score2 = m2.score2 ?: 0
 
-            p1TotalScore = m1Score1 + m2Score2
-            p2TotalScore = m1Score2 + m2Score1
+            val p1TotalScore = m1Score1 + m2Score2
+            val p2TotalScore = m1Score2 + m2Score1
 
             if (p1TotalScore == p2TotalScore) {
                 // Beraberlik bozma maçı türet
@@ -718,48 +775,198 @@ object TournamentEngine {
     }
 
     /**
+     * Eşleşme Sonucu Modeli (Kesin Galip ve Mağlup Tespiti)
+     */
+    data class MatchupResult(
+        val baseCode: String,
+        val isCompleted: Boolean,
+        val winnerId: String?,
+        val winnerName: String?,
+        val loserId: String?,
+        val loserName: String?
+    )
+
+    /**
+     * Tek bir eleme eşleşmesinin (tek maç, çift maç ve karar maçı dahil)
+     * kesin galibini ve mağlubunu tespit eder. Kaybeden değil kazananın tur atlamasını garanti eder.
+     */
+    fun determineMatchupResult(
+        baseCode: String,
+        allMatches: List<TournamentMatch>,
+        selectionMethod: WinnerSelectionMethod
+    ): MatchupResult {
+        val related = allMatches.filter { getBaseMatchCode(it.matchCode) == baseCode }
+        if (related.isEmpty()) {
+            return MatchupResult(baseCode, false, null, null, null, null)
+        }
+
+        // 1. Karar Maçı (Tie-Breaker) var mı ve oynanmış mı?
+        val tieBreaker = related.find { it.isTieBreaker }
+        if (tieBreaker != null) {
+            if (tieBreaker.status == "completed") {
+                val wId = tieBreaker.winnerId ?: when {
+                    tieBreaker.score1 != null && tieBreaker.score2 != null && tieBreaker.score1 > tieBreaker.score2 -> tieBreaker.player1Id
+                    tieBreaker.score1 != null && tieBreaker.score2 != null && tieBreaker.score2 > tieBreaker.score1 -> tieBreaker.player2Id
+                    else -> null
+                }
+                if (wId != null) {
+                    val isP1Winner = (wId == tieBreaker.player1Id)
+                    val wName = if (isP1Winner) tieBreaker.player1Name else tieBreaker.player2Name
+                    val lId = if (isP1Winner) tieBreaker.player2Id else tieBreaker.player1Id
+                    val lName = if (isP1Winner) tieBreaker.player2Name else tieBreaker.player1Name
+                    return MatchupResult(baseCode, true, wId, wName, lId, lName)
+                }
+            }
+            return MatchupResult(baseCode, false, null, null, null, null)
+        }
+
+        // 2. Çift Maç (Rövanşlı) Karşılaşma
+        val isDouble = related.any { it.isDoubleMatch }
+        if (isDouble) {
+            val m1 = related.find { !it.matchCode.endsWith("-R") }
+            val m2 = related.find { it.matchCode.endsWith("-R") }
+            if (m1 != null && m2 != null && m1.status == "completed" && m2.status == "completed") {
+                if (selectionMethod == WinnerSelectionMethod.SCORE) {
+                    val p1Total = (m1.score1 ?: 0) + (m2.score2 ?: 0)
+                    val p2Total = (m1.score2 ?: 0) + (m2.score1 ?: 0)
+                    return when {
+                        p1Total > p2Total -> MatchupResult(baseCode, true, m1.player1Id, m1.player1Name, m1.player2Id, m1.player2Name)
+                        p2Total > p1Total -> MatchupResult(baseCode, true, m1.player2Id, m1.player2Name, m1.player1Id, m1.player1Name)
+                        else -> MatchupResult(baseCode, false, null, null, null, null) // Eşitlik: Karar maçı bekleniyor
+                    }
+                } else {
+                    val w1 = m1.winnerId
+                    val w2 = m2.winnerId
+                    return when {
+                        w1 != null && w1 == w2 -> {
+                            val isP1 = (w1 == m1.player1Id)
+                            val wName = if (isP1) m1.player1Name else m1.player2Name
+                            val lId = if (isP1) m1.player2Id else m1.player1Id
+                            val lName = if (isP1) m1.player2Name else m1.player1Name
+                            MatchupResult(baseCode, true, w1, wName, lId, lName)
+                        }
+                        else -> MatchupResult(baseCode, false, null, null, null, null) // 1-1 eşitlik: Karar maçı bekleniyor
+                    }
+                }
+            }
+            return MatchupResult(baseCode, false, null, null, null, null)
+        }
+
+        // 3. Tek Maçlı Eleme Karşılaşması
+        val m = related.firstOrNull()
+        if (m != null && m.status == "completed") {
+            if (m.player2Id == "BYE") {
+                return MatchupResult(baseCode, true, m.player1Id, m.player1Name, null, null)
+            }
+            if (m.player1Id == "BYE") {
+                return MatchupResult(baseCode, true, m.player2Id, m.player2Name, null, null)
+            }
+            val wId = m.winnerId ?: when {
+                m.score1 != null && m.score2 != null && m.score1 > m.score2 -> m.player1Id
+                m.score1 != null && m.score2 != null && m.score2 > m.score1 -> m.player2Id
+                else -> null
+            }
+            if (wId != null) {
+                val isP1 = (wId == m.player1Id)
+                val wName = if (isP1) m.player1Name else m.player2Name
+                val lId = if (isP1) m.player2Id else m.player1Id
+                val lName = if (isP1) m.player2Name else m.player1Name
+                return MatchupResult(baseCode, true, wId, wName, lId, lName)
+            }
+        }
+
+        return MatchupResult(baseCode, false, null, null, null, null)
+    }
+
+    /**
      * Çift maçlı (Rövanşlı) karşılaşmalarda iki ayağın genel galibini tespit eder.
      */
     fun getDoubleMatchOverallWinner(
         tournament: Tournament,
         legMatches: List<TournamentMatch>
     ): Pair<String, String>? {
-        val m1 = legMatches.find { !it.matchCode.endsWith("-R") && !it.isTieBreaker } ?: return null
-        val m2 = legMatches.find { it.matchCode.endsWith("-R") && !it.isTieBreaker } ?: return null
-
-        if (m1.status != "completed" || m2.status != "completed") return null
-
-        if (tournament.winnerSelectionMethod == WinnerSelectionMethod.SCORE) {
-            val p1Total = (m1.score1 ?: 0) + (m2.score2 ?: 0)
-            val p2Total = (m1.score2 ?: 0) + (m2.score1 ?: 0)
-            return when {
-                p1Total > p2Total -> Pair(m1.player1Id, m1.player1Name)
-                p2Total > p1Total -> Pair(m1.player2Id, m1.player2Name)
-                else -> null
-            }
-        } else {
-            val w1 = m1.winnerId
-            val w2 = m2.winnerId
-            return when {
-                w1 != null && w1 == w2 -> {
-                    val name = if (w1 == m1.player1Id) m1.player1Name else m1.player2Name
-                    Pair(w1, name)
-                }
-                w1 != null && w2 == null -> {
-                    val name = if (w1 == m1.player1Id) m1.player1Name else m1.player2Name
-                    Pair(w1, name)
-                }
-                w2 != null && w1 == null -> {
-                    val name = if (w2 == m1.player1Id) m1.player1Name else m1.player2Name
-                    Pair(w2, name)
-                }
-                else -> null
-            }
-        }
+        val baseCode = legMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: return null
+        val outcome = determineMatchupResult(baseCode, legMatches, tournament.winnerSelectionMethod)
+        return if (outcome.isCompleted && outcome.winnerId != null) {
+            Pair(outcome.winnerId, outcome.winnerName ?: "")
+        } else null
     }
 
     /**
-     * 6. ELEME AĞACINDA GALİBİ BİR SONRAKİ TURA İLERLETME
+     * 6. ELEME AĞACINI KESİN VE SENKRONİZE GÜNCELLEME
+     * - Tüm turları sırayla tarar.
+     * - Karar maçları ve normal maçlar bittiğinde YALNIZCA KAZANANI üst tura ilerletir.
+     * - Yarı final mağluplarını ise otomatik olarak 3.lük maçına yerleştirir.
+     * - Önceden yanlış yerleşmiş oyuncuları daima güncel galip ile ezerek düzeltir.
+     */
+    fun syncKnockoutTree(
+        matches: List<TournamentMatch>,
+        selectionMethod: WinnerSelectionMethod
+    ): List<TournamentMatch> {
+        val updated = matches.toMutableList()
+        val knockoutMatches = updated.filter { it.stage == "knockout" }
+        val rounds = knockoutMatches.map { it.round }.distinct().sorted()
+
+        for (r in rounds) {
+            val roundMatches = updated.filter { it.stage == "knockout" && it.round == r }
+            val baseCodes = roundMatches.map { getBaseMatchCode(it.matchCode) }.distinct()
+
+            for (baseCode in baseCodes) {
+                val outcome = determineMatchupResult(baseCode, updated, selectionMethod)
+                if (outcome.isCompleted && outcome.winnerId != null) {
+                    val winPlaceholder = "WINNER_OF_$baseCode"
+                    val losePlaceholder = "LOSER_OF_$baseCode"
+                    val winSource = "WINNER:$baseCode"
+                    val loseSource = "LOSER:$baseCode"
+
+                    for (i in updated.indices) {
+                        val m = updated[i]
+                        if (m.stage == "knockout" && m.round > r) {
+                            var p1Id = m.player1Id
+                            var p1Name = m.player1Name
+                            var p2Id = m.player2Id
+                            var p2Name = m.player2Name
+
+                            // 1. Oyuncu Güncelleme: Galip veya Mağlup Kaynağı
+                            if (m.player1Source == winSource || m.player1Id == winPlaceholder || (m.player1Source == null && m.player1Id.startsWith("WINNER_OF_$baseCode"))) {
+                                p1Id = outcome.winnerId
+                                p1Name = outcome.winnerName ?: "Galip"
+                            } else if (m.player1Source == loseSource || m.player1Id == losePlaceholder || (m.player1Source == null && m.player1Id.startsWith("LOSER_OF_$baseCode"))) {
+                                if (outcome.loserId != null) {
+                                    p1Id = outcome.loserId
+                                    p1Name = outcome.loserName ?: "Mağlup"
+                                }
+                            }
+
+                            // 2. Oyuncu Güncelleme: Galip veya Mağlup Kaynağı
+                            if (m.player2Source == winSource || m.player2Id == winPlaceholder || (m.player2Source == null && m.player2Id.startsWith("WINNER_OF_$baseCode"))) {
+                                p2Id = outcome.winnerId
+                                p2Name = outcome.winnerName ?: "Galip"
+                            } else if (m.player2Source == loseSource || m.player2Id == losePlaceholder || (m.player2Source == null && m.player2Id.startsWith("LOSER_OF_$baseCode"))) {
+                                if (outcome.loserId != null) {
+                                    p2Id = outcome.loserId
+                                    p2Name = outcome.loserName ?: "Mağlup"
+                                }
+                            }
+
+                            if (p1Id != m.player1Id || p1Name != m.player1Name || p2Id != m.player2Id || p2Name != m.player2Name) {
+                                updated[i] = m.copy(
+                                    player1Id = p1Id,
+                                    player1Name = p1Name,
+                                    player2Id = p2Id,
+                                    player2Name = p2Name
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return updated
+    }
+
+    /**
+     * Eleme ağacında galibi bir sonraki tura ilerletme (syncKnockoutTree'ye yönlendirir)
      */
     fun advanceWinnerToNextMatch(
         matches: List<TournamentMatch>,
@@ -770,13 +977,14 @@ object TournamentEngine {
         val updated = matches.toMutableList()
         val baseCode = getBaseMatchCode(completedMatchCode)
         val placeholder = "WINNER_OF_$baseCode"
+        val winSource = "WINNER:$baseCode"
 
         for (i in updated.indices) {
             val m = updated[i]
-            if (m.player1Id == placeholder || getBaseMatchCode(m.player1Id) == placeholder) {
+            if (m.player1Source == winSource || m.player1Id == placeholder || getBaseMatchCode(m.player1Id) == placeholder) {
                 updated[i] = updated[i].copy(player1Id = winnerId, player1Name = winnerName)
             }
-            if (m.player2Id == placeholder || getBaseMatchCode(m.player2Id) == placeholder) {
+            if (m.player2Source == winSource || m.player2Id == placeholder || getBaseMatchCode(m.player2Id) == placeholder) {
                 updated[i] = updated[i].copy(player2Id = winnerId, player2Name = winnerName)
             }
         }
@@ -785,6 +993,9 @@ object TournamentEngine {
 
     /**
      * 7. PODYUM TESPİTİ (1. Şampiyon, 2. İkinci, 3. Üçüncü)
+     * - Final Maçı Galibi: 1. Şampiyon
+     * - Final Maçı Mağlubu: 2. İkinci
+     * - 3.lük Maçı Galibi: 3. Üçüncü (Karar maçları dahil kesin galip)
      */
     fun determinePodium(
         tournament: Tournament,
@@ -801,38 +1012,41 @@ object TournamentEngine {
             }
 
             TournamentType.ELEME, TournamentType.GRUP_ELEME -> {
-                // Eleme ağacında final maçı tespiti
                 val knockoutMatches = matches.filter { it.stage == "knockout" }
                 val maxRound = knockoutMatches.maxOfOrNull { it.round } ?: 1
-                val finalMatches = knockoutMatches.filter { it.round == maxRound && !it.isTieBreaker }
 
-                val finalCompleted = finalMatches.isNotEmpty() && finalMatches.all { it.status == "completed" }
+                // Final Maçı (isThirdPlaceMatch == false olan ve en üst round'daki maçlar)
+                val finalMatches = knockoutMatches.filter { it.round == maxRound && !it.isThirdPlaceMatch }
+                val finalBaseCode = finalMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: ""
+                val finalOutcome = determineMatchupResult(finalBaseCode, knockoutMatches, tournament.winnerSelectionMethod)
 
-                if (!finalCompleted) {
+                // 3.lük Maçı (isThirdPlaceMatch == true olan maçlar)
+                val thirdPlaceMatches = knockoutMatches.filter { it.isThirdPlaceMatch }
+                val thirdBaseCode = thirdPlaceMatches.firstOrNull()?.let { getBaseMatchCode(it.matchCode) } ?: ""
+                val thirdOutcome = if (thirdBaseCode.isNotEmpty()) determineMatchupResult(thirdBaseCode, knockoutMatches, tournament.winnerSelectionMethod) else null
+
+                if (!finalOutcome.isCompleted || finalOutcome.winnerId == null) {
                     Triple(null, null, null)
                 } else {
-                    val lastMatch = finalMatches.last()
-                    val winnerId = lastMatch.winnerId ?: if ((lastMatch.score1 ?: 0) > (lastMatch.score2 ?: 0)) lastMatch.player1Id else lastMatch.player2Id
-                    val runnerUpId = if (winnerId == lastMatch.player1Id) lastMatch.player2Id else lastMatch.player1Id
+                    val first = Pair(finalOutcome.winnerId, finalOutcome.winnerName ?: "Şampiyon")
+                    val second = if (finalOutcome.loserId != null) Pair(finalOutcome.loserId, finalOutcome.loserName ?: "İkinci") else null
 
-                    val winnerName = if (winnerId == lastMatch.player1Id) lastMatch.player1Name else lastMatch.player2Name
-                    val runnerUpName = if (winnerId == lastMatch.player1Id) lastMatch.player2Name else lastMatch.player1Name
+                    // 3.lük: 3.lük maçı galibi
+                    val third = if (thirdOutcome != null && thirdOutcome.isCompleted && thirdOutcome.winnerId != null) {
+                        Pair(thirdOutcome.winnerId, thirdOutcome.winnerName ?: "Üçüncü")
+                    } else {
+                        // 3.lük maçı henüz sonuçlanmamış veya bulunmuyorsa yarı final mağlubu fallback
+                        val semiRound = maxRound - 1
+                        val semiMatches = knockoutMatches.filter { it.round == semiRound }
+                        val semiBaseCodes = semiMatches.map { getBaseMatchCode(it.matchCode) }.distinct()
+                        val semiLosers = semiBaseCodes.mapNotNull { bc ->
+                            val outcome = determineMatchupResult(bc, knockoutMatches, tournament.winnerSelectionMethod)
+                            if (outcome.isCompleted && outcome.loserId != null) Pair(outcome.loserId, outcome.loserName ?: "") else null
+                        }.distinctBy { it.first }
+                        semiLosers.firstOrNull()
+                    }
 
-                    // 3.lük: Yarı final maçlarını kaybedenler arasından averajı yüksek olan
-                    val semiRound = maxRound - 1
-                    val semiMatches = knockoutMatches.filter { it.round == semiRound && it.status == "completed" }
-                    val semiLosers = semiMatches.mapNotNull { sm ->
-                        val smWinner = sm.winnerId ?: if ((sm.score1 ?: 0) > (sm.score2 ?: 0)) sm.player1Id else sm.player2Id
-                        if (smWinner == sm.player1Id) Pair(sm.player2Id, sm.player2Name) else Pair(sm.player1Id, sm.player1Name)
-                    }.distinctBy { it.first }
-
-                    val third = semiLosers.firstOrNull()
-
-                    Triple(
-                        Pair(winnerId, winnerName),
-                        Pair(runnerUpId, runnerUpName),
-                        third
-                    )
+                    Triple(first, second, third)
                 }
             }
         }

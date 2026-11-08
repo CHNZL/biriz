@@ -830,11 +830,17 @@ private fun TournamentDetailScreen(
                             Text("Bu tur için planlanmış maç bulunmuyor.", color = secondaryText, fontSize = 12.sp)
                         }
                     } else {
+                        val sortedRoundMatches = remember(roundMatches) {
+                            roundMatches.sortedWith(
+                                compareBy<TournamentMatch> { if (it.isThirdPlaceMatch) 0 else 1 }
+                                    .thenBy { it.matchCode }
+                            )
+                        }
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(roundMatches, key = { it.id }) { match ->
+                            items(sortedRoundMatches, key = { it.id }) { match ->
                                 TournamentMatchCard(
                                     tournament = tournament,
                                     match = match,
@@ -853,8 +859,7 @@ private fun TournamentDetailScreen(
                         TournamentEliminationsView(
                             tournament = tournament,
                             matches = matches,
-                            isDarkTheme = isDarkTheme,
-                            onMatchClick = onMatchClick
+                            isDarkTheme = isDarkTheme
                         )
                     }
                     TournamentType.LIG -> {
@@ -877,7 +882,6 @@ private fun TournamentDetailScreen(
                             matches = matches,
                             students = students,
                             isDarkTheme = isDarkTheme,
-                            onMatchClick = onMatchClick,
                             onGenerateKnockout = {
                                 TournamentPersistenceHelper.generateAndSaveKnockoutFromGroups(
                                     context = context,
@@ -947,7 +951,21 @@ private fun TournamentMatchCard(
                     color = secondaryText
                 )
 
-                if (isTieBreaker) {
+                if (match.isThirdPlaceMatch) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, Color(0xFFD97706))
+                    ) {
+                        Text(
+                            text = "🥉 3.lük Maçı",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF92400E),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                } else if (isTieBreaker) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = Color(0xFFFEE2E2),
@@ -1181,8 +1199,7 @@ private fun TournamentStandingsView(
 private fun TournamentEliminationsView(
     tournament: Tournament,
     matches: List<TournamentMatch>,
-    isDarkTheme: Boolean,
-    onMatchClick: (TournamentMatch) -> Unit
+    isDarkTheme: Boolean
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
@@ -1215,66 +1232,199 @@ private fun TournamentEliminationsView(
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Bilgilendirme Şeridi (Kullanıcı İsteği: Bu sekme sadece turnuva durumunu izlemek içindir)
+        item {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isDarkTheme) Color(0x2506B6D4) else Color(0xFFF0FDF4),
+                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5006B6D4) else Color(0xFF86EFAC)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("ℹ️", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Bu sekme turnuva durumunu canlı takip etmek içindir. Maç skorları ve galip seçimleri 'Maçlar & Fikstür' sekmesinden yapılır.",
+                        fontSize = 11.sp,
+                        color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF166534),
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        }
+
         items(rounds, key = { it }) { r ->
             val roundMatches = knockoutMatches.filter { it.round == r }
-            val roundTitle = when {
-                r == maxRound -> "🏆 Final"
-                r == maxRound - 1 && maxRound >= 2 -> "🥈 Yarı Final"
-                r == maxRound - 2 && maxRound >= 3 -> "🥉 Çeyrek Final"
-                r == maxRound - 3 && maxRound >= 4 -> "Son 16 (1. Eleme)"
-                r == 1 && rounds.size > 1 -> "⚡ Ön Eleme Turu"
-                else -> "$r. Eleme Turu"
-            }
-            val completedCount = roundMatches.count { it.status == "completed" }
+            val isFinalRound = (r == maxRound)
+            val thirdPlaceMatches = roundMatches.filter { it.isThirdPlaceMatch }
+            val regularMatches = roundMatches.filter { !it.isThirdPlaceMatch }
 
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Tur Başlık Şeridi
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            if (isFinalRound && thirdPlaceMatches.isNotEmpty()) {
+                // 1. Önce 3.lük Maçı Bloğu (Bronz Madalya)
+                val thirdCompleted = thirdPlaceMatches.count { it.status == "completed" }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkTheme) Color(0x3578350F) else Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFFB45309) else Color(0xFFFCD34D)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = roundTitle,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            color = if (r == maxRound) BirizAmber else primaryText
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (completedCount == roundMatches.size) Color(0xFFDCFCE7) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
-                            border = BorderStroke(0.8.dp, if (completedCount == roundMatches.size) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = if (completedCount == roundMatches.size) "Tamamlandı ($completedCount/$completedCount) ✅" else "$completedCount/${roundMatches.size} Maç",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (completedCount == roundMatches.size) Color(0xFF15803D) else secondaryText,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                text = "🥉 3.lük Maçı (Bronz Madalya)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = if (isDarkTheme) Color(0xFFFBBF24) else Color(0xFF92400E)
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (thirdCompleted == thirdPlaceMatches.size) Color(0xFFDCFCE7) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
+                                border = BorderStroke(0.8.dp, if (thirdCompleted == thirdPlaceMatches.size) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                            ) {
+                                Text(
+                                    text = if (thirdCompleted == thirdPlaceMatches.size) "Tamamlandı ($thirdCompleted/$thirdCompleted) ✅" else "$thirdCompleted/${thirdPlaceMatches.size} Maç",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (thirdCompleted == thirdPlaceMatches.size) Color(0xFF15803D) else secondaryText,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        thirdPlaceMatches.forEach { match ->
+                            EliminationMatchCard(
+                                tournament = tournament,
+                                match = match,
+                                isDarkTheme = isDarkTheme
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Maç Kartları
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    roundMatches.forEach { match ->
-                        EliminationMatchCard(
-                            tournament = tournament,
-                            match = match,
-                            isDarkTheme = isDarkTheme,
-                            onClick = { onMatchClick(match) }
-                        )
+                // 2. Ardından Final Maçı Bloğu (Şampiyonluk)
+                val finalCompleted = regularMatches.count { it.status == "completed" }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "🏆 Final (Şampiyonluk Maçı)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = BirizAmber
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (finalCompleted == regularMatches.size) Color(0xFFDCFCE7) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
+                                border = BorderStroke(0.8.dp, if (finalCompleted == regularMatches.size) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                            ) {
+                                Text(
+                                    text = if (finalCompleted == regularMatches.size) "Tamamlandı ($finalCompleted/$finalCompleted) ✅" else "$finalCompleted/${regularMatches.size} Maç",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (finalCompleted == regularMatches.size) Color(0xFF15803D) else secondaryText,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        regularMatches.forEach { match ->
+                            EliminationMatchCard(
+                                tournament = tournament,
+                                match = match,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+                    }
+                }
+            } else {
+                val roundTitle = when {
+                    r == maxRound -> "🏆 Final"
+                    r == maxRound - 1 && maxRound >= 2 -> "🥈 Yarı Final"
+                    r == maxRound - 2 && maxRound >= 3 -> "🥉 Çeyrek Final"
+                    r == maxRound - 3 && maxRound >= 4 -> "Son 16 (1. Eleme)"
+                    r == 1 && rounds.size > 1 -> "⚡ Ön Eleme Turu"
+                    else -> "$r. Eleme Turu"
+                }
+                val completedCount = roundMatches.count { it.status == "completed" }
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Tur Başlık Şeridi
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = roundTitle,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = if (r == maxRound) BirizAmber else primaryText
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (completedCount == roundMatches.size) Color(0xFFDCFCE7) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
+                                border = BorderStroke(0.8.dp, if (completedCount == roundMatches.size) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                            ) {
+                                Text(
+                                    text = if (completedCount == roundMatches.size) "Tamamlandı ($completedCount/$completedCount) ✅" else "$completedCount/${roundMatches.size} Maç",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (completedCount == roundMatches.size) Color(0xFF15803D) else secondaryText,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Maç Kartları
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        roundMatches.forEach { match ->
+                            EliminationMatchCard(
+                                tournament = tournament,
+                                match = match,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
                     }
                 }
             }
@@ -1283,14 +1433,13 @@ private fun TournamentEliminationsView(
 }
 
 // -------------------------------------------------------------
-// BİLEŞEN: ELEME MAÇ KARTI (Yenen Yeşil, Yenilen Kırmızı, Oynanmayan Nötr)
+// BİLEŞEN: ELEME MAÇ KARTI (Salt Okunur - İzleme & Takip Amaçlı)
 // -------------------------------------------------------------
 @Composable
 private fun EliminationMatchCard(
     tournament: Tournament,
     match: TournamentMatch,
-    isDarkTheme: Boolean,
-    onClick: () -> Unit
+    isDarkTheme: Boolean
 ) {
     val isCompleted = match.status == "completed"
     val isBye = match.player2Id == "BYE" || match.player1Id == "BYE"
@@ -1310,8 +1459,7 @@ private fun EliminationMatchCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .clickable { onClick() },
+            .clip(RoundedCornerShape(10.dp)),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isDarkTheme) Color(0x351E293B) else Color.White
@@ -1325,12 +1473,23 @@ private fun EliminationMatchCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "${match.matchCode}${if (match.isDoubleMatch && match.matchCode.endsWith("-R")) " (Rövanş)" else ""}",
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = secondaryText
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "${match.matchCode}${if (match.isDoubleMatch && match.matchCode.endsWith("-R")) " (Rövanş)" else ""}",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = secondaryText
+                    )
+                    if (match.isThirdPlaceMatch) {
+                        Surface(shape = RoundedCornerShape(3.dp), color = Color(0xFFFEF3C7)) {
+                            Text("🥉 3.lük", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E), modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                        }
+                    } else if (match.isTieBreaker) {
+                        Surface(shape = RoundedCornerShape(3.dp), color = Color(0xFFFEE2E2)) {
+                            Text("⚖️ Karar", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF991B1B), modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                        }
+                    }
+                }
                 if (isBye) {
                     Text("Bay Geçti", fontSize = 10.sp, color = BirizTurquoise, fontWeight = FontWeight.Bold)
                 } else if (isCompleted) {
@@ -1687,7 +1846,6 @@ private fun TournamentGroupAndKnockoutView(
     matches: List<TournamentMatch>,
     students: List<Student>,
     isDarkTheme: Boolean,
-    onMatchClick: (TournamentMatch) -> Unit,
     onGenerateKnockout: () -> Unit
 ) {
     var subTab by remember { mutableIntStateOf(0) } // 0: Gruplar, 1: Elemeler
@@ -1762,8 +1920,7 @@ private fun TournamentGroupAndKnockoutView(
                     TournamentEliminationsView(
                         tournament = tournament,
                         matches = matches,
-                        isDarkTheme = isDarkTheme,
-                        onMatchClick = onMatchClick
+                        isDarkTheme = isDarkTheme
                     )
                 } else if (allGroupMatchesCompleted) {
                     // Grup maçları bitti, eleme ağacını başlatma çağrısı
@@ -2115,6 +2272,66 @@ private fun MatchScoreDialog(
                             )
                         }
                     }
+
+                    val s1Val = score1Str.toIntOrNull()
+                    val s2Val = score2Str.toIntOrNull()
+                    val isTied = (s1Val != null && s2Val != null && s1Val == s2Val)
+                    val isSingleKnockout = (match.stage == "knockout" && !match.isDoubleMatch)
+
+                    if (isTied && isSingleKnockout) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "⚠️ Skorlar Eşit! Eleme formatında üst tura çıkacak galibi seçin:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.5.sp,
+                                    color = if (isDarkTheme) Color.White else Color(0xFF92400E)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (selectedWinnerId == match.player1Id) Color(0xFF10B981) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
+                                        border = BorderStroke(1.dp, if (selectedWinnerId == match.player1Id) Color(0xFF10B981) else Color(0xFFCBD5E1)),
+                                        modifier = Modifier.weight(1f).clickable { selectedWinnerId = match.player1Id }
+                                    ) {
+                                        Text(
+                                            text = "🏆 ${match.player1Name}",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedWinnerId == match.player1Id) Color.White else primaryText,
+                                            modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (selectedWinnerId == match.player2Id) Color(0xFF10B981) else (if (isDarkTheme) Color(0xFF1E293B) else Color.White),
+                                        border = BorderStroke(1.dp, if (selectedWinnerId == match.player2Id) Color(0xFF10B981) else Color(0xFFCBD5E1)),
+                                        modifier = Modifier.weight(1f).clickable { selectedWinnerId = match.player2Id }
+                                    ) {
+                                        Text(
+                                            text = "🏆 ${match.player2Name}",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selectedWinnerId == match.player2Id) Color.White else primaryText,
+                                            modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     // Galip Seçim Modu
                     Text("Kazanan oyuncuyu seçin:", fontSize = 12.sp)
@@ -2177,6 +2394,7 @@ private fun MatchScoreDialog(
                         val wId = when {
                             s1 != null && s2 != null && s1 > s2 -> match.player1Id
                             s1 != null && s2 != null && s2 > s1 -> match.player2Id
+                            s1 != null && s2 != null && s1 == s2 -> selectedWinnerId
                             else -> null
                         }
                         onSave(s1, s2, wId)
@@ -2185,7 +2403,13 @@ private fun MatchScoreDialog(
                         onSave(null, null, wId)
                     }
                 },
-                enabled = if (isScoreMode) score1Str.isNotBlank() && score2Str.isNotBlank() else selectedWinnerId != null
+                enabled = if (isScoreMode) {
+                    val s1 = score1Str.toIntOrNull()
+                    val s2 = score2Str.toIntOrNull()
+                    score1Str.isNotBlank() && score2Str.isNotBlank() && (
+                        s1 != s2 || match.stage != "knockout" || match.isDoubleMatch || selectedWinnerId != null
+                    )
+                } else selectedWinnerId != null
             ) {
                 Text("Kaydet")
             }
