@@ -70,12 +70,13 @@ data class Student(
 ) {
     val allLinkedParents: List<LinkedParentAccount> get() {
         val list = linkedParents.toMutableList()
-        if (!parentEmail.isNullOrBlank() && list.none { it.email.equals(parentEmail, ignoreCase = true) }) {
+        val hasParentInfo = !parentEmail.isNullOrBlank() || !parentName.isNullOrBlank()
+        if (hasParentInfo && (parentEmail.isNullOrBlank() || list.none { it.email.equals(parentEmail, ignoreCase = true) })) {
             list.add(
                 0,
                 LinkedParentAccount(
-                    email = parentEmail,
-                    name = parentName ?: "Veli",
+                    email = parentEmail ?: "veli@biriz.app",
+                    name = parentName ?: "Öğrenci Velisi",
                     linkedAt = parentLinkedAt ?: "Bağlandı",
                     lastLoginAt = parentLastLoginAt
                 )

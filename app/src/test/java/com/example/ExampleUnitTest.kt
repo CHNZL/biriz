@@ -1219,6 +1219,66 @@ class ExampleUnitTest {
     assertFalse(otherDeskInfo.second) // isChild = false
     assertEquals("Öğrenci", otherDeskInfo.first)
   }
+
+  @Test
+  fun testParentLinkEvaluationAndSync() {
+    val unlinkedStudent = com.example.data.model.Student(
+      id = "std_test_1",
+      studentNumber = "45",
+      fullName = "SEMİH AHMET KAVAKOĞLU",
+      gender = "Erkek",
+      parentInviteCode = "TD8GDLU8",
+      parentName = null,
+      parentEmail = null,
+      linkedParents = emptyList()
+    )
+    assertFalse(unlinkedStudent.isParentLinked)
+    assertEquals(0, unlinkedStudent.allLinkedParents.size)
+
+    val linkedStudent = unlinkedStudent.copy(
+      parentName = "Ahmet Kavakoğlu",
+      parentEmail = "ahmet.kav@gmail.com",
+      parentLinkedAt = "09 Kasım 2026, 14:00",
+      parentLastLoginAt = "Bugün, 09:15"
+    )
+    assertTrue(linkedStudent.isParentLinked)
+    assertEquals(1, linkedStudent.allLinkedParents.size)
+    assertEquals("ahmet.kav@gmail.com", linkedStudent.allLinkedParents.first().email)
+    assertEquals("Ahmet Kavakoğlu", linkedStudent.allLinkedParents.first().name)
+
+    // Test ClassRegistryRepository sync
+    val repo = com.example.data.repository.ClassRegistryRepository()
+    repo.seedDefaultTestClassroom("test_uid")
+
+    // Find student 45 by code
+    val result = repo.findInSampleStudents(
+      sanitizedCode = "94K7P2MN",
+      currentUserEmail = "veli.test@gmail.com",
+      currentUserFullName = "Veli Test"
+    )
+    assertNotNull(result)
+    val (matchedStudent, _) = result!!
+    assertTrue(matchedStudent.isParentLinked)
+    assertEquals("veli.test@gmail.com", matchedStudent.parentEmail)
+
+    // Verify repository's state flow is updated
+    val updatedInRepo = repo.students.value.firstOrNull { it.id == matchedStudent.id }
+    assertNotNull(updatedInRepo)
+    assertTrue(updatedInRepo!!.isParentLinked)
+    assertEquals("veli.test@gmail.com", updatedInRepo.parentEmail)
+
+    // Test syncLinkedStudentsWithParent
+    repo.syncLinkedStudentsWithParent(
+      linkedStudentIds = listOf("std_326"),
+      parentEmail = "gunes.veli@test.com",
+      parentName = "Güneş Velisi"
+    )
+    val gunesInRepo = repo.students.value.firstOrNull { it.id == "std_326" }
+    assertNotNull(gunesInRepo)
+    assertTrue(gunesInRepo!!.isParentLinked)
+    assertEquals("gunes.veli@test.com", gunesInRepo.parentEmail)
+    assertEquals("Güneş Velisi", gunesInRepo.parentName)
+  }
 }
 
 

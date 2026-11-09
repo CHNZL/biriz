@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -134,11 +135,11 @@ import java.util.Locale
  */
 enum class ParentPortalTab(val title: String, val iconVector: ImageVector, val emoji: String) {
     HOME("Ana Sayfa", Icons.Default.Home, "🏠"),
-    STARS("Gelişim & Yıldız", Icons.Default.Star, "⭐"),
+    STARS("Yıldızlar", Icons.Default.Star, "⭐"),
     READING("Kitaplık", Icons.Default.MenuBook, "📚"),
-    SCHEDULE_SEATING("Ders & Oturma", Icons.Default.Schedule, "📅"),
-    TOURNAMENT("Turnuvalar", Icons.Default.EmojiEvents, "🏆"),
-    COMMUNICATION("İletişim & Duyuru", Icons.Default.Chat, "💬")
+    SCHEDULE_SEATING("Ders & Sıra", Icons.Default.Schedule, "📅"),
+    TOURNAMENT("Turnuva", Icons.Default.EmojiEvents, "🏆"),
+    COMMUNICATION("İletişim", Icons.Default.Chat, "💬")
 }
 
 @Composable
@@ -328,7 +329,7 @@ fun ParentPortalSubScreen(
                                     Text(
                                         text = "${currentUser.fullName} 👋",
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 14.5.sp,
+                                        fontSize = 16.sp,
                                         color = Color.White,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -340,19 +341,19 @@ fun ParentPortalSubScreen(
                                         ) {
                                             Text(
                                                 text = "🔒 KVKK Korumalı Veli Portalı",
-                                                fontSize = 9.sp,
+                                                fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                             )
                                         }
                                         if (classRoom != null) {
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "• ${classRoom.gradeLevel}/${classRoom.section}",
-                                                fontSize = 10.sp,
-                                                color = Color.White.copy(alpha = 0.85f),
-                                                fontWeight = FontWeight.Medium
+                                                fontSize = 11.5.sp,
+                                                color = Color.White.copy(alpha = 0.9f),
+                                                fontWeight = FontWeight.SemiBold
                                             )
                                         }
                                     }
@@ -362,12 +363,12 @@ fun ParentPortalSubScreen(
                             // Sağ: Bildirim Zili + Profil Avatarı
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 val unreadNotificationsCount = notifications.count { !it.isRead }
                                 Surface(
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(38.dp)
                                         .clip(CircleShape)
                                         .clickable { onOpenNotificationCenter() }
                                         .testTag("parent_notification_bell"),
@@ -380,14 +381,14 @@ fun ParentPortalSubScreen(
                                             imageVector = Icons.Default.Notifications,
                                             contentDescription = "Bildirimler",
                                             tint = Color.White,
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(20.dp)
                                         )
                                         if (unreadNotificationsCount > 0) {
                                             Box(
                                                 modifier = Modifier
                                                     .align(Alignment.TopEnd)
-                                                    .padding(top = 3.dp, end = 3.dp)
-                                                    .size(8.dp)
+                                                    .padding(top = 4.dp, end = 4.dp)
+                                                    .size(9.dp)
                                                     .clip(CircleShape)
                                                     .background(BirizAmber)
                                             )
@@ -399,7 +400,7 @@ fun ParentPortalSubScreen(
                                     user = currentUser,
                                     isDarkTheme = isDarkTheme,
                                     onClick = { showProfileMenuDialog = true },
-                                    size = 34.dp
+                                    size = 38.dp
                                 )
                             }
                         }
@@ -421,15 +422,15 @@ fun ParentPortalSubScreen(
                                     onClick = { showLinkCodeDialog = true },
                                     shape = RoundedCornerShape(12.dp),
                                     color = BirizAmber,
-                                    modifier = Modifier.height(34.dp)
+                                    modifier = Modifier.height(38.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("🔑 8 Haneli Veli Kodunu Gir ve Çocuğunu Bağla", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("🔑 8 Haneli Veli Kodunu Gir ve Çocuğunu Bağla", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                     }
                                 }
                             } else {
@@ -439,17 +440,17 @@ fun ParentPortalSubScreen(
                                         onClick = { onSelectActiveStudent(student.id) },
                                         shape = RoundedCornerShape(12.dp),
                                         color = if (isSelected) BirizTurquoise else Color.White.copy(alpha = 0.15f),
-                                        modifier = Modifier.height(34.dp)
+                                        modifier = Modifier.height(38.dp)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 13.sp)
+                                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 15.sp)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "${student.fullName} (${student.studentNumber})",
-                                                fontSize = 11.5.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                                                 color = if (isSelected) BirizNavyDark else Color.White
                                             )
@@ -457,7 +458,7 @@ fun ParentPortalSubScreen(
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(18.dp)
+                                                        .size(20.dp)
                                                         .clip(CircleShape)
                                                         .background(BirizNavyDark.copy(alpha = 0.2f))
                                                         .clickable { studentToUnlink = student }
@@ -468,7 +469,7 @@ fun ParentPortalSubScreen(
                                                         imageVector = Icons.Default.Close,
                                                         contentDescription = "Öğrenciyi Kaldır",
                                                         tint = BirizNavyDark,
-                                                        modifier = Modifier.size(12.dp)
+                                                        modifier = Modifier.size(13.dp)
                                                     )
                                                 }
                                             }
@@ -480,15 +481,15 @@ fun ParentPortalSubScreen(
                                     onClick = { showLinkCodeDialog = true },
                                     shape = RoundedCornerShape(12.dp),
                                     color = Color.White.copy(alpha = 0.2f),
-                                    modifier = Modifier.height(34.dp)
+                                    modifier = Modifier.height(38.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Kardeş Ekle", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Kardeş Ekle", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                     }
                                 }
                             }
@@ -589,18 +590,22 @@ fun ParentPortalSubScreen(
             }
 
             // =========================================================================
-            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION)
+            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION) - FERAH & BÜYÜTÜLMÜŞ
             // =========================================================================
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(22.dp),
                 color = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
-                shadowElevation = 8.dp,
-                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                shadowElevation = 12.dp,
+                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1))
             ) {
                 NavigationBar(
                     containerColor = Color.Transparent,
                     tonalElevation = 0.dp,
-                    modifier = Modifier.height(64.dp)
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    modifier = Modifier.height(72.dp)
                 ) {
                     ParentPortalTab.entries.forEach { tab ->
                         val isSelected = activeTab == tab
@@ -611,18 +616,19 @@ fun ParentPortalSubScreen(
                                 Icon(
                                     imageVector = tab.iconVector,
                                     contentDescription = tab.title,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             },
                             label = {
                                 Text(
                                     text = tab.title,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    softWrap = false
                                 )
                             },
+                            alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = BirizNavyPrimary,
                                 selectedTextColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
@@ -850,13 +856,13 @@ private fun ParentDashboardHomeView(
                     Surface(
                         shape = CircleShape,
                         color = if (student.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(62.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 30.sp)
+                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 34.sp)
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
@@ -865,28 +871,28 @@ private fun ParentDashboardHomeView(
                             ) {
                                 Text(
                                     text = "NO: ${student.studentNumber}",
-                                    fontSize = 10.5.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = BirizNavyDark,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = classRoom?.let { "${it.gradeLevel}/${it.section} • Öğr: ${it.teacherName}" } ?: "Sınıf",
-                                fontSize = 11.sp,
+                                text = classRoom?.let { "${it.gradeLevel}/${it.section} • Öğretmen: ${it.teacherName}" } ?: "Sınıf",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
+                                color = if (isDarkTheme) Color.LightGray else Color(0xFF334155)
                             )
                         }
-                        Spacer(modifier = Modifier.height(3.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = student.fullName,
-                            fontSize = 17.sp,
+                            fontSize = 21.sp,
                             fontWeight = FontWeight.Black,
                             color = if (isDarkTheme) Color.White else BirizNavyPrimary
                         )
-                        Spacer(modifier = Modifier.height(3.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = starLevelBadge.second.copy(alpha = 0.15f),
@@ -894,25 +900,25 @@ private fun ParentDashboardHomeView(
                         ) {
                             Text(
                                 text = starLevelBadge.first,
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = starLevelBadge.second,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = BirizAmber.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, BirizAmber)
+                            border = BorderStroke(1.5.dp, BirizAmber)
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(text = "⭐ $totalStars", fontSize = 18.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                                Text(text = "Yıldız", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = BirizAmber)
+                                Text(text = "⭐ $totalStars", fontSize = 22.sp, fontWeight = FontWeight.Black, color = BirizAmber)
+                                Text(text = "Yıldız", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = BirizAmber)
                             }
                         }
                     }
@@ -1053,7 +1059,7 @@ private fun BentoSummaryCard(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
         modifier = Modifier.fillMaxWidth()
@@ -1065,43 +1071,43 @@ private fun BentoSummaryCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = accentColor.copy(alpha = 0.15f),
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier.size(50.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(text = icon, fontSize = 20.sp)
+                    Text(text = icon, fontSize = 26.sp)
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.5.sp,
                     color = if (isDarkTheme) Color.White else BirizNavyPrimary
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 11.5.sp,
+                    fontSize = 13.sp,
                     color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 15.sp
+                    lineHeight = 18.sp
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = accentColor.copy(alpha = 0.15f)
             ) {
                 Text(
                     text = badgeText,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = accentColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
         }
@@ -1121,15 +1127,15 @@ private fun BentoCompactCard(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-        modifier = modifier.height(130.dp)
+        modifier = modifier.height(148.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
@@ -1137,32 +1143,34 @@ private fun BentoCompactCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = icon, fontSize = 20.sp)
+                Text(text = icon, fontSize = 24.sp)
                 Text(
                     text = "Detay →",
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = accentColor
                 )
             }
             Column {
                 Text(
                     text = title,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
                     color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = highlight,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Black,
                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = description,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1211,9 +1219,9 @@ private fun ParentStarsDetailView(
         // Özet Kartı
         item {
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = BirizAmber.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, BirizAmber),
+                border = BorderStroke(1.5.dp, BirizAmber),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -1222,23 +1230,23 @@ private fun ParentStarsDetailView(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text(text = "⭐ Toplam Yıldız", fontSize = 12.sp, color = BirizAmber, fontWeight = FontWeight.Bold)
-                        Text(text = "${stars.sumOf { it.starCount }} Yıldız", fontSize = 24.sp, fontWeight = FontWeight.Black, color = primaryText)
+                        Text(text = "⭐ Toplam Yıldız", fontSize = 13.5.sp, color = BirizAmber, fontWeight = FontWeight.Bold)
+                        Text(text = "${stars.sumOf { it.starCount }} Yıldız", fontSize = 28.sp, fontWeight = FontWeight.Black, color = primaryText)
                         Text(
                             text = "🏆 Sınıfta ${studentRank}. Sırada (İlk %${(studentRank * 100 / maxOf(1, allStudents.size))} dilim)",
-                            fontSize = 11.5.sp,
+                            fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryText
                         )
                     }
-                    Text(text = "🌟", fontSize = 38.sp)
+                    Text(text = "🌟", fontSize = 42.sp)
                 }
             }
         }
 
         // Yıldız Geçmişi Listesi
         item {
-            Text(text = "📜 Yıldız Kazanım Geçmişi & Notlar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "📜 Yıldız Kazanım Geçmişi & Notlar", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
         }
 
         if (stars.isEmpty()) {
@@ -1250,7 +1258,7 @@ private fun ParentStarsDetailView(
                 ) {
                     Text(
                         text = "Henüz öğretmen tarafından verilmiş bir yıldız kaydı bulunmuyor.",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = secondaryText,
                         modifier = Modifier.padding(16.dp),
                         textAlign = TextAlign.Center
@@ -1260,37 +1268,37 @@ private fun ParentStarsDetailView(
         } else {
             items(stars.sortedByDescending { it.timestamp }) { rec ->
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
                     border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = rec.note.ifBlank { rec.categoryName },
-                                fontSize = 12.5.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = primaryText
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(3.dp))
                             val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(rec.timestamp))
-                            Text(text = "$dateStr • ${rec.categoryName}", fontSize = 10.5.sp, color = secondaryText)
+                            Text(text = "$dateStr • ${rec.categoryName}", fontSize = 12.5.sp, color = secondaryText)
                         }
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = BirizAmber.copy(alpha = 0.2f)
                         ) {
                             Text(
                                 text = "+${rec.starCount} ⭐",
-                                fontSize = 13.sp,
+                                fontSize = 14.5.sp,
                                 fontWeight = FontWeight.Black,
                                 color = BirizAmber,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
@@ -1300,13 +1308,14 @@ private fun ParentStarsDetailView(
 
         // KVKK Korumalı Sınıf Sıralama Tablosu
         item {
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "🛡️ Sınıf Başarı Sıralaması (KVKK Korumalı)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+                Text(text = "🛡️ Sınıf Başarı Sıralaması (KVKK Korumalı)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
             }
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "KVKK gereği diğer öğrencilerin isimleri 'Öğrenci' olarak gizlenir.",
-                fontSize = 10.5.sp,
+                fontSize = 12.sp,
                 color = secondaryText
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -1315,7 +1324,7 @@ private fun ParentStarsDetailView(
         items(studentStarTotals.take(15)) { (sId, sName, count) ->
             val isMyChild = linkedStudentIds.contains(sId)
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = if (isMyChild) BirizTurquoise.copy(alpha = 0.2f) else if (isDarkTheme) BirizDarkCardGlass else Color.White,
                 border = BorderStroke(
                     if (isMyChild) 1.5.dp else 1.dp,
@@ -1324,29 +1333,29 @@ private fun ParentStarsDetailView(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = if (isMyChild) "★" else "•",
-                            fontSize = 13.sp,
+                            fontSize = 15.sp,
                             color = if (isMyChild) BirizTurquoise else secondaryText,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = if (isMyChild) "$sName (Çocuğunuz)" else "Öğrenci",
                             fontWeight = if (isMyChild) FontWeight.ExtraBold else FontWeight.Medium,
-                            fontSize = 12.sp,
+                            fontSize = 13.5.sp,
                             color = if (isMyChild) primaryText else secondaryText
                         )
                     }
                     Text(
                         text = "$count ⭐",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.5.sp,
                         color = if (isMyChild) BirizAmber else secondaryText
                     )
                 }
@@ -1435,21 +1444,21 @@ private fun ParentReadingDetailView(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = primaryText)
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = primaryText)
+                            Spacer(modifier = Modifier.height(3.dp))
                             val readingDays = maxOf(1, ((rec.endDate - rec.startDate) / (1000 * 60 * 60 * 24)).toInt())
-                            Text(text = "Sayfa: ${rec.pageCount} • $readingDays gün okuma", fontSize = 11.sp, color = secondaryText)
+                            Text(text = "Sayfa: ${rec.pageCount} • $readingDays gün okuma", fontSize = 12.5.sp, color = secondaryText)
                         }
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = BirizAmber.copy(alpha = 0.2f)
                         ) {
                             Text(
                                 text = "+${rec.earnedStars} ⭐",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black,
                                 color = BirizAmber,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
@@ -1460,23 +1469,23 @@ private fun ParentReadingDetailView(
         // Sınıf Kitaplığındaki Kitaplar
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "📚 Sınıf Kitaplığında Mevcut Kitaplar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "📚 Sınıf Kitaplığında Mevcut Kitaplar", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
         }
 
         items(classBooks.take(10)) { b ->
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = b.name, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = primaryText)
-                    Text(text = "${b.pageCount} Sayfa", fontSize = 11.sp, color = secondaryText)
+                    Text(text = b.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
+                    Text(text = "${b.pageCount} Sayfa", fontSize = 12.5.sp, color = secondaryText)
                 }
             }
         }
@@ -1565,7 +1574,7 @@ private fun ParentScheduleAndSeatingDetailView(
                                     val isOccupied = !studentIdInSeat.isNullOrBlank()
 
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                         color = if (isChildHere) {
                                             Color(0xFF10B981)
                                         } else if (isOccupied) {
@@ -1577,25 +1586,25 @@ private fun ParentScheduleAndSeatingDetailView(
                                             if (isChildHere) 2.dp else 1.dp,
                                             if (isChildHere) Color(0xFF059669) else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
                                         ),
-                                        modifier = Modifier.size(width = 85.dp, height = 38.dp)
+                                        modifier = Modifier.size(width = 96.dp, height = 44.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             if (isChildHere) {
                                                 Text(
                                                     text = "★ Çocuğunuz",
-                                                    fontSize = 10.sp,
+                                                    fontSize = 11.5.sp,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     color = Color.White
                                                 )
                                             } else if (isOccupied) {
                                                 Text(
                                                     text = "Öğrenci",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold,
                                                     color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
                                                 )
                                             } else {
-                                                Text(text = "Boş Sıra", fontSize = 9.sp, color = secondaryText)
+                                                Text(text = "Boş Sıra", fontSize = 10.sp, color = secondaryText)
                                             }
                                         }
                                     }
@@ -1610,28 +1619,28 @@ private fun ParentScheduleAndSeatingDetailView(
         // --- 2. HAFTALIK DERS PROGRAMI & GÜN SEÇİCİ ---
         item {
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "📅 Haftalık Ders Programı & Zil Saatleri", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "📅 Haftalık Ders Programı & Zil Saatleri", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
             Spacer(modifier = Modifier.height(6.dp))
 
             // Gün Seçici Çipleri
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 dayNames.forEach { (code, name) ->
                     val isSel = selectedDay == code
                     Surface(
                         onClick = { selectedDay = code },
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                        border = BorderStroke(1.dp, if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                        modifier = Modifier.height(34.dp)
+                        border = BorderStroke(1.5.dp, if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                        modifier = Modifier.height(38.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
                             Text(
                                 text = name,
-                                fontSize = 11.5.sp,
-                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 color = if (isSel) Color.White else primaryText
                             )
                         }
@@ -1649,7 +1658,7 @@ private fun ParentScheduleAndSeatingDetailView(
                 ) {
                     Text(
                         text = "Bu gün için henüz ders programı girilmemiş.",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = secondaryText,
                         modifier = Modifier.padding(16.dp),
                         textAlign = TextAlign.Center
@@ -1662,42 +1671,42 @@ private fun ParentScheduleAndSeatingDetailView(
                     .firstOrNull { it.lessonIndex == lesson.lessonIndex }
                 val timeRange = if (slot != null) "${slot.startTime} - ${slot.endTime}" else "${lesson.lessonIndex}. Ders"
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
                     border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = BirizTurquoise.copy(alpha = 0.2f),
-                                modifier = Modifier.size(34.dp)
+                                modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(text = "${lesson.lessonIndex}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = BirizNavyPrimary)
+                                    Text(text = "${lesson.lessonIndex}", fontWeight = FontWeight.Black, fontSize = 15.sp, color = BirizNavyPrimary)
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text(text = lesson.subjectName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = primaryText)
-                                Text(text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" }, fontSize = 11.sp, color = secondaryText)
+                                Text(text = lesson.subjectName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryText)
+                                Text(text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" }, fontSize = 12.5.sp, color = secondaryText)
                             }
                         }
                         Surface(
-                            shape = RoundedCornerShape(6.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
                         ) {
                             Text(
                                 text = timeRange,
-                                fontSize = 10.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = primaryText,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
                     }
@@ -1868,7 +1877,7 @@ private fun ParentCommunicationDetailView(
     ) {
         // --- 1. DUYURULAR & ANKETLER ---
         item {
-            Text(text = "📢 Sınıf Duyuruları & Veli Anketleri", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "📢 Sınıf Duyuruları & Veli Anketleri", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
         }
 
         if (announcements.isEmpty()) {
@@ -1880,9 +1889,9 @@ private fun ParentCommunicationDetailView(
                 ) {
                     Text(
                         text = "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor.",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = secondaryText,
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(16.dp),
                         textAlign = TextAlign.Center
                     )
                 }
@@ -1898,36 +1907,37 @@ private fun ParentCommunicationDetailView(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+                            Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
                             val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ann.createdAt))
-                            Text(text = dateStr, fontSize = 10.5.sp, color = secondaryText)
+                            Text(text = dateStr, fontSize = 12.sp, color = secondaryText)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = ann.content, fontSize = 12.sp, color = secondaryText, lineHeight = 16.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(text = ann.content, fontSize = 13.5.sp, color = secondaryText, lineHeight = 19.sp)
 
                         // Veli Anketi Varsa
                         val poll = ann.poll
                         if (poll != null && poll.options.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryText)
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                            Spacer(modifier = Modifier.height(8.dp))
                             poll.options.forEach { opt ->
                                 Surface(
                                     onClick = { onVotePoll(ann.id, opt.id) },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
                                     border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(text = opt.text, fontSize = 11.5.sp, color = primaryText)
-                                        Text(text = "${opt.voteCount} Oy", fontSize = 10.5.sp, color = secondaryText, fontWeight = FontWeight.Bold)
+                                        Text(text = opt.text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = primaryText)
+                                        Text(text = "${opt.voteCount} Oy", fontSize = 12.sp, color = secondaryText, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

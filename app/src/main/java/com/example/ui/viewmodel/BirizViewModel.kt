@@ -240,6 +240,14 @@ class BirizViewModel(
                 linkedParentStudentIds = linkedList,
                 activeParentStudentId = if (savedActiveStudentId.isNullOrBlank()) linkedList.firstOrNull() else savedActiveStudentId
             )
+
+            if (linkedList.isNotEmpty()) {
+                repository.syncLinkedStudentsWithParent(
+                    linkedList,
+                    _uiState.value.currentUser.email.ifBlank { "veli@biriz.app" },
+                    _uiState.value.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
+                )
+            }
         }
         refreshCurrentUser()
         startPeriodicUpdateChecker()
@@ -845,6 +853,13 @@ class BirizViewModel(
     }
 
     fun switchToTeacherRole() {
+        if (_uiState.value.linkedParentStudentIds.isNotEmpty()) {
+            repository.syncLinkedStudentsWithParent(
+                _uiState.value.linkedParentStudentIds,
+                _uiState.value.currentUser.email.ifBlank { "veli@biriz.app" },
+                _uiState.value.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
+            )
+        }
         if (_uiState.value.activeClassRoom != null) {
             _uiState.value = _uiState.value.copy(
                 currentRole = UserRole.TEACHER,

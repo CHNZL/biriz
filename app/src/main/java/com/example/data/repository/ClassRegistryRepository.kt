@@ -30,14 +30,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 class ClassRegistryRepository(
-    private val db: FirebaseFirestore,
+    private val firestoreInstance: FirebaseFirestore? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
+    private val db: FirebaseFirestore
+        get() = firestoreInstance ?: FirebaseFirestore.getInstance()
+
     // Secondary constructor requiring explicit firestore_database_id
     constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
+        try {
+            FirebaseFirestore.getInstance(
+                context.applicationContext.getString(R.string.firestore_database_id)
+            )
+        } catch (_: Exception) {
+            null
+        }
     )
 
     val cities: List<City> = TurkeyGeoRepository.allCities
@@ -54,17 +61,19 @@ class ClassRegistryRepository(
     private var schoolsJob: kotlinx.coroutines.Job? = null
 
     init {
-        Firebase.auth.addAuthStateListener { auth ->
-            val user = auth.currentUser
-            if (user != null) {
-                startObserving()
-            } else {
-                stopObserving()
+        try {
+            Firebase.auth.addAuthStateListener { auth ->
+                val user = auth.currentUser
+                if (user != null) {
+                    startObserving()
+                } else {
+                    stopObserving()
+                }
             }
-        }
-        if (Firebase.auth.currentUser != null) {
-            startObserving()
-        }
+            if (Firebase.auth.currentUser != null) {
+                startObserving()
+            }
+        } catch (_: Exception) {}
     }
 
     private fun startObserving() {
@@ -247,14 +256,79 @@ class ClassRegistryRepository(
         Student(id = "std_455", studentNumber = "455", fullName = "EYLÜL SARE TAŞKIN", gender = "Kız", parentInviteCode = "2Q5R8M4P")
     )
 
-    fun findInSampleStudents(sanitizedCode: String): Pair<Student, ClassRoom>? {
+    fun findInSampleStudents(
+        sanitizedCode: String,
+        currentUserEmail: String = "veli@biriz.app",
+        currentUserFullName: String = "Öğrenci Velisi"
+    ): Pair<Student, ClassRoom>? {
+        val normTarget = TurkishTextHelper.normalizeVeliKatilimKodu(sanitizedCode)
         val match = defaultSampleStudents.firstOrNull { s ->
             val code = TurkishTextHelper.normalizeVeliKatilimKodu(s.parentInviteCode)
             val no = TurkishTextHelper.normalizeVeliKatilimKodu(s.studentNumber)
             val id = TurkishTextHelper.normalizeVeliKatilimKodu(s.id)
-            code == sanitizedCode || no == sanitizedCode || id == sanitizedCode
+            code == normTarget || no == normTarget || id == normTarget
+        } ?: return null
+
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val finalEmail = currentUserEmail.ifBlank { "veli@biriz.app" }
+        val finalName = currentUserFullName.ifBlank { "Öğrenci Velisi" }
+
+        val newParentAccount = LinkedParentAccount(
+            email = finalEmail,
+            name = finalName,
+            phone = "",
+            relationship = "Veli",
+            linkedAt = todayStr,
+            lastLoginAt = lastLoginStr
+        )
+        val updatedParents = listOf(newParentAccount) + match.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+        val updatedStudent = match.copy(
+            parentName = finalName,
+            parentEmail = finalEmail,
+            parentLinkedAt = todayStr,
+            parentLastLoginAt = lastLoginStr,
+            linkedParents = updatedParents
+        )
+        _students.value = _students.value.map { if (it.id == updatedStudent.id) updatedStudent else it }
+        if (_students.value.none { it.id == updatedStudent.id }) {
+            _students.value = defaultSampleStudents.map { if (it.id == updatedStudent.id) updatedStudent else it }
         }
-        return if (match != null) Pair(match, defaultSampleClass) else null
+        return Pair(updatedStudent, defaultSampleClass)
+    }
+
+    fun syncLinkedStudentsWithParent(
+        linkedStudentIds: List<String>,
+        parentEmail: String = "veli@biriz.app",
+        parentName: String = "Öğrenci Velisi"
+    ) {
+        if (linkedStudentIds.isEmpty()) return
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val finalEmail = parentEmail.ifBlank { "veli@biriz.app" }
+        val finalName = parentName.ifBlank { "Öğrenci Velisi" }
+
+        val account = LinkedParentAccount(
+            email = finalEmail,
+            name = finalName,
+            phone = "",
+            relationship = "Veli",
+            linkedAt = todayStr,
+            lastLoginAt = lastLoginStr
+        )
+
+        _students.value = _students.value.map { s ->
+            if (s.id in linkedStudentIds && !s.isParentLinked) {
+                val updatedParents = listOf(account) + s.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+                s.copy(
+                    parentName = finalName,
+                    parentEmail = finalEmail,
+                    parentLinkedAt = todayStr,
+                    parentLastLoginAt = lastLoginStr,
+                    linkedParents = updatedParents
+                )
+            } else s
+        }
     }
 
     suspend fun findAndLinkStudentByCode(
@@ -265,6 +339,20 @@ class ClassRegistryRepository(
         val normTarget = TurkishTextHelper.normalizeVeliKatilimKodu(sanitizedCode)
         if (normTarget.isBlank()) return null
 
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val finalEmail = currentUserEmail.ifBlank { "veli@biriz.app" }
+        val finalName = currentUserFullName.ifBlank { "Öğrenci Velisi" }
+
+        val newParentAccount = LinkedParentAccount(
+            email = finalEmail,
+            name = finalName,
+            phone = "",
+            relationship = "Veli",
+            linkedAt = todayStr,
+            lastLoginAt = lastLoginStr
+        )
+
         // 1. Önce hafızadaki öğrencilerden kontrol et (eğer sınıf zaten yüklüyse)
         val inMemoryMatch = _students.value.firstOrNull { s ->
             val sc = TurkishTextHelper.normalizeVeliKatilimKodu(s.parentInviteCode)
@@ -274,7 +362,45 @@ class ClassRegistryRepository(
         }
         if (inMemoryMatch != null) {
             val matchedClass = _registeredClasses.value.firstOrNull() ?: defaultSampleClass
-            return Pair(inMemoryMatch, matchedClass)
+            val updatedParents = listOf(newParentAccount) + inMemoryMatch.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+            val updatedStudent = inMemoryMatch.copy(
+                parentName = finalName,
+                parentEmail = finalEmail,
+                parentLinkedAt = todayStr,
+                parentLastLoginAt = lastLoginStr,
+                linkedParents = updatedParents
+            )
+
+            // Hem hafızadaki _students StateFlow'unu hem de varsa Firestore'u anında senkronize et
+            _students.value = _students.value.map { if (it.id == updatedStudent.id) updatedStudent else it }
+
+            if (Firebase.auth.currentUser != null) {
+                try {
+                    val classId = matchedClass.id
+                    val sRef = db.collection("classrooms").document(classId).collection("students").document(updatedStudent.id)
+                    val updatePayload = mapOf<String, Any?>(
+                        "parentCode" to updatedStudent.parentInviteCode,
+                        "parentInviteCode" to updatedStudent.parentInviteCode,
+                        "parentEmail" to finalEmail,
+                        "parentName" to finalName,
+                        "parentLinkedAt" to todayStr,
+                        "parentLastLoginAt" to lastLoginStr,
+                        "linkedParents" to updatedParents.map { p ->
+                            mapOf(
+                                "email" to p.email,
+                                "name" to p.name,
+                                "phone" to p.phone,
+                                "relationship" to p.relationship,
+                                "linkedAt" to p.linkedAt,
+                                "lastLoginAt" to p.lastLoginAt
+                            )
+                        },
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    sRef.update(updatePayload).await()
+                } catch (_: Exception) {}
+            }
+            return Pair(updatedStudent, matchedClass)
         }
 
         // 2. Firestore üzerinde tüm sınıfları ve altındaki öğrencileri ara
@@ -303,15 +429,24 @@ class ClassRegistryRepository(
 
                         if (isMatch) {
                             val finalCode = if (normCode.isNotBlank()) normCode else normTarget
-                            val todayStr = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale("tr")).format(java.util.Date())
-
+                            val updatedParents = listOf(newParentAccount)
                             val updatePayload = mapOf<String, Any?>(
                                 "parentCode" to finalCode,
                                 "parentInviteCode" to finalCode,
-                                "parentEmail" to currentUserEmail,
-                                "parentName" to currentUserFullName,
+                                "parentEmail" to finalEmail,
+                                "parentName" to finalName,
                                 "parentLinkedAt" to todayStr,
-                                "parentLastLoginAt" to todayStr,
+                                "parentLastLoginAt" to lastLoginStr,
+                                "linkedParents" to updatedParents.map { p ->
+                                    mapOf(
+                                        "email" to p.email,
+                                        "name" to p.name,
+                                        "phone" to p.phone,
+                                        "relationship" to p.relationship,
+                                        "linkedAt" to p.linkedAt,
+                                        "lastLoginAt" to p.lastLoginAt
+                                    )
+                                },
                                 "updatedAt" to FieldValue.serverTimestamp()
                             )
                             try {
@@ -331,29 +466,24 @@ class ClassRegistryRepository(
                                 isOccupied = true
                             )
 
-                            val linkedParent = LinkedParentAccount(
-                                email = currentUserEmail,
-                                name = currentUserFullName,
-                                phone = "",
-                                relationship = "Veli",
-                                linkedAt = todayStr,
-                                lastLoginAt = todayStr
-                            )
-
                             val student = Student(
                                 id = sDoc.id,
                                 studentNumber = sNoStr,
                                 fullName = fullName,
                                 gender = gender,
                                 parentInviteCode = finalCode,
-                                parentName = currentUserFullName,
-                                parentEmail = currentUserEmail,
+                                parentName = finalName,
+                                parentEmail = finalEmail,
                                 parentLinkedAt = todayStr,
-                                parentLastLoginAt = todayStr,
-                                linkedParents = listOf(linkedParent)
+                                parentLastLoginAt = lastLoginStr,
+                                linkedParents = updatedParents
                             )
 
-                            // Öğrenci listesini de bu sınıf için gözlemlemeye başla
+                            // Öğrenci listesini de bu sınıf için gözlemlemeye başla ve StateFlow'u güncelle
+                            _students.value = _students.value.map { if (it.id == student.id) student else it }
+                            if (_students.value.none { it.id == student.id }) {
+                                _students.value = _students.value + student
+                            }
                             observeStudents(classId)
                             return Pair(student, classRoom)
                         }
@@ -363,7 +493,7 @@ class ClassRegistryRepository(
         }
 
         // 3. Bulunamazsa örnek öğrenci listesinden kontrol et
-        return findInSampleStudents(normTarget)
+        return findInSampleStudents(normTarget, currentUserEmail, currentUserFullName)
     }
 
     fun seedDefaultTestClassroom(userId: String = "test_teacher_preview_uid"): ClassRoom {
