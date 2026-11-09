@@ -1,12 +1,10 @@
 package com.example.ui.screens
 
-import com.example.data.model.UserRole
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -22,44 +20,43 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Poll
-import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SupervisorAccount
-import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -76,8 +73,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,46 +85,62 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.Announcement
 import com.example.data.model.BirizNotification
+import com.example.data.model.Book
 import com.example.data.model.ChatMessage
 import com.example.data.model.ClassRoom
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
+import com.example.data.model.ScheduleTimelineItem
 import com.example.data.model.SeatingPlanState
+import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
+import com.example.data.model.Tournament
+import com.example.data.model.TournamentMatch
+import com.example.data.model.UserRole
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
-import com.example.ui.components.ThemeToggleIconButton
 import com.example.ui.components.UserAvatarCircle
 import com.example.ui.components.UserProfileMenuDialog
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
+import com.example.ui.theme.BirizDarkCardGlass
 import com.example.ui.theme.BirizDarkSurfaceGlass
 import com.example.ui.theme.BirizDarkTextMuted
+import com.example.ui.theme.BirizDarkTextPrimary
 import com.example.ui.theme.BirizDarkTextSecondary
+import com.example.ui.theme.BirizGold
 import com.example.ui.theme.BirizNavyDark
 import com.example.ui.theme.BirizNavyLight
 import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTextMuted
+import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
 import com.example.util.LibraryPersistenceHelper
+import com.example.util.ParentPrivacyHelper
 import com.example.util.ScheduleHelper
+import com.example.util.TournamentEngine
+import com.example.util.TournamentPersistenceHelper
 import com.example.util.TurkishTextHelper
-import androidx.compose.ui.res.painterResource
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
-enum class ParentPortalTab(val title: String, val icon: String) {
-    DASHBOARD("Gelişim & Yıldızlar", "🌟"),
-    READING("Kitaplık & Okuma", "📚"),
-    EXAMS("Sınav & Kazanım", "📊"),
-    SCHEDULE("Ders Programı", "📅"),
-    SEATING("Oturma Planı", "🪑"),
-    ANNOUNCEMENTS("Duyuru & Anket", "📢"),
-    CHAT("Öğretmen İletişim", "💬")
+/**
+ * Veli Portalı Navigasyon Sekmeleri
+ */
+enum class ParentPortalTab(val title: String, val iconVector: ImageVector, val emoji: String) {
+    HOME("Ana Sayfa", Icons.Default.Home, "🏠"),
+    STARS("Gelişim & Yıldız", Icons.Default.Star, "⭐"),
+    READING("Kitaplık", Icons.Default.MenuBook, "📚"),
+    SCHEDULE_SEATING("Ders & Oturma", Icons.Default.Schedule, "📅"),
+    TOURNAMENT("Turnuvalar", Icons.Default.EmojiEvents, "🏆"),
+    COMMUNICATION("İletişim & Duyuru", Icons.Default.Chat, "💬")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParentPortalSubScreen(
     classRoom: ClassRoom?,
@@ -152,20 +167,28 @@ fun ParentPortalSubScreen(
     onSendChatMessage: (String, String) -> Unit
 ) {
     val context = LocalContext.current
-    var activeTab by remember { mutableStateOf(ParentPortalTab.DASHBOARD) }
+    var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
     var showLinkCodeDialog by remember { mutableStateOf(false) }
     var showProfileMenuDialog by remember { mutableStateOf(false) }
     var studentToUnlink by remember { mutableStateOf<Student?>(null) }
     var inviteCodeInput by remember { mutableStateOf("") }
     var chatInputText by remember { mutableStateOf("") }
 
+    // KVKK: Velinin bağlı olduğu çocuk kimlikleri kümesi
+    val linkedStudentIds = remember(linkedStudents) { linkedStudents.map { it.id }.toSet() }
+
+    // Geri Tuşu: Detay ekranlarındayken ana sayfaya dön
+    BackHandler(enabled = activeTab != ParentPortalTab.HOME) {
+        activeTab = ParentPortalTab.HOME
+    }
+
+    // Aktif öğrencinin yıldız kayıtları ve istatistikleri
     val activeStudentStars = remember(activeStudent, classRoom) {
         if (activeStudent != null && classRoom != null) {
             StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id)
                 .filter { it.studentId == activeStudent.id }
         } else emptyList()
     }
-
     val totalStars = remember(activeStudentStars) { activeStudentStars.sumOf { it.starCount } }
 
     val starLevelBadge = remember(totalStars) {
@@ -178,6 +201,60 @@ fun ParentPortalSubScreen(
         }
     }
 
+    // Aktif öğrencinin okuma kayıtları
+    val studentReadingRecords = remember(activeStudent, classRoom) {
+        if (activeStudent != null && classRoom != null) {
+            LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
+                .filter { it.studentId == activeStudent.id }
+        } else emptyList()
+    }
+    val classBooks = remember(classRoom) {
+        if (classRoom != null) LibraryPersistenceHelper.loadBooks(context, classRoom.id) else emptyList()
+    }
+
+    // Aktif turnuva
+    val classTournaments = remember(classRoom) {
+        if (classRoom != null) TournamentPersistenceHelper.loadTournaments(context, classRoom.id) else emptyList()
+    }
+    val activeTournament = remember(classTournaments) {
+        classTournaments.firstOrNull { it.status == com.example.data.model.TournamentStatus.DEVAM_EDIYOR }
+            ?: classTournaments.firstOrNull()
+    }
+    val tournamentMatches = remember(activeTournament) {
+        if (activeTournament != null) TournamentPersistenceHelper.loadMatches(context, activeTournament.id) else emptyList()
+    }
+
+    // Bugünkü dersler (PZT, SAL, CAR, PER, CUM)
+    val todayCode = remember {
+        when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "PZT"
+            Calendar.TUESDAY -> "SAL"
+            Calendar.WEDNESDAY -> "CAR"
+            Calendar.THURSDAY -> "PER"
+            Calendar.FRIDAY -> "CUM"
+            else -> "PZT" // Hafta sonu için Pazartesi planını önizle
+        }
+    }
+    val todayLessons = remember(scheduleLessons, todayCode) {
+        scheduleLessons.filter { it.dayOfWeek == todayCode }.sortedBy { it.lessonIndex }
+    }
+
+    // Oturma yeri bilgisi
+    val studentSeatDesc = remember(seatingPlanState, activeStudent) {
+        if (activeStudent != null) {
+            val entry = seatingPlanState.assignments.entries.firstOrNull { it.value == activeStudent.id }
+            if (entry != null) {
+                val parts = entry.key.split("-")
+                val g = if (parts.isNotEmpty()) (parts[0].removePrefix("g").toIntOrNull() ?: 0) + 1 else 1
+                val r = if (parts.size > 1) (parts[1].removePrefix("r").toIntOrNull() ?: 0) + 1 else 1
+                "Grup $g, Sıra $r"
+            } else "Henüz bir sıraya atanmadı"
+        } else "Belirtilmedi"
+    }
+
+    val primaryTextColor = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryTextColor = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -185,31 +262,27 @@ fun ParentPortalSubScreen(
             .testTag("screen_parent_portal")
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // --- 1. ÜST HEADER: BENTO GLASSMORPHISM ---
+
+            // =========================================================================
+            // 1. ÜST HEADER: BENTO GLASS & KULLANICI / BİLDİRİM / PROFİL
+            // =========================================================================
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (isDarkTheme) BirizDarkSurfaceGlass else BirizNavyPrimary,
-                shadowElevation = if (isDarkTheme) 0.dp else 6.dp,
-                border = BorderStroke(
-                    1.dp,
-                    if (isDarkTheme) BirizDarkCardBorder else Color.Transparent
-                )
+                shadowElevation = if (isDarkTheme) 0.dp else 4.dp,
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color.Transparent)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
                             if (isDarkTheme) {
-                                Brush.verticalGradient(
-                                    listOf(BirizDarkSurfaceGlass, Color(0xCC0E1A38))
-                                )
+                                Brush.verticalGradient(listOf(BirizDarkSurfaceGlass, Color(0xCC0E1A38)))
                             } else {
-                                Brush.verticalGradient(
-                                    listOf(BirizNavyPrimary, BirizNavyLight)
-                                )
+                                Brush.verticalGradient(listOf(BirizNavyPrimary, BirizNavyLight))
                             }
                         )
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -217,11 +290,25 @@ fun ParentPortalSubScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            // Sol: BİRİZ Amblem + Kullanıcı İsmi (Tek Satır)
+                            // Sol: BİRİZ Amblem + Selamlama
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
+                                if (activeTab != ParentPortalTab.HOME) {
+                                    IconButton(
+                                        onClick = { activeTab = ParentPortalTab.HOME },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Ana Sayfaya Dön",
+                                            tint = Color.White
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .size(34.dp)
@@ -246,20 +333,37 @@ fun ParentPortalSubScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(
-                                        text = "BİRİZ Veli Modülü",
-                                        fontSize = 10.sp,
-                                        color = Color.White.copy(alpha = 0.8f)
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = BirizTurquoise.copy(alpha = 0.25f)
+                                        ) {
+                                            Text(
+                                                text = "🔒 KVKK Korumalı Veli Portalı",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                        if (classRoom != null) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "• ${classRoom.gradeLevel}/${classRoom.section}",
+                                                fontSize = 10.sp,
+                                                color = Color.White.copy(alpha = 0.85f),
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
-                            // Sağ İkon Butonları: Bildirim (sol) + Kullanıcı Avatarı (sağ başta)
+                            // Sağ: Bildirim Zili + Profil Avatarı
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                // 🔔 Bildirim Rozeti (Profil Avatarının solunda)
                                 val unreadNotificationsCount = notifications.count { !it.isRead }
                                 Surface(
                                     modifier = Modifier
@@ -291,7 +395,6 @@ fun ParentPortalSubScreen(
                                     }
                                 }
 
-                                // 👤 Sağ Başta Kullanıcı Avatarı (Google profil fotosu / baş harfler)
                                 UserAvatarCircle(
                                     user = currentUser,
                                     isDarkTheme = isDarkTheme,
@@ -303,7 +406,9 @@ fun ParentPortalSubScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // 2. SATIR: Bağlı Çocuklar Listesi / Seçici
+                        // -------------------------------------------------------------
+                        // 2. ÇOCUK / KARDEŞ SEÇİCİ ÇUBUĞU
+                        // -------------------------------------------------------------
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -316,15 +421,15 @@ fun ParentPortalSubScreen(
                                     onClick = { showLinkCodeDialog = true },
                                     shape = RoundedCornerShape(12.dp),
                                     color = BirizAmber,
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(34.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("🔑 8 Haneli Veli Kodunu Gir ve Çocuğunu Bağla", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("🔑 8 Haneli Veli Kodunu Gir ve Çocuğunu Bağla", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                     }
                                 }
                             } else {
@@ -334,13 +439,13 @@ fun ParentPortalSubScreen(
                                         onClick = { onSelectActiveStudent(student.id) },
                                         shape = RoundedCornerShape(12.dp),
                                         color = if (isSelected) BirizTurquoise else Color.White.copy(alpha = 0.15f),
-                                        modifier = Modifier.height(36.dp)
+                                        modifier = Modifier.height(34.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 14.sp)
+                                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 13.sp)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "${student.fullName} (${student.studentNumber})",
@@ -375,15 +480,15 @@ fun ParentPortalSubScreen(
                                     onClick = { showLinkCodeDialog = true },
                                     shape = RoundedCornerShape(12.dp),
                                     color = Color.White.copy(alpha = 0.2f),
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(34.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Kardeş Ekle", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("Kardeş Ekle", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                     }
                                 }
                             }
@@ -392,451 +497,175 @@ fun ParentPortalSubScreen(
                 }
             }
 
-            // --- 2. SEKMELER DİZİSİ (PARENT PORTAL TABS) ---
+            // =========================================================================
+            // 2. ANA İÇERİK ALANI (SEÇİLİ SEKME VEYA BENTO DASHBOARD)
+            // =========================================================================
+            Box(modifier = Modifier.weight(1f)) {
+                if (activeStudent == null) {
+                    ParentEmptyStateView(
+                        isDarkTheme = isDarkTheme,
+                        onOpenCodeDialog = { showLinkCodeDialog = true }
+                    )
+                } else {
+                    when (activeTab) {
+                        ParentPortalTab.HOME -> {
+                            ParentDashboardHomeView(
+                                student = activeStudent,
+                                classRoom = classRoom,
+                                totalStars = totalStars,
+                                starLevelBadge = starLevelBadge,
+                                lastStarRecord = activeStudentStars.maxByOrNull { it.timestamp },
+                                todayLessons = todayLessons,
+                                studentSeatDesc = studentSeatDesc,
+                                readingRecords = studentReadingRecords,
+                                activeTournament = activeTournament,
+                                lastAnnouncement = announcements.firstOrNull(),
+                                lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
+                                isDarkTheme = isDarkTheme,
+                                onNavigate = { activeTab = it }
+                            )
+                        }
+
+                        ParentPortalTab.STARS -> {
+                            ParentStarsDetailView(
+                                student = activeStudent,
+                                stars = activeStudentStars,
+                                allStudents = allStudents,
+                                classRoom = classRoom,
+                                linkedStudentIds = linkedStudentIds,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+
+                        ParentPortalTab.READING -> {
+                            ParentReadingDetailView(
+                                student = activeStudent,
+                                records = studentReadingRecords,
+                                classBooks = classBooks,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+
+                        ParentPortalTab.SCHEDULE_SEATING -> {
+                            ParentScheduleAndSeatingDetailView(
+                                student = activeStudent,
+                                classRoom = classRoom,
+                                scheduleConfig = scheduleConfig,
+                                scheduleLessons = scheduleLessons,
+                                seatingPlanState = seatingPlanState,
+                                allStudents = allStudents,
+                                linkedStudentIds = linkedStudentIds,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+
+                        ParentPortalTab.TOURNAMENT -> {
+                            ParentTournamentDetailView(
+                                student = activeStudent,
+                                tournament = activeTournament,
+                                matches = tournamentMatches,
+                                linkedStudentIds = linkedStudentIds,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+
+                        ParentPortalTab.COMMUNICATION -> {
+                            ParentCommunicationDetailView(
+                                student = activeStudent,
+                                announcements = announcements,
+                                chatMessages = chatMessages.filter { it.studentId == activeStudent.id },
+                                currentUser = currentUser,
+                                isDarkTheme = isDarkTheme,
+                                onVotePoll = onVotePoll,
+                                onSendMessage = { text ->
+                                    if (text.isNotBlank()) {
+                                        onSendChatMessage(activeStudent.id, text)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // =========================================================================
+            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION)
+            // =========================================================================
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
+                color = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
+                shadowElevation = 8.dp,
                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                NavigationBar(
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.height(64.dp)
                 ) {
                     ParentPortalTab.entries.forEach { tab ->
                         val isSelected = activeTab == tab
-                        Surface(
+                        NavigationBarItem(
+                            selected = isSelected,
                             onClick = { activeTab = tab },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) {
-                                if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                            } else Color.Transparent,
-                            border = if (isSelected) null else BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = tab.icon, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.width(6.dp))
+                            icon = {
+                                Icon(
+                                    imageVector = tab.iconVector,
+                                    contentDescription = tab.title,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            label = {
                                 Text(
                                     text = tab.title,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-                                    color = if (isSelected) {
-                                        if (isDarkTheme) BirizNavyDark else Color.White
-                                    } else {
-                                        if (isDarkTheme) Color.LightGray else Color(0xFF475569)
-                                    }
+                                    fontSize = 9.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // --- 3. ANA İÇERİK EKRANI (SEÇİLİ SEKMEYE GÖRE) ---
-            if (activeStudent == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    BentoCard(
-                        isDark = isDarkTheme,
-                        glowColor = BirizAmber,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(text = "👨‍👩‍👧‍👦", fontSize = 48.sp)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "BİRİZ Veli Portalına Hoş Geldiniz",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary,
-                                textAlign = TextAlign.Center
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = BirizNavyPrimary,
+                                selectedTextColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                unselectedIconColor = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                unselectedTextColor = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                indicatorColor = BirizTurquoise
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Çocuğunuzun gelişimini, yıldızlarını, sınav sonuçlarını ve ödevlerini canlı takip etmek için öğretmeninizin verdiği 8 haneli Veli Katılım Kodunu girin.",
-                                fontSize = 12.sp,
-                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 17.sp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { showLinkCodeDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("🔑 8 Haneli Katılım Kodunu Gir", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // TAB 1: DASHBOARD & YILDIZLAR
-                    if (activeTab == ParentPortalTab.DASHBOARD) {
-                        item {
-                            // Student Hero Profile Card
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isDarkTheme) Color(0xFF0F1F38) else Color(0xFFEFF6FF),
-                                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizTurquoise else Color(0xFFBFDBFE)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = if (activeStudent.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                                        modifier = Modifier.size(60.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(text = if (activeStudent.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 32.sp)
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = BirizTurquoise
-                                            ) {
-                                                Text(
-                                                    text = "NO: ${activeStudent.studentNumber}",
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    color = BirizNavyDark,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = classRoom?.let { "${it.gradeLevel}/${it.section} Sınıfı" } ?: "Sınıf Belirtilmedi",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = activeStudent.fullName,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = starLevelBadge.second.copy(alpha = 0.15f),
-                                            border = BorderStroke(1.dp, starLevelBadge.second)
-                                        ) {
-                                            Text(
-                                                text = starLevelBadge.first,
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = starLevelBadge.second,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                            )
-                                        }
-                                    }
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(text = "⭐ $totalStars", fontSize = 22.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                                        Text(text = "Toplam Yıldız", fontSize = 10.sp, color = Color.Gray)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        IconButton(
-                                            onClick = { studentToUnlink = activeStudent },
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .testTag("unlink_student_button")
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.DeleteOutline,
-                                                contentDescription = "Öğrenci Bağlantısını Kaldır",
-                                                tint = Color(0xFFEF4444).copy(alpha = 0.85f),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Yıldız Kazanım Geçmişi
-                        item {
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "📜 Yıldız Kazanım Geçmişi", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    if (activeStudentStars.isEmpty()) {
-                                        Text(text = "Henüz yıldız kaydı bulunmuyor.", fontSize = 12.sp, color = Color.Gray)
-                                    } else {
-                                        activeStudentStars.take(6).forEach { record ->
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Column {
-                                                        val titleText = if (record.note.isNotBlank()) record.note else record.categoryName
-                                                        val dateStr = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(record.timestamp))
-                                                        Text(text = titleText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                                        Text(text = "$dateStr • ${record.categoryName}", fontSize = 10.sp, color = Color.Gray)
-                                                    }
-                                                    Text(text = "+${record.starCount} ⭐", fontSize = 13.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 2: KİTAPLIK & OKUMA
-                    if (activeTab == ParentPortalTab.READING) {
-                        item {
-                            val studentReadingRecords = remember(activeStudent, classRoom) {
-                                if (activeStudent != null && classRoom != null) {
-                                    LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
-                                        .filter { it.studentId == activeStudent.id }
-                                } else emptyList()
-                            }
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "📖 Okuma Değerlendirmeleri ve Kitap Geçmişi", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    if (studentReadingRecords.isEmpty()) {
-                                        Text(text = "Henüz öğretmen tarafından kitap okuma kaydı girilmedi.", fontSize = 12.sp, color = Color.Gray)
-                                    } else {
-                                        studentReadingRecords.forEach { rec ->
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                            ) {
-                                                Column(modifier = Modifier.padding(10.dp)) {
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.SpaceBetween
-                                                    ) {
-                                                        Text(text = rec.bookName, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                                        Text(text = "+${rec.earnedStars} ⭐", fontSize = 12.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                                                    }
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Text(text = "Sayfa: ${rec.pageCount} • Tamamlandı", fontSize = 11.sp, color = Color.Gray)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 3: SINAV & KAZANIM
-                    if (activeTab == ParentPortalTab.EXAMS) {
-                        item {
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "📊 Ders Sınavları & Kazanım Analizi", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Text(text = "Henüz öğretmen tarafından sınav veya kazanım değerlendirmesi girilmedi.", fontSize = 12.sp, color = Color.Gray)
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 4: DERS PROGRAMI
-                    if (activeTab == ParentPortalTab.SCHEDULE) {
-                        item {
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "📅 Sınıf Haftalık Ders Programı", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    scheduleLessons.filter { it.dayOfWeek == "PZT" }.take(6).forEach { lesson ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(text = "${lesson.lessonIndex}. Ders: ${lesson.subjectName}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text(text = lesson.teacherName, fontSize = 11.sp, color = Color.Gray)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 5: OTURMA PLANI
-                    if (activeTab == ParentPortalTab.SEATING) {
-                        item {
-                            val seatEntry = seatingPlanState.assignments.entries.firstOrNull { it.value == activeStudent?.id }
-                            val seatDesc = if (seatEntry != null) {
-                                val parts = seatEntry.key.split("-")
-                                val g = if (parts.isNotEmpty()) (parts[0].removePrefix("g").toIntOrNull() ?: 0) + 1 else 1
-                                val r = if (parts.size > 1) (parts[1].removePrefix("r").toIntOrNull() ?: 0) + 1 else 1
-                                "Grup $g, Sıra $r"
-                            } else null
-
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "🪑 Çocuğunuzun Sınıftaki Oturma Yeri", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isDarkTheme) Color(0x3010B981) else Color(0xFFDCFCE7),
-                                        border = BorderStroke(1.dp, Color(0xFF10B981)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(text = "📍", fontSize = 24.sp)
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(text = "${activeStudent?.fullName ?: ""} (Sıra Konumu)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
-                                                Text(
-                                                    text = seatDesc ?: "Sınıf oturma planında henüz yerleştirilmedi.",
-                                                    fontSize = 11.sp,
-                                                    color = Color(0xFF166534)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 6: DUYURU & ANKET
-                    if (activeTab == ParentPortalTab.ANNOUNCEMENTS) {
-                        item {
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "📢 Sınıf Öğretmeni Duyuruları & Anketler", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    if (announcements.isEmpty()) {
-                                        Text(text = "Henüz yayınlanmış duyuru bulunmuyor.", fontSize = 12.sp, color = Color.Gray)
-                                    } else {
-                                        announcements.forEach { ann ->
-                                            Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF1F5F9),
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp)) {
-                                                    Text(text = ann.title, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                    Text(text = ann.content, fontSize = 11.5.sp, color = if (isDarkTheme) Color.LightGray else Color(0xFF334155))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 7: ÇAT / MESAJLAŞMA
-                    if (activeTab == ParentPortalTab.CHAT) {
-                        item {
-                            BentoCard(isDark = isDarkTheme, modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text(text = "💬 Sınıf Öğretmeni Birebir Sohbet", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isDarkTheme) Color.White else BirizNavyPrimary)
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    val filteredMsgs = chatMessages.filter { it.studentId == activeStudent.id }
-                                    LazyColumn(modifier = Modifier.height(220.dp)) {
-                                        items(filteredMsgs) { msg ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                                horizontalArrangement = if (msg.isFromTeacher) Arrangement.Start else Arrangement.End
-                                            ) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    color = if (msg.isFromTeacher) (if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0)) else BirizTurquoise
-                                                ) {
-                                                    Text(
-                                                        text = msg.text,
-                                                        fontSize = 11.5.sp,
-                                                        color = if (msg.isFromTeacher) (if (isDarkTheme) Color.White else Color.Black) else BirizNavyDark,
-                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        OutlinedTextField(
-                                            value = chatInputText,
-                                            onValueChange = { chatInputText = it },
-                                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 11.sp) },
-                                            modifier = Modifier.weight(1f).height(46.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Button(
-                                            onClick = {
-                                                if (chatInputText.isNotBlank()) {
-                                                    onSendChatMessage(activeStudent.id, chatInputText)
-                                                    chatInputText = ""
-                                                }
-                                            },
-                                            shape = RoundedCornerShape(10.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise)
-                                        ) {
-                                            Icon(Icons.Default.Send, contentDescription = "Gönder", tint = BirizNavyDark, modifier = Modifier.size(16.dp))
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        )
                     }
                 }
             }
         }
     }
 
-    // --- LINK STUDENT CODE DIALOG ---
+    // =========================================================================
+    // DİYALOGLAR (KOD İLE BAĞLAMA, ÇIKARMA, PROFİL MENÜSÜ)
+    // =========================================================================
     if (showLinkCodeDialog) {
         AlertDialog(
             onDismissRequest = { showLinkCodeDialog = false },
-            title = { Text("🔑 8 Haneli Veli Katılım Kodu", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔑", fontSize = 20.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Veli Katılım Kodu Girin", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
             text = {
                 Column {
-                    Text("Sınıf öğretmeninizin verdiği 8 haneli Veli Katılım Kodunu girerek çocuğunuzun gelişim takip hesabını bağlayın.", fontSize = 12.sp, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Sınıf öğretmeninizin çocuğunuz için paylaştığı 8 haneli Veli Katılım Kodunu girerek hesabınızı bağlayabilirsiniz.",
+                        fontSize = 12.5.sp,
+                        color = secondaryTextColor,
+                        lineHeight = 17.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = inviteCodeInput,
                         onValueChange = { inviteCodeInput = TurkishTextHelper.normalizeVeliKatilimKodu(it) },
-                        placeholder = { Text("Örn: 8K3N9P2X", fontSize = 12.sp) },
+                        placeholder = { Text("Örn: 8K3N9P2X", fontSize = 13.sp) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
                     )
                 }
             },
@@ -848,9 +677,11 @@ fun ParentPortalSubScreen(
                             showLinkCodeDialog = false
                             inviteCodeInput = ""
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Çocuğumu Bağla")
+                    Text("Çocuğumu Bağla", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -859,7 +690,6 @@ fun ParentPortalSubScreen(
         )
     }
 
-    // --- ÖĞRENCİ BAĞLANTISINI KALDIRMA ONAY DİYALOĞU ---
     if (studentToUnlink != null) {
         val s = studentToUnlink!!
         AlertDialog(
@@ -874,16 +704,15 @@ fun ParentPortalSubScreen(
             text = {
                 Column {
                     Text(
-                        text = "${s.fullName} (${s.studentNumber}) adlı öğrencinin veli takip bağlantısını kaldırmak istediğinize emin misiniz?",
-                        fontSize = 13.5.sp,
+                        text = "${s.fullName} (${s.studentNumber}) adlı öğrencinin veli takip hesabınızdaki bağlantısını kaldırmak istediğinize emin misiniz?",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Bu işlem sonucunda öğrenci veli profilinizden kaldırılacaktır. Dilediğiniz zaman öğretmenden alacağınız 8 haneli Veli Katılım Kodu ile tekrar bağlayabilirsiniz.",
+                        text = "İstediğiniz zaman öğretmenden alacağınız 8 haneli kod ile tekrar bağlayabilirsiniz.",
                         fontSize = 12.sp,
-                        color = Color.Gray,
-                        lineHeight = 16.sp
+                        color = secondaryTextColor
                     )
                 }
             },
@@ -900,14 +729,11 @@ fun ParentPortalSubScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { studentToUnlink = null }) {
-                    Text("Vazgeç")
-                }
+                TextButton(onClick = { studentToUnlink = null }) { Text("Vazgeç") }
             }
         )
     }
 
-    // --- VELİ PROFİLİ VE HESAP AYARLARI DİYALOĞU ---
     if (showProfileMenuDialog) {
         UserProfileMenuDialog(
             currentUser = currentUser,
@@ -922,5 +748,1290 @@ fun ParentPortalSubScreen(
             onLogout = onLogout,
             onDismissRequest = { showProfileMenuDialog = false }
         )
+    }
+}
+
+// =========================================================================
+// BİLEŞEN: VELİ BOŞ DURUMU (HİÇ ÇOCUK BAĞLANMAMIŞSA)
+// =========================================================================
+@Composable
+private fun ParentEmptyStateView(
+    isDarkTheme: Boolean,
+    onOpenCodeDialog: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        BentoCard(
+            isDark = isDarkTheme,
+            glowColor = BirizAmber,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "👨‍👩‍👧‍👦", fontSize = 48.sp)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "BİRİZ Veli Portalı",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Çocuğunuzun günlük ders akışını, yıldızlarını, kitap okumalarını, sınıf oturma yerini ve öğretmen duyurularını anlık takip edebilmek için öğretmeninizin verdiği 8 haneli Veli Katılım Kodunu girin.",
+                    fontSize = 12.5.sp,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onOpenCodeDialog,
+                    colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("🔑 8 Haneli Veli Kodunu Gir", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// BİLEŞEN: BENTO DASHBOARD ANA SAYFASI ("BUGÜN ÇOCUĞUM")
+// =========================================================================
+@Composable
+private fun ParentDashboardHomeView(
+    student: Student,
+    classRoom: ClassRoom?,
+    totalStars: Int,
+    starLevelBadge: Pair<String, Color>,
+    lastStarRecord: StarRewardRecord?,
+    todayLessons: List<ScheduleLesson>,
+    studentSeatDesc: String,
+    readingRecords: List<com.example.data.model.ReadingRecord>,
+    activeTournament: Tournament?,
+    lastAnnouncement: Announcement?,
+    lastChatMessage: ChatMessage?,
+    isDarkTheme: Boolean,
+    onNavigate: (ParentPortalTab) -> Unit
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // --- 1. HERO PROFİL KARTI ---
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = if (isDarkTheme) Color(0xFF0F2038) else Color(0xFFEFF6FF),
+                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizTurquoise else Color(0xFFBFDBFE)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (student.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 30.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = BirizTurquoise
+                            ) {
+                                Text(
+                                    text = "NO: ${student.studentNumber}",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = BirizNavyDark,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = classRoom?.let { "${it.gradeLevel}/${it.section} • Öğr: ${it.teacherName}" } ?: "Sınıf",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = student.fullName,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = starLevelBadge.second.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, starLevelBadge.second)
+                        ) {
+                            Text(
+                                text = starLevelBadge.first,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = starLevelBadge.second,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = BirizAmber.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, BirizAmber)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = "⭐ $totalStars", fontSize = 18.sp, fontWeight = FontWeight.Black, color = BirizAmber)
+                                Text(text = "Yıldız", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = BirizAmber)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 2. BENTO KART: GÜNCEL YILDIZ & GELİŞİM NOTU ---
+        item {
+            BentoSummaryCard(
+                icon = "⭐",
+                title = "Günün Başarı & Yıldız Akışı",
+                subtitle = if (lastStarRecord != null) {
+                    val timeStr = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(lastStarRecord.timestamp))
+                    "Son Ödül: ${lastStarRecord.note.ifBlank { lastStarRecord.categoryName }} (+${lastStarRecord.starCount} ⭐) • $timeStr"
+                } else {
+                    "Henüz bugün yıldız kaydı bulunmuyor."
+                },
+                badgeText = "Detaylar →",
+                accentColor = BirizAmber,
+                isDarkTheme = isDarkTheme,
+                onClick = { onNavigate(ParentPortalTab.STARS) }
+            )
+        }
+
+        // --- 3. BENTO 2'Lİ GRID: BUGÜNKÜ DERSLER & OTURMA YERİ ---
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Bugünkü Dersler
+                BentoCompactCard(
+                    icon = "📅",
+                    title = "Bugünkü Dersler",
+                    highlight = if (todayLessons.isNotEmpty()) "${todayLessons.size} Ders Planlı" else "Program Yok",
+                    description = if (todayLessons.isNotEmpty()) {
+                        todayLessons.take(3).joinToString(", ") { "${it.lessonIndex}. ${it.subjectName}" }
+                    } else "Bugün için ders girilmemiş",
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF0284C7),
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.SCHEDULE_SEATING) }
+                )
+
+                // Oturma Yeri
+                BentoCompactCard(
+                    icon = "🪑",
+                    title = "Sınıftaki Yeri",
+                    highlight = studentSeatDesc,
+                    description = "Öğretmen masası & tahta karşısı konumu",
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF10B981),
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.SCHEDULE_SEATING) }
+                )
+            }
+        }
+
+        // --- 4. BENTO 2'Lİ GRID: KİTAP OKUMA & TURNUVA ---
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Kitap Okuma
+                val lastBook = readingRecords.lastOrNull()
+                BentoCompactCard(
+                    icon = "📖",
+                    title = "Kitap & Okuma",
+                    highlight = lastBook?.bookName ?: "Kitap Bekleniyor",
+                    description = if (lastBook != null) "Toplam: ${readingRecords.size} Kitap Tamamlandı" else "Henüz okuma kaydı girilmedi",
+                    modifier = Modifier.weight(1f),
+                    accentColor = Color(0xFF8B5CF6),
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.READING) }
+                )
+
+                // Turnuva
+                BentoCompactCard(
+                    icon = "🏆",
+                    title = "Turnuva Durumu",
+                    highlight = activeTournament?.name ?: "Aktif Turnuva Yok",
+                    description = if (activeTournament != null) {
+                        "Format: ${activeTournament.type.displayName} • Katılımcı"
+                    } else "Sınıfta turnuva planlanınca görünür",
+                    modifier = Modifier.weight(1f),
+                    accentColor = BirizGold,
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.TOURNAMENT) }
+                )
+            }
+        }
+
+        // --- 5. BENTO KART: ÖĞRETMENDEN SON DUYURU ---
+        item {
+            BentoSummaryCard(
+                icon = "📢",
+                title = "Öğretmenden Son Duyuru",
+                subtitle = lastAnnouncement?.let { "${it.title}: ${it.content.take(70)}..." } ?: "Henüz yeni bir duyuru bulunmuyor.",
+                badgeText = if (lastAnnouncement?.poll?.options?.isNotEmpty() == true) "Anket Var 🗳️" else "Tüm Duyurular →",
+                accentColor = Color(0xFFEC4899),
+                isDarkTheme = isDarkTheme,
+                onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+            )
+        }
+
+        // --- 6. BENTO KART: ÖĞRETMENLE BİREBİR İLETİŞİM ---
+        item {
+            BentoSummaryCard(
+                icon = "💬",
+                title = "Öğretmen İletişimi",
+                subtitle = lastChatMessage?.let {
+                    val sender = if (it.isFromTeacher) "Öğretmen" else "Siz"
+                    "$sender: ${it.text.take(60)}..."
+                } ?: "Öğretmeniniz ile buradan birebir özel mesajlaşabilirsiniz.",
+                badgeText = "Mesaj Yaz →",
+                accentColor = BirizTurquoise,
+                isDarkTheme = isDarkTheme,
+                onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+            )
+        }
+    }
+}
+
+// =========================================================================
+// YARDIMCI BENTO KARTLARI
+// =========================================================================
+@Composable
+private fun BentoSummaryCard(
+    icon: String,
+    title: String,
+    subtitle: String,
+    badgeText: String,
+    accentColor: Color,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accentColor.copy(alpha = 0.15f),
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(text = icon, fontSize = 20.sp)
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 11.5.sp,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 15.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = accentColor.copy(alpha = 0.15f)
+            ) {
+                Text(
+                    text = badgeText,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BentoCompactCard(
+    icon: String,
+    title: String,
+    highlight: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    accentColor: Color,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+        modifier = modifier.height(130.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = icon, fontSize = 20.sp)
+                Text(
+                    text = "Detay →",
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+            }
+            Column {
+                Text(
+                    text = title,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                )
+                Text(
+                    text = highlight,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = description,
+                    fontSize = 10.sp,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
+// DETAY 1: YILDIZLAR & GELİŞİM (KVKK SIRALAMA İLE)
+// =========================================================================
+@Composable
+private fun ParentStarsDetailView(
+    student: Student,
+    stars: List<StarRewardRecord>,
+    allStudents: List<Student>,
+    classRoom: ClassRoom?,
+    linkedStudentIds: Set<String>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    // Sınıf yıldız sıralaması (KVKK korumalı hesaplama)
+    val context = LocalContext.current
+    val allClassStars = remember(classRoom) {
+        if (classRoom != null) StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id) else emptyList()
+    }
+    val studentStarTotals = remember(allStudents, allClassStars) {
+        allStudents.map { s ->
+            val sum = allClassStars.filter { it.studentId == s.id }.sumOf { it.starCount }
+            Triple(s.id, s.fullName, sum)
+        }.sortedByDescending { it.third }
+    }
+    val studentRank = remember(studentStarTotals, student) {
+        val idx = studentStarTotals.indexOfFirst { it.first == student.id }
+        if (idx >= 0) idx + 1 else 1
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Özet Kartı
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = BirizAmber.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, BirizAmber),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(text = "⭐ Toplam Yıldız", fontSize = 12.sp, color = BirizAmber, fontWeight = FontWeight.Bold)
+                        Text(text = "${stars.sumOf { it.starCount }} Yıldız", fontSize = 24.sp, fontWeight = FontWeight.Black, color = primaryText)
+                        Text(
+                            text = "🏆 Sınıfta ${studentRank}. Sırada (İlk %${(studentRank * 100 / maxOf(1, allStudents.size))} dilim)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryText
+                        )
+                    }
+                    Text(text = "🌟", fontSize = 38.sp)
+                }
+            }
+        }
+
+        // Yıldız Geçmişi Listesi
+        item {
+            Text(text = "📜 Yıldız Kazanım Geçmişi & Notlar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+        }
+
+        if (stars.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "Henüz öğretmen tarafından verilmiş bir yıldız kaydı bulunmuyor.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(stars.sortedByDescending { it.timestamp }) { rec ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = rec.note.ifBlank { rec.categoryName },
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryText
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(rec.timestamp))
+                            Text(text = "$dateStr • ${rec.categoryName}", fontSize = 10.5.sp, color = secondaryText)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BirizAmber.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "+${rec.starCount} ⭐",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                color = BirizAmber,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // KVKK Korumalı Sınıf Sıralama Tablosu
+        item {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "🛡️ Sınıf Başarı Sıralaması (KVKK Korumalı)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            }
+            Text(
+                text = "KVKK gereği diğer öğrencilerin isimleri 'Öğrenci' olarak gizlenir.",
+                fontSize = 10.5.sp,
+                color = secondaryText
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        items(studentStarTotals.take(15)) { (sId, sName, count) ->
+            val isMyChild = linkedStudentIds.contains(sId)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (isMyChild) BirizTurquoise.copy(alpha = 0.2f) else if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                border = BorderStroke(
+                    if (isMyChild) 1.5.dp else 1.dp,
+                    if (isMyChild) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isMyChild) "★" else "•",
+                            fontSize = 13.sp,
+                            color = if (isMyChild) BirizTurquoise else secondaryText,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isMyChild) "$sName (Çocuğunuz)" else "Öğrenci",
+                            fontWeight = if (isMyChild) FontWeight.ExtraBold else FontWeight.Medium,
+                            fontSize = 12.sp,
+                            color = if (isMyChild) primaryText else secondaryText
+                        )
+                    }
+                    Text(
+                        text = "$count ⭐",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isMyChild) BirizAmber else secondaryText
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// DETAY 2: KİTAPLIK & OKUMA KARNESİ
+// =========================================================================
+@Composable
+private fun ParentReadingDetailView(
+    student: Student,
+    records: List<com.example.data.model.ReadingRecord>,
+    classBooks: List<Book>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // İstatistik Kartı
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, Color(0xFF8B5CF6)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("📚 Okuma Karnesi", fontSize = 12.sp, color = Color(0xFF8B5CF6), fontWeight = FontWeight.Bold)
+                        Text("${records.size} Kitap Okundu", fontSize = 22.sp, fontWeight = FontWeight.Black, color = primaryText)
+                        Text(
+                            "Toplam ${records.sumOf { it.pageCount }} sayfa okundu • +${records.sumOf { it.earnedStars }} ⭐",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryText
+                        )
+                    }
+                    Text("📖", fontSize = 36.sp)
+                }
+            }
+        }
+
+        item {
+            Text(text = "📕 Tamamlanan Kitaplar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+        }
+
+        if (records.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Henüz tamamlanmış kitap okuma kaydı bulunmuyor.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(records) { rec ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = primaryText)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val readingDays = maxOf(1, ((rec.endDate - rec.startDate) / (1000 * 60 * 60 * 24)).toInt())
+                            Text(text = "Sayfa: ${rec.pageCount} • $readingDays gün okuma", fontSize = 11.sp, color = secondaryText)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BirizAmber.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "+${rec.earnedStars} ⭐",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BirizAmber,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sınıf Kitaplığındaki Kitaplar
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = "📚 Sınıf Kitaplığında Mevcut Kitaplar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+        }
+
+        items(classBooks.take(10)) { b ->
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = b.name, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = primaryText)
+                    Text(text = "${b.pageCount} Sayfa", fontSize = 11.sp, color = secondaryText)
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// DETAY 3: DERS PROGRAMI & OTURMA PLANI KROKİSİ
+// =========================================================================
+@Composable
+private fun ParentScheduleAndSeatingDetailView(
+    student: Student,
+    classRoom: ClassRoom?,
+    scheduleConfig: ScheduleConfig,
+    scheduleLessons: List<ScheduleLesson>,
+    seatingPlanState: SeatingPlanState,
+    allStudents: List<Student>,
+    linkedStudentIds: Set<String>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    var selectedDay by remember { mutableStateOf("PZT") }
+    val dayNames = listOf("PZT" to "Pazartesi", "SAL" to "Salı", "CAR" to "Çarşamba", "PER" to "Perşembe", "CUM" to "Cuma")
+    val dayLessons = remember(scheduleLessons, selectedDay) {
+        scheduleLessons.filter { it.dayOfWeek == selectedDay }.sortedBy { it.lessonIndex }
+    }
+    val timeline = remember(scheduleConfig, dayLessons) {
+        ScheduleHelper.calculateTimeline(scheduleConfig, dayLessons)
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // --- 1. OTURMA PLANI KROKİSİ (KVKK UYUMLU) ---
+        item {
+            Text(text = "🪑 Sınıf Oturma Düzeni & Çocuğunuzun Sırası", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(
+                text = "Çocuğunuzun sırası yeşil renkle vurgulanmıştır. Diğer tüm sıralar KVKK gereği gizlenmiştir.",
+                fontSize = 10.5.sp,
+                color = secondaryText
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Yazı Tahtası & Öğretmen Masası
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFF0F172A),
+                        modifier = Modifier.fillMaxWidth(0.7f).height(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "📋 YAZI TAHTASI & ÖĞRETMEN KÜRSÜSÜ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Oturma Sıraları Krokisi
+                    val groups = listOf("g0", "g1", "g2")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        groups.forEachIndexed { gIdx, gKey ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(text = "${gIdx + 1}. Grup", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText)
+                                for (row in 0 until 4) {
+                                    val seatKey = "$gKey-r$row"
+                                    val studentIdInSeat = seatingPlanState.assignments[seatKey]
+                                    val isChildHere = studentIdInSeat == student.id
+                                    val isOccupied = !studentIdInSeat.isNullOrBlank()
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isChildHere) {
+                                            Color(0xFF10B981)
+                                        } else if (isOccupied) {
+                                            if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+                                        } else {
+                                            if (isDarkTheme) Color(0x30334E68) else Color(0xFFF8FAFC)
+                                        },
+                                        border = BorderStroke(
+                                            if (isChildHere) 2.dp else 1.dp,
+                                            if (isChildHere) Color(0xFF059669) else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                        ),
+                                        modifier = Modifier.size(width = 85.dp, height = 38.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (isChildHere) {
+                                                Text(
+                                                    text = "★ Çocuğunuz",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.White
+                                                )
+                                            } else if (isOccupied) {
+                                                Text(
+                                                    text = "Öğrenci",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
+                                                )
+                                            } else {
+                                                Text(text = "Boş Sıra", fontSize = 9.sp, color = secondaryText)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 2. HAFTALIK DERS PROGRAMI & GÜN SEÇİCİ ---
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = "📅 Haftalık Ders Programı & Zil Saatleri", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Gün Seçici Çipleri
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                dayNames.forEach { (code, name) ->
+                    val isSel = selectedDay == code
+                    Surface(
+                        onClick = { selectedDay = code },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                        border = BorderStroke(1.dp, if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
+                            Text(
+                                text = name,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSel) Color.White else primaryText
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (dayLessons.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Bu gün için henüz ders programı girilmemiş.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(dayLessons) { lesson ->
+                val slot = timeline.filterIsInstance<ScheduleTimelineItem.LessonSlot>()
+                    .firstOrNull { it.lessonIndex == lesson.lessonIndex }
+                val timeRange = if (slot != null) "${slot.startTime} - ${slot.endTime}" else "${lesson.lessonIndex}. Ders"
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = BirizTurquoise.copy(alpha = 0.2f),
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(text = "${lesson.lessonIndex}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = BirizNavyPrimary)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(text = lesson.subjectName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = primaryText)
+                                Text(text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" }, fontSize = 11.sp, color = secondaryText)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
+                        ) {
+                            Text(
+                                text = timeRange,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryText,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// DETAY 4: TURNUVALAR (KVKK RAKİP MASKELEME İLE)
+// =========================================================================
+@Composable
+private fun ParentTournamentDetailView(
+    student: Student,
+    tournament: Tournament?,
+    matches: List<TournamentMatch>,
+    linkedStudentIds: Set<String>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    if (tournament == null) {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text("Sınıfta şu an aktif turnuva bulunmuyor.", fontSize = 13.sp, color = secondaryText)
+        }
+        return
+    }
+
+    // Çocuğun yer aldığı maçlar
+    val childMatches = remember(matches, student) {
+        matches.filter { it.player1Id == student.id || it.player2Id == student.id }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Turnuva Başlık Kartı
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = BirizGold.copy(alpha = 0.15f),
+                border = BorderStroke(1.dp, BirizGold),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(text = "🏆 Sınıf Turnuvası", fontSize = 11.sp, color = BirizGold, fontWeight = FontWeight.Bold)
+                        Text(text = tournament.name, fontSize = 18.sp, fontWeight = FontWeight.Black, color = primaryText)
+                        Text(
+                            text = "Format: ${tournament.type.displayName} • ${matches.size} Planlı Maç",
+                            fontSize = 11.sp,
+                            color = secondaryText
+                        )
+                    }
+                    Text(text = "🥇", fontSize = 36.sp)
+                }
+            }
+        }
+
+        item {
+            Text(text = "⚔️ Çocuğunuzun Maçları & Karşılaşmaları", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "KVKK kuralı: Rakip öğrencinin ismi gizlenerek 'Öğrenci' olarak gösterilir.", fontSize = 10.5.sp, color = secondaryText)
+        }
+
+        if (childMatches.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Çocuğunuzun bu turnuvada henüz planlanmış maçı bulunmuyor.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(childMatches) { m ->
+                val maskedM = ParentPrivacyHelper.maskTournamentMatch(m, linkedStudentIds)
+                val isCompleted = m.status == "completed"
+                val isWon = m.winnerId == student.id
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Tur ${m.round} • ${m.matchCode}", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = secondaryText)
+                            if (isCompleted) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (isWon) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
+                                ) {
+                                    Text(
+                                        text = if (isWon) "Kazandı ✓" else "Tamamlandı",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isWon) Color(0xFF065F46) else Color(0xFF991B1B),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            } else {
+                                Text(text = "Oynanacak", fontSize = 10.sp, color = secondaryText)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${maskedM.player1Name} vs ${maskedM.player2Name}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = primaryText
+                            )
+                            if (m.score1 != null && m.score2 != null) {
+                                Text(text = "${m.score1} - ${m.score2}", fontWeight = FontWeight.Black, fontSize = 14.sp, color = BirizAmber)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// DETAY 5: DUYURU & ANKET & BİREBİR MESAJLAŞMA
+// =========================================================================
+@Composable
+private fun ParentCommunicationDetailView(
+    student: Student,
+    announcements: List<Announcement>,
+    chatMessages: List<ChatMessage>,
+    currentUser: AuthenticatedUser,
+    isDarkTheme: Boolean,
+    onVotePoll: (String, String) -> Unit,
+    onSendMessage: (String) -> Unit
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    var chatText by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // --- 1. DUYURULAR & ANKETLER ---
+        item {
+            Text(text = "📢 Sınıf Duyuruları & Veli Anketleri", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+        }
+
+        if (announcements.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(14.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(announcements) { ann ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+                            val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ann.createdAt))
+                            Text(text = dateStr, fontSize = 10.5.sp, color = secondaryText)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = ann.content, fontSize = 12.sp, color = secondaryText, lineHeight = 16.sp)
+
+                        // Veli Anketi Varsa
+                        val poll = ann.poll
+                        if (poll != null && poll.options.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryText)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            poll.options.forEach { opt ->
+                                Surface(
+                                    onClick = { onVotePoll(ann.id, opt.id) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = opt.text, fontSize = 11.5.sp, color = primaryText)
+                                        Text(text = "${opt.voteCount} Oy", fontSize = 10.5.sp, color = secondaryText, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 2. BİREBİR ÖĞRETMEN SOHBETİ ---
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = "💬 Sınıf Öğretmeni Birebir Özel Mesajlaşma", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Text(text = "Bu sohbet yalnızca sizin ve sınıf öğretmeninizin arasındadır.", fontSize = 10.5.sp, color = secondaryText)
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    // Mesajlar Akışı
+                    if (chatMessages.isEmpty()) {
+                        Text(
+                            text = "Henüz mesaj bulunmuyor. Öğretmeninize buradan kolayca mesaj iletebilirsiniz.",
+                            fontSize = 11.5.sp,
+                            color = secondaryText,
+                            modifier = Modifier.padding(vertical = 20.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            chatMessages.takeLast(10).forEach { msg ->
+                                val isMe = !msg.isFromTeacher
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(
+                                            topStart = 12.dp,
+                                            topEnd = 12.dp,
+                                            bottomStart = if (isMe) 12.dp else 2.dp,
+                                            bottomEnd = if (isMe) 2.dp else 12.dp
+                                        ),
+                                        color = if (isMe) BirizTurquoise else if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0),
+                                        modifier = Modifier.fillMaxWidth(0.8f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                                            Text(
+                                                text = if (msg.isFromTeacher) "Öğretmen" else "Siz",
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isMe) BirizNavyDark else secondaryText
+                                            )
+                                            Text(
+                                                text = msg.text,
+                                                fontSize = 12.sp,
+                                                color = if (isMe) BirizNavyDark else primaryText
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Mesaj Yazma Alanı
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = chatText,
+                            onValueChange = { chatText = it },
+                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 11.5.sp) },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Button(
+                            onClick = {
+                                if (chatText.isNotBlank()) {
+                                    onSendMessage(chatText.trim())
+                                    chatText = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = "Gönder", tint = BirizNavyDark, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
     }
 }

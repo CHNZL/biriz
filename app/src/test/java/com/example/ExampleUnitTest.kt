@@ -1166,6 +1166,59 @@ class ExampleUnitTest {
     // 2. turun kendisi kilitli değildir çünkü 3. tur henüz oynanmadı
     assertFalse(engine.isMatchLocked(mR2_1_completed, allWithR2Played))
   }
+
+  @Test
+  fun testParentPrivacyHelperKVKKAboluteAnonymization() {
+    val privacyHelper = com.example.util.ParentPrivacyHelper
+    val myChildId = "child_elif_14"
+    val otherStudentId = "student_can_25"
+    val linkedIds = setOf(myChildId)
+
+    // 1. İsim maskeleme testi: Kendi çocuğu açık, diğer öğrenci "Öğrenci"
+    assertEquals("Elif Yazıcı", privacyHelper.maskStudentName(myChildId, "Elif Yazıcı", linkedIds))
+    assertEquals("Öğrenci", privacyHelper.maskStudentName(otherStudentId, "Can Demir", linkedIds))
+    assertEquals("Öğrenci", privacyHelper.maskStudentName("", "", linkedIds))
+
+    // 2. Numara maskeleme testi: Kendi çocuğu "14", diğer öğrenci "-"
+    assertEquals("14", privacyHelper.maskStudentNumber(myChildId, "14", linkedIds))
+    assertEquals("-", privacyHelper.maskStudentNumber(otherStudentId, "25", linkedIds))
+
+    // 3. Sıralama (Standings) maskeleme testi
+    val standings = listOf(
+      com.example.data.model.TournamentStanding(otherStudentId, "Can Demir", 5, 5, 0, 0, 10, 0, 10, 15),
+      com.example.data.model.TournamentStanding(myChildId, "Elif Yazıcı", 5, 4, 0, 1, 8, 2, 6, 12)
+    )
+    val maskedStandings = privacyHelper.maskStandings(standings, linkedIds)
+    assertEquals("Öğrenci", maskedStandings[0].playerName)
+    assertEquals("Elif Yazıcı", maskedStandings[1].playerName)
+
+    // 4. Turnuva Maçı Eşleşme maskeleme testi
+    val match = com.example.data.model.TournamentMatch(
+      id = "m1",
+      tournamentId = "t1",
+      round = 1,
+      player1Id = myChildId,
+      player2Id = otherStudentId,
+      player1Name = "Elif Yazıcı",
+      player2Name = "Can Demir",
+      matchCode = "R1-M1"
+    )
+    val maskedMatch = privacyHelper.maskTournamentMatch(match, linkedIds)
+    assertEquals("Elif Yazıcı", maskedMatch.player1Name)
+    assertEquals("Öğrenci", maskedMatch.player2Name)
+
+    // 5. Oturma planı sıra gösterim testi
+    val myStudent = com.example.data.model.Student(myChildId, "c1", "Elif Yazıcı", "14", "Kız")
+    val otherStudent = com.example.data.model.Student(otherStudentId, "c1", "Can Demir", "25", "Erkek")
+
+    val childDeskInfo = privacyHelper.getDeskDisplayInfo(myChildId, myStudent, linkedIds)
+    assertTrue(childDeskInfo.second) // isChild = true
+    assertEquals("Elif Yazıcı", childDeskInfo.first)
+
+    val otherDeskInfo = privacyHelper.getDeskDisplayInfo(otherStudentId, otherStudent, linkedIds)
+    assertFalse(otherDeskInfo.second) // isChild = false
+    assertEquals("Öğrenci", otherDeskInfo.first)
+  }
 }
 
 

@@ -1,6 +1,6 @@
 {
-  "summary": "Zamanlayıcı (Timer) modülü için modern, estetik, dairesel neon animasyonlu ve sınıf yönetimi odaklı (Sınav, Grup Etkinliği, Okuma Saati) kapsamlı geliştirme planı.",
-  "updatedAt": "2026-11-03T21:37:04.514000699Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "BİRİZ Veli Modülü için KVKK ve Veri Gizliliği tam uyumlu, modern Bento-Grid Ana Sayfa Dashboard'u ve modül detay ekranlarını kapsayan mimari uygulama planı. Sınıftaki diğer öğrencilerin isimleri 'Öğrenci' olarak maskelenir; veli kendi çocuğunun güncel ders, yıldız, kitap okuma, oturma yeri, turnuva ve duyuru verilerini canlı özet kartlarından ve detay sayfalarından takip eder.",
+  "updatedAt":  "2026-11-09T21:11:04.014943029Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

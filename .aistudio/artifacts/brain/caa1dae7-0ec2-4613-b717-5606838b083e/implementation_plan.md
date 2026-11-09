@@ -1,65 +1,128 @@
-# Uygulama Planı: Profesyonel ve Modern Sınıf Zamanlayıcısı (Timer Modülü)
+# BİRİZ Veli Modülü & KVKK Veri Gizliliği Mimarisi Uygulama Planı
 
-Öğretmenlerin ders anlatımı, sınav yönetimi, grup çalışmaları ve serbest okuma etkinliklerinde hem telefondan pratikçe yönetebileceği hem de akıllı tahtaya canlı yansıtabileceği modern, şık, dairesel animasyonlu ve sesli/titreşimli bir **Zamanlayıcı (Timer)** modülü geliştirilecektir.
-
----
-
-## 1. Kullanıcı Tercihleri ve Tasarım Yönü
-- **Ana Odak**: Geri Sayım Sayacı, Hızlı Hazır Süreler ve Özel Sınıf Modları:
-  - 📝 **Sınav Sayacı** (Örn: 20 dk, 30 dk, 40 dk - sessiz, odaklayıcı mor/gece mavisi tema)
-  - 👥 **Grup Etkinliği** (Örn: 5 dk, 10 dk, 15 dk - dinamik turkuaz/yeşil tema)
-  - 📖 **Kitap Okuma Saati** (Örn: 15 dk, 20 dk - huzurlu kehribar/sıcak tema)
-  - ⏱️ **Serbest Hızlı Sayaç** (1 dk, 2 dk, 3 dk, 5 dk, 10 dk ve özel dakika/saniye girişi)
-- **Görsel Tasarım**:
-  - Merkezde Canvas tabanlı, parlayan neon gradient dairesel ilerleme halkası (`DrawScope.drawArc`).
-  - Ortasında büyük, kalın, tabular dijital sayaç (`05:00`).
-  - Süre azaldıkça yumuşak renk geçişi (Turkuaz ➔ Son %20'de Kehribar ➔ Son 10 saniyede Canlı Kırmızı ve hafif nabız/pulse efekti).
-- **Aksiyonlar & Kontroller**:
-  - Başlat / Duraklat (büyük konforlu ana buton), Sıfırla, Hızlı `+1 Dk` ve `+5 Dk` ekleme butonları.
-  - Tam Ekran / Sunum Modu (telefon masaya konulduğunda sadece dev saat ve çember görünümü).
-  - Süre bittiğinde hoş bir zil/bip sesi (`ToneGenerator` / `RingtoneManager`), titreşim (`Vibrator`) ve görsel konfeti kutlaması.
-- **Akıllı Tahta Canlı Yansıtma**:
-  - Telefondaki sayaç durumu, kalan süre ve seçili mod (`Sınav`, `Okuma`, `Grup`) akıllı tahta Firestore oturumuna (`board_sessions/{sessionCode}`) canlı yazılacak ve bilgisayar ekranında da senkron akacaktır.
+Bu plan, öğretmen modülünde üretilen zengin öğrenci gelişim verilerini (yıldızlar, kitap okuma, haftalık ders programı, oturma planı, turnuvalar, duyurular ve birebir iletişim) velilere **%100 KVKK ve Veri Gizliliği** prensipleriyle, modern bir **Bento-Grid Ana Sayfa Dashboard'u** ve **Derinlemesine Detay Ekranları** eşliğinde sunmayı amaçlar.
 
 ---
 
-## 2. Yapılacak Değişiklikler
+## 1. Temel Prensipler & KVKK Veri Güvenliği Mimarisi
 
-### Dosya 1: `app/src/main/java/com/example/ui/screens/TimerSubScreen.kt` (Yeni Ekran)
-- **Mod Seçici Sekmeleri**: "Hızlı Sayaç", "📝 Sınav", "👥 Grup Etkinliği", "📖 Okuma Saati".
-- **Dairesel İlerleme Çemberi (Circular Progress)**:
-  - Canvas ile çizilen pürüzsüz yay animasyonu, başlangıç ve bitiş süresine göre oranlanan doluluk.
-  - Kalan süre formatlaması (`mm:ss` veya `hh:mm:ss`).
-- **Hızlı Süre Çipleri**:
-  - `1 Dk`, `2 Dk`, `3 Dk`, `5 Dk`, `10 Dk`, `15 Dk`, `20 Dk`, `30 Dk`, `40 Dk`.
-- **Özel Süre Giriş Diyaloğu**:
-  - Dakika ve saniyeyi klavyeden veya artır/azalt tuşlarıyla elle girme imkanı.
-- **Canlı Kontrol Paneli**:
-  - Başlat / Duraklat (Play/Pause), Sıfırla (Reset), `+1 Dk`, `+5 Dk`.
-  - Ses ve Titreşim açma/kapama anahtarları.
-  - Tam Ekran Sunum Modu açma/kapama.
-- **Süre Bitiş Uyarı Modalı**:
-  - "Süre Doldu! 🔔" bildirimi, konfeti animasyonu ve tek dokunuşla yeni süre başlatma.
+> [!CRITICAL]
+> **KVKK & Veri Gizliliği Kuralı:** Hiçbir veli, hangi ekranda olursa olsun (sıralamalar, oturma planı, turnuva eşleşmeleri, kitap listeleri) sınıftaki diğer öğrencilerin adını, soyadını, numarasını veya kişisel detaylarını **asla** göremez. Veli yalnızca kendi velisi olduğu öğrencinin/öğrencilerin (kardeşler dahil) bilgilerini net görür; sınıftaki tüm diğer öğrenciler istisnasız **"Öğrenci"** (veya anonim ikon) olarak maskelenir.
 
-### Dosya 2: `app/src/main/java/com/example/util/SoundAlertHelper.kt` (Yardımcı Sınıf)
-- Süre bittiğinde sistemin yerleşik bildirim sesini çalma (`RingtoneManager` veya `ToneGenerator` ile sıfır harici bağımlılık, anında ve güvenilir ses).
-- `Vibrator` ile hafif dokunsal titreşim geri bildirimi.
-
-### Dosya 3: `app/src/main/java/com/example/ui/screens/TeacherDashboardScreen.kt`
-- `DashboardSubPage.ZAMANLAYICI` durumunda `ModulePreviewsSubScreen` yerine tam fonksiyonel `TimerSubScreen` çağrısı yapılacak.
-- Akıllı tahtaya canlı zamanlayıcı senkronizasyonu bağlanacak.
-
-### Dosya 4: `app/src/main/assets/tahta.html`
-- Tahtadaki zamanlayıcı şablonu güncellenerek öğretmenin telefonundaki mod adı ("Sınav", "Okuma Saati", "Grup Çalışması") ve telefonla birebir saniye senkronizasyonu sağlanacak.
+### Veri Maskeleme Motoru (`ParentPrivacyHelper.kt`)
+* **Öğrenci İsmi Maskeleme:** `maskStudentName(studentId, studentName, linkedStudentIds)`:
+  * Eğer `studentId` velinin bağlı çocuklarından biri ise: Gerçek tam isim (örn. `ELİF YAZICI`).
+  * Değilse: Sabit `"Öğrenci"` etiketi.
+* **Öğrenci Numarası Maskeleme:**
+  * Kendi çocuğu ise: Gerçek okul numarası (örn. `14`).
+  * Değilse: `"-"` veya gizli.
+* **Sıralama ve İstatistik Gösterimi:**
+  * Çocuğun başarı derecesi korunur: *"Sınıfta 3. Sırada • İlk %10'luk Dilimde"*.
+  * Sınıf lider tablosunda velinin çocuğu belirgin renk ve rozetle parıldarken, 1., 2., 4., 5. sıralardaki isimler `"Öğrenci"` olarak gösterilir. Bu sayede pedagojik motivasyon korunurken KVKK ihlali sıfıra indirilir.
 
 ---
 
-## 3. Doğrulama Planı
-1. **Derleme Kontrolü**:
-   - `compile_applet` ile projenin sorunsuz derlendiği doğrulanacak.
-2. **Birim Testleri**:
-   - `gradle :app:testDebugUnitTest --tests com.example.ExampleUnitTest` ile tüm zamanlayıcı formatlama, saniye hesaplama ve geri sayım mantık testleri çalıştırılacak.
-3. **Fonksiyonel Doğrulama**:
-   - Sayacın başlatılması, duraklatılması, sıfırlanması, `+1 Dk` / `+5 Dk` butonlarının çalışması.
-   - Sınav, Grup Etkinliği ve Okuma Saati modlarının hazır sürelerinin yüklenmesi.
-   - Açık ve Koyu tema uyumluluğu, tam ekran modu ve süre bitiş ses/titreşim bildirimleri.
+## 2. Kullanıcı Deneyimi (UX) & Veli Ana Sayfası (Dashboard)
+
+Veli uygulamaya girdiğinde, karmaşık menüler yerine çocuğunun okul hayatını bir bakışta gösteren sıcak ve modern bir **Bento-Grid Güncel Bilgi Hub'ı** ile karşılanır:
+
+### A. Üst Bölüm (Header & Kardeş Seçici)
+* **Kişisel Selamlama:** *"İyi günler, Zeynep Hanım 👋 • BİRİZ Veli Portalı"*.
+* **Sınıf & Öğretmen Kimliği:** *"Süleyman Sami Kepenek İlkokulu • 4/D Sınıfı • Öğr: Cihan Özel"*.
+* **Kardeş / Çocuk Seçici Çubuğu:** Velinin birden fazla çocuğu varsa tek dokunuşla çocuk değiştirme (örn. `👧 Elif (4/D)` ↔ `👦 Ali (1/B)`) ve *"➕ Kardeş Ekle (8 Haneli Kod)"* butonu.
+* **Hızlı Aksiyonlar:** 🔔 Bildirim zili ve 👤 Profil/Tema ayarları.
+
+### B. "Bugün Çocuğum" Canlı Özet Kartları (Bento Dashboard)
+Her bir kart güncel durumu özetler ve tıklandığında ilgili modülün tam ekran detayına yönlendirir:
+
+1. **⭐ Güncel Yıldız & Gelişim Kartı (Hero Bento):**
+   * Toplam yıldız sayısı, sınıf seviye rozeti (örn. `🥇 Sınıf Yıldızı`).
+   * Öğretmenin verdiği **en son yıldızın açıklaması**, kategorisi ve saati (örn. *"Matematik problem çözme gayreti (+3 ⭐) - 2 saat önce"*).
+   * *Tıklanınca:* Yıldız Geçmişi ve Kazanım Analizi Detayına gider.
+
+2. **📅 Bugünkü Dersler & Zaman Akışı Kartı:**
+   * Bugünün tarihi ve haftalık programdaki günün dersleri (örn. *1. Türkçe, 2. Matematik, 3. Fen Bilimleri...*).
+   * Çantaya konulacak ders araç-gereçleri hatırlatması.
+   * *Tıklanınca:* 5 Günlük Tam Haftalık Ders Programı & Zil Saatleri Detayına gider.
+
+3. **📖 Kitaplık & Okuma Durumu Kartı:**
+   * Öğrencinin şu an okumakta olduğu aktif kitap (Kitap adı, sayfa sayısı).
+   * Bu ay okunan toplam kitap sayısı ve okuma serisi rozeti.
+   * *Tıklanınca:* Kitaplık, Okuma Karnesi ve Sınıf Kitap Kataloğu Detayına gider.
+
+4. **🪑 Sınıftaki Oturma Yeri Kartı:**
+   * Mini sınıf konumu şeridi: *"Orta Sıra • 2. Sıra (Tahta Önü)"*.
+   * *Tıklanınca:* Kuş bakışı interaktif sınıf yerleşim planına gider.
+
+5. **🏆 Turnuva & Etkinlik Kartı (Aktif Turnuva Varsa):**
+   * Çocuğun katıldığı turnuva durumu (örn. *"Mangala Turnuvası • Yarı Final Maçı Bekleniyor ⏳"* veya *"Kürsü: 1. Şampiyonluk 🥇"*).
+   * Rakipler KVKK gereği anonimleştirilmiştir.
+   * *Tıklanınca:* Turnuva Fikstürü ve Canlı Podyum Detayına gider.
+
+6. **📢 Öğretmenden Son Duyuru & Anket Kartı:**
+   * Sınıf öğretmeninin paylaştığı en son duyuru başlığı ve özeti.
+   * Eğer açık bir veli anketi varsa *"Oyunuzu Kullanın 🗳️"* acil durum etiketi.
+   * *Tıklanınca:* Tüm Duyurular ve Anket Katılım Ekranına gider.
+
+7. **💬 Öğretmenle İletişim & Son Mesaj Kartı:**
+   * Sınıf öğretmeninden gelen son mesaj önizlemesi ve tek dokunuşla hızlı cevap alanı.
+   * *Tıklanınca:* Birebir Güvenli Sohbet Ekranına gider.
+
+---
+
+## 3. Detay Ekranları Mimarisi (Drill-Down Views)
+
+Özet kartlarına veya alt gezinme çubuğundaki sekmelere tıklandığında açılacak zengin detay sayfaları:
+
+```
+Veli Portalı
+├── 🏠 Ana Sayfa (Bento Dashboard)
+├── ⭐ Gelişim & Yıldızlar Detayı
+│   ├── Kategori Dağılımı Grafiği (Ders, Saygı, Beden Eğitimi vb.)
+│   ├── Öğretmen Notları Zaman Çizelgesi
+│   └── KVKK Uyumlu Sınıf Derecesi (Kendi Çocuğu Vurgulu, Diğerleri Anonim)
+├── 📚 Kitaplık & Okuma Detayı
+│   ├── Okunan Kitaplar Arşivi ve Sayfa Sayıları
+│   ├── Kazanılan Okuma Yıldızları
+│   └── Sınıf Kitap Kataloğu (Ödünç Alınabilir Kitaplar)
+├── 📅 Ders Programı & Zaman Çizelgesi Detayı
+│   ├── 5 Günlük Tam Haftalık Çizelge
+│   ├── Ders Başlama, Teneffüs ve Öğle Arası Saatleri
+│   └── Ders Öğretmenleri Listesi
+├── 🪑 Oturma Planı Detayı
+│   ├── Kuş Bakışı Sınıf Krokisi (Öğretmen Masası, Yazı Tahtası, Kapı, Pencereler)
+│   ├── Çocuğun Sırası Yeşil/Turkuaz Vurgulu ("Çocuğunuz")
+│   └── Diğer Sıralar Nötr Gri ("Öğrenci")
+├── 🏆 Turnuva & Yarışma Detayı
+│   ├── Çocuğun Eşleşmeleri, Maç Sonuçları ve Tur Atlama Durumu
+│   └── Şampiyonluk Kürsüsü (Kendi Çocuğu Derecedeyse İsmiyle, Diğerleri "Öğrenci")
+└── 💬 İletişim, Duyuru & Anket Detayı
+    ├── Sınıf Duyuruları & Ekler
+    ├── Veli Anketleri Oylama Alanı
+    └── Öğretmenle Birebir Güvenli Mesajlaşma (Sohbet Balonları)
+```
+
+---
+
+## 4. Uygulama Adımları (Teknik Yol Haritası)
+
+### Adım 1: KVKK & Maskeleme Yardımcısı (`ParentPrivacyHelper.kt`)
+* Öğrenci isimlerini ve numaralarını velinin bağlı çocuk kimliklerine (`linkedStudentIds`) göre süzen yardımcı sınıfın oluşturulması.
+* Oturma planı, turnuva ve sıralama ekranlarında maskeleme fonksiyonlarının entegrasyonu.
+
+### Adım 2: Bento Dashboard & Ana Sayfa Yeniden Tasarımı (`ParentPortalSubScreen.kt`)
+* Mevcut tab yapısını modern bir **Bento Dashboard + Drill-Down Detay Mimarisi**ne dönüştürme.
+* "Bugün Çocuğum" üst başlık kartı, hızlı durum göstergeleri ve canlı veri kartları.
+* Kartlara tıklanınca detay sayfalarına pürüzsüz geçiş sağlama ve Android `BackHandler` ile ana sayfaya dönüşü güvenceye alma.
+
+### Adım 3: Modül Detay Ekranlarının Güçlendirilmesi
+* **Yıldızlar Detayı:** Zaman çizelgesi ve kategori filtreleme.
+* **Oturma Planı Detayı:** `SeatingPlanHelper` verilerini okuyarak görsel sınıf yerleşim kroki çizimi (öğretmen tahtası referanslı).
+* **Kitaplık Detayı:** Öğrencinin okuduğu kitaplar ve sınıf kütüphanesinden seçebileceği kitaplar listesi.
+* **Ders Programı Detayı:** `ScheduleHelper` ile güncel haftalık tablo ve zil saatleri.
+* **Turnuva Detayı:** `TournamentPersistenceHelper` ile aktif turnuvanın maçları ve çocuğun tur durumu.
+
+### Adım 4: Birim Testler & Derleme Doğrulaması
+* `ParentPrivacyHelperTest` ile farklı veli kimliklerinde diğer öğrencilerin kesinlikle maskelendiğinin test edilmesi.
+* Kardeş geçişi ve detay navigasyonu testleri.
+* `compile_applet` ile hatasız derlemenin doğrulanması.
