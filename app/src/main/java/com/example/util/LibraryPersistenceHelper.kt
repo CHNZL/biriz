@@ -335,6 +335,20 @@ object LibraryPersistenceHelper {
         records.removeAll { it.bookId == bookId }
         saveReadingRecords(context, classRoomId, records)
 
+        if (classRoomId.isNotBlank() && classRoomId != "default") {
+            syncScope.launch {
+                try {
+                    val db = getFirestore(context) ?: return@launch
+                    db.collection("classrooms").document(classRoomId)
+                        .collection("library_books").document(bookId).delete()
+                    relatedRecords.forEach { rec ->
+                        db.collection("classrooms").document(classRoomId)
+                            .collection("reading_records").document(rec.id).delete()
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         // 3. Yıldızlar Sınıfı kayıtlarından (StarRewardRecord) bu kitaba ait okuma yıldızlarını sil
         val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
         val starIdsToRemove = mutableSetOf<String>()
@@ -386,6 +400,16 @@ object LibraryPersistenceHelper {
         val record = records.firstOrNull { it.id == recordId }
         records.removeAll { it.id == recordId }
         saveReadingRecords(context, classRoomId, records)
+
+        if (classRoomId.isNotBlank() && classRoomId != "default") {
+            syncScope.launch {
+                try {
+                    val db = getFirestore(context) ?: return@launch
+                    db.collection("classrooms").document(classRoomId)
+                        .collection("reading_records").document(recordId).delete()
+                } catch (_: Exception) {}
+            }
+        }
 
         var revokedStars = 0
         if (record != null) {
@@ -910,6 +934,14 @@ object LibraryPersistenceHelper {
                                 )
                             }
                         }
+                        if (list.isEmpty()) {
+                            val localBooks = loadBooks(context, classId)
+                            if (localBooks.isNotEmpty()) {
+                                uploadBooksToFirestore(context, classId, localBooks)
+                                onUpdate(localBooks)
+                                return@addSnapshotListener
+                            }
+                        }
                         list.sortBy { it.registrationNo }
                         if (list.isNotEmpty()) {
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -962,6 +994,14 @@ object LibraryPersistenceHelper {
                                     earnedStars = stars
                                 )
                             )
+                        }
+                        if (list.isEmpty()) {
+                            val localRecords = loadReadingRecords(context, classId)
+                            if (localRecords.isNotEmpty()) {
+                                uploadRecordsToFirestore(context, classId, localRecords)
+                                onUpdate(localRecords)
+                                return@addSnapshotListener
+                            }
                         }
                         list.sortByDescending { it.endDate }
                         if (list.isNotEmpty()) {

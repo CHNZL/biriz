@@ -173,6 +173,18 @@ object SchedulePersistenceHelper {
             }
             editor.putString(KEY_ACTIVE_DAY_PREFIX + "default", day)
             editor.apply()
+
+            if (classId.isNotBlank() && classId != "default") {
+                val db = getFirestore(context)
+                if (db != null) {
+                    syncScope.launch {
+                        try {
+                            db.collection("classrooms").document(classId).collection("schedule").document("current")
+                                .set(mapOf("activeDay" to day, "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge())
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -246,7 +258,8 @@ object SchedulePersistenceHelper {
 
     /**
      * Firestore üzerinden ders programındaki anlık değişiklikleri dinler.
-     * Öğretmen ders veya zaman çizelgesi değiştirdiği anda veli ekranı canlı güncellenir.
+     * Öğretmen ders veya zaman çizelgesi değiştirdiği anda veli ekranı ve diğer tüm cihazlar canlı güncellenir.
+     * Eğer Firestore'da henüz kayıt yoksa ve bu cihazda yerel kayıt varsa otomatik olarak buluta taşır.
      */
     fun observeFirestoreSchedule(
         context: Context,
@@ -258,8 +271,18 @@ object SchedulePersistenceHelper {
         return try {
             db.collection("classrooms").document(classId).collection("schedule").document("current")
                 .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    if (!snapshot.exists()) {
+                        // Firestore'da henüz ders programı yoksa, bu cihazdaki mevcut yerel programı buluta yükle
+                        val localConfig = loadScheduleConfig(context, classId)
+                        val localLessons = loadScheduleLessons(context, classId)
+                        if (localConfig != null || !localLessons.isNullOrEmpty()) {
+                            uploadScheduleToFirestore(context, classId, localConfig, localLessons)
+                        }
+                        return@addSnapshotListener
+                    }
                     try {
+                        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                         var parsedConfig: ScheduleConfig? = null
                         val configJsonStr = snapshot.getString("configJson")
                         if (!configJsonStr.isNullOrBlank()) {
@@ -281,8 +304,15 @@ object SchedulePersistenceHelper {
                                 lunchDurationMinutes = json.optInt("lunchDurationMinutes", 50),
                                 isConfigured = true
                             )
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            prefs.edit().putString(KEY_CONFIG_PREFIX + classId, configJsonStr).apply()
+                            prefs.edit()
+                                .putString(KEY_CONFIG_PREFIX + classId, configJsonStr)
+                                .putString(KEY_CONFIG_PREFIX + "default", configJsonStr)
+                                .apply()
+                        } else {
+                            val localConfig = loadScheduleConfig(context, classId)
+                            if (localConfig != null) {
+                                uploadScheduleToFirestore(context, classId, localConfig, null)
+                            }
                         }
 
                         var parsedLessons: List<ScheduleLesson>? = null
@@ -305,8 +335,15 @@ object SchedulePersistenceHelper {
                             }
                             if (list.isNotEmpty()) {
                                 parsedLessons = list
-                                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                prefs.edit().putString(KEY_LESSONS_PREFIX + classId, lessonsJsonStr).apply()
+                                prefs.edit()
+                                    .putString(KEY_LESSONS_PREFIX + classId, lessonsJsonStr)
+                                    .putString(KEY_LESSONS_PREFIX + "default", lessonsJsonStr)
+                                    .apply()
+                            }
+                        } else {
+                            val localLessons = loadScheduleLessons(context, classId)
+                            if (!localLessons.isNullOrEmpty()) {
+                                uploadScheduleToFirestore(context, classId, null, localLessons)
                             }
                         }
 

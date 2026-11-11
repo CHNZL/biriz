@@ -196,12 +196,18 @@ class BirizViewModel(
     private var communicationAnnouncementsListener: ListenerRegistration? = null
     private var communicationMessagesListener: ListenerRegistration? = null
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
+    private var groupMakerListenerRegistration: ListenerRegistration? = null
+
+    private fun resolveActiveClassId(): String {
+        val activeId = _uiState.value.activeClassRoom?.id
+        if (!activeId.isNullOrBlank() && activeId != "default") return activeId
+        val savedId = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+            ?.getString("key_linked_classroom_id", null)
+        if (!savedId.isNullOrBlank() && savedId != "default") return savedId
+        return "default"
+    }
 
     init {
-        loadScheduleFromStorage("default")
-        loadSeatingPlanFromStorage("default")
-        loadCommunicationFromStorage("default")
-        loadGroupMakerFromStorage("default")
         if (appContext != null) {
             val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
             val savedDark = prefs.getBoolean("key_is_dark_theme", false)
@@ -217,17 +223,25 @@ class BirizViewModel(
                 savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
             } else emptyList()
 
-            if (!savedClassroomId.isNullOrBlank()) {
-                repository.observeStudents(savedClassroomId)
-                loadScheduleFromStorage(savedClassroomId)
-                loadSeatingPlanFromStorage(savedClassroomId)
-                loadCommunicationFromStorage(savedClassroomId)
-            }
+            val restoredClassRoom = if (!savedClassroomId.isNullOrBlank() && savedClassroomId != "default") {
+                ClassRoom(
+                    id = savedClassroomId,
+                    cityName = prefs.getString("key_classroom_city", "") ?: "",
+                    districtName = prefs.getString("key_classroom_district", "") ?: "",
+                    schoolName = prefs.getString("key_classroom_school", "") ?: "",
+                    gradeLevel = prefs.getInt("key_classroom_grade", 4),
+                    section = prefs.getString("key_classroom_section", "A") ?: "A",
+                    teacherName = prefs.getString("key_classroom_teacher_name", "") ?: "",
+                    teacherEmail = prefs.getString("key_classroom_teacher_email", "") ?: "",
+                    inviteCode = prefs.getString("key_classroom_invite_code", "") ?: "",
+                    isOccupied = true
+                )
+            } else null
 
-            val restoredRole = if (savedRoleCode == UserRole.PARENT.code) {
-                UserRole.PARENT
-            } else {
-                _uiState.value.currentRole
+            val restoredRole = when (savedRoleCode) {
+                UserRole.PARENT.code -> UserRole.PARENT
+                UserRole.TEACHER.code -> UserRole.TEACHER
+                else -> _uiState.value.currentRole
             }
 
             val restoredScreen = if (restoredRole == UserRole.PARENT) {
@@ -240,11 +254,21 @@ class BirizViewModel(
                 isDarkTheme = savedDark,
                 connectedBoardSessionCode = savedSession,
                 isLiveBoardMirrorActive = savedMirror,
+                activeClassRoom = restoredClassRoom ?: _uiState.value.activeClassRoom,
                 currentRole = restoredRole,
                 currentScreen = restoredScreen,
                 linkedParentStudentIds = linkedList,
                 activeParentStudentId = if (savedActiveStudentId.isNullOrBlank()) linkedList.firstOrNull() else savedActiveStudentId
             )
+
+            val targetClassId = if (!savedClassroomId.isNullOrBlank()) savedClassroomId else "default"
+            if (targetClassId != "default") {
+                repository.observeStudents(targetClassId)
+            }
+            loadScheduleFromStorage(targetClassId)
+            loadSeatingPlanFromStorage(targetClassId)
+            loadCommunicationFromStorage(targetClassId)
+            loadGroupMakerFromStorage(targetClassId)
 
             if (linkedList.isNotEmpty()) {
                 repository.syncLinkedStudentsWithParent(
@@ -253,6 +277,11 @@ class BirizViewModel(
                     _uiState.value.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
                 )
             }
+        } else {
+            loadScheduleFromStorage("default")
+            loadSeatingPlanFromStorage("default")
+            loadCommunicationFromStorage("default")
+            loadGroupMakerFromStorage("default")
         }
         refreshCurrentUser()
         startPeriodicUpdateChecker()
@@ -262,12 +291,24 @@ class BirizViewModel(
         if (appContext == null) return
         val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
         val state = _uiState.value
-        prefs.edit()
+        val activeClass = state.activeClassRoom
+        val editor = prefs.edit()
             .putString("key_saved_role", state.currentRole.code)
             .putString("key_linked_student_ids", state.linkedParentStudentIds.joinToString(","))
             .putString("key_active_parent_student_id", state.activeParentStudentId ?: "")
-            .putString("key_linked_classroom_id", state.activeClassRoom?.id ?: "")
-            .apply()
+            .putString("key_linked_classroom_id", activeClass?.id ?: "")
+        if (activeClass != null) {
+            editor
+                .putString("key_classroom_city", activeClass.cityName)
+                .putString("key_classroom_district", activeClass.districtName)
+                .putString("key_classroom_school", activeClass.schoolName)
+                .putInt("key_classroom_grade", activeClass.gradeLevel)
+                .putString("key_classroom_section", activeClass.section)
+                .putString("key_classroom_teacher_name", activeClass.teacherName)
+                .putString("key_classroom_teacher_email", activeClass.teacherEmail)
+                .putString("key_classroom_invite_code", activeClass.inviteCode)
+        }
+        editor.apply()
     }
 
     /**
@@ -369,7 +410,7 @@ class BirizViewModel(
         }
     }
 
-    fun loadScheduleFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
+    fun loadScheduleFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
         val savedConfig = SchedulePersistenceHelper.loadScheduleConfig(ctx, classId)
         val savedLessons = SchedulePersistenceHelper.loadScheduleLessons(ctx, classId)
@@ -383,7 +424,7 @@ class BirizViewModel(
             )
         }
 
-        // Firestore üzerinden anlık canlı ders programı senkronizasyonu
+        // Firestore üzerinden anlık canlı ders programı senkronizasyonu (SSOT)
         scheduleListenerRegistration?.remove()
         scheduleListenerRegistration = SchedulePersistenceHelper.observeFirestoreSchedule(ctx, classId) { cloudConfig, cloudLessons ->
             if (cloudConfig != null || cloudLessons != null) {
@@ -395,41 +436,47 @@ class BirizViewModel(
         }
     }
 
-    fun loadSeatingPlanFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
+    fun loadSeatingPlanFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
         val savedPlan = SeatingPlanPersistenceHelper.loadActivePlan(ctx, classId)
         val savedConfig = SeatingPlanPersistenceHelper.loadSeatingConfig(ctx, classId)
         if (savedPlan != null) {
-            val finalPlan = if (savedConfig != null) savedPlan.copy(config = savedConfig) else savedPlan
-            _uiState.value = _uiState.value.copy(seatingPlanState = finalPlan)
+            _uiState.value = _uiState.value.copy(seatingPlanState = savedPlan)
         } else if (savedConfig != null) {
             _uiState.value = _uiState.value.copy(
                 seatingPlanState = _uiState.value.seatingPlanState.copy(config = savedConfig)
             )
         }
 
+        // Firestore üzerinden anlık canlı oturma planı senkronizasyonu (SSOT - yerel config bulutu ezmez)
         seatingPlanListenerRegistration?.remove()
         seatingPlanListenerRegistration = SeatingPlanPersistenceHelper.observeActivePlanFromFirestore(ctx, classId) { cloudPlan ->
-            val finalCloudPlan = if (savedConfig != null) cloudPlan.copy(config = savedConfig) else cloudPlan
-            _uiState.value = _uiState.value.copy(seatingPlanState = finalCloudPlan)
+            _uiState.value = _uiState.value.copy(seatingPlanState = cloudPlan)
         }
     }
 
-    fun loadGroupMakerFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
+    fun loadGroupMakerFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
         val saved = GroupMakerPersistenceHelper.loadState(ctx, classId)
         if (saved != null && saved.groups.isNotEmpty()) {
             _uiState.value = _uiState.value.copy(groupMakerState = saved)
         }
+
+        groupMakerListenerRegistration?.remove()
+        groupMakerListenerRegistration = GroupMakerPersistenceHelper.observeFirestoreGroups(ctx, classId) { cloudGroups ->
+            if (cloudGroups.groups.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(groupMakerState = cloudGroups)
+            }
+        }
     }
 
     private fun persistGroupMakerState(state: GroupMakerState) {
         val ctx = appContext ?: return
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         GroupMakerPersistenceHelper.saveState(ctx, classId, state)
     }
 
-    fun loadCommunicationFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
+    fun loadCommunicationFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
         val currentStudents = repository.students.value
         val loadedAnnouncements = CommunicationPersistenceHelper.loadAnnouncements(ctx, classId, currentStudents)
@@ -455,8 +502,8 @@ class BirizViewModel(
     }
 
     fun saveAnnouncement(announcement: Announcement) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
-        val updatedList = listOf(announcement) + _uiState.value.announcements.filter { it.id != announcement.id }
+        val classId = resolveActiveClassId()
+        val updatedList = listOf(announcement.copy(classId = classId)) + _uiState.value.announcements.filter { it.id != announcement.id }
         val newNotif = BirizNotification(
             id = "notif_${System.currentTimeMillis()}",
             title = "Yeni Sınıf Duyurusu 📢",
@@ -480,7 +527,7 @@ class BirizViewModel(
     }
 
     fun markAnnouncementReadByParent(announcementId: String, parentName: String) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val resolvedName = parentName.ifBlank { "Veli" }
         val updatedList = _uiState.value.announcements.map { ann ->
             if (ann.id == announcementId && !ann.readReceipts.containsKey(resolvedName)) {
@@ -501,7 +548,7 @@ class BirizViewModel(
         targetStudentIds: List<String>,
         targetStudentNames: List<String>
     ) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val currentStudents = repository.students.value
         val deliveredParents = if (targetType == AnnouncementTargetType.ALL_CLASS) {
             currentStudents.map { it.parentName ?: "${it.fullName} Velisi" }
@@ -551,7 +598,7 @@ class BirizViewModel(
     }
 
     fun deleteAnnouncement(id: String) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val updatedList = _uiState.value.announcements.filter { it.id != id }
         _uiState.value = _uiState.value.copy(
             announcements = updatedList,
@@ -564,7 +611,7 @@ class BirizViewModel(
     }
 
     fun votePollOption(announcementId: String, optionId: String, voterName: String) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val updatedList = _uiState.value.announcements.map { ann ->
             if (ann.id == announcementId && ann.poll != null) {
                 val updatedOptions = ann.poll.options.map { opt ->
@@ -590,7 +637,7 @@ class BirizViewModel(
         parentEmail: String = "",
         parentName: String = ""
     ) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val student = repository.students.value.find { it.id == studentId }
         val studentNo = student?.studentNumber ?: ""
         val studentName = student?.fullName ?: "Öğrenci"
@@ -798,12 +845,6 @@ class BirizViewModel(
                 }
 
                 if (resolvedClass != null) {
-                    repository.observeStudents(resolvedClass.id)
-                    loadScheduleFromStorage(resolvedClass.id)
-                    loadSeatingPlanFromStorage(resolvedClass.id)
-                    loadCommunicationFromStorage(resolvedClass.id)
-                    loadGroupMakerFromStorage(resolvedClass.id)
-
                     _uiState.value = _uiState.value.copy(
                         activeClassRoom = resolvedClass,
                         currentRole = UserRole.TEACHER,
@@ -812,6 +853,12 @@ class BirizViewModel(
                         currentSubPage = DashboardSubPage.SINIF_LISTESI
                     )
                     saveParentSessionState()
+
+                    repository.observeStudents(resolvedClass.id)
+                    loadScheduleFromStorage(resolvedClass.id)
+                    loadSeatingPlanFromStorage(resolvedClass.id)
+                    loadCommunicationFromStorage(resolvedClass.id)
+                    loadGroupMakerFromStorage(resolvedClass.id)
                     return@launch
                 }
 
@@ -1295,11 +1342,17 @@ class BirizViewModel(
 
                 _uiState.value = _uiState.value.copy(
                     activeClassRoom = createdClass,
+                    currentRole = UserRole.TEACHER,
                     currentScreen = ScreenState.SETUP_SUCCESS,
                     currentSubPage = DashboardSubPage.SINIF_LISTESI,
                     conflictError = null,
                     occupiedClassRoom = null
                 )
+                saveParentSessionState()
+                loadScheduleFromStorage(createdClass.id)
+                loadSeatingPlanFromStorage(createdClass.id)
+                loadCommunicationFromStorage(createdClass.id)
+                loadGroupMakerFromStorage(createdClass.id)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     conflictError = e.message,
@@ -1310,29 +1363,39 @@ class BirizViewModel(
     }
 
     fun navigateToTeacherDashboard() {
-        val classRoom = _uiState.value.activeClassRoom
-        if (classRoom != null) {
-            repository.observeStudents(classRoom.id)
-            loadScheduleFromStorage(classRoom.id)
-            loadSeatingPlanFromStorage(classRoom.id)
-            loadGroupMakerFromStorage(classRoom.id)
+        val classId = resolveActiveClassId()
+        if (classId != "default") {
+            repository.observeStudents(classId)
+            loadScheduleFromStorage(classId)
+            loadSeatingPlanFromStorage(classId)
+            loadCommunicationFromStorage(classId)
+            loadGroupMakerFromStorage(classId)
         } else {
             loadScheduleFromStorage("default")
             loadSeatingPlanFromStorage("default")
             loadGroupMakerFromStorage("default")
         }
         _uiState.value = _uiState.value.copy(
+            currentRole = UserRole.TEACHER,
             currentScreen = ScreenState.TEACHER_DASHBOARD,
             currentSubPage = DashboardSubPage.SINIF_LISTESI
         )
+        saveParentSessionState()
     }
 
     fun selectSubPage(subPage: DashboardSubPage) {
+        val activeClassId = resolveActiveClassId()
         if (subPage == DashboardSubPage.DERS_PROGRAMI) {
-            loadScheduleFromStorage(_uiState.value.activeClassRoom?.id ?: "default")
+            loadScheduleFromStorage(activeClassId)
         }
         if (subPage == DashboardSubPage.OTURMA_PLANI) {
-            loadSeatingPlanFromStorage(_uiState.value.activeClassRoom?.id ?: "default")
+            loadSeatingPlanFromStorage(activeClassId)
+        }
+        if (subPage == DashboardSubPage.GRUP_OLUSTURMA) {
+            loadGroupMakerFromStorage(activeClassId)
+        }
+        if (subPage == DashboardSubPage.ILETISIM_DUYURULAR || subPage == DashboardSubPage.ILETISIM_MESAJLAR) {
+            loadCommunicationFromStorage(activeClassId)
         }
 
         if (subPage == DashboardSubPage.SINIF_LISTESI || subPage == DashboardSubPage.PROFIL_AYARLARI || subPage.category == "ÖĞRETMEN ODASI") {
@@ -1604,9 +1667,10 @@ class BirizViewModel(
 
     fun updateScheduleConfig(newConfig: ScheduleConfig) {
         val configured = newConfig.copy(isConfigured = true)
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         appContext?.let { ctx ->
             SchedulePersistenceHelper.saveScheduleConfig(ctx, classId, configured)
+            SchedulePersistenceHelper.uploadScheduleToFirestore(ctx, classId, configured, _uiState.value.scheduleLessons)
         }
         _uiState.value = _uiState.value.copy(
             scheduleConfig = configured,
@@ -1646,9 +1710,10 @@ class BirizViewModel(
             }
         }
 
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         appContext?.let { ctx ->
             SchedulePersistenceHelper.saveScheduleLessons(ctx, classId, currentLessons)
+            SchedulePersistenceHelper.uploadScheduleToFirestore(ctx, classId, _uiState.value.scheduleConfig, currentLessons)
         }
 
         _uiState.value = _uiState.value.copy(
@@ -1662,7 +1727,7 @@ class BirizViewModel(
     }
 
     fun setActiveScheduleDay(day: String) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         appContext?.let { ctx ->
             SchedulePersistenceHelper.saveActiveDay(ctx, classId, day)
         }
@@ -1675,7 +1740,7 @@ class BirizViewModel(
     // --- AKILLI SINIF OTURMA PLANI METODLARI ---
 
     private fun persistActiveSeatingPlan(state: SeatingPlanState) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         appContext?.let { ctx ->
             SeatingPlanPersistenceHelper.saveActivePlan(ctx, classId, state)
         }
@@ -1690,7 +1755,7 @@ class BirizViewModel(
             config = newConfig,
             assignments = filteredAssignments
         )
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         appContext?.let { ctx ->
             SeatingPlanPersistenceHelper.saveSeatingConfig(ctx, classId, newConfig)
         }
@@ -1836,15 +1901,15 @@ class BirizViewModel(
     fun ensureSeatingPlanInitialized() {
         val currentPlan = _uiState.value.seatingPlanState
         val currentStudents = repository.students.value
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
         val saved = appContext?.let { SeatingPlanPersistenceHelper.loadActivePlan(it, classId) }
         val savedConfig = appContext?.let { SeatingPlanPersistenceHelper.loadSeatingConfig(it, classId) }
-        val effectiveConfig = savedConfig ?: saved?.config ?: currentPlan.config
+        val effectiveConfig = saved?.config ?: savedConfig ?: currentPlan.config
 
         if (saved != null) {
             if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
                 if (saved.assignments.isNotEmpty()) {
-                    _uiState.value = _uiState.value.copy(seatingPlanState = saved.copy(config = effectiveConfig))
+                    _uiState.value = _uiState.value.copy(seatingPlanState = saved)
                 } else {
                     val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, effectiveConfig)
                     val initialPlan = saved.copy(
@@ -1855,10 +1920,6 @@ class BirizViewModel(
                     persistActiveSeatingPlan(initialPlan)
                     _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
                 }
-            } else if (currentPlan.config != effectiveConfig) {
-                _uiState.value = _uiState.value.copy(
-                    seatingPlanState = currentPlan.copy(config = effectiveConfig)
-                )
             }
         } else if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
             val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, effectiveConfig)
@@ -1867,12 +1928,21 @@ class BirizViewModel(
                 assignments = initial,
                 activePlanName = "1. Başlangıç Planı"
             )
-            persistActiveSeatingPlan(initialPlan)
             _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
-        } else if (currentPlan.config != effectiveConfig) {
-            _uiState.value = _uiState.value.copy(
-                seatingPlanState = currentPlan.copy(config = effectiveConfig)
-            )
+            // Eğer gerçek bir sınıf aktifse, önce Firestore'da plan olup olmadığını kontrol et;
+            // varsa buluttaki planı yükle, yoksa başlangıç planını kaydet (böylece 2. cihaz bulutu ezmez!)
+            val ctx = appContext
+            if (ctx != null && classId != "default") {
+                SeatingPlanPersistenceHelper.syncActivePlanFromFirestore(ctx, classId) { cloudState ->
+                    if (cloudState.assignments.isNotEmpty()) {
+                        _uiState.value = _uiState.value.copy(seatingPlanState = cloudState)
+                    } else {
+                        persistActiveSeatingPlan(initialPlan)
+                    }
+                }
+            } else {
+                persistActiveSeatingPlan(initialPlan)
+            }
         }
     }
 
@@ -2296,6 +2366,7 @@ class BirizViewModel(
         communicationAnnouncementsListener?.remove()
         communicationMessagesListener?.remove()
         seatingPlanListenerRegistration?.remove()
+        groupMakerListenerRegistration?.remove()
     }
 }
 

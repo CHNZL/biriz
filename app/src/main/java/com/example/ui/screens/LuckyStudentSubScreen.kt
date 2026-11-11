@@ -145,7 +145,7 @@ fun LuckyStudentSubScreen(
         }
     }
 
-    // Durumu diske kaydetme yardımcı fonksiyonu
+    // Durumu diske ve buluta kaydetme yardımcı fonksiyonu
     fun persistCurrentState() {
         LuckyStudentPersistenceHelper.saveState(
             context = context,
@@ -154,6 +154,22 @@ fun LuckyStudentSubScreen(
             excludedStudentIds = excludedStudentIds.toSet(),
             selectedModeName = selectedMode.name
         )
+    }
+
+    androidx.compose.runtime.DisposableEffect(classRoom.id, students) {
+        val listener = LuckyStudentPersistenceHelper.observeFirestoreLuckyState(context, classRoom.id) { cloudState ->
+            val studentMap = students.associateBy { it.id }
+            drawnStudentsHistory.clear()
+            cloudState.drawnStudentIds.mapNotNull { studentMap[it] }.forEach { drawnStudentsHistory.add(it) }
+            excludedStudentIds.clear()
+            excludedStudentIds.addAll(cloudState.excludedStudentIds)
+            try {
+                selectedMode = LuckyDrawMode.valueOf(cloudState.selectedModeName)
+            } catch (_: Exception) {}
+        }
+        onDispose {
+            listener?.remove()
+        }
     }
 
     // Aktif aday havuzu (Henüz çekilmemiş ve devamsız olmayan öğrenciler)

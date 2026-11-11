@@ -624,6 +624,16 @@ object TournamentPersistenceHelper {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove("$KEY_MATCHES_PREFIX$tournamentId").apply()
 
+        if (classRoomId.isNotBlank() && classRoomId != "default") {
+            syncScope.launch {
+                try {
+                    val db = getFirestore(context) ?: return@launch
+                    db.collection("classrooms").document(classRoomId)
+                        .collection("tournaments").document(tournamentId).delete()
+                } catch (_: Exception) {}
+            }
+        }
+
         // Yıldızları Geri Al (Rollback)
         if (tournament != null) {
             val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId).toMutableList()
@@ -879,6 +889,20 @@ object TournamentPersistenceHelper {
                                 } catch (_: Exception) {}
                             }
                         }
+                        if (list.isEmpty()) {
+                            val localTournaments = loadTournaments(context, classId)
+                            if (localTournaments.isNotEmpty()) {
+                                uploadTournamentsToFirestore(context, classId, localTournaments)
+                                localTournaments.forEach { t ->
+                                    val localMatches = loadMatches(context, t.id)
+                                    if (localMatches.isNotEmpty()) {
+                                        uploadMatchesToFirestore(context, t.id, localMatches)
+                                    }
+                                }
+                                onUpdate(localTournaments)
+                                return@addSnapshotListener
+                            }
+                        }
                         list.sortByDescending { it.createdAt }
                         if (list.isNotEmpty()) {
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -917,14 +941,22 @@ object TournamentPersistenceHelper {
                                 } catch (_: Exception) {}
                             }
                         }
-                        list.sortedWith(compareBy({ it.round }, { it.matchCode }))
-                        if (list.isNotEmpty()) {
+                        if (list.isEmpty()) {
+                            val localMatches = loadMatches(context, tournamentId)
+                            if (localMatches.isNotEmpty()) {
+                                uploadMatchesToFirestore(context, tournamentId, localMatches)
+                                onUpdate(localMatches)
+                                return@addSnapshotListener
+                            }
+                        }
+                        val sorted = list.sortedWith(compareBy({ it.round }, { it.matchCode }))
+                        if (sorted.isNotEmpty()) {
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                             val array = JSONArray()
-                            list.forEach { array.put(serializeMatch(it)) }
+                            sorted.forEach { array.put(serializeMatch(it)) }
                             prefs.edit().putString("$KEY_MATCHES_PREFIX$tournamentId", array.toString()).apply()
                         }
-                        onUpdate(list)
+                        onUpdate(sorted)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in observeFirestoreMatches", e)
                     }

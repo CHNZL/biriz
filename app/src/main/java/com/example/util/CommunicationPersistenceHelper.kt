@@ -66,7 +66,8 @@ object CommunicationPersistenceHelper {
      */
     fun loadAnnouncements(context: Context, classId: String, students: List<Student>): List<Announcement> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val rawJson = prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + classId, null)
+        val rawJson = (if (classId.isNotBlank()) prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + classId, null) else null)
+            ?: prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + "default", null)
 
         if (!rawJson.isNullOrBlank()) {
             try {
@@ -98,7 +99,13 @@ object CommunicationPersistenceHelper {
             jsonArray.put(serializeAnnouncementJson(announcement))
             uploadAnnouncementToFirestore(context, classId, announcement)
         }
-        prefs.edit().putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonArray.toString()).apply()
+        val jsonStr = jsonArray.toString()
+        val editor = prefs.edit()
+        if (classId.isNotBlank()) {
+            editor.putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonStr)
+        }
+        editor.putString(KEY_ANNOUNCEMENTS_PREFIX + "default", jsonStr)
+        editor.apply()
     }
 
     /**
@@ -109,7 +116,7 @@ object CommunicationPersistenceHelper {
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
-                val json = serializeAnnouncementJson(announcement).toString()
+                val json = serializeAnnouncementJson(announcement.copy(classId = classId)).toString()
                 val data = mapOf(
                     "id" to announcement.id,
                     "classId" to classId,
@@ -146,7 +153,7 @@ object CommunicationPersistenceHelper {
 
     /**
      * Firestore üzerinden sınıfa ait duyuruları gerçek zamanlı dinler.
-     * Öğretmen duyuru veya anket yayınladığında veli portalında ANINDA görünür.
+     * Öğretmen duyuru veya anket yayınladığında veli portalında ve diğer cihazlarda ANINDA görünür.
      */
     fun observeFirestoreAnnouncements(
         context: Context,
@@ -173,15 +180,26 @@ object CommunicationPersistenceHelper {
                                 } catch (_: Exception) {}
                             }
                         }
+                        if (list.isEmpty()) {
+                            val localList = loadAnnouncements(context, classId, emptyList())
+                            if (localList.isNotEmpty()) {
+                                localList.forEach { uploadAnnouncementToFirestore(context, classId, it) }
+                                onUpdate(localList)
+                                return@addSnapshotListener
+                            }
+                        }
                         list.sortByDescending { it.createdAt }
-                        // Yerel önbelleğe de senkronize et
                         if (list.isNotEmpty()) {
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                             val jsonArray = JSONArray()
                             for (item in list) {
                                 jsonArray.put(serializeAnnouncementJson(item))
                             }
-                            prefs.edit().putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonArray.toString()).apply()
+                            val str = jsonArray.toString()
+                            prefs.edit()
+                                .putString(KEY_ANNOUNCEMENTS_PREFIX + classId, str)
+                                .putString(KEY_ANNOUNCEMENTS_PREFIX + "default", str)
+                                .apply()
                         }
                         onUpdate(list)
                     } catch (e: Exception) {
@@ -199,7 +217,8 @@ object CommunicationPersistenceHelper {
      */
     fun loadChatMessages(context: Context, classId: String, students: List<Student>): List<ChatMessage> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val rawJson = prefs.getString(KEY_CHAT_MESSAGES_PREFIX + classId, null)
+        val rawJson = (if (classId.isNotBlank()) prefs.getString(KEY_CHAT_MESSAGES_PREFIX + classId, null) else null)
+            ?: prefs.getString(KEY_CHAT_MESSAGES_PREFIX + "default", null)
 
         if (!rawJson.isNullOrBlank()) {
             try {
@@ -234,7 +253,13 @@ object CommunicationPersistenceHelper {
             jsonArray.put(serializeChatMessageJson(msg))
             uploadChatMessageToFirestore(context, classId, msg)
         }
-        prefs.edit().putString(KEY_CHAT_MESSAGES_PREFIX + classId, jsonArray.toString()).apply()
+        val str = jsonArray.toString()
+        val editor = prefs.edit()
+        if (classId.isNotBlank()) {
+            editor.putString(KEY_CHAT_MESSAGES_PREFIX + classId, str)
+        }
+        editor.putString(KEY_CHAT_MESSAGES_PREFIX + "default", str)
+        editor.apply()
     }
 
     /**
@@ -245,7 +270,7 @@ object CommunicationPersistenceHelper {
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
-                val json = serializeChatMessageJson(message).toString()
+                val json = serializeChatMessageJson(message.copy(classId = classId)).toString()
                 val data = mapOf(
                     "id" to message.id,
                     "classId" to classId,
@@ -317,15 +342,26 @@ object CommunicationPersistenceHelper {
                                 } catch (_: Exception) {}
                             }
                         }
+                        if (list.isEmpty()) {
+                            val localMessages = loadChatMessages(context, classId, emptyList())
+                            if (localMessages.isNotEmpty()) {
+                                localMessages.forEach { uploadChatMessageToFirestore(context, classId, it) }
+                                onUpdate(localMessages)
+                                return@addSnapshotListener
+                            }
+                        }
                         list.sortBy { it.timestamp }
-                        // Yerel önbelleğe de senkronize et
                         if (list.isNotEmpty()) {
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                             val jsonArray = JSONArray()
                             for (msg in list) {
                                 jsonArray.put(serializeChatMessageJson(msg))
                             }
-                            prefs.edit().putString(KEY_CHAT_MESSAGES_PREFIX + classId, jsonArray.toString()).apply()
+                            val str = jsonArray.toString()
+                            prefs.edit()
+                                .putString(KEY_CHAT_MESSAGES_PREFIX + classId, str)
+                                .putString(KEY_CHAT_MESSAGES_PREFIX + "default", str)
+                                .apply()
                         }
                         onUpdate(list)
                     } catch (e: Exception) {

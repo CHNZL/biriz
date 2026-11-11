@@ -155,15 +155,23 @@ fun ScheduleSubScreen(
                 onSelectDay(day)
             },
             onSaveLesson = { lesson ->
-                onSaveLesson(lesson)
+                val upperSubjectName = TurkishTextHelper.toTurkishUpperCase(lesson.subjectName.trim()).ifEmpty { "DERS" }
+                val normalizedLesson = lesson.copy(subjectName = upperSubjectName, colorTheme = lesson.colorTheme)
                 val updatedLessons = scheduleLessons.toMutableList()
-                val idx = updatedLessons.indexOfFirst { it.dayOfWeek == lesson.dayOfWeek && it.lessonIndex == lesson.lessonIndex }
+                val idx = updatedLessons.indexOfFirst { it.dayOfWeek == normalizedLesson.dayOfWeek && it.lessonIndex == normalizedLesson.lessonIndex }
                 if (idx >= 0) {
-                    updatedLessons[idx] = lesson
+                    updatedLessons[idx] = normalizedLesson
                 } else {
-                    updatedLessons.add(lesson)
+                    updatedLessons.add(normalizedLesson)
+                }
+                for (i in 0 until updatedLessons.size) {
+                    val item = updatedLessons[i]
+                    if (TurkishTextHelper.toTurkishUpperCase(item.subjectName.trim()) == upperSubjectName) {
+                        updatedLessons[i] = item.copy(subjectName = upperSubjectName, colorTheme = normalizedLesson.colorTheme)
+                    }
                 }
                 SchedulePersistenceHelper.saveScheduleLessons(context, classRoom.id, updatedLessons)
+                onSaveLesson(normalizedLesson)
             }
         )
     }

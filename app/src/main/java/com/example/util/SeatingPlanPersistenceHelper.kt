@@ -147,6 +147,12 @@ object SeatingPlanPersistenceHelper {
             }
             editor.putString("config_default", jsonStr)
             editor.apply()
+
+            // Mevcut aktif plan varsa config'i güncelleyip buluta da yaz
+            val currentPlan = loadActivePlan(context, classId)
+            if (currentPlan != null && classId.isNotBlank() && classId != "default") {
+                saveActivePlan(context, classId, currentPlan.copy(config = config))
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -208,14 +214,17 @@ object SeatingPlanPersistenceHelper {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val json = serializePlanState(state)
             val jsonStr = json.toString()
+            val configStr = serializeConfig(state.config).toString()
             val editor = prefs.edit()
             if (classId.isNotBlank()) {
                 editor.putString(KEY_ACTIVE_PREFIX + classId, jsonStr)
+                editor.putString("config_" + classId, configStr)
             }
             editor.putString(KEY_ACTIVE_PREFIX + "default", jsonStr)
+            editor.putString("config_default", configStr)
             editor.apply()
 
-            if (classId.isNotBlank() && classId != "default" && Firebase.auth.currentUser != null) {
+            if (classId.isNotBlank() && classId != "default") {
                 syncScope.launch {
                     try {
                         val db = getFirestore(context) ?: return@launch
@@ -224,10 +233,9 @@ object SeatingPlanPersistenceHelper {
                             "classId" to classId,
                             "name" to state.activePlanName,
                             "seatsJson" to jsonStr,
-                            "createdAt" to FieldValue.serverTimestamp(),
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
-                        docRef.set(payload)
+                        docRef.set(payload, com.google.firebase.firestore.SetOptions.merge())
                     } catch (e: Exception) {
                         handleFirestoreError(e, OperationType.WRITE, "classrooms/$classId/seating/current")
                     }
@@ -249,8 +257,14 @@ object SeatingPlanPersistenceHelper {
                     if (!seatsJson.isNullOrBlank()) {
                         try {
                             val state = deserializePlanState(JSONObject(seatsJson))
+                            val configStr = serializeConfig(state.config).toString()
                             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            prefs.edit().putString(KEY_ACTIVE_PREFIX + classId, seatsJson).apply()
+                            prefs.edit()
+                                .putString(KEY_ACTIVE_PREFIX + classId, seatsJson)
+                                .putString(KEY_ACTIVE_PREFIX + "default", seatsJson)
+                                .putString("config_" + classId, configStr)
+                                .putString("config_default", configStr)
+                                .apply()
                             onLoaded(state)
                         } catch (_: Exception) {}
                     }
@@ -261,6 +275,7 @@ object SeatingPlanPersistenceHelper {
     /**
      * Firestore üzerinden oturma planını anlık canlı dinler.
      * Öğretmen sırayı veya öğrenci yerleşimini değiştirdiği anda veli ve diğer cihazlarda anında güncellenir.
+     * Eğer Firestore'da henüz kayıt yoksa ve bu cihazda yerel oturma planı varsa otomatik olarak buluta taşır.
      */
     fun observeActivePlanFromFirestore(
         context: Context,
@@ -272,14 +287,40 @@ object SeatingPlanPersistenceHelper {
         return try {
             db.collection("classrooms").document(classId).collection("seating").document("current")
                 .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    if (!snapshot.exists()) {
+                        val localPlan = loadActivePlan(context, classId)
+                        if (localPlan != null && localPlan.assignments.isNotEmpty()) {
+                            saveActivePlan(context, classId, localPlan)
+                        }
+                        return@addSnapshotListener
+                    }
                     try {
+                        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        val archivedJson = snapshot.getString("archivedPlansJson")
+                        if (!archivedJson.isNullOrBlank()) {
+                            prefs.edit()
+                                .putString(KEY_ARCHIVE_PREFIX + classId, archivedJson)
+                                .putString(KEY_ARCHIVE_PREFIX + "default", archivedJson)
+                                .apply()
+                        }
+
                         val seatsJson = snapshot.getString("seatsJson")
                         if (!seatsJson.isNullOrBlank()) {
                             val state = deserializePlanState(JSONObject(seatsJson))
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            prefs.edit().putString(KEY_ACTIVE_PREFIX + classId, seatsJson).apply()
+                            val configStr = serializeConfig(state.config).toString()
+                            prefs.edit()
+                                .putString(KEY_ACTIVE_PREFIX + classId, seatsJson)
+                                .putString(KEY_ACTIVE_PREFIX + "default", seatsJson)
+                                .putString("config_" + classId, configStr)
+                                .putString("config_default", configStr)
+                                .apply()
                             onUpdate(state)
+                        } else {
+                            val localPlan = loadActivePlan(context, classId)
+                            if (localPlan != null && localPlan.assignments.isNotEmpty()) {
+                                saveActivePlan(context, classId, localPlan)
+                            }
                         }
                     } catch (_: Exception) {}
                 }
@@ -306,7 +347,9 @@ object SeatingPlanPersistenceHelper {
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val key = if (classId.isNotBlank()) KEY_ARCHIVE_PREFIX + classId else KEY_ARCHIVE_PREFIX + "default"
-            val jsonStr = prefs.getString(key, null) ?: return emptyList()
+            val jsonStr = prefs.getString(key, null)
+                ?: prefs.getString(KEY_ARCHIVE_PREFIX + "default", null)
+                ?: return emptyList()
 
             val array = JSONArray(jsonStr)
             val list = mutableListOf<ArchivedSeatingPlan>()
@@ -381,7 +424,28 @@ object SeatingPlanPersistenceHelper {
             }
             array.put(obj)
         }
-        val key = if (classId.isNotBlank()) KEY_ARCHIVE_PREFIX + classId else KEY_ARCHIVE_PREFIX + "default"
-        prefs.edit().putString(key, array.toString()).apply()
+        val arrayStr = array.toString()
+        val editor = prefs.edit()
+        if (classId.isNotBlank()) {
+            editor.putString(KEY_ARCHIVE_PREFIX + classId, arrayStr)
+        }
+        editor.putString(KEY_ARCHIVE_PREFIX + "default", arrayStr)
+        editor.apply()
+
+        if (classId.isNotBlank() && classId != "default") {
+            syncScope.launch {
+                try {
+                    val db = getFirestore(context) ?: return@launch
+                    db.collection("classrooms").document(classId).collection("seating").document("current")
+                        .set(
+                            mapOf(
+                                "archivedPlansJson" to arrayStr,
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+                } catch (_: Exception) {}
+            }
+        }
     }
 }

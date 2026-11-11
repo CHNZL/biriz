@@ -85,6 +85,7 @@ class ClassRegistryRepository(
                         val schoolName = doc.getString("schoolName") ?: return@mapNotNull null
                         val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
                         val section = doc.getString("section") ?: return@mapNotNull null
+                        val teacherId = doc.getString("teacherId") ?: ""
                         val teacherName = doc.getString("teacherName") ?: ""
                         val teacherEmail = doc.getString("teacherEmail") ?: ""
                         val inviteCode = doc.getString("inviteCode") ?: ""
@@ -96,6 +97,7 @@ class ClassRegistryRepository(
                             schoolName = schoolName,
                             gradeLevel = gradeLevel,
                             section = section,
+                            teacherId = teacherId,
                             teacherName = teacherName,
                             teacherEmail = teacherEmail,
                             inviteCode = inviteCode,
@@ -637,6 +639,7 @@ class ClassRegistryRepository(
             schoolName = normalizedSchool,
             gradeLevel = gradeLevel,
             section = normalizedSection,
+            teacherId = uid,
             teacherName = teacherName,
             teacherEmail = teacherEmail,
             inviteCode = inviteCode,
@@ -1160,6 +1163,7 @@ class ClassRegistryRepository(
                 val schoolName = doc.getString("schoolName") ?: ""
                 val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
                 val section = doc.getString("section") ?: "A"
+                val teacherId = doc.getString("teacherId") ?: ""
                 val teacherName = doc.getString("teacherName") ?: ""
                 val teacherEmail = doc.getString("teacherEmail") ?: ""
                 val inviteCode = doc.getString("inviteCode") ?: ""
@@ -1171,6 +1175,7 @@ class ClassRegistryRepository(
                     schoolName = schoolName,
                     gradeLevel = gradeLevel,
                     section = section,
+                    teacherId = teacherId,
                     teacherName = teacherName,
                     teacherEmail = teacherEmail,
                     inviteCode = inviteCode,
@@ -1222,6 +1227,7 @@ class ClassRegistryRepository(
                 if (_registeredClasses.value.none { it.id == doc.id }) {
                     _registeredClasses.value = _registeredClasses.value + room
                 }
+                healTeacherUserAssignment(uid, room.id)
                 return room
             }
         } catch (_: Exception) {}
@@ -1252,12 +1258,65 @@ class ClassRegistryRepository(
                     if (_registeredClasses.value.none { it.id == doc.id }) {
                         _registeredClasses.value = _registeredClasses.value + room
                     }
+                    healTeacherUserAssignment(uid, room.id)
                     return room
                 }
             } catch (_: Exception) {}
         }
 
+        // 4. Case-insensitive fallback scan over all classrooms in Firestore
+        try {
+            val allClassrooms = db.collection("classrooms").get().await()
+            val matchedDoc = allClassrooms.documents.firstOrNull { doc ->
+                val docTeacherId = doc.getString("teacherId") ?: ""
+                val docEmail = doc.getString("teacherEmail") ?: ""
+                (uid.isNotBlank() && docTeacherId == uid) ||
+                (teacherEmail.isNotBlank() && docEmail.trim().equals(teacherEmail.trim(), ignoreCase = true))
+            }
+            if (matchedDoc != null && matchedDoc.exists()) {
+                val room = ClassRoom(
+                    id = matchedDoc.id,
+                    cityName = matchedDoc.getString("cityName") ?: "",
+                    districtName = matchedDoc.getString("districtName") ?: "",
+                    schoolName = matchedDoc.getString("schoolName") ?: "",
+                    gradeLevel = (matchedDoc.getLong("gradeLevel") ?: 1L).toInt(),
+                    section = matchedDoc.getString("section") ?: "A",
+                    teacherId = matchedDoc.getString("teacherId") ?: uid,
+                    teacherName = matchedDoc.getString("teacherName") ?: "",
+                    teacherEmail = matchedDoc.getString("teacherEmail") ?: teacherEmail,
+                    inviteCode = matchedDoc.getString("inviteCode") ?: "",
+                    isOccupied = true
+                )
+                if (_registeredClasses.value.none { it.id == matchedDoc.id }) {
+                    _registeredClasses.value = _registeredClasses.value + room
+                }
+                healTeacherUserAssignment(uid, room.id)
+                return room
+            }
+        } catch (_: Exception) {}
+
         return null
+    }
+
+    private fun healTeacherUserAssignment(uid: String, classId: String) {
+        if (uid.isBlank() || classId.isBlank() || Firebase.auth.currentUser == null) return
+        scope.launch {
+            try {
+                db.collection("users").document(uid).set(
+                    mapOf(
+                        "assignedClassId" to classId,
+                        "role" to "TEACHER",
+                        "kvkkAccepted" to true,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                db.collection("classrooms").document(classId).set(
+                    mapOf("teacherId" to uid),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+            } catch (_: Exception) {}
+        }
     }
 
     suspend fun updateKvkkConsent(uid: String, accepted: Boolean) {

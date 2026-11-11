@@ -142,7 +142,7 @@ object StarRewardPersistenceHelper {
         saveStarRecords(context, classId, emptyList())
 
         syncScope.launch {
-            if (Firebase.auth.currentUser == null) return@launch
+            if (classId.isBlank() || classId == "default") return@launch
             val db = getFirestore(context) ?: return@launch
             val collRef = db.collection("classrooms").document(classId).collection("stars")
             collRef.get()
@@ -176,6 +176,7 @@ object StarRewardPersistenceHelper {
         classId: String,
         onUpdate: (List<StarRewardRecord>) -> Unit
     ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
 
         val path = "classrooms/$classId/stars"
@@ -213,6 +214,15 @@ object StarRewardPersistenceHelper {
                             )
                         }.sortedByDescending { it.timestamp }
 
+                        if (cloudRecords.isEmpty()) {
+                            val localRecords = loadStarRecords(context, classId)
+                            if (localRecords.isNotEmpty()) {
+                                uploadRecordsBatchToFirestore(context, classId, localRecords)
+                                onUpdate(localRecords)
+                                return@addSnapshotListener
+                            }
+                        }
+
                         saveStarRecords(context, classId, cloudRecords)
                         onUpdate(cloudRecords)
                     }
@@ -224,7 +234,7 @@ object StarRewardPersistenceHelper {
     }
 
     private fun uploadRecordToFirestore(context: Context, classId: String, record: StarRewardRecord) {
-        if (Firebase.auth.currentUser == null) return
+        if (classId.isBlank() || classId == "default") return
         val db = getFirestore(context) ?: return
         val docRef = db.collection("classrooms").document(classId).collection("stars").document(record.id)
         val payload = mapOf(
@@ -248,7 +258,7 @@ object StarRewardPersistenceHelper {
     }
 
     private fun uploadRecordsBatchToFirestore(context: Context, classId: String, records: List<StarRewardRecord>) {
-        if (Firebase.auth.currentUser == null || records.isEmpty()) return
+        if (classId.isBlank() || classId == "default" || records.isEmpty()) return
         val db = getFirestore(context) ?: return
         val batch = db.batch()
         records.forEach { record ->
@@ -276,7 +286,7 @@ object StarRewardPersistenceHelper {
     }
 
     private fun deleteRecordFromFirestore(context: Context, classId: String, recordId: String) {
-        if (Firebase.auth.currentUser == null) return
+        if (classId.isBlank() || classId == "default") return
         val db = getFirestore(context) ?: return
         val docRef = db.collection("classrooms").document(classId).collection("stars").document(recordId)
         docRef.delete()
