@@ -722,20 +722,80 @@ class BirizViewModel(
                     return@launch
                 }
 
-                // 2. Veli rolünde ise veya önceden kayıtlı veli ise
-                if (profile.role == "PARENT" || profile.role == "VELI" || _uiState.value.currentRole == UserRole.PARENT) {
+                // 2. Veli Rolü veya Öğrenci Bağlantısı Kontrolü
+                // Veli her girişinde (mailine tıkladığında) daha önce veli olarak tanımlandıysa
+                // veya sisteme kayıtlı öğrencisi varsa ASLA rol seçme ekranı (ROLE_AND_KVKK) gösterilmez,
+                // doğrudan Veli Portalı ana ekranına (PARENT_PORTAL) yönlendirilir.
+                val prefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+                val savedRole = prefs?.getString("key_saved_role", "") ?: ""
+                val savedLinkedIdsStr = prefs?.getString("key_linked_student_ids", "") ?: ""
+                val savedLinkedIds = if (savedLinkedIdsStr.isNotBlank()) {
+                    savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
+                } else emptyList()
+
+                val hasLocalParentRole = savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT
+                val hasLocalLinkedStudents = _uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty()
+                val isProfileParent = profile.role.uppercase() in listOf("PARENT", "VELI")
+
+                // Firestore ve hafızadan e-postaya bağlı öğrenci sorgusu
+                val parentLinkedMatches = repository.findStudentsLinkedToParent(userEmail)
+                val hasParentLinkedStudents = parentLinkedMatches.isNotEmpty()
+
+                if (isProfileParent || hasLocalParentRole || hasLocalLinkedStudents || hasParentLinkedStudents) {
+                    val combinedLinkedStudentIds = (_uiState.value.linkedParentStudentIds + savedLinkedIds + parentLinkedMatches.map { it.first.id })
+                        .distinct()
+                    val activeStudentId = _uiState.value.activeParentStudentId
+                        ?: combinedLinkedStudentIds.firstOrNull()
+                    val parentClass = parentLinkedMatches.firstOrNull()?.second
+                        ?: _uiState.value.activeClassRoom
+                        ?: repository.defaultSampleClass
+
+                    if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != parentClass.id) {
+                        _uiState.value = _uiState.value.copy(activeClassRoom = parentClass)
+                    }
+
+                    repository.observeStudents(parentClass.id)
+                    loadScheduleFromStorage(parentClass.id)
+                    loadSeatingPlanFromStorage(parentClass.id)
+                    loadCommunicationFromStorage(parentClass.id)
+
+                    if (combinedLinkedStudentIds.isNotEmpty()) {
+                        repository.syncLinkedStudentsWithParent(
+                            linkedStudentIds = combinedLinkedStudentIds,
+                            parentEmail = userEmail,
+                            parentName = name
+                        )
+                    }
+
+                    if (profile.role != "PARENT" && profile.role != "VELI") {
+                        repository.updateUserRole(fbUser.uid, "PARENT")
+                    }
+
                     _uiState.value = _uiState.value.copy(
                         currentRole = UserRole.PARENT,
                         isKvkkAccepted = true,
-                        currentScreen = ScreenState.PARENT_PORTAL
+                        currentScreen = ScreenState.PARENT_PORTAL,
+                        linkedParentStudentIds = combinedLinkedStudentIds,
+                        activeParentStudentId = activeStudentId
                     )
                     saveParentSessionState()
                     return@launch
                 }
 
-                // 3. Henüz sınıfı bulunmayan yeni kullanıcılar için
+                // 3. Öğretmen olarak kayıtlı olup henüz sınıf oluşturmamış olanlar
+                if (isTeacher || savedRole == UserRole.TEACHER.code) {
+                    _uiState.value = _uiState.value.copy(
+                        currentRole = UserRole.TEACHER,
+                        isKvkkAccepted = true,
+                        currentScreen = ScreenState.TEACHER_SETUP
+                    )
+                    saveParentSessionState()
+                    return@launch
+                }
+
+                // 4. Henüz rol seçimi yapmamış yeni kullanıcılar için Rol ve KVKK ekranı
                 _uiState.value = _uiState.value.copy(
-                    currentRole = if (isTeacher) UserRole.TEACHER else UserRole.MEMBER,
+                    currentRole = UserRole.MEMBER,
                     isKvkkAccepted = profile.kvkkAccepted,
                     currentScreen = if (_uiState.value.currentScreen == ScreenState.GOOGLE_SIGN_IN) {
                         ScreenState.ROLE_AND_KVKK
@@ -825,6 +885,12 @@ class BirizViewModel(
             )
             return
         }
+        val uid = Firebase.auth.currentUser?.uid
+        if (uid != null) {
+            viewModelScope.launch {
+                repository.updateUserRole(uid, "TEACHER")
+            }
+        }
         if (_uiState.value.isTestMode && _uiState.value.activeClassRoom != null) {
             _uiState.value = _uiState.value.copy(
                 currentRole = UserRole.TEACHER,
@@ -844,6 +910,12 @@ class BirizViewModel(
     }
 
     fun switchToParentRole() {
+        val uid = Firebase.auth.currentUser?.uid
+        if (uid != null) {
+            viewModelScope.launch {
+                repository.updateUserRole(uid, "PARENT")
+            }
+        }
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.PARENT,
             currentScreen = ScreenState.PARENT_PORTAL,
@@ -908,6 +980,11 @@ class BirizViewModel(
                 loadScheduleFromStorage(activeClass.id)
                 loadSeatingPlanFromStorage(activeClass.id)
                 loadCommunicationFromStorage(activeClass.id)
+
+                val uid = Firebase.auth.currentUser?.uid
+                if (uid != null) {
+                    repository.updateUserRole(uid, "PARENT")
+                }
 
                 _uiState.value = _uiState.value.copy(
                     linkedParentStudentIds = currentList,
@@ -2009,6 +2086,12 @@ class BirizViewModel(
     }
 
     fun deleteParentRole() {
+        val uid = Firebase.auth.currentUser?.uid
+        if (uid != null) {
+            viewModelScope.launch {
+                repository.updateUserRole(uid, "UYE")
+            }
+        }
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.MEMBER,
             currentScreen = ScreenState.ROLE_AND_KVKK,

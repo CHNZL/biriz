@@ -1279,6 +1279,32 @@ class ExampleUnitTest {
     assertEquals("gunes.veli@test.com", gunesInRepo.parentEmail)
     assertEquals("Güneş Velisi", gunesInRepo.parentName)
   }
+
+  @Test
+  fun testAutoRoutingParentDetection() = kotlinx.coroutines.runBlocking {
+    val repo = com.example.data.repository.ClassRegistryRepository()
+    repo.seedDefaultTestClassroom("test_teacher_uid")
+
+    // Link a student with a parent email
+    repo.syncLinkedStudentsWithParent(
+      linkedStudentIds = listOf("std_45"),
+      parentEmail = "cihan.veli@gmail.com",
+      parentName = "Cihan Veli"
+    )
+
+    // Query parent linked students by email
+    val linkedStudents = repo.findStudentsLinkedToParent("cihan.veli@gmail.com")
+    assertEquals(1, linkedStudents.size)
+    val (foundStudent, foundClass) = linkedStudents.first()
+    assertEquals("std_45", foundStudent.id)
+    assertEquals("45", foundStudent.studentNumber)
+    assertTrue(foundStudent.allLinkedParents.any { it.email == "cihan.veli@gmail.com" })
+    assertNotNull(foundClass)
+
+    // Unlinked email should return empty
+    val unlinked = repo.findStudentsLinkedToParent("nonexistent.parent@gmail.com")
+    assertTrue(unlinked.isEmpty())
+  }
 }
 
 

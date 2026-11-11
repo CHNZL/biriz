@@ -318,15 +318,18 @@ class ClassRegistryRepository(
         )
 
         _students.value = _students.value.map { s ->
-            if (s.id in linkedStudentIds && !s.isParentLinked) {
-                val updatedParents = listOf(account) + s.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
-                s.copy(
-                    parentName = finalName,
-                    parentEmail = finalEmail,
-                    parentLinkedAt = todayStr,
-                    parentLastLoginAt = lastLoginStr,
-                    linkedParents = updatedParents
-                )
+            if (s.id in linkedStudentIds) {
+                val hasThisParent = s.allLinkedParents.any { it.email.equals(finalEmail, ignoreCase = true) }
+                if (!hasThisParent) {
+                    val updatedParents = listOf(account) + s.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+                    s.copy(
+                        parentName = s.parentName ?: finalName,
+                        parentEmail = s.parentEmail ?: finalEmail,
+                        parentLinkedAt = s.parentLinkedAt ?: todayStr,
+                        parentLastLoginAt = lastLoginStr,
+                        linkedParents = updatedParents
+                    )
+                } else s
             } else s
         }
     }
@@ -1273,5 +1276,141 @@ class ClassRegistryRepository(
                 handleFirestoreError(e, OperationType.UPDATE, userRef.path)
             }
         }
+    }
+
+    private val isFirebaseAuthAvailable: Boolean
+        get() = try {
+            Firebase.auth.currentUser != null
+        } catch (_: Throwable) {
+            false
+        }
+
+    suspend fun updateUserRole(uid: String, role: String) {
+        if (isFirebaseAuthAvailable) {
+            val userRef = db.collection("users").document(uid)
+            try {
+                userRef.update(
+                    mapOf(
+                        "role" to role,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } catch (_: Exception) {
+                try {
+                    userRef.set(
+                        mapOf(
+                            "role" to role,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ),
+                        com.google.firebase.firestore.SetOptions.merge()
+                    ).await()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun findStudentsLinkedToParent(userEmail: String): List<Pair<Student, ClassRoom>> {
+        val results = mutableListOf<Pair<Student, ClassRoom>>()
+        val cleanEmail = userEmail.trim()
+        if (cleanEmail.isBlank()) return results
+
+        // 1. Check in-memory students
+        val currentRoom = _registeredClasses.value.firstOrNull() ?: defaultSampleClass
+        for (s in _students.value) {
+            val matches = s.parentEmail?.trim().equals(cleanEmail, ignoreCase = true) ||
+                    s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+            if (matches) {
+                results.add(Pair(s, currentRoom))
+            }
+        }
+
+        // 2. Check sample students if not yet loaded in _students
+        for (s in defaultSampleStudents) {
+            val matches = s.parentEmail?.trim().equals(cleanEmail, ignoreCase = true) ||
+                    s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+            if (matches && results.none { it.first.id == s.id }) {
+                results.add(Pair(s, defaultSampleClass))
+            }
+        }
+
+        // 3. Check Firestore classrooms and students
+        if (isFirebaseAuthAvailable) {
+            try {
+                val classSnap = db.collection("classrooms").get().await()
+                for (cDoc in classSnap.documents) {
+                    val classId = cDoc.id
+                    val studentsSnap = db.collection("classrooms").document(classId)
+                        .collection("students").get().await()
+
+                    for (sDoc in studentsSnap.documents) {
+                        val sParentEmail = sDoc.getString("parentEmail")
+                        @Suppress("UNCHECKED_CAST")
+                        val rawLinked = sDoc.get("linkedParents") as? List<Map<String, Any?>>
+                        val anyLinkedEmail = rawLinked?.any {
+                            (it["email"] as? String)?.trim().equals(cleanEmail, ignoreCase = true)
+                        } == true
+
+                        if (sParentEmail?.trim().equals(cleanEmail, ignoreCase = true) || anyLinkedEmail) {
+                            val sNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
+                            val fullName = sDoc.getString("fullName") ?: ""
+                            val gender = sDoc.getString("gender") ?: "Erkek"
+                            val pCode = sDoc.getString("parentCode")
+                                ?: sDoc.getString("parentInviteCode")
+                                ?: ""
+                            val pName = sDoc.getString("parentName")
+                            val pLinkedAt = sDoc.getString("parentLinkedAt")
+                            val pLastLoginAt = sDoc.getString("parentLastLoginAt")
+
+                            val parsedLinked = rawLinked?.mapNotNull { map ->
+                                val e = map["email"] as? String
+                                val n = map["name"] as? String
+                                if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
+                                    LinkedParentAccount(
+                                        email = e,
+                                        name = n,
+                                        phone = (map["phone"] as? String) ?: "",
+                                        relationship = (map["relationship"] as? String) ?: "Veli",
+                                        linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
+                                        lastLoginAt = map["lastLoginAt"] as? String
+                                    )
+                                } else null
+                            } ?: emptyList()
+
+                            val student = Student(
+                                id = sDoc.id,
+                                studentNumber = sNo.toString(),
+                                fullName = fullName,
+                                gender = gender,
+                                parentInviteCode = pCode,
+                                parentName = pName,
+                                parentEmail = sParentEmail,
+                                parentLinkedAt = pLinkedAt,
+                                parentLastLoginAt = pLastLoginAt,
+                                linkedParents = parsedLinked
+                            )
+
+                            val classRoom = ClassRoom(
+                                id = cDoc.id,
+                                cityName = cDoc.getString("cityName") ?: "",
+                                districtName = cDoc.getString("districtName") ?: "",
+                                schoolName = cDoc.getString("schoolName") ?: "",
+                                gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
+                                section = cDoc.getString("section") ?: "A",
+                                teacherName = cDoc.getString("teacherName") ?: "",
+                                teacherEmail = cDoc.getString("teacherEmail") ?: "",
+                                inviteCode = cDoc.getString("inviteCode") ?: "",
+                                isOccupied = true
+                            )
+
+                            if (results.none { it.first.id == student.id }) {
+                                results.add(Pair(student, classRoom))
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return results
     }
 }
