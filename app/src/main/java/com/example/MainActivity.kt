@@ -395,8 +395,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                         onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
                         onOpenNotificationCenter = { viewModel.setNotificationCenterOpen(true) },
                         onLogout = { viewModel.signOut(context) },
-                        onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, activeStudent?.fullName ?: "Veli") },
-                        onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) }
+                        onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, uiState.currentUser.fullName.ifBlank { "Veli" }) },
+                        onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) },
+                        onMarkAnnouncementRead = { aId -> viewModel.markAnnouncementReadByParent(aId, uiState.currentUser.fullName) }
                     )
                 }
             }

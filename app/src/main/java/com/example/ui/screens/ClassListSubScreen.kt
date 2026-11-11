@@ -2181,11 +2181,17 @@ fun StudentDetailDialog(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
+                            val primaryParent = student.allLinkedParents.firstOrNull()
+                            val displayParentName = primaryParent?.name ?: student.parentName ?: "Belirtilmemiş"
+                            val displayParentEmail = primaryParent?.email ?: student.parentEmail ?: "Belirtilmemiş"
+                            val displayLinkedAt = primaryParent?.linkedAt ?: student.parentLinkedAt ?: "Belirtilmemiş"
+                            val displayLastLoginAt = primaryParent?.lastLoginAt ?: student.parentLastLoginAt ?: "Giriş bilgisi bulunmuyor"
+
                             // 1. Veli Ad Soyad
                             ParentDetailRowItem(
                                 icon = Icons.Default.Person,
                                 label = "Veli Adı Soyadı",
-                                value = student.parentName ?: "Belirtilmemiş",
+                                value = displayParentName,
                                 isDarkTheme = isDarkTheme
                             )
 
@@ -2195,14 +2201,14 @@ fun StudentDetailDialog(
                             ParentDetailRowItem(
                                 icon = Icons.Default.Email,
                                 label = "E-posta Adresi",
-                                value = student.parentEmail ?: "Belirtilmemiş",
+                                value = displayParentEmail,
                                 isDarkTheme = isDarkTheme,
                                 actionIcon = Icons.Default.ContentCopy,
                                 onAction = {
-                                    student.parentEmail?.let { email ->
+                                    if (displayParentEmail != "Belirtilmemiş") {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("Veli E-posta", email))
-                                        Toast.makeText(context, "E-posta kopyalandı: $email", Toast.LENGTH_SHORT).show()
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Veli E-posta", displayParentEmail))
+                                        Toast.makeText(context, "E-posta kopyalandı: $displayParentEmail", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             )
@@ -2213,7 +2219,7 @@ fun StudentDetailDialog(
                             ParentDetailRowItem(
                                 icon = Icons.Default.CalendarToday,
                                 label = "Bağlanma Tarihi",
-                                value = student.parentLinkedAt ?: "Belirtilmemiş",
+                                value = displayLinkedAt,
                                 isDarkTheme = isDarkTheme
                             )
 
@@ -2223,7 +2229,7 @@ fun StudentDetailDialog(
                             ParentDetailRowItem(
                                 icon = Icons.Default.AccessTime,
                                 label = "Sisteme Son Giriş",
-                                value = student.parentLastLoginAt ?: "Giriş bilgisi bulunmuyor",
+                                value = displayLastLoginAt,
                                 isDarkTheme = isDarkTheme,
                                 valueHighlight = true
                             )

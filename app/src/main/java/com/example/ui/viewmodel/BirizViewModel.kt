@@ -428,10 +428,38 @@ class BirizViewModel(
     fun saveAnnouncement(announcement: Announcement) {
         val classId = _uiState.value.activeClassRoom?.id ?: "default"
         val updatedList = listOf(announcement) + _uiState.value.announcements.filter { it.id != announcement.id }
+        val newNotif = BirizNotification(
+            id = "notif_${System.currentTimeMillis()}",
+            title = "Yeni Sınıf Duyurusu 📢",
+            message = "${announcement.title}: ${announcement.content.take(80)}",
+            timestamp = System.currentTimeMillis(),
+            type = NotificationType.ANNOUNCEMENT,
+            targetSubPageName = "ILETISIM_DUYURULAR",
+            targetId = announcement.id,
+            isRead = false
+        )
+        val updatedNotifs = listOf(newNotif) + _uiState.value.notifications
         _uiState.value = _uiState.value.copy(
             announcements = updatedList,
+            notifications = updatedNotifs,
             snackbarMessage = "Duyuru başarıyla yayınlandı 📢"
         )
+        appContext?.let {
+            CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
+            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs)
+        }
+    }
+
+    fun markAnnouncementReadByParent(announcementId: String, parentName: String) {
+        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val resolvedName = parentName.ifBlank { "Veli" }
+        val updatedList = _uiState.value.announcements.map { ann ->
+            if (ann.id == announcementId && !ann.readReceipts.containsKey(resolvedName)) {
+                val updatedReceipts = ann.readReceipts + (resolvedName to System.currentTimeMillis())
+                ann.copy(readReceipts = updatedReceipts)
+            } else ann
+        }
+        _uiState.value = _uiState.value.copy(announcements = updatedList)
         appContext?.let { CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList) }
     }
 
@@ -557,8 +585,38 @@ class BirizViewModel(
         )
 
         val updatedMessages = _uiState.value.chatMessages + newMsg
-        _uiState.value = _uiState.value.copy(chatMessages = updatedMessages)
-        appContext?.let { CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages) }
+        val notif = if (!isFromTeacher) {
+            BirizNotification(
+                id = "notif_${System.currentTimeMillis()}",
+                title = "Yeni Veli Mesajı 💬",
+                message = "$resolvedParentName ($studentNo $studentName): $text",
+                timestamp = System.currentTimeMillis(),
+                type = NotificationType.MESSAGE,
+                targetSubPageName = "ILETISIM_MESAJLAR",
+                targetId = studentId,
+                isRead = false
+            )
+        } else {
+            BirizNotification(
+                id = "notif_${System.currentTimeMillis()}",
+                title = "Öğretmenden Yeni Mesaj 💬",
+                message = "${_uiState.value.activeClassRoom?.teacherName ?: "Öğretmen"}: $text",
+                timestamp = System.currentTimeMillis(),
+                type = NotificationType.MESSAGE,
+                targetSubPageName = "ILETISIM",
+                targetId = studentId,
+                isRead = false
+            )
+        }
+        val updatedNotifs = listOf(notif) + _uiState.value.notifications
+        _uiState.value = _uiState.value.copy(
+            chatMessages = updatedMessages,
+            notifications = updatedNotifs
+        )
+        appContext?.let {
+            CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages)
+            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs)
+        }
     }
 
     fun simulateParentReply(
@@ -632,9 +690,9 @@ class BirizViewModel(
         val testUid = "test_ogretmen_preview_id"
         repository.enableTestMode(testUid)
         val defaultClass = repository.seedDefaultTestClassroom(testUid)
-        loadScheduleFromStorage(testUid)
-        loadSeatingPlanFromStorage(testUid)
-        loadCommunicationFromStorage(testUid)
+        loadScheduleFromStorage(defaultClass.id)
+        loadSeatingPlanFromStorage(defaultClass.id)
+        loadCommunicationFromStorage(defaultClass.id)
         _uiState.value = _uiState.value.copy(
             currentUser = AuthenticatedUser(
                 fullName = "Cihan Özel",
@@ -916,6 +974,15 @@ class BirizViewModel(
                 repository.updateUserRole(uid, "PARENT")
             }
         }
+        val targetClass = _uiState.value.activeClassRoom ?: repository.defaultSampleClass
+        if (_uiState.value.activeClassRoom == null) {
+            _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
+        }
+        repository.observeStudents(targetClass.id)
+        loadScheduleFromStorage(targetClass.id)
+        loadSeatingPlanFromStorage(targetClass.id)
+        loadCommunicationFromStorage(targetClass.id)
+
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.PARENT,
             currentScreen = ScreenState.PARENT_PORTAL,
@@ -1006,6 +1073,17 @@ class BirizViewModel(
         _uiState.value = _uiState.value.copy(
             activeParentStudentId = studentId
         )
+        val registeredClass = repository.registeredClasses.value.firstOrNull { cls ->
+            cls.id == _uiState.value.activeClassRoom?.id
+        }
+        val targetClass = registeredClass ?: _uiState.value.activeClassRoom ?: repository.defaultSampleClass
+        if (_uiState.value.activeClassRoom?.id != targetClass.id) {
+            _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
+        }
+        repository.observeStudents(targetClass.id)
+        loadScheduleFromStorage(targetClass.id)
+        loadSeatingPlanFromStorage(targetClass.id)
+        loadCommunicationFromStorage(targetClass.id)
         saveParentSessionState()
     }
 

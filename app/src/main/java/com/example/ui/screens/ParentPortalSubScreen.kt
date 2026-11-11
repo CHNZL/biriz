@@ -64,6 +64,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -165,7 +167,8 @@ fun ParentPortalSubScreen(
     onOpenNotificationCenter: () -> Unit,
     onLogout: () -> Unit = {},
     onVotePoll: (String, String) -> Unit,
-    onSendChatMessage: (String, String) -> Unit
+    onSendChatMessage: (String, String) -> Unit,
+    onMarkAnnouncementRead: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
@@ -175,7 +178,7 @@ fun ParentPortalSubScreen(
     var inviteCodeInput by remember { mutableStateOf("") }
     var chatInputText by remember { mutableStateOf("") }
 
-    // KVKK: Velinin bağlı olduğu çocuk kimlikleri kümesi
+    // Velinin bağlı olduğu çocuk kimlikleri kümesi (Gizlilik ve filtreleme için)
     val linkedStudentIds = remember(linkedStudents) { linkedStudents.map { it.id }.toSet() }
 
     // Geri Tuşu: Detay ekranlarındayken ana sayfaya dön
@@ -183,11 +186,31 @@ fun ParentPortalSubScreen(
         activeTab = ParentPortalTab.HOME
     }
 
-    // Aktif öğrencinin yıldız kayıtları ve istatistikleri
-    val activeStudentStars = remember(activeStudent, classRoom) {
-        if (activeStudent != null && classRoom != null) {
-            StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id)
-                .filter { it.studentId == activeStudent.id }
+    // Aktif sınıf kimliği
+    val classRoomId = classRoom?.id ?: ""
+
+    // Tüm sınıfın yıldız kayıtları (Firestore canlı dinleyici ile anlık güncellenir)
+    var allClassStars by remember(classRoomId) {
+        mutableStateOf(
+            if (classRoom != null) StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id) else emptyList()
+        )
+    }
+
+    DisposableEffect(classRoomId) {
+        if (classRoom != null) {
+            val reg = StarRewardPersistenceHelper.observeFirestoreStars(context, classRoom.id) { updated ->
+                allClassStars = updated
+            }
+            onDispose { reg?.remove() }
+        } else {
+            onDispose {}
+        }
+    }
+
+    // Aktif öğrencinin öğretmeninden aldığı yıldız kayıtları ve puanları
+    val activeStudentStars = remember(allClassStars, activeStudent) {
+        if (activeStudent != null) {
+            allClassStars.filter { it.studentId == activeStudent.id }
         } else emptyList()
     }
     val totalStars = remember(activeStudentStars) { activeStudentStars.sumOf { it.starCount } }
@@ -202,7 +225,7 @@ fun ParentPortalSubScreen(
         }
     }
 
-    // Aktif öğrencinin okuma kayıtları
+    // Aktif öğrencinin kütüphane / okuma kayıtları
     val studentReadingRecords = remember(activeStudent, classRoom) {
         if (activeStudent != null && classRoom != null) {
             LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
@@ -213,7 +236,7 @@ fun ParentPortalSubScreen(
         if (classRoom != null) LibraryPersistenceHelper.loadBooks(context, classRoom.id) else emptyList()
     }
 
-    // Aktif turnuva
+    // Aktif turnuva ve eşleşmeler
     val classTournaments = remember(classRoom) {
         if (classRoom != null) TournamentPersistenceHelper.loadTournaments(context, classRoom.id) else emptyList()
     }
@@ -223,6 +246,16 @@ fun ParentPortalSubScreen(
     }
     val tournamentMatches = remember(activeTournament) {
         if (activeTournament != null) TournamentPersistenceHelper.loadMatches(context, activeTournament.id) else emptyList()
+    }
+
+    // Velinin görebileceği duyurular (Tüm sınıfa veya bu öğrenciye özel duyurular)
+    val parentAnnouncements = remember(announcements, activeStudent) {
+        if (activeStudent == null) announcements
+        else announcements.filter { ann ->
+            ann.targetType == com.example.data.model.AnnouncementTargetType.ALL_CLASS ||
+            ann.targetStudentIds.isEmpty() ||
+            ann.targetStudentIds.contains(activeStudent.id)
+        }
     }
 
     // Bugünkü dersler (PZT, SAL, CAR, PER, CUM)
@@ -340,11 +373,11 @@ fun ParentPortalSubScreen(
                                             color = BirizTurquoise.copy(alpha = 0.25f)
                                         ) {
                                             Text(
-                                                text = "🔒 KVKK Korumalı Veli Portalı",
-                                                fontSize = 10.5.sp,
+                                                text = "Veli Bilgilendirme Portalı",
+                                                fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
                                         if (classRoom != null) {
@@ -520,7 +553,7 @@ fun ParentPortalSubScreen(
                                 studentSeatDesc = studentSeatDesc,
                                 readingRecords = studentReadingRecords,
                                 activeTournament = activeTournament,
-                                lastAnnouncement = announcements.firstOrNull(),
+                                lastAnnouncement = parentAnnouncements.firstOrNull(),
                                 lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
                                 isDarkTheme = isDarkTheme,
                                 onNavigate = { activeTab = it }
@@ -531,6 +564,7 @@ fun ParentPortalSubScreen(
                             ParentStarsDetailView(
                                 student = activeStudent,
                                 stars = activeStudentStars,
+                                allClassStars = allClassStars,
                                 allStudents = allStudents,
                                 classRoom = classRoom,
                                 linkedStudentIds = linkedStudentIds,
@@ -573,11 +607,13 @@ fun ParentPortalSubScreen(
                         ParentPortalTab.COMMUNICATION -> {
                             ParentCommunicationDetailView(
                                 student = activeStudent,
-                                announcements = announcements,
+                                classRoom = classRoom,
+                                announcements = parentAnnouncements,
                                 chatMessages = chatMessages.filter { it.studentId == activeStudent.id },
                                 currentUser = currentUser,
                                 isDarkTheme = isDarkTheme,
                                 onVotePoll = onVotePoll,
+                                onMarkAnnouncementRead = onMarkAnnouncementRead,
                                 onSendMessage = { text ->
                                     if (text.isNotBlank()) {
                                         onSendChatMessage(activeStudent.id, text)
@@ -1187,6 +1223,7 @@ private fun BentoCompactCard(
 private fun ParentStarsDetailView(
     student: Student,
     stars: List<StarRewardRecord>,
+    allClassStars: List<StarRewardRecord>,
     allStudents: List<Student>,
     classRoom: ClassRoom?,
     linkedStudentIds: Set<String>,
@@ -1195,11 +1232,7 @@ private fun ParentStarsDetailView(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    // Sınıf yıldız sıralaması (KVKK korumalı hesaplama)
-    val context = LocalContext.current
-    val allClassStars = remember(classRoom) {
-        if (classRoom != null) StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id) else emptyList()
-    }
+    // Sınıf yıldız sıralaması (Diğer öğrenciler 'Öğrenci' olarak anonimleştirilir)
     val studentStarTotals = remember(allStudents, allClassStars) {
         allStudents.map { s ->
             val sum = allClassStars.filter { it.studentId == s.id }.sumOf { it.starCount }
@@ -1306,15 +1339,15 @@ private fun ParentStarsDetailView(
             }
         }
 
-        // KVKK Korumalı Sınıf Sıralama Tablosu
+        // Sınıf Sıralama Tablosu
         item {
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "🛡️ Sınıf Başarı Sıralaması (KVKK Korumalı)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
+                Text(text = "🏆 Sınıf Başarı Sıralaması", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
             }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "KVKK gereği diğer öğrencilerin isimleri 'Öğrenci' olarak gizlenir.",
+                text = "Sınıf mevcudundaki puan dağılımı ve çocuğunuzun konumu",
                 fontSize = 12.sp,
                 color = secondaryText
             )
@@ -1522,12 +1555,12 @@ private fun ParentScheduleAndSeatingDetailView(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // --- 1. OTURMA PLANI KROKİSİ (KVKK UYUMLU) ---
+        // --- 1. OTURMA PLANI KROKİSİ ---
         item {
             Text(text = "🪑 Sınıf Oturma Düzeni & Çocuğunuzun Sırası", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
             Text(
-                text = "Çocuğunuzun sırası yeşil renkle vurgulanmıştır. Diğer tüm sıralar KVKK gereği gizlenmiştir.",
-                fontSize = 10.5.sp,
+                text = "Çocuğunuzun sınıf içindeki yeri yeşil renkle vurgulanmıştır.",
+                fontSize = 11.sp,
                 color = secondaryText
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -1776,7 +1809,7 @@ private fun ParentTournamentDetailView(
 
         item {
             Text(text = "⚔️ Çocuğunuzun Maçları & Karşılaşmaları", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
-            Text(text = "KVKK kuralı: Rakip öğrencinin ismi gizlenerek 'Öğrenci' olarak gösterilir.", fontSize = 10.5.sp, color = secondaryText)
+            Text(text = "Turnuva fikstüründeki karşılaşmalar ve anlık skorlar", fontSize = 11.sp, color = secondaryText)
         }
 
         if (childMatches.isEmpty()) {
@@ -1859,22 +1892,91 @@ private fun ParentTournamentDetailView(
 @Composable
 private fun ParentCommunicationDetailView(
     student: Student,
+    classRoom: ClassRoom?,
     announcements: List<Announcement>,
     chatMessages: List<ChatMessage>,
     currentUser: AuthenticatedUser,
     isDarkTheme: Boolean,
     onVotePoll: (String, String) -> Unit,
+    onMarkAnnouncementRead: (String) -> Unit = {},
     onSendMessage: (String) -> Unit
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     var chatText by remember { mutableStateOf("") }
 
+    // Duyuruları görüntülendiğinde okundu olarak işaretle
+    val parentDisplayName = currentUser.fullName.ifBlank { "Veli" }
+    LaunchedEffect(announcements) {
+        announcements.forEach { ann ->
+            if (!ann.readReceipts.containsKey(parentDisplayName)) {
+                onMarkAnnouncementRead(ann.id)
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // --- 0. ÖĞRETMEN İLETİŞİM KARTI ---
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (isDarkTheme) Color(0xFF0F2038) else Color(0xFFEFF6FF),
+                border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else Color(0xFFBFDBFE)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = BirizNavyPrimary,
+                        modifier = Modifier.size(46.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("👨‍🏫", fontSize = 24.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = classRoom?.teacherName ?: "Sınıf Öğretmeni",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                        )
+                        Text(
+                            text = "${classRoom?.schoolName ?: "Okul"} • ${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} Şubesi",
+                            fontSize = 12.sp,
+                            color = secondaryText
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF10B981).copy(alpha = 0.15f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF10B981))
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text("İletişime Açık", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        }
+                    }
+                }
+            }
+        }
+
         // --- 1. DUYURULAR & ANKETLER ---
         item {
             Text(text = "📢 Sınıf Duyuruları & Veli Anketleri", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
@@ -1924,11 +2026,15 @@ private fun ParentCommunicationDetailView(
                             Text(text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = primaryText)
                             Spacer(modifier = Modifier.height(8.dp))
                             poll.options.forEach { opt ->
+                                val isVotedByMe = opt.voterParentNames.contains(parentDisplayName)
                                 Surface(
                                     onClick = { onVotePoll(ann.id, opt.id) },
                                     shape = RoundedCornerShape(10.dp),
-                                    color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
-                                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                                    color = if (isVotedByMe) BirizTurquoise.copy(alpha = 0.25f) else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                                    border = BorderStroke(
+                                        if (isVotedByMe) 1.5.dp else 1.dp,
+                                        if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                    ),
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                 ) {
                                     Row(
@@ -1936,7 +2042,12 @@ private fun ParentCommunicationDetailView(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(text = opt.text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = primaryText)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (isVotedByMe) {
+                                                Text("✓ ", color = BirizTurquoise, fontWeight = FontWeight.Black)
+                                            }
+                                            Text(text = opt.text, fontSize = 13.5.sp, fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.Medium, color = primaryText)
+                                        }
                                         Text(text = "${opt.voteCount} Oy", fontSize = 12.sp, color = secondaryText, fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -1972,11 +2083,12 @@ private fun ParentCommunicationDetailView(
                         )
                     } else {
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            chatMessages.takeLast(10).forEach { msg ->
+                            chatMessages.takeLast(15).forEach { msg ->
                                 val isMe = !msg.isFromTeacher
+                                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
@@ -1989,18 +2101,30 @@ private fun ParentCommunicationDetailView(
                                             bottomEnd = if (isMe) 2.dp else 12.dp
                                         ),
                                         color = if (isMe) BirizTurquoise else if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0),
-                                        modifier = Modifier.fillMaxWidth(0.8f)
+                                        modifier = Modifier.fillMaxWidth(0.82f)
                                     ) {
-                                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-                                            Text(
-                                                text = if (msg.isFromTeacher) "Öğretmen" else "Siz",
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isMe) BirizNavyDark else secondaryText
-                                            )
+                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (msg.isFromTeacher) classRoom?.teacherName ?: "Öğretmen" else "Siz",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isMe) BirizNavyDark else secondaryText
+                                                )
+                                                Text(
+                                                    text = timeStr,
+                                                    fontSize = 9.5.sp,
+                                                    color = if (isMe) BirizNavyDark.copy(alpha = 0.7f) else secondaryText
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
                                             Text(
                                                 text = msg.text,
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 color = if (isMe) BirizNavyDark else primaryText
                                             )
                                         }
@@ -2020,8 +2144,8 @@ private fun ParentCommunicationDetailView(
                         OutlinedTextField(
                             value = chatText,
                             onValueChange = { chatText = it },
-                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 11.5.sp) },
-                            modifier = Modifier.weight(1f).height(48.dp),
+                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 12.sp) },
+                            modifier = Modifier.weight(1f).height(50.dp),
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true
                         )
@@ -2035,7 +2159,7 @@ private fun ParentCommunicationDetailView(
                             },
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise),
-                            modifier = Modifier.height(48.dp)
+                            modifier = Modifier.height(50.dp)
                         ) {
                             Icon(Icons.Default.Send, contentDescription = "Gönder", tint = BirizNavyDark, modifier = Modifier.size(16.dp))
                         }

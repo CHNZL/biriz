@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -394,6 +395,29 @@ fun UserProfileMenuDialog(
                                 } else {
                                     Text("Henüz bağlı öğrenciniz bulunmamaktadır.", fontSize = 11.5.sp, color = Color.Gray)
                                 }
+                            }
+                        }
+                    }
+
+                    if (currentRole == UserRole.PARENT) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) Color(0x3010B981) else Color(0xFFF0FDF4),
+                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF10B981) else Color(0xFFBBF7D0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "BİRİZ Veri Güvenliği: Yalnızca bağlı olduğunuz öğrencinizin verileri görüntülenir. Sınıftaki diğer öğrencilerin kimlik bilgileri KVKK ve gizlilik standartlarına uygun olarak korunur.",
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 14.5.sp,
+                                    color = if (isDarkTheme) Color(0xFF86EFAC) else Color(0xFF166534)
+                                )
                             }
                         }
                     }
