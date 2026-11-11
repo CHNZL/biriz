@@ -206,8 +206,7 @@ fun TimerSubScreen(
     fun syncTimerToSmartBoard(isFinished: Boolean = false) {
         coroutineScope.launch {
             try {
-                val dbId = context.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(dbId)
+                val db = com.example.util.FirestoreProvider.get(context)
                 val prefs = context.getSharedPreferences("biriz_board_sync", Context.MODE_PRIVATE)
                 val activeCode = prefs.getString("active_session_code", null)
                 if (!activeCode.isNullOrBlank()) {

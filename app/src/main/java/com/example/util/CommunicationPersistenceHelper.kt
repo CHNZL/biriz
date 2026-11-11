@@ -2,6 +2,8 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
+import com.example.R
 import com.example.data.model.Announcement
 import com.example.data.model.AnnouncementPoll
 import com.example.data.model.AnnouncementTargetType
@@ -11,6 +13,14 @@ import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
 import com.example.data.model.PollOption
 import com.example.data.model.Student
+import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -19,11 +29,21 @@ import java.util.Locale
 
 object CommunicationPersistenceHelper {
 
+    private const val TAG = "CommunicationPersistence"
     private const val PREFS_NAME = "biriz_communication_storage"
     private const val KEY_ANNOUNCEMENTS_PREFIX = "announcements_"
     private const val KEY_CHAT_MESSAGES_PREFIX = "chat_messages_"
     private const val KEY_NOTIFICATIONS_PREFIX = "notifications_"
     private const val KEY_FONT_OFFSET = "key_communication_font_offset"
+    private val syncScope = CoroutineScope(Dispatchers.IO)
+
+    private fun getFirestore(context: Context): FirebaseFirestore? {
+        return try {
+            FirestoreProvider.get(context)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private val timeFormat = SimpleDateFormat("HH:mm", Locale("tr", "TR"))
     private val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))
@@ -69,15 +89,109 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Sınıfa ait duyuruları kaydeder.
+     * Sınıfa ait duyuruları kaydeder ve buluta senkronize eder.
      */
     fun saveAnnouncements(context: Context, classId: String, announcements: List<Announcement>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (announcement in announcements) {
             jsonArray.put(serializeAnnouncementJson(announcement))
+            uploadAnnouncementToFirestore(context, classId, announcement)
         }
         prefs.edit().putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonArray.toString()).apply()
+    }
+
+    /**
+     * Tek bir duyuruyu Firestore'a canlı yükler.
+     */
+    fun uploadAnnouncementToFirestore(context: Context, classId: String, announcement: Announcement) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val json = serializeAnnouncementJson(announcement).toString()
+                val data = mapOf(
+                    "id" to announcement.id,
+                    "classId" to classId,
+                    "title" to announcement.title,
+                    "createdAt" to announcement.createdAt,
+                    "json" to json,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                db.collection("classrooms").document(classId)
+                    .collection("announcements").document(announcement.id)
+                    .set(data, SetOptions.merge())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to upload announcement to Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Duyuruyu Firestore'dan siler.
+     */
+    fun deleteAnnouncementFromFirestore(context: Context, classId: String, announcementId: String) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                db.collection("classrooms").document(classId)
+                    .collection("announcements").document(announcementId)
+                    .delete()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete announcement from Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Firestore üzerinden sınıfa ait duyuruları gerçek zamanlı dinler.
+     * Öğretmen duyuru veya anket yayınladığında veli portalında ANINDA görünür.
+     */
+    fun observeFirestoreAnnouncements(
+        context: Context,
+        classId: String,
+        onUpdate: (List<Announcement>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId)
+                .collection("announcements")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<Announcement>()
+                        for (doc in snapshot.documents) {
+                            val jsonStr = doc.getString("json")
+                            if (!jsonStr.isNullOrBlank()) {
+                                try {
+                                    val ann = parseAnnouncementJson(JSONObject(jsonStr))
+                                    if (ann.id != "ann_1" && ann.id != "ann_2") {
+                                        list.add(ann)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        list.sortByDescending { it.createdAt }
+                        // Yerel önbelleğe de senkronize et
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val jsonArray = JSONArray()
+                            for (item in list) {
+                                jsonArray.put(serializeAnnouncementJson(item))
+                            }
+                            prefs.edit().putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonArray.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed parsing announcements snapshot", e)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register announcements snapshot listener", e)
+            null
+        }
     }
 
     /**
@@ -111,15 +225,117 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Sohbet mesajlarını kaydeder.
+     * Sohbet mesajlarını kaydeder ve buluta yükler.
      */
     fun saveChatMessages(context: Context, classId: String, messages: List<ChatMessage>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (msg in messages) {
             jsonArray.put(serializeChatMessageJson(msg))
+            uploadChatMessageToFirestore(context, classId, msg)
         }
         prefs.edit().putString(KEY_CHAT_MESSAGES_PREFIX + classId, jsonArray.toString()).apply()
+    }
+
+    /**
+     * Tek bir sohbet mesajını Firestore'a canlı yükler.
+     */
+    fun uploadChatMessageToFirestore(context: Context, classId: String, message: ChatMessage) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val json = serializeChatMessageJson(message).toString()
+                val data = mapOf(
+                    "id" to message.id,
+                    "classId" to classId,
+                    "studentId" to message.studentId,
+                    "parentEmail" to message.parentEmail,
+                    "isFromTeacher" to message.isFromTeacher,
+                    "timestamp" to message.timestamp,
+                    "status" to message.status.name,
+                    "json" to json,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                db.collection("classrooms").document(classId)
+                    .collection("messages").document(message.id)
+                    .set(data, SetOptions.merge())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to upload chat message to Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Okundu durumlarını Firestore'a işler.
+     */
+    fun markChatMessagesReadInFirestore(context: Context, classId: String, messages: List<ChatMessage>) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                messages.filter { it.status == MessageStatus.READ }.forEach { msg ->
+                    db.collection("classrooms").document(classId)
+                        .collection("messages").document(msg.id)
+                        .update("status", MessageStatus.READ.name, "json", serializeChatMessageJson(msg).toString())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to mark chat messages read in Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Firestore üzerinden sınıfa ait sohbet mesajlarını gerçek zamanlı dinler.
+     * Veli öğretmenine, öğretmen veliye mesaj yazdığı anda ekranda anlık belirir.
+     */
+    fun observeFirestoreChatMessages(
+        context: Context,
+        classId: String,
+        onUpdate: (List<ChatMessage>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId)
+                .collection("messages")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<ChatMessage>()
+                        for (doc in snapshot.documents) {
+                            val jsonStr = doc.getString("json")
+                            if (!jsonStr.isNullOrBlank()) {
+                                try {
+                                    val msg = parseChatMessageJson(JSONObject(jsonStr))
+                                    val isSample = msg.id.startsWith("msg_1") || msg.id.startsWith("msg_2") ||
+                                            msg.id.startsWith("msg_3") || msg.id.startsWith("msg_4") ||
+                                            msg.id.startsWith("msg_5") || msg.studentId.startsWith("student_test_")
+                                    if (!isSample) {
+                                        list.add(msg)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        list.sortBy { it.timestamp }
+                        // Yerel önbelleğe de senkronize et
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val jsonArray = JSONArray()
+                            for (msg in list) {
+                                jsonArray.put(serializeChatMessageJson(msg))
+                            }
+                            prefs.edit().putString(KEY_CHAT_MESSAGES_PREFIX + classId, jsonArray.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed parsing chat messages snapshot", e)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register chat messages snapshot listener", e)
+            null
+        }
     }
 
     /**

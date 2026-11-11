@@ -16,6 +16,8 @@ import com.example.data.repository.StarRewardPersistenceHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,10 +40,8 @@ object TournamentPersistenceHelper {
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
-            val dbId = context.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get Firestore instance", e)
+            FirestoreProvider.get(context)
+        } catch (_: Exception) {
             null
         }
     }
@@ -642,47 +642,295 @@ object TournamentPersistenceHelper {
 
     // -------------------------------------------------------------
     // FIRESTORE SYNC
-    // -------------------------------------------------------------
-    private fun uploadTournamentsToFirestore(context: Context, classId: String, tournaments: List<Tournament>) {
-        if (Firebase.auth.currentUser == null) return
-        val db = getFirestore(context) ?: return
-        val batch = db.batch()
-        tournaments.forEach { t ->
-            val doc = db.collection("classrooms").document(classId).collection("tournaments").document(t.id)
-            batch.set(
-                doc,
-                mapOf(
-                    "name" to t.name,
-                    "type" to t.type.name,
-                    "status" to t.status.name,
-                    "winnerName" to (t.winnerName ?: ""),
-                    "participantCount" to t.participants.size,
-                    "updatedAt" to System.currentTimeMillis()
-                )
-            )
+    fun serializeTournament(t: Tournament): JSONObject {
+        val starObj = JSONObject().apply {
+            put("enabled", t.starRewards.enabled)
+            put("firstPlaceStars", t.starRewards.firstPlaceStars)
+            put("secondPlaceStars", t.starRewards.secondPlaceStars)
+            put("thirdPlaceStars", t.starRewards.thirdPlaceStars)
+            put("participationStars", t.starRewards.participationStars)
+            put("winBonusStars", t.starRewards.winBonusStars)
+            put("distributed", t.starRewards.distributed)
+            t.starRewards.distributedAt?.let { put("distributedAt", it) }
         }
-        batch.commit()
+
+        val partArray = JSONArray()
+        t.participants.forEach { partArray.put(it) }
+
+        return JSONObject().apply {
+            put("id", t.id)
+            put("classRoomId", t.classRoomId)
+            put("name", t.name)
+            put("description", t.description)
+            put("type", t.type.name)
+            put("matchType", t.matchType.name)
+            put("fixtureType", t.fixtureType)
+            put("winnerSelectionMethod", t.winnerSelectionMethod.name)
+            put("currentRound", t.currentRound)
+            put("participants", partArray)
+            put("status", t.status.name)
+            t.winnerName?.let { put("winnerName", it) }
+            t.winnerId?.let { put("winnerId", it) }
+            t.runnerUpName?.let { put("runnerUpName", it) }
+            t.runnerUpId?.let { put("runnerUpId", it) }
+            t.thirdPlaceName?.let { put("thirdPlaceName", it) }
+            t.thirdPlaceId?.let { put("thirdPlaceId", it) }
+            put("pointsWin", t.pointsWin)
+            put("pointsDraw", t.pointsDraw)
+            put("pointsLoss", t.pointsLoss)
+            put("groupCount", t.groupCount)
+            put("groupNaming", t.groupNaming)
+            put("advancingPerGroup", t.advancingPerGroup)
+            put("currentStage", t.currentStage)
+            put("starRewards", starObj)
+            put("createdAt", t.createdAt)
+            put("updatedAt", t.updatedAt)
+        }
     }
 
-    private fun uploadMatchesToFirestore(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
-        if (Firebase.auth.currentUser == null) return
-        val db = getFirestore(context) ?: return
-        val batch = db.batch()
-        matches.take(50).forEach { m ->
-            val doc = db.collection("tournaments").document(tournamentId).collection("matches").document(m.id)
-            batch.set(
-                doc,
-                mapOf(
-                    "round" to m.round,
-                    "player1Name" to m.player1Name,
-                    "player2Name" to m.player2Name,
-                    "status" to m.status,
-                    "score1" to (m.score1 ?: -1),
-                    "score2" to (m.score2 ?: -1),
-                    "winnerId" to (m.winnerId ?: "")
-                )
-            )
+    fun deserializeTournament(obj: JSONObject, defaultClassId: String): Tournament {
+        val starObj = obj.optJSONObject("starRewards")
+        val starRewards = TournamentStarRewards(
+            enabled = starObj?.optBoolean("enabled", true) ?: true,
+            firstPlaceStars = starObj?.optInt("firstPlaceStars", 10) ?: 10,
+            secondPlaceStars = starObj?.optInt("secondPlaceStars", 6) ?: 6,
+            thirdPlaceStars = starObj?.optInt("thirdPlaceStars", 4) ?: 4,
+            participationStars = starObj?.optInt("participationStars", 1) ?: 1,
+            winBonusStars = starObj?.optInt("winBonusStars", 0) ?: 0,
+            distributed = starObj?.optBoolean("distributed", false) ?: false,
+            distributedAt = if (starObj?.has("distributedAt") == true) starObj.optLong("distributedAt") else null
+        )
+
+        val participantsList = mutableListOf<String>()
+        val partArray = obj.optJSONArray("participants")
+        if (partArray != null) {
+            for (j in 0 until partArray.length()) {
+                participantsList.add(partArray.getString(j))
+            }
         }
-        batch.commit()
+
+        return Tournament(
+            id = obj.optString("id", UUID.randomUUID().toString()),
+            classRoomId = obj.optString("classRoomId", defaultClassId),
+            name = obj.optString("name", "Turnuva"),
+            description = obj.optString("description", ""),
+            type = try { TournamentType.valueOf(obj.optString("type", "ELEME")) } catch (_: Exception) { TournamentType.ELEME },
+            matchType = try { TournamentMatchType.valueOf(obj.optString("matchType", "TEK_MAC")) } catch (_: Exception) { TournamentMatchType.TEK_MAC },
+            fixtureType = obj.optString("fixtureType", "all"),
+            winnerSelectionMethod = try { WinnerSelectionMethod.valueOf(obj.optString("winnerSelectionMethod", "WINNER")) } catch (_: Exception) { WinnerSelectionMethod.WINNER },
+            currentRound = obj.optInt("currentRound", 1),
+            participants = participantsList,
+            status = try { TournamentStatus.valueOf(obj.optString("status", "DEVAM_EDIYOR")) } catch (_: Exception) { TournamentStatus.DEVAM_EDIYOR },
+            winnerName = obj.optString("winnerName", "").takeIf { it.isNotEmpty() },
+            winnerId = obj.optString("winnerId", "").takeIf { it.isNotEmpty() },
+            runnerUpName = obj.optString("runnerUpName", "").takeIf { it.isNotEmpty() },
+            runnerUpId = obj.optString("runnerUpId", "").takeIf { it.isNotEmpty() },
+            thirdPlaceName = obj.optString("thirdPlaceName", "").takeIf { it.isNotEmpty() },
+            thirdPlaceId = obj.optString("thirdPlaceId", "").takeIf { it.isNotEmpty() },
+            pointsWin = obj.optInt("pointsWin", 3),
+            pointsDraw = obj.optInt("pointsDraw", 1),
+            pointsLoss = obj.optInt("pointsLoss", 0),
+            groupCount = obj.optInt("groupCount", 2),
+            groupNaming = obj.optString("groupNaming", "letters"),
+            advancingPerGroup = obj.optInt("advancingPerGroup", 2),
+            currentStage = obj.optString("currentStage", "group"),
+            starRewards = starRewards,
+            createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+        )
+    }
+
+    fun serializeMatch(m: TournamentMatch): JSONObject {
+        return JSONObject().apply {
+            put("id", m.id)
+            put("tournamentId", m.tournamentId)
+            put("round", m.round)
+            put("player1Id", m.player1Id)
+            put("player2Id", m.player2Id)
+            put("player1Name", m.player1Name)
+            put("player2Name", m.player2Name)
+            m.winnerId?.let { put("winnerId", it) }
+            m.score1?.let { put("score1", it) }
+            m.score2?.let { put("score2", it) }
+            put("status", m.status)
+            put("matchCode", m.matchCode)
+            put("isDoubleMatch", m.isDoubleMatch)
+            m.pairCode?.let { put("pairCode", it) }
+            put("isTieBreaker", m.isTieBreaker)
+            put("isThirdPlaceMatch", m.isThirdPlaceMatch)
+            m.player1Source?.let { put("player1Source", it) }
+            m.player2Source?.let { put("player2Source", it) }
+            m.groupId?.let { put("groupId", it) }
+            m.groupName?.let { put("groupName", it) }
+            put("stage", m.stage)
+            put("createdAt", m.createdAt)
+        }
+    }
+
+    fun deserializeMatch(obj: JSONObject, defaultTournamentId: String): TournamentMatch {
+        return TournamentMatch(
+            id = obj.optString("id", UUID.randomUUID().toString()),
+            tournamentId = obj.optString("tournamentId", defaultTournamentId),
+            round = obj.optInt("round", 1),
+            player1Id = obj.optString("player1Id", ""),
+            player2Id = obj.optString("player2Id", ""),
+            player1Name = obj.optString("player1Name", ""),
+            player2Name = obj.optString("player2Name", ""),
+            winnerId = obj.optString("winnerId", "").takeIf { it.isNotEmpty() },
+            score1 = if (obj.has("score1")) obj.optInt("score1") else null,
+            score2 = if (obj.has("score2")) obj.optInt("score2") else null,
+            status = obj.optString("status", "pending"),
+            matchCode = obj.optString("matchCode", ""),
+            isDoubleMatch = obj.optBoolean("isDoubleMatch", false),
+            pairCode = obj.optString("pairCode", "").takeIf { it.isNotEmpty() },
+            isTieBreaker = obj.optBoolean("isTieBreaker", false),
+            isThirdPlaceMatch = obj.optBoolean("isThirdPlaceMatch", false),
+            player1Source = obj.optString("player1Source", "").takeIf { it.isNotEmpty() },
+            player2Source = obj.optString("player2Source", "").takeIf { it.isNotEmpty() },
+            groupId = obj.optString("groupId", "").takeIf { it.isNotEmpty() },
+            groupName = obj.optString("groupName", "").takeIf { it.isNotEmpty() },
+            stage = obj.optString("stage", "knockout"),
+            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+        )
+    }
+
+    fun uploadTournamentsToFirestore(context: Context, classId: String, tournaments: List<Tournament>) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val batch = db.batch()
+                tournaments.forEach { t ->
+                    val doc = db.collection("classrooms").document(classId).collection("tournaments").document(t.id)
+                    batch.set(
+                        doc,
+                        mapOf(
+                            "id" to t.id,
+                            "classRoomId" to classId,
+                            "name" to t.name,
+                            "type" to t.type.name,
+                            "status" to t.status.name,
+                            "winnerName" to (t.winnerName ?: ""),
+                            "participantCount" to t.participants.size,
+                            "json" to serializeTournament(t).toString(),
+                            "updatedAt" to System.currentTimeMillis()
+                        ),
+                        SetOptions.merge()
+                    )
+                }
+                batch.commit()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed uploading tournaments to Firestore", e)
+            }
+        }
+    }
+
+    fun uploadMatchesToFirestore(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
+        if (tournamentId.isBlank()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val batch = db.batch()
+                matches.take(80).forEach { m ->
+                    val doc = db.collection("tournaments").document(tournamentId).collection("matches").document(m.id)
+                    batch.set(
+                        doc,
+                        mapOf(
+                            "id" to m.id,
+                            "tournamentId" to tournamentId,
+                            "round" to m.round,
+                            "player1Name" to m.player1Name,
+                            "player2Name" to m.player2Name,
+                            "status" to m.status,
+                            "score1" to (m.score1 ?: -1),
+                            "score2" to (m.score2 ?: -1),
+                            "winnerId" to (m.winnerId ?: ""),
+                            "json" to serializeMatch(m).toString(),
+                            "updatedAt" to System.currentTimeMillis()
+                        ),
+                        SetOptions.merge()
+                    )
+                }
+                batch.commit()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed uploading matches to Firestore", e)
+            }
+        }
+    }
+
+    fun observeFirestoreTournaments(
+        context: Context,
+        classId: String,
+        onUpdate: (List<Tournament>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId).collection("tournaments")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<Tournament>()
+                        for (doc in snapshot.documents) {
+                            val jsonStr = doc.getString("json")
+                            if (!jsonStr.isNullOrBlank()) {
+                                try {
+                                    list.add(deserializeTournament(JSONObject(jsonStr), classId))
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        list.sortByDescending { it.createdAt }
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val array = JSONArray()
+                            list.forEach { array.put(serializeTournament(it)) }
+                            prefs.edit().putString("$KEY_TOURNAMENTS_PREFIX$classId", array.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in observeFirestoreTournaments", e)
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun observeFirestoreMatches(
+        context: Context,
+        tournamentId: String,
+        onUpdate: (List<TournamentMatch>) -> Unit
+    ): ListenerRegistration? {
+        if (tournamentId.isBlank()) return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("tournaments").document(tournamentId).collection("matches")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<TournamentMatch>()
+                        for (doc in snapshot.documents) {
+                            val jsonStr = doc.getString("json")
+                            if (!jsonStr.isNullOrBlank()) {
+                                try {
+                                    list.add(deserializeMatch(JSONObject(jsonStr), tournamentId))
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        list.sortedWith(compareBy({ it.round }, { it.matchCode }))
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val array = JSONArray()
+                            list.forEach { array.put(serializeMatch(it)) }
+                            prefs.edit().putString("$KEY_MATCHES_PREFIX$tournamentId", array.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in observeFirestoreMatches", e)
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

@@ -36,12 +36,10 @@ class ClassRegistryRepository(
     private val db: FirebaseFirestore
         get() = firestoreInstance ?: FirebaseFirestore.getInstance()
 
-    // Secondary constructor requiring explicit firestore_database_id
+    // Secondary constructor using centralized FirestoreProvider
     constructor(context: Context) : this(
         try {
-            FirebaseFirestore.getInstance(
-                context.applicationContext.getString(R.string.firestore_database_id)
-            )
+            com.example.util.FirestoreProvider.get(context)
         } catch (_: Exception) {
             null
         }

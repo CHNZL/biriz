@@ -225,27 +225,63 @@ fun ParentPortalSubScreen(
         }
     }
 
-    // Aktif öğrencinin kütüphane / okuma kayıtları
-    val studentReadingRecords = remember(activeStudent, classRoom) {
-        if (activeStudent != null && classRoom != null) {
-            LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
-                .filter { it.studentId == activeStudent.id }
-        } else emptyList()
-    }
-    val classBooks = remember(classRoom) {
-        if (classRoom != null) LibraryPersistenceHelper.loadBooks(context, classRoom.id) else emptyList()
+    // Aktif öğrencinin kütüphane ve turnuva verilerini Firestore'dan canlı dinle
+    var classBooks by remember { mutableStateOf(emptyList<Book>()) }
+    var rawReadingRecords by remember { mutableStateOf(emptyList<com.example.data.model.ReadingRecord>()) }
+    var classTournaments by remember { mutableStateOf(emptyList<Tournament>()) }
+    var tournamentMatches by remember { mutableStateOf(emptyList<TournamentMatch>()) }
+
+    DisposableEffect(classRoom?.id) {
+        val cid = classRoom?.id
+        if (!cid.isNullOrBlank()) {
+            classBooks = LibraryPersistenceHelper.loadBooks(context, cid)
+            rawReadingRecords = LibraryPersistenceHelper.loadReadingRecords(context, cid)
+            classTournaments = TournamentPersistenceHelper.loadTournaments(context, cid)
+
+            val booksListener = LibraryPersistenceHelper.observeFirestoreBooks(context, cid) { updated ->
+                classBooks = updated
+            }
+            val recordsListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(context, cid) { updated ->
+                rawReadingRecords = updated
+            }
+            val tourneysListener = TournamentPersistenceHelper.observeFirestoreTournaments(context, cid) { updated ->
+                classTournaments = updated
+            }
+            onDispose {
+                booksListener?.remove()
+                recordsListener?.remove()
+                tourneysListener?.remove()
+            }
+        } else {
+            onDispose {}
+        }
     }
 
-    // Aktif turnuva ve eşleşmeler
-    val classTournaments = remember(classRoom) {
-        if (classRoom != null) TournamentPersistenceHelper.loadTournaments(context, classRoom.id) else emptyList()
+    val studentReadingRecords = remember(rawReadingRecords, activeStudent) {
+        if (activeStudent != null) {
+            rawReadingRecords.filter { it.studentId == activeStudent.id }
+        } else emptyList()
     }
+
     val activeTournament = remember(classTournaments) {
         classTournaments.firstOrNull { it.status == com.example.data.model.TournamentStatus.DEVAM_EDIYOR }
             ?: classTournaments.firstOrNull()
     }
-    val tournamentMatches = remember(activeTournament) {
-        if (activeTournament != null) TournamentPersistenceHelper.loadMatches(context, activeTournament.id) else emptyList()
+
+    DisposableEffect(activeTournament?.id) {
+        val tid = activeTournament?.id
+        if (!tid.isNullOrBlank()) {
+            tournamentMatches = TournamentPersistenceHelper.loadMatches(context, tid)
+            val matchesListener = TournamentPersistenceHelper.observeFirestoreMatches(context, tid) { updated ->
+                tournamentMatches = updated
+            }
+            onDispose {
+                matchesListener?.remove()
+            }
+        } else {
+            tournamentMatches = emptyList()
+            onDispose {}
+        }
     }
 
     // Velinin görebileceği duyurular (Tüm sınıfa veya bu öğrenciye özel duyurular)
@@ -258,19 +294,22 @@ fun ParentPortalSubScreen(
         }
     }
 
-    // Bugünkü dersler (PZT, SAL, CAR, PER, CUM)
+    // Bugünkü dersler (PZT, SAL, ÇAR, PER, CUM)
     val todayCode = remember {
         when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
             Calendar.MONDAY -> "PZT"
             Calendar.TUESDAY -> "SAL"
-            Calendar.WEDNESDAY -> "CAR"
+            Calendar.WEDNESDAY -> "ÇAR"
             Calendar.THURSDAY -> "PER"
             Calendar.FRIDAY -> "CUM"
             else -> "PZT" // Hafta sonu için Pazartesi planını önizle
         }
     }
     val todayLessons = remember(scheduleLessons, todayCode) {
-        scheduleLessons.filter { it.dayOfWeek == todayCode }.sortedBy { it.lessonIndex }
+        scheduleLessons.filter {
+            it.dayOfWeek == todayCode ||
+                    (todayCode in listOf("ÇAR", "CAR") && it.dayOfWeek in listOf("ÇAR", "CAR"))
+        }.sortedBy { it.lessonIndex }
     }
 
     // Oturma yeri bilgisi
@@ -1542,9 +1581,12 @@ private fun ParentScheduleAndSeatingDetailView(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     var selectedDay by remember { mutableStateOf("PZT") }
-    val dayNames = listOf("PZT" to "Pazartesi", "SAL" to "Salı", "CAR" to "Çarşamba", "PER" to "Perşembe", "CUM" to "Cuma")
+    val dayNames = listOf("PZT" to "Pazartesi", "SAL" to "Salı", "ÇAR" to "Çarşamba", "PER" to "Perşembe", "CUM" to "Cuma")
     val dayLessons = remember(scheduleLessons, selectedDay) {
-        scheduleLessons.filter { it.dayOfWeek == selectedDay }.sortedBy { it.lessonIndex }
+        scheduleLessons.filter {
+            it.dayOfWeek == selectedDay ||
+                    (selectedDay in listOf("ÇAR", "CAR") && it.dayOfWeek in listOf("ÇAR", "CAR"))
+        }.sortedBy { it.lessonIndex }
     }
     val timeline = remember(scheduleConfig, dayLessons) {
         ScheduleHelper.calculateTimeline(scheduleConfig, dayLessons)

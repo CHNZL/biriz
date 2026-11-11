@@ -50,17 +50,7 @@ object SmartBoardHelper {
      * Öncelikle projenin özel veritabanını (R.string.firestore_database_id) döndürür.
      */
     fun getMainFirestore(context: Context): FirebaseFirestore {
-        return try {
-            val customDbId = context.getString(R.string.firestore_database_id)
-            if (customDbId.isNotBlank()) {
-                FirebaseFirestore.getInstance(customDbId)
-            } else {
-                FirebaseFirestore.getInstance()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Custom database init exception: ${e.message}")
-            FirebaseFirestore.getInstance()
-        }
+        return FirestoreProvider.get(context)
     }
 
     fun getSavedSessionCode(context: Context): String? {

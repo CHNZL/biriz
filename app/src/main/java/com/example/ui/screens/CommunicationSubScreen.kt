@@ -218,7 +218,7 @@ fun CommunicationSubScreen(
                     teacherName = classRoom.teacherName,
                     messages = chatMessages.filter {
                         it.studentId == chatStudent.id &&
-                                (it.parentEmail.isBlank() || it.parentEmail.equals(chatParent.email, ignoreCase = true))
+                                (it.parentEmail.isBlank() || chatParent.email.isBlank() || it.parentEmail.trim().equals(chatParent.email.trim(), ignoreCase = true))
                     },
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,

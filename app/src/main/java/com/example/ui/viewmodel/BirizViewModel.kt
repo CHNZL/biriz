@@ -41,6 +41,7 @@ import com.example.util.SmartBoardHelper
 import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.ListenerRegistration
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -191,6 +192,10 @@ class BirizViewModel(
     val students: StateFlow<List<com.example.data.model.Student>> = repository.students
 
     private var updateCheckJob: Job? = null
+    private var scheduleListenerRegistration: ListenerRegistration? = null
+    private var communicationAnnouncementsListener: ListenerRegistration? = null
+    private var communicationMessagesListener: ListenerRegistration? = null
+    private var seatingPlanListenerRegistration: ListenerRegistration? = null
 
     init {
         loadScheduleFromStorage("default")
@@ -377,6 +382,17 @@ class BirizViewModel(
                 activeScheduleDay = savedActiveDay ?: _uiState.value.activeScheduleDay
             )
         }
+
+        // Firestore üzerinden anlık canlı ders programı senkronizasyonu
+        scheduleListenerRegistration?.remove()
+        scheduleListenerRegistration = SchedulePersistenceHelper.observeFirestoreSchedule(ctx, classId) { cloudConfig, cloudLessons ->
+            if (cloudConfig != null || cloudLessons != null) {
+                _uiState.value = _uiState.value.copy(
+                    scheduleConfig = cloudConfig ?: _uiState.value.scheduleConfig,
+                    scheduleLessons = cloudLessons ?: _uiState.value.scheduleLessons
+                )
+            }
+        }
     }
 
     fun loadSeatingPlanFromStorage(classId: String = _uiState.value.activeClassRoom?.id ?: "default") {
@@ -392,7 +408,8 @@ class BirizViewModel(
             )
         }
 
-        SeatingPlanPersistenceHelper.syncActivePlanFromFirestore(ctx, classId) { cloudPlan ->
+        seatingPlanListenerRegistration?.remove()
+        seatingPlanListenerRegistration = SeatingPlanPersistenceHelper.observeActivePlanFromFirestore(ctx, classId) { cloudPlan ->
             val finalCloudPlan = if (savedConfig != null) cloudPlan.copy(config = savedConfig) else cloudPlan
             _uiState.value = _uiState.value.copy(seatingPlanState = finalCloudPlan)
         }
@@ -423,6 +440,18 @@ class BirizViewModel(
             chatMessages = loadedMessages,
             notifications = loadedNotifications
         )
+
+        // Firestore üzerinden anlık canlı duyuru ve anket senkronizasyonu
+        communicationAnnouncementsListener?.remove()
+        communicationAnnouncementsListener = CommunicationPersistenceHelper.observeFirestoreAnnouncements(ctx, classId) { cloudAnnouncements ->
+            _uiState.value = _uiState.value.copy(announcements = cloudAnnouncements)
+        }
+
+        // Firestore üzerinden anlık iki yönlü öğretmen-veli canlı mesajlaşma senkronizasyonu
+        communicationMessagesListener?.remove()
+        communicationMessagesListener = CommunicationPersistenceHelper.observeFirestoreChatMessages(ctx, classId) { cloudMessages ->
+            _uiState.value = _uiState.value.copy(chatMessages = cloudMessages)
+        }
     }
 
     fun saveAnnouncement(announcement: Announcement) {
@@ -528,7 +557,10 @@ class BirizViewModel(
             announcements = updatedList,
             snackbarMessage = "Duyuru silindi."
         )
-        appContext?.let { CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList) }
+        appContext?.let {
+            CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
+            CommunicationPersistenceHelper.deleteAnnouncementFromFirestore(it, classId, id)
+        }
     }
 
     fun votePollOption(announcementId: String, optionId: String, voterName: String) {
@@ -657,7 +689,10 @@ class BirizViewModel(
             } else msg
         }
         _uiState.value = _uiState.value.copy(chatMessages = updatedMessages)
-        appContext?.let { CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages) }
+        appContext?.let {
+            CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages)
+            CommunicationPersistenceHelper.markChatMessagesReadInFirestore(it, classId, updatedMessages)
+        }
     }
 
     fun markNotificationAsRead(notificationId: String) {
@@ -2253,6 +2288,14 @@ class BirizViewModel(
             selectedGradeLevel = null,
             selectedSection = null
         )
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        scheduleListenerRegistration?.remove()
+        communicationAnnouncementsListener?.remove()
+        communicationMessagesListener?.remove()
+        seatingPlanListenerRegistration?.remove()
     }
 }
 

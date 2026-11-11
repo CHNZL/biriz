@@ -85,6 +85,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -210,8 +211,19 @@ fun LibrarySubScreen(
         isLoading = false
     }
 
-    LaunchedEffect(classRoom.id) {
+    DisposableEffect(classRoom.id) {
         refreshData()
+        val booksListener = LibraryPersistenceHelper.observeFirestoreBooks(context, classRoom.id) { updatedBooks ->
+            books = updatedBooks
+            isLoading = false
+        }
+        val recordsListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(context, classRoom.id) { updatedRecords ->
+            records = updatedRecords
+        }
+        onDispose {
+            booksListener?.remove()
+            recordsListener?.remove()
+        }
     }
 
     // Colors

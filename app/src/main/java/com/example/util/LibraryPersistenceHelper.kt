@@ -12,6 +12,8 @@ import com.example.data.repository.StarRewardPersistenceHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,10 +33,8 @@ object LibraryPersistenceHelper {
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
-            val dbId = context.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get Firestore instance", e)
+            FirestoreProvider.get(context)
+        } catch (_: Exception) {
             null
         }
     }
@@ -733,51 +733,250 @@ object LibraryPersistenceHelper {
         return emptyList()
     }
 
-    private fun uploadBooksToFirestore(context: Context, classId: String, books: List<Book>) {
-        if (Firebase.auth.currentUser == null) return
-        val db = getFirestore(context) ?: return
-        val batch = db.batch()
-        books.forEach { book ->
-            val doc = db.collection("classrooms").document(classId).collection("library_books").document(book.id)
-            batch.set(
-                doc,
-                mapOf(
-                    "registrationNo" to book.registrationNo,
-                    "name" to book.name,
-                    "author" to book.author,
-                    "pageCount" to book.pageCount,
-                    "status" to book.status,
-                    "currentStudentId" to (book.currentStudentId ?: ""),
-                    "currentStudentName" to (book.currentStudentName ?: ""),
-                    "activeCount" to book.activeAssignments.size,
-                    "updatedAt" to System.currentTimeMillis()
-                )
-            )
+    private fun serializeBook(book: Book): JSONObject {
+        val assignArray = JSONArray()
+        book.activeAssignments.forEach { a ->
+            val aObj = JSONObject().apply {
+                put("studentId", a.studentId)
+                put("studentName", a.studentName)
+                put("assignmentDate", a.assignmentDate)
+            }
+            assignArray.put(aObj)
         }
-        batch.commit()
+        return JSONObject().apply {
+            put("id", book.id)
+            put("registrationNo", book.registrationNo)
+            put("name", book.name)
+            put("author", book.author)
+            put("pageCount", book.pageCount)
+            put("status", book.status)
+            put("activeAssignments", assignArray)
+            book.currentStudentId?.let { put("currentStudentId", it) }
+            book.currentStudentName?.let { put("currentStudentName", it) }
+            book.assignmentDate?.let { put("assignmentDate", it) }
+            put("createdAt", book.createdAt)
+            put("updatedAt", book.updatedAt)
+        }
     }
 
-    private fun uploadRecordsToFirestore(context: Context, classId: String, records: List<ReadingRecord>) {
-        if (Firebase.auth.currentUser == null) return
-        val db = getFirestore(context) ?: return
-        val batch = db.batch()
-        records.take(50).forEach { r ->
-            val doc = db.collection("classrooms").document(classId).collection("reading_records").document(r.id)
-            batch.set(
-                doc,
-                mapOf(
-                    "bookId" to r.bookId,
-                    "bookName" to r.bookName,
-                    "pageCount" to r.pageCount,
-                    "studentId" to r.studentId,
-                    "studentName" to r.studentName,
-                    "startDate" to r.startDate,
-                    "endDate" to r.endDate,
-                    "earnedStars" to r.earnedStars,
-                    "updatedAt" to System.currentTimeMillis()
+    private fun deserializeBook(obj: JSONObject): Book {
+        val assignmentsList = mutableListOf<ActiveAssignment>()
+        val assignArray = obj.optJSONArray("activeAssignments")
+        if (assignArray != null) {
+            for (j in 0 until assignArray.length()) {
+                val aObj = assignArray.getJSONObject(j)
+                assignmentsList.add(
+                    ActiveAssignment(
+                        studentId = aObj.optString("studentId", ""),
+                        studentName = aObj.optString("studentName", ""),
+                        assignmentDate = aObj.optLong("assignmentDate", System.currentTimeMillis())
+                    )
                 )
-            )
+            }
         }
-        batch.commit()
+        return Book(
+            id = obj.optString("id", UUID.randomUUID().toString()),
+            registrationNo = obj.optInt("registrationNo", 1),
+            name = obj.optString("name", "Kitap"),
+            author = obj.optString("author", ""),
+            pageCount = obj.optInt("pageCount", 0),
+            status = obj.optString("status", if (assignmentsList.isNotEmpty()) "Okunuyor" else "Rafta"),
+            activeAssignments = assignmentsList,
+            currentStudentId = obj.optString("currentStudentId", "").takeIf { it.isNotEmpty() },
+            currentStudentName = obj.optString("currentStudentName", "").takeIf { it.isNotEmpty() },
+            assignmentDate = if (obj.has("assignmentDate")) obj.optLong("assignmentDate") else null,
+            createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+        )
+    }
+
+    private fun serializeReadingRecord(r: ReadingRecord): JSONObject {
+        return JSONObject().apply {
+            put("id", r.id)
+            put("bookId", r.bookId)
+            put("bookName", r.bookName)
+            put("pageCount", r.pageCount)
+            put("studentId", r.studentId)
+            put("studentName", r.studentName)
+            put("startDate", r.startDate)
+            put("endDate", r.endDate)
+            put("earnedStars", r.earnedStars)
+        }
+    }
+
+    fun uploadBooksToFirestore(context: Context, classId: String, books: List<Book>) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val batch = db.batch()
+                books.forEach { book ->
+                    val doc = db.collection("classrooms").document(classId).collection("library_books").document(book.id)
+                    batch.set(
+                        doc,
+                        mapOf(
+                            "id" to book.id,
+                            "registrationNo" to book.registrationNo,
+                            "name" to book.name,
+                            "author" to book.author,
+                            "pageCount" to book.pageCount,
+                            "status" to book.status,
+                            "currentStudentId" to (book.currentStudentId ?: ""),
+                            "currentStudentName" to (book.currentStudentName ?: ""),
+                            "json" to serializeBook(book).toString(),
+                            "updatedAt" to System.currentTimeMillis()
+                        ),
+                        SetOptions.merge()
+                    )
+                }
+                batch.commit()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed uploading books to Firestore", e)
+            }
+        }
+    }
+
+    fun uploadRecordsToFirestore(context: Context, classId: String, records: List<ReadingRecord>) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val batch = db.batch()
+                records.take(50).forEach { r ->
+                    val doc = db.collection("classrooms").document(classId).collection("reading_records").document(r.id)
+                    batch.set(
+                        doc,
+                        mapOf(
+                            "id" to r.id,
+                            "bookId" to r.bookId,
+                            "bookName" to r.bookName,
+                            "pageCount" to r.pageCount,
+                            "studentId" to r.studentId,
+                            "studentName" to r.studentName,
+                            "startDate" to r.startDate,
+                            "endDate" to r.endDate,
+                            "earnedStars" to r.earnedStars,
+                            "json" to serializeReadingRecord(r).toString(),
+                            "updatedAt" to System.currentTimeMillis()
+                        ),
+                        SetOptions.merge()
+                    )
+                }
+                batch.commit()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed uploading reading records to Firestore", e)
+            }
+        }
+    }
+
+    fun observeFirestoreBooks(
+        context: Context,
+        classId: String,
+        onUpdate: (List<Book>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId).collection("library_books")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<Book>()
+                        for (doc in snapshot.documents) {
+                            val jsonStr = doc.getString("json")
+                            if (!jsonStr.isNullOrBlank()) {
+                                try {
+                                    list.add(deserializeBook(JSONObject(jsonStr)))
+                                } catch (_: Exception) {}
+                            } else {
+                                val regNo = (doc.getLong("registrationNo") ?: 1L).toInt()
+                                val name = doc.getString("name") ?: "Kitap"
+                                val author = doc.getString("author") ?: ""
+                                val pageCount = (doc.getLong("pageCount") ?: 0L).toInt()
+                                val status = doc.getString("status") ?: "Rafta"
+                                val sId = doc.getString("currentStudentId")?.takeIf { it.isNotEmpty() }
+                                val sName = doc.getString("currentStudentName")?.takeIf { it.isNotEmpty() }
+                                list.add(
+                                    Book(
+                                        id = doc.id,
+                                        registrationNo = regNo,
+                                        name = name,
+                                        author = author,
+                                        pageCount = pageCount,
+                                        status = status,
+                                        currentStudentId = sId,
+                                        currentStudentName = sName
+                                    )
+                                )
+                            }
+                        }
+                        list.sortBy { it.registrationNo }
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val array = JSONArray()
+                            list.forEach { array.put(serializeBook(it)) }
+                            prefs.edit().putString("$KEY_BOOKS_PREFIX$classId", array.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in observeFirestoreBooks", e)
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun observeFirestoreReadingRecords(
+        context: Context,
+        classId: String,
+        onUpdate: (List<ReadingRecord>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId).collection("reading_records")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val list = mutableListOf<ReadingRecord>()
+                        for (doc in snapshot.documents) {
+                            val bId = doc.getString("bookId") ?: ""
+                            val bName = doc.getString("bookName") ?: ""
+                            val page = (doc.getLong("pageCount") ?: 0L).toInt()
+                            val sId = doc.getString("studentId") ?: ""
+                            val sName = doc.getString("studentName") ?: ""
+                            val sDate = doc.getLong("startDate") ?: System.currentTimeMillis()
+                            val eDate = doc.getLong("endDate") ?: System.currentTimeMillis()
+                            val stars = (doc.getLong("earnedStars") ?: 1L).toInt()
+                            list.add(
+                                ReadingRecord(
+                                    id = doc.id,
+                                    bookId = bId,
+                                    bookName = bName,
+                                    pageCount = page,
+                                    studentId = sId,
+                                    studentName = sName,
+                                    startDate = sDate,
+                                    endDate = eDate,
+                                    earnedStars = stars
+                                )
+                            )
+                        }
+                        list.sortByDescending { it.endDate }
+                        if (list.isNotEmpty()) {
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            val array = JSONArray()
+                            list.forEach { array.put(serializeReadingRecord(it)) }
+                            prefs.edit().putString("$KEY_RECORDS_PREFIX$classId", array.toString()).apply()
+                        }
+                        onUpdate(list)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in observeFirestoreReadingRecords", e)
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

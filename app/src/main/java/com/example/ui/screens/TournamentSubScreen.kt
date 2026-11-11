@@ -74,6 +74,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.window.Dialog
 import com.example.ui.theme.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -164,8 +165,28 @@ fun TournamentSubScreen(
         }
     }
 
-    LaunchedEffect(classRoom.id) {
+    DisposableEffect(classRoom.id, selectedTournament?.id) {
         refreshData()
+        val tournamentsListener = TournamentPersistenceHelper.observeFirestoreTournaments(context, classRoom.id) { updatedTournaments ->
+            tournaments = updatedTournaments
+            if (selectedTournament != null) {
+                val updatedT = updatedTournaments.find { it.id == selectedTournament!!.id }
+                if (updatedT != null) {
+                    selectedTournament = updatedT
+                }
+            }
+        }
+
+        val matchesListener = if (selectedTournament != null) {
+            TournamentPersistenceHelper.observeFirestoreMatches(context, selectedTournament!!.id) { updatedMatches ->
+                selectedTournamentMatches = updatedMatches
+            }
+        } else null
+
+        onDispose {
+            tournamentsListener?.remove()
+            matchesListener?.remove()
+        }
     }
 
     // Geri tuşu yönetimi

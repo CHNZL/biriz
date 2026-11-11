@@ -30,10 +30,8 @@ object StarRewardPersistenceHelper {
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
-            val dbId = context.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get Firestore instance with custom database ID", e)
+            com.example.util.FirestoreProvider.get(context)
+        } catch (_: Exception) {
             null
         }
     }
@@ -178,7 +176,6 @@ object StarRewardPersistenceHelper {
         classId: String,
         onUpdate: (List<StarRewardRecord>) -> Unit
     ): ListenerRegistration? {
-        if (Firebase.auth.currentUser == null) return null
         val db = getFirestore(context) ?: return null
 
         val path = "classrooms/$classId/stars"

@@ -14,6 +14,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,8 +39,7 @@ object SeatingPlanPersistenceHelper {
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
-            val dbId = context.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
+            FirestoreProvider.get(context)
         } catch (_: Exception) {
             null
         }
@@ -239,7 +239,7 @@ object SeatingPlanPersistenceHelper {
     }
 
     fun syncActivePlanFromFirestore(context: Context, classId: String, onLoaded: (SeatingPlanState) -> Unit) {
-        if (classId.isBlank() || classId == "default" || Firebase.auth.currentUser == null) return
+        if (classId.isBlank() || classId == "default") return
         val db = getFirestore(context) ?: return
         db.collection("classrooms").document(classId).collection("seating").document("current")
             .get()
@@ -256,6 +256,36 @@ object SeatingPlanPersistenceHelper {
                     }
                 }
             }
+    }
+
+    /**
+     * Firestore üzerinden oturma planını anlık canlı dinler.
+     * Öğretmen sırayı veya öğrenci yerleşimini değiştirdiği anda veli ve diğer cihazlarda anında güncellenir.
+     */
+    fun observeActivePlanFromFirestore(
+        context: Context,
+        classId: String,
+        onUpdate: (SeatingPlanState) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId).collection("seating").document("current")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    try {
+                        val seatsJson = snapshot.getString("seatsJson")
+                        if (!seatsJson.isNullOrBlank()) {
+                            val state = deserializePlanState(JSONObject(seatsJson))
+                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            prefs.edit().putString(KEY_ACTIVE_PREFIX + classId, seatsJson).apply()
+                            onUpdate(state)
+                        }
+                    } catch (_: Exception) {}
+                }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun loadActivePlan(context: Context, classId: String): SeatingPlanState? {
