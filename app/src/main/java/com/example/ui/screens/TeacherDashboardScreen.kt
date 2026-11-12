@@ -309,10 +309,20 @@ fun TeacherDashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Sol: BİRİZ Amblem + Kullanıcı İsmi (Tek Satır)
+                        // Sol: BİRİZ Amblem + Kullanıcı İsmi (Tek Satır - Tıklanınca Öğretmen Ana Sayfasına Yönlendirir)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .clickable {
+                                    onToggleScheduleSettings(false)
+                                    onCloseSeatingConfig()
+                                    onCloseGroupWizard()
+                                    onCloseGroupSwapModal()
+                                    onSelectSubPage(DashboardSubPage.SINIF_LISTESI)
+                                }
+                                .testTag("teacher_header_home_logo")
                         ) {
                             Box(
                                 modifier = Modifier
@@ -324,7 +334,7 @@ fun TeacherDashboardScreen(
                             ) {
                                 Image(
                                     painter = painterResource(id = R.drawable.ic_biriz_emblem),
-                                    contentDescription = "BİRİZ Amblem",
+                                    contentDescription = "BİRİZ Ana Sayfa",
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }

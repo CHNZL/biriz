@@ -86,6 +86,7 @@ fun AppUpdateDialog(
     isDarkTheme: Boolean,
     initialInfo: UpdateInfo? = null,
     autoStartDownload: Boolean = false,
+    onUpdateDiscovered: (UpdateInfo) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -142,6 +143,7 @@ fun AppUpdateDialog(
                 )
             } else if (result.isUpdateAvailable) {
                 state = UpdateDialogState.Available(result)
+                onUpdateDiscovered(result)
                 AppUpdateNotificationHelper.showUpdateNotification(context, result)
                 if (autoStartDownload) {
                     startDownloadAndInstall(result)

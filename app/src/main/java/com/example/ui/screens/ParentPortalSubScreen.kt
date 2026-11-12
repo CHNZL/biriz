@@ -91,6 +91,7 @@ import com.example.data.model.BirizNotification
 import com.example.data.model.Book
 import com.example.data.model.ChatMessage
 import com.example.data.model.ClassRoom
+import com.example.data.model.NotificationType
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.ScheduleTimelineItem
@@ -102,6 +103,7 @@ import com.example.data.model.TournamentMatch
 import com.example.data.model.UserRole
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
+import com.example.ui.components.NotificationCenterDialog
 import com.example.ui.components.UserAvatarCircle
 import com.example.ui.components.UserProfileMenuDialog
 import com.example.ui.theme.BirizAmber
@@ -157,6 +159,7 @@ fun ParentPortalSubScreen(
     seatingPlanState: SeatingPlanState,
     currentUser: AuthenticatedUser,
     notifications: List<BirizNotification>,
+    isNotificationCenterOpen: Boolean = false,
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onLinkStudentByCode: (String) -> Unit,
@@ -165,6 +168,10 @@ fun ParentPortalSubScreen(
     onDeleteRole: () -> Unit = {},
     onDeleteEntireAccount: () -> Unit = {},
     onOpenNotificationCenter: () -> Unit,
+    onCloseNotificationCenter: () -> Unit = {},
+    onMarkNotificationAsRead: (String) -> Unit = {},
+    onMarkAllNotificationsAsRead: () -> Unit = {},
+    onOpenUpdateDialog: () -> Unit = {},
     onLogout: () -> Unit = {},
     onVotePoll: (String, String) -> Unit,
     onSendChatMessage: (String, String) -> Unit,
@@ -363,10 +370,14 @@ fun ParentPortalSubScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            // Sol: BİRİZ Amblem + Selamlama
+                            // Sol: BİRİZ Amblem + Selamlama (Tıklanınca Veli Ana Sayfasına Yönlendirir)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .clickable { activeTab = ParentPortalTab.HOME }
+                                    .testTag("parent_header_home_logo")
                             ) {
                                 if (activeTab != ParentPortalTab.HOME) {
                                     IconButton(
@@ -392,7 +403,7 @@ fun ParentPortalSubScreen(
                                 ) {
                                     androidx.compose.foundation.Image(
                                         painter = painterResource(id = R.drawable.ic_biriz_emblem),
-                                        contentDescription = "BİRİZ Amblem",
+                                        contentDescription = "BİRİZ Ana Sayfa",
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
@@ -665,53 +676,69 @@ fun ParentPortalSubScreen(
             }
 
             // =========================================================================
-            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION) - FERAH & BÜYÜTÜLMÜŞ
+            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION) - VELİ ROLÜNE ÖZEL YÜKSEK GÖRÜNÜRLÜKLÜ RENKLİ TASARIM
             // =========================================================================
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 shape = RoundedCornerShape(22.dp),
-                color = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
-                shadowElevation = 12.dp,
-                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1))
+                color = Color.Transparent,
+                shadowElevation = 14.dp,
+                border = BorderStroke(1.5.dp, BirizTurquoise.copy(alpha = 0.75f))
             ) {
-                NavigationBar(
-                    containerColor = Color.Transparent,
-                    tonalElevation = 0.dp,
-                    windowInsets = WindowInsets(0, 0, 0, 0),
-                    modifier = Modifier.height(72.dp)
-                ) {
-                    ParentPortalTab.entries.forEach { tab ->
-                        val isSelected = activeTab == tab
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { activeTab = tab },
-                            icon = {
-                                Icon(
-                                    imageVector = tab.iconVector,
-                                    contentDescription = tab.title,
-                                    modifier = Modifier.size(24.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isDarkTheme) {
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFF0B192C), Color(0xFF133354), Color(0xFF0B192C))
                                 )
-                            },
-                            label = {
-                                Text(
-                                    text = tab.title,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    softWrap = false
+                            } else {
+                                Brush.horizontalGradient(
+                                    listOf(BirizNavyPrimary, Color(0xFF17466E), BirizNavyPrimary)
                                 )
-                            },
-                            alwaysShowLabel = true,
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = BirizNavyPrimary,
-                                selectedTextColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                unselectedIconColor = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                                unselectedTextColor = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                                indicatorColor = BirizTurquoise
-                            )
+                            }
                         )
+                ) {
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp,
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        modifier = Modifier.height(74.dp)
+                    ) {
+                        ParentPortalTab.entries.forEach { tab ->
+                            val isSelected = activeTab == tab
+                            NavigationBarItem(
+                                selected = isSelected,
+                                onClick = { activeTab = tab },
+                                icon = {
+                                    Icon(
+                                        imageVector = tab.iconVector,
+                                        contentDescription = tab.title,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = tab.title,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                },
+                                alwaysShowLabel = true,
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = BirizNavyDark,
+                                    selectedTextColor = Color(0xFF5EEAD4),
+                                    unselectedIconColor = Color.White.copy(alpha = 0.88f),
+                                    unselectedTextColor = Color.White.copy(alpha = 0.92f),
+                                    indicatorColor = BirizTurquoise
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -815,6 +842,23 @@ fun ParentPortalSubScreen(
         )
     }
 
+    if (isNotificationCenterOpen) {
+        NotificationCenterDialog(
+            notifications = notifications,
+            isDarkTheme = isDarkTheme,
+            onDismiss = onCloseNotificationCenter,
+            onNotificationClick = { notif ->
+                onMarkNotificationAsRead(notif.id)
+                if (notif.type == NotificationType.APP_UPDATE) {
+                    onOpenUpdateDialog()
+                } else {
+                    activeTab = ParentPortalTab.COMMUNICATION
+                }
+            },
+            onMarkAllAsRead = onMarkAllNotificationsAsRead
+        )
+    }
+
     if (showProfileMenuDialog) {
         UserProfileMenuDialog(
             currentUser = currentUser,
@@ -825,7 +869,7 @@ fun ParentPortalSubScreen(
             onToggleTheme = onToggleTheme,
             onDeleteRole = onDeleteRole,
             onDeleteEntireAccount = onDeleteEntireAccount,
-            onCheckUpdate = {},
+            onCheckUpdate = onOpenUpdateDialog,
             onLogout = onLogout,
             onDismissRequest = { showProfileMenuDialog = false }
         )

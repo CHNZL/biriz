@@ -500,42 +500,77 @@ fun UserProfileMenuDialog(
                 // --- 3. SÜRÜM BİLGİSİ VE GÜNCELLEME KUTUSU ---
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF8FAFC),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)),
+                    color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF0F9FF),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise.copy(alpha = 0.5f) else Color(0xFFBAE6FD)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = "📱 Uygulama Sürümü",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                            Text(
-                                text = "BİRİZ Mobil v${BuildConfig.VERSION_NAME} (#${BuildConfig.VERSION_CODE})",
-                                fontSize = 11.sp,
-                                color = Color.Gray
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "📱 Uygulama Sürümü",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                )
+                                Text(
+                                    text = "BİRİZ Mobil v${BuildConfig.VERSION_NAME} (#${BuildConfig.VERSION_CODE})",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = BirizTurquoise.copy(alpha = 0.18f)
+                            ) {
+                                Text(
+                                    text = "v${BuildConfig.VERSION_NAME}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
-                                onCheckUpdate()
                                 onDismissRequest()
+                                onCheckUpdate()
                             },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(42.dp)
+                                .testTag("profile_check_update_button"),
                             shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                contentColor = if (isDarkTheme) BirizNavyPrimary else Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Güncelleme Denetle", fontSize = 11.sp)
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "🚀 Sürümü ve Güncellemeleri Denetle",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

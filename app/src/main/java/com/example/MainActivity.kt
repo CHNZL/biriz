@@ -348,7 +348,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onMarkNotificationAsRead = { viewModel.markNotificationAsRead(it) },
                             onMarkAllNotificationsAsRead = { viewModel.markAllNotificationsAsRead() },
                             onSetActiveChatStudent = { viewModel.setActiveChatStudent(it) },
-                            onOpenUpdateDialog = { viewModel.openGlobalUpdateDialog() },
+                            onOpenUpdateDialog = { viewModel.openGlobalUpdateDialog(forceCheck = true) },
                             connectedBoardSessionCode = uiState.connectedBoardSessionCode,
                             isLiveBoardMirrorActive = uiState.isLiveBoardMirrorActive,
                             isSmartBoardDialogOpen = uiState.isSmartBoardDialogOpen,
@@ -362,7 +362,8 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onDeleteStudent = { viewModel.deleteStudent(it) },
                             onDeleteTeacherRoleAndClass = { viewModel.deleteTeacherRoleAndClassroom() },
                             onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
-                            onLogout = { viewModel.signOut(context) }
+                            onLogout = { viewModel.signOut(context) },
+                            currentUser = uiState.currentUser
                         )
                     } else {
                         viewModel.resetToRoleSelection()
@@ -386,6 +387,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                         seatingPlanState = uiState.seatingPlanState,
                         currentUser = uiState.currentUser,
                         notifications = uiState.notifications,
+                        isNotificationCenterOpen = uiState.isNotificationCenterOpen,
                         isDarkTheme = uiState.isDarkTheme,
                         onToggleTheme = { viewModel.toggleTheme() },
                         onLinkStudentByCode = { viewModel.linkStudentByParentCode(it) },
@@ -394,6 +396,10 @@ fun BirizApp(viewModel: BirizViewModel) {
                         onDeleteRole = { viewModel.deleteParentRole() },
                         onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
                         onOpenNotificationCenter = { viewModel.setNotificationCenterOpen(true) },
+                        onCloseNotificationCenter = { viewModel.setNotificationCenterOpen(false) },
+                        onMarkNotificationAsRead = { viewModel.markNotificationAsRead(it) },
+                        onMarkAllNotificationsAsRead = { viewModel.markAllNotificationsAsRead() },
+                        onOpenUpdateDialog = { viewModel.openGlobalUpdateDialog(forceCheck = true) },
                         onLogout = { viewModel.signOut(context) },
                         onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, uiState.currentUser.fullName.ifBlank { "Veli" }) },
                         onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) },
@@ -499,6 +505,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                     isDarkTheme = uiState.isDarkTheme,
                     initialInfo = uiState.availableUpdateInfo,
                     autoStartDownload = uiState.isAutoDownloadOnOpen,
+                    onUpdateDiscovered = { viewModel.onManualUpdateDiscovered(it) },
                     onDismiss = { viewModel.dismissGlobalUpdateDialog() }
                 )
             }

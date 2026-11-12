@@ -367,16 +367,30 @@ class BirizViewModel(
             )
             val updatedList = listOf(updateNotif) + currentNotifs
             _uiState.value = _uiState.value.copy(notifications = updatedList)
-            val classId = _uiState.value.activeClassRoom?.id ?: "default"
+            val classId = resolveActiveClassId()
             CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedList)
         }
     }
 
-    fun openGlobalUpdateDialog(info: UpdateInfo? = null, autoStartDownload: Boolean = false) {
+    fun onManualUpdateDiscovered(update: UpdateInfo) {
+        if (update.isUpdateAvailable) {
+            _uiState.value = _uiState.value.copy(
+                availableUpdateInfo = update,
+                isUpdateBannerDismissed = false
+            )
+            syncUpdateNotification(update)
+        }
+    }
+
+    fun openGlobalUpdateDialog(
+        info: UpdateInfo? = null,
+        autoStartDownload: Boolean = false,
+        forceCheck: Boolean = false
+    ) {
         _uiState.value = _uiState.value.copy(
             isGlobalUpdateDialogOpen = true,
             isAutoDownloadOnOpen = autoStartDownload,
-            availableUpdateInfo = info ?: _uiState.value.availableUpdateInfo
+            availableUpdateInfo = if (forceCheck) null else (info ?: _uiState.value.availableUpdateInfo)
         )
     }
 
@@ -481,12 +495,16 @@ class BirizViewModel(
         val currentStudents = repository.students.value
         val loadedAnnouncements = CommunicationPersistenceHelper.loadAnnouncements(ctx, classId, currentStudents)
         val loadedMessages = CommunicationPersistenceHelper.loadChatMessages(ctx, classId, currentStudents)
+        val existingUpdateNotifs = _uiState.value.notifications.filter { it.type == NotificationType.APP_UPDATE }
         val loadedNotifications = CommunicationPersistenceHelper.loadNotifications(ctx, classId)
+        val mergedNotifications = (existingUpdateNotifs + loadedNotifications).distinctBy { it.id }
+
         _uiState.value = _uiState.value.copy(
             announcements = loadedAnnouncements,
             chatMessages = loadedMessages,
-            notifications = loadedNotifications
+            notifications = mergedNotifications
         )
+        _uiState.value.availableUpdateInfo?.let { syncUpdateNotification(it) }
 
         // Firestore üzerinden anlık canlı duyuru ve anket senkronizasyonu
         communicationAnnouncementsListener?.remove()
