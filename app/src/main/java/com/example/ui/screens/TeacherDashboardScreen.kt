@@ -761,7 +761,8 @@ fun TeacherDashboardScreen(
                             onDeleteTeacherRoleAndClass = { showDeleteRoleDialog = true },
                             onDeleteEntireAccount = { showDeleteAccountDialog = true },
                             onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
-                            onCopyCode = copyCodeToClipboard
+                            onCopyCode = copyCodeToClipboard,
+                            onOpenUpdateDialog = onOpenUpdateDialog
                         )
                     }
 

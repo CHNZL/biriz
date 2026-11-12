@@ -56,7 +56,10 @@ object AppUpdateManager {
     }
 
     /**
-     * GitHub Releases veya raw version.json üzerinden en son sürümü denetler.
+     * GitHub Releases (doğrudan sürüm varlığı, etiket yönlendirmesi ve API) üzerinden en son sürümü denetler.
+     * GitHub REST API saatlik 60 istek sınırına (HTTP 403 Rate Limit) takılmamak için
+     * önce doğrudan Release Asset (releases/latest/download/version.json) ve Release Redirect
+     * (releases/latest -> /releases/tag/v1.0.X) kanallarını kontrol eder ve en yüksek sürüm kodunu seçer.
      */
     suspend fun checkForUpdates(context: Context, customRepo: String? = null): UpdateInfo? = withContext(Dispatchers.IO) {
         val repo = (customRepo ?: getGitHubRepo(context)).trim().trim('/')
@@ -67,15 +70,166 @@ object AppUpdateManager {
         val currentVersionName = BuildConfig.VERSION_NAME
         val currentVersionCode = BuildConfig.VERSION_CODE
 
-        // 1. Yol: GitHub Releases API
-        var info = fetchFromReleasesApi(repo, currentVersionName, currentVersionCode)
+        val candidates = mutableListOf<UpdateInfo>()
 
-        // 2. Yol: Eğer Releases API 404/rate limit verirse raw version.json dene
-        if (info == null) {
-            info = fetchFromRawVersionJson(repo, currentVersionName, currentVersionCode)
+        // 1. Yol (Rate-Limit Yok): GitHub Latest Release içindeki version.json asset dosyası
+        fetchFromLatestReleaseVersionJson(repo, currentVersionName, currentVersionCode)?.let {
+            candidates.add(it)
         }
 
-        return@withContext info
+        // 2. Yol (Rate-Limit Yok): GitHub releases/latest 302 Location yönlendirmesinden etiket (tag) okuma
+        fetchFromLatestReleaseRedirect(repo, currentVersionName, currentVersionCode)?.let {
+            candidates.add(it)
+        }
+
+        // 3. Yol: Eğer yukarıdaki iki kanaldan sonuç alınamazsa GitHub Releases REST API dene
+        if (candidates.isEmpty()) {
+            fetchFromReleasesApi(repo, currentVersionName, currentVersionCode)?.let {
+                candidates.add(it)
+            }
+        }
+
+        // 4. Yol: Son çare olarak raw version.json kontrol et
+        if (candidates.isEmpty()) {
+            fetchFromRawVersionJson(repo, currentVersionName, currentVersionCode)?.let {
+                candidates.add(it)
+            }
+        }
+
+        // Bulunan adaylar arasından en güncel (en yüksek versionCode'lu) olanı seç
+        return@withContext candidates.maxByOrNull { it.latestVersionCode }
+    }
+
+    /**
+     * GitHub'ın her sürümde (Release) yayınladığı `releases/latest/download/version.json` dosyasını
+     * 302 yönlendirmelerini takip ederek doğrudan okur (API Rate Limit'e takılmaz).
+     */
+    private fun fetchFromLatestReleaseVersionJson(
+        repo: String,
+        currentVersionName: String,
+        currentVersionCode: Int
+    ): UpdateInfo? {
+        return try {
+            val assetUrl = "https://github.com/$repo/releases/latest/download/version.json?t=${System.currentTimeMillis()}"
+            val jsonStr = fetchUrlTextFollowingRedirects(assetUrl) ?: return null
+            val json = JSONObject(jsonStr)
+
+            val rawName = json.optString("versionName", "").trim().removePrefix("v").removePrefix("V")
+            if (rawName.isEmpty()) return null
+            val latestVersionCode = json.optInt("versionCode", extractVersionCode(rawName))
+            val tag = json.optString("tag", "v$rawName").ifBlank { "v$rawName" }
+            var apkUrl = json.optString("apkUrl", "").trim()
+            val releaseNotes = json.optString("releaseNotes", "BİRİZ v$rawName yeni sürümü kullanıma hazır.")
+
+            if (apkUrl.isEmpty()) {
+                apkUrl = "https://github.com/$repo/releases/download/$tag/Biriz.apk"
+            }
+
+            val isUpdate = isRemoteNewer(rawName, latestVersionCode, currentVersionName, currentVersionCode)
+            UpdateInfo(
+                isUpdateAvailable = isUpdate,
+                currentVersionName = currentVersionName,
+                currentVersionCode = currentVersionCode,
+                latestVersionName = rawName,
+                latestVersionCode = latestVersionCode,
+                downloadUrl = apkUrl,
+                releaseNotes = releaseNotes,
+                releaseTag = tag
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * `https://github.com/{repo}/releases/latest` adresinin döndürdüğü 302 Location başlığından
+     * (`/releases/tag/v1.0.84` gibi) en son sürüm etiketini anında tespit eder (API Rate Limit'e takılmaz).
+     */
+    private fun fetchFromLatestReleaseRedirect(
+        repo: String,
+        currentVersionName: String,
+        currentVersionCode: Int
+    ): UpdateInfo? {
+        return try {
+            val latestUrl = "https://github.com/$repo/releases/latest?t=${System.currentTimeMillis()}"
+            val connection = (URL(latestUrl).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", "Biriz-Android-App")
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                setRequestProperty("Pragma", "no-cache")
+            }
+
+            val code = connection.responseCode
+            val location = if (code in 300..399) {
+                connection.getHeaderField("Location") ?: ""
+            } else {
+                connection.url?.toString() ?: ""
+            }
+
+            if (!location.contains("/releases/tag/")) {
+                return null
+            }
+
+            val tagName = location
+                .substringAfterLast("/releases/tag/")
+                .substringBefore("?")
+                .substringBefore("#")
+                .trim()
+            if (tagName.isEmpty()) return null
+
+            val rawVersionName = if (tagName.startsWith("v", ignoreCase = true)) tagName.substring(1) else tagName
+            val latestVersionCode = extractVersionCode(rawVersionName)
+            val apkUrl = "https://github.com/$repo/releases/download/$tagName/Biriz.apk"
+            val isUpdate = isRemoteNewer(rawVersionName, latestVersionCode, currentVersionName, currentVersionCode)
+
+            UpdateInfo(
+                isUpdateAvailable = isUpdate,
+                currentVersionName = currentVersionName,
+                currentVersionCode = currentVersionCode,
+                latestVersionName = rawVersionName,
+                latestVersionCode = latestVersionCode,
+                downloadUrl = apkUrl,
+                releaseNotes = "BİRİZ v$rawVersionName yeni sürümü kullanıma hazır.",
+                releaseTag = tagName
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun fetchUrlTextFollowingRedirects(initialUrl: String): String? {
+        var currentUrl = initialUrl
+        var redirects = 0
+        while (redirects <= 8) {
+            val connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", "Biriz-Android-App")
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                setRequestProperty("Pragma", "no-cache")
+            }
+            val code = connection.responseCode
+            if (code in 300..399) {
+                val location = connection.getHeaderField("Location")
+                if (!location.isNullOrBlank()) {
+                    currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                        location
+                    } else {
+                        URL(URL(currentUrl), location).toString()
+                    }
+                    redirects++
+                    continue
+                }
+            }
+            if (code !in 200..299) return null
+            return connection.inputStream.bufferedReader().use { it.readText() }
+        }
+        return null
     }
 
     private fun fetchFromReleasesApi(repo: String, currentVersionName: String, currentVersionCode: Int): UpdateInfo? {
@@ -161,7 +315,7 @@ object AppUpdateManager {
             val jsonStr = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(jsonStr)
 
-            val latestVersionName = json.optString("versionName", "1.0.0")
+            val latestVersionName = json.optString("versionName", "1.0.0").trim().removePrefix("v").removePrefix("V")
             val latestVersionCode = json.optInt("versionCode", extractVersionCode(latestVersionName))
             var apkUrl = json.optString("apkUrl", "")
             val releaseNotes = json.optString("releaseNotes", "Yeni sürüm güncellemeleri.")
@@ -189,8 +343,9 @@ object AppUpdateManager {
     }
 
     private fun extractVersionCode(versionName: String): Int {
-        val parts = versionName.split(".")
-        val lastPart = parts.lastOrNull()?.toIntOrNull() ?: 1
+        val clean = versionName.trim().removePrefix("v").removePrefix("V")
+        val parts = clean.split(".")
+        val lastPart = parts.lastOrNull()?.filter { it.isDigit() }?.toIntOrNull() ?: 1
         return 1000 + lastPart
     }
 

@@ -1,8 +1,8 @@
 {
-  "versionCode": 1001,
-  "versionName": "1.0.1",
-  "tag": "v1.0.1",
-  "apkUrl": "",
+  "versionCode": 1085,
+  "versionName": "1.0.85",
+  "tag": "v1.0.85",
+  "apkUrl": "https://github.com/CHNZL/biriz/releases/latest/download/Biriz.apk",
   "appName": "BİRİZ",
-  "releaseNotes": "İlk BİRİZ senkronizasyonu."
+  "releaseNotes": "BİRİZ yeni sürüm güncellemeleri kullanıma hazır."
 }

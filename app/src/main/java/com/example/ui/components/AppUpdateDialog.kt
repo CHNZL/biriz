@@ -94,9 +94,8 @@ fun AppUpdateDialog(
 
     var state by remember {
         mutableStateOf<UpdateDialogState>(
-            if (initialInfo != null) {
-                if (initialInfo.isUpdateAvailable) UpdateDialogState.Available(initialInfo)
-                else UpdateDialogState.UpToDate(initialInfo)
+            if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
+                UpdateDialogState.Available(initialInfo)
             } else {
                 UpdateDialogState.Checking
             }
@@ -144,7 +143,7 @@ fun AppUpdateDialog(
             } else if (result.isUpdateAvailable) {
                 state = UpdateDialogState.Available(result)
                 onUpdateDiscovered(result)
-                AppUpdateNotificationHelper.showUpdateNotification(context, result)
+                AppUpdateNotificationHelper.showUpdateNotification(context, result, forceResend = true)
                 if (autoStartDownload) {
                     startDownloadAndInstall(result)
                 }
@@ -155,10 +154,10 @@ fun AppUpdateDialog(
     }
 
     LaunchedEffect(Unit) {
-        if (initialInfo == null) {
-            runCheck()
-        } else if (autoStartDownload && initialInfo.isUpdateAvailable) {
+        if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
             startDownloadAndInstall(initialInfo)
+        } else {
+            runCheck()
         }
     }
 
@@ -435,19 +434,37 @@ fun AppUpdateDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Zaten en son BİRİZ sürümünü (v${BuildConfig.VERSION_NAME}) kullanıyorsunuz.",
+                                text = "Kurulu Sürüm: v${BuildConfig.VERSION_NAME} • GitHub Son Sürüm: v${current.info.latestVersionName}",
                                 fontSize = 12.sp,
                                 color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = onDismiss,
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Harika, Tamam", fontSize = 12.sp)
+                                OutlinedButton(
+                                    onClick = { runCheck() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Tekrar Denetle", fontSize = 11.5.sp)
+                                }
+                                Button(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary)
+                                ) {
+                                    Text("Tamam", fontSize = 12.sp)
+                                }
                             }
                         }
                     }

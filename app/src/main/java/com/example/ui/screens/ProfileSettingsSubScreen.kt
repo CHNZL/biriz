@@ -75,7 +75,8 @@ fun ProfileSettingsSubScreen(
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
     onBackToClassList: () -> Unit,
-    onCopyCode: (String) -> Unit
+    onCopyCode: (String) -> Unit,
+    onOpenUpdateDialog: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showUpdateDialog by remember { mutableStateOf(false) }
@@ -261,7 +262,13 @@ fun ProfileSettingsSubScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { showUpdateDialog = true },
+                    onClick = {
+                        if (onOpenUpdateDialog != null) {
+                            onOpenUpdateDialog()
+                        } else {
+                            showUpdateDialog = true
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
