@@ -67,6 +67,7 @@ enum class ScreenState {
 
 enum class DashboardSubPage(val title: String, val category: String) {
     // 1. SINIF YÖNETİMİ
+    ANA_SAYFA("Ana Sayfa", "SINIF YÖNETİMİ"),
     SINIF_LISTESI("Sınıf Listesi", "SINIF YÖNETİMİ"),
     DERS_PROGRAMI("Ders Programı", "SINIF YÖNETİMİ"),
     OTURMA_PLANI("Oturma Planı", "SINIF YÖNETİMİ"),
@@ -110,7 +111,7 @@ data class AuthenticatedUser(
 )
 
 data class BirizUiState(
-    val currentScreen: ScreenState = if (Firebase.auth.currentUser == null) ScreenState.GOOGLE_SIGN_IN else ScreenState.ROLE_AND_KVKK,
+    val currentScreen: ScreenState = if (try { Firebase.auth.currentUser == null } catch (_: Throwable) { true }) ScreenState.GOOGLE_SIGN_IN else ScreenState.ROLE_AND_KVKK,
     val currentRole: UserRole = UserRole.MEMBER,
     val isKvkkAccepted: Boolean = false,
     val isKvkkDialogVisible: Boolean = false,
@@ -139,7 +140,7 @@ data class BirizUiState(
     val activeParentStudentId: String? = null,
 
     // Öğretmen Paneli Alt Sayfa & Öğrenci Durumu
-    val currentSubPage: DashboardSubPage = DashboardSubPage.SINIF_LISTESI,
+    val currentSubPage: DashboardSubPage = DashboardSubPage.ANA_SAYFA,
     val isAddStudentDialogOpen: Boolean = false,
     val isDeleting: Boolean = false,
 
@@ -270,7 +271,7 @@ class BirizViewModel(
             loadCommunicationFromStorage(targetClassId)
             loadGroupMakerFromStorage(targetClassId)
 
-            if (linkedList.isNotEmpty()) {
+            if (linkedList.isNotEmpty() && Firebase.auth.currentUser == null) {
                 repository.syncLinkedStudentsWithParent(
                     linkedList,
                     _uiState.value.currentUser.email.ifBlank { "veli@biriz.app" },
@@ -283,8 +284,65 @@ class BirizViewModel(
             loadCommunicationFromStorage("default")
             loadGroupMakerFromStorage("default")
         }
+
+        // Öğretmen bağlantıyı kestiğinde veli ekranında öğrencinin ANINDA düşmesini sağlayan canlı dinleyici
+        viewModelScope.launch {
+            repository.students.collect { currentStudents ->
+                val state = _uiState.value
+                if (state.currentRole == UserRole.PARENT && state.linkedParentStudentIds.isNotEmpty() && currentStudents.isNotEmpty()) {
+                    val userEmail = state.currentUser.email.trim()
+                    val stillValidIds = state.linkedParentStudentIds.filter { linkedId ->
+                        val studentInClass = currentStudents.find { it.id == linkedId }
+                        if (studentInClass == null) {
+                            false
+                        } else if (!studentInClass.isParentLinked) {
+                            false
+                        } else if (userEmail.isNotBlank() && userEmail != "veli@biriz.app") {
+                            studentInClass.parentEmail?.trim().equals(userEmail, ignoreCase = true) ||
+                                    studentInClass.allLinkedParents.any { it.email.trim().equals(userEmail, ignoreCase = true) }
+                        } else {
+                            true
+                        }
+                    }
+
+                    if (stillValidIds.size != state.linkedParentStudentIds.size) {
+                        val nextActive = if (state.activeParentStudentId in stillValidIds) {
+                            state.activeParentStudentId
+                        } else {
+                            stillValidIds.firstOrNull()
+                        }
+                        _uiState.value = state.copy(
+                            linkedParentStudentIds = stillValidIds,
+                            activeParentStudentId = nextActive,
+                            snackbarMessage = "ℹ️ Öğretmen tarafından öğrenci-veli bağlantısı sonlandırıldı."
+                        )
+                        saveParentSessionState()
+                    }
+                }
+            }
+        }
+
         refreshCurrentUser()
         startPeriodicUpdateChecker()
+    }
+
+    fun updateParentPresence(isOnline: Boolean) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.PARENT && isOnline) return
+        val linkedIds = state.linkedParentStudentIds
+        if (linkedIds.isEmpty()) return
+        val classId = resolveActiveClassId()
+        val email = state.currentUser.email.ifBlank { "veli@biriz.app" }
+        val name = state.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
+        viewModelScope.launch {
+            repository.updateParentPresence(
+                classroomId = classId,
+                studentIds = linkedIds,
+                parentEmail = email,
+                parentName = name,
+                isOnline = isOnline
+            )
+        }
     }
 
     private fun saveParentSessionState() {
@@ -805,7 +863,7 @@ class BirizViewModel(
             isTestMode = true,
             activeClassRoom = defaultClass,
             currentScreen = ScreenState.TEACHER_DASHBOARD,
-            currentSubPage = DashboardSubPage.SINIF_LISTESI,
+            currentSubPage = DashboardSubPage.ANA_SAYFA,
             snackbarMessage = "Önizleme Test Modu: 4/D Sınıfı (25 Öğrenci) hazır yüklendi."
         )
     }
@@ -868,7 +926,7 @@ class BirizViewModel(
                         currentRole = UserRole.TEACHER,
                         isKvkkAccepted = true,
                         currentScreen = ScreenState.TEACHER_DASHBOARD,
-                        currentSubPage = DashboardSubPage.SINIF_LISTESI
+                        currentSubPage = DashboardSubPage.ANA_SAYFA
                     )
                     saveParentSessionState()
 
@@ -881,9 +939,6 @@ class BirizViewModel(
                 }
 
                 // 2. Veli Rolü veya Öğrenci Bağlantısı Kontrolü
-                // Veli her girişinde (mailine tıkladığında) daha önce veli olarak tanımlandıysa
-                // veya sisteme kayıtlı öğrencisi varsa ASLA rol seçme ekranı (ROLE_AND_KVKK) gösterilmez,
-                // doğrudan Veli Portalı ana ekranına (PARENT_PORTAL) yönlendirilir.
                 val prefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
                 val savedRole = prefs?.getString("key_saved_role", "") ?: ""
                 val savedLinkedIdsStr = prefs?.getString("key_linked_student_ids", "") ?: ""
@@ -900,10 +955,21 @@ class BirizViewModel(
                 val hasParentLinkedStudents = parentLinkedMatches.isNotEmpty()
 
                 if (isProfileParent || hasLocalParentRole || hasLocalLinkedStudents || hasParentLinkedStudents) {
-                    val combinedLinkedStudentIds = (_uiState.value.linkedParentStudentIds + savedLinkedIds + parentLinkedMatches.map { it.first.id })
-                        .distinct()
-                    val activeStudentId = _uiState.value.activeParentStudentId
-                        ?: combinedLinkedStudentIds.firstOrNull()
+                    val combinedLinkedStudentIds = if (hasParentLinkedStudents) {
+                        parentLinkedMatches.map { it.first.id }.distinct()
+                    } else {
+                        (_uiState.value.linkedParentStudentIds + savedLinkedIds)
+                            .distinct()
+                            .filter { id ->
+                                val s = repository.students.value.find { it.id == id }
+                                s == null || s.isParentLinked
+                            }
+                    }
+                    val activeStudentId = if (_uiState.value.activeParentStudentId in combinedLinkedStudentIds) {
+                        _uiState.value.activeParentStudentId
+                    } else {
+                        combinedLinkedStudentIds.firstOrNull()
+                    }
                     val parentClass = parentLinkedMatches.firstOrNull()?.second
                         ?: _uiState.value.activeClassRoom
                         ?: repository.defaultSampleClass
@@ -918,10 +984,12 @@ class BirizViewModel(
                     loadCommunicationFromStorage(parentClass.id)
 
                     if (combinedLinkedStudentIds.isNotEmpty()) {
-                        repository.syncLinkedStudentsWithParent(
-                            linkedStudentIds = combinedLinkedStudentIds,
+                        repository.updateParentPresence(
+                            classroomId = parentClass.id,
+                            studentIds = combinedLinkedStudentIds,
                             parentEmail = userEmail,
-                            parentName = name
+                            parentName = name,
+                            isOnline = true
                         )
                     }
 
@@ -1053,7 +1121,7 @@ class BirizViewModel(
             _uiState.value = _uiState.value.copy(
                 currentRole = UserRole.TEACHER,
                 currentScreen = ScreenState.TEACHER_DASHBOARD,
-                currentSubPage = DashboardSubPage.SINIF_LISTESI
+                currentSubPage = DashboardSubPage.ANA_SAYFA
             )
             return
         }
@@ -1362,7 +1430,7 @@ class BirizViewModel(
                     activeClassRoom = createdClass,
                     currentRole = UserRole.TEACHER,
                     currentScreen = ScreenState.SETUP_SUCCESS,
-                    currentSubPage = DashboardSubPage.SINIF_LISTESI,
+                    currentSubPage = DashboardSubPage.ANA_SAYFA,
                     conflictError = null,
                     occupiedClassRoom = null
                 )
@@ -1396,27 +1464,31 @@ class BirizViewModel(
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.TEACHER,
             currentScreen = ScreenState.TEACHER_DASHBOARD,
-            currentSubPage = DashboardSubPage.SINIF_LISTESI
+            currentSubPage = DashboardSubPage.ANA_SAYFA
         )
         saveParentSessionState()
     }
 
     fun selectSubPage(subPage: DashboardSubPage) {
         val activeClassId = resolveActiveClassId()
-        if (subPage == DashboardSubPage.DERS_PROGRAMI) {
+        if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.DERS_PROGRAMI) {
             loadScheduleFromStorage(activeClassId)
         }
-        if (subPage == DashboardSubPage.OTURMA_PLANI) {
+        if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.OTURMA_PLANI) {
             loadSeatingPlanFromStorage(activeClassId)
         }
-        if (subPage == DashboardSubPage.GRUP_OLUSTURMA) {
+        if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.GRUP_OLUSTURMA) {
             loadGroupMakerFromStorage(activeClassId)
         }
-        if (subPage == DashboardSubPage.ILETISIM_DUYURULAR || subPage == DashboardSubPage.ILETISIM_MESAJLAR) {
+        if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.ILETISIM_DUYURULAR || subPage == DashboardSubPage.ILETISIM_MESAJLAR) {
             loadCommunicationFromStorage(activeClassId)
         }
 
-        if (subPage == DashboardSubPage.SINIF_LISTESI || subPage == DashboardSubPage.PROFIL_AYARLARI || subPage.category == "ÖĞRETMEN ODASI") {
+        if (subPage == DashboardSubPage.ANA_SAYFA ||
+            subPage == DashboardSubPage.SINIF_LISTESI ||
+            subPage == DashboardSubPage.PROFIL_AYARLARI ||
+            subPage.category == "ÖĞRETMEN ODASI"
+        ) {
             _uiState.value = _uiState.value.copy(currentSubPage = subPage)
             return
         }
@@ -2354,8 +2426,27 @@ class BirizViewModel(
     }
 
     fun signOut(context: android.content.Context? = null) {
+        val prevState = _uiState.value
+        if (prevState.currentRole == UserRole.PARENT && prevState.linkedParentStudentIds.isNotEmpty()) {
+            val cid = resolveActiveClassId()
+            val email = prevState.currentUser.email.ifBlank { "veli@biriz.app" }
+            val name = prevState.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
+            viewModelScope.launch {
+                try {
+                    repository.updateParentPresence(
+                        classroomId = cid,
+                        studentIds = prevState.linkedParentStudentIds,
+                        parentEmail = email,
+                        parentName = name,
+                        isOnline = false
+                    )
+                } catch (_: Exception) {}
+                Firebase.auth.signOut()
+            }
+        } else {
+            Firebase.auth.signOut()
+        }
         disconnectSmartBoard()
-        Firebase.auth.signOut()
         repository.disableTestMode()
         context?.let { ctx ->
             viewModelScope.launch {

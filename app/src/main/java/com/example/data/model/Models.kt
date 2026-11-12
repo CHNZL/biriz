@@ -50,7 +50,9 @@ data class LinkedParentAccount(
     val phone: String = "",
     val relationship: String = "Veli", // "Anne", "Baba", "Veli"
     val linkedAt: String = "Bağlandı",
-    val lastLoginAt: String? = null
+    val lastLoginAt: String? = null,
+    val isOnline: Boolean = false,
+    val lastActiveMillis: Long? = null
 )
 
 data class Student(
@@ -66,6 +68,8 @@ data class Student(
     val parentEmail: String? = null,
     val parentLinkedAt: String? = null,
     val parentLastLoginAt: String? = null,
+    val parentIsOnline: Boolean = false,
+    val parentLastActiveMillis: Long? = null,
     val linkedParents: List<LinkedParentAccount> = emptyList()
 ) {
     val allLinkedParents: List<LinkedParentAccount> get() {
@@ -78,7 +82,9 @@ data class Student(
                     email = parentEmail ?: "veli@biriz.app",
                     name = parentName ?: "Öğrenci Velisi",
                     linkedAt = parentLinkedAt ?: "Bağlandı",
-                    lastLoginAt = parentLastLoginAt
+                    lastLoginAt = parentLastLoginAt,
+                    isOnline = parentIsOnline,
+                    lastActiveMillis = parentLastActiveMillis
                 )
             )
         }
@@ -86,6 +92,36 @@ data class Student(
     }
 
     val isParentLinked: Boolean get() = allLinkedParents.isNotEmpty()
+
+    /**
+     * Velinin şu an sistemde gerçekten aktif olup olmadığını döndürür.
+     * Veli ekranı açıkken periyodik (25 sn) canlı kalp atışı (heartbeat) gönderir ve
+     * uygulamadan çıktığında anında parentIsOnline = false yazar.
+     */
+    fun isParentCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (!isParentLinked) return false
+        val primary = allLinkedParents.firstOrNull()
+        val onlineFlag = primary?.isOnline ?: parentIsOnline
+        val activeTs = primary?.lastActiveMillis ?: parentLastActiveMillis
+        return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..75_000L
+    }
+
+    /**
+     * Velinin gerçek son giriş tarih ve saatini döndürür (sanal veri üretmez).
+     */
+    fun resolvedParentLastLoginDisplay(): String {
+        val primary = allLinkedParents.firstOrNull()
+        val activeTs = primary?.lastActiveMillis ?: parentLastActiveMillis
+        if (activeTs != null && activeTs > 0L) {
+            return java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
+                .format(java.util.Date(activeTs))
+        }
+        val rawLogin = primary?.lastLoginAt ?: parentLastLoginAt
+        if (!rawLogin.isNullOrBlank()) return rawLogin
+        val rawLinked = primary?.linkedAt ?: parentLinkedAt
+        if (!rawLinked.isNullOrBlank()) return rawLinked
+        return "Henüz giriş kaydı yok"
+    }
 }
 
 data class BranchStatus(

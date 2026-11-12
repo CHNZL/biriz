@@ -190,7 +190,7 @@ class ClassRegistryRepository(
             parentName = "Ahmet Kavakoğlu",
             parentEmail = "ahmet.kav@gmail.com",
             parentLinkedAt = "12 Ekim 2026, 14:20",
-            parentLastLoginAt = "Bugün, 09:15",
+            parentLastLoginAt = "12 Ekim 2026, 14:20",
             linkedParents = listOf(
                 LinkedParentAccount(
                     email = "ahmet.kav@gmail.com",
@@ -198,7 +198,7 @@ class ClassRegistryRepository(
                     phone = "0532 111 22 33",
                     relationship = "Baba",
                     linkedAt = "12 Ekim 2026, 14:20",
-                    lastLoginAt = "Bugün, 09:15"
+                    lastLoginAt = "12 Ekim 2026, 14:20"
                 ),
                 LinkedParentAccount(
                     email = "zeynep.kav@gmail.com",
@@ -206,7 +206,7 @@ class ClassRegistryRepository(
                     phone = "0533 222 33 44",
                     relationship = "Anne",
                     linkedAt = "14 Ekim 2026, 11:05",
-                    lastLoginAt = "Dün, 18:40"
+                    lastLoginAt = "14 Ekim 2026, 11:05"
                 )
             )
         ),
@@ -222,7 +222,7 @@ class ClassRegistryRepository(
             parentName = "Fatma Özdemir",
             parentEmail = "fatma.ozdemir@gmail.com",
             parentLinkedAt = "18 Ekim 2026, 10:00",
-            parentLastLoginAt = "Bugün, 08:30",
+            parentLastLoginAt = "18 Ekim 2026, 10:00",
             linkedParents = listOf(
                 LinkedParentAccount(
                     email = "fatma.ozdemir@gmail.com",
@@ -230,7 +230,7 @@ class ClassRegistryRepository(
                     phone = "0555 333 44 55",
                     relationship = "Anne",
                     linkedAt = "18 Ekim 2026, 10:00",
-                    lastLoginAt = "Bugün, 08:30"
+                    lastLoginAt = "18 Ekim 2026, 10:00"
                 )
             )
         ),
@@ -269,8 +269,9 @@ class ClassRegistryRepository(
             code == normTarget || no == normTarget || id == normTarget
         } ?: return null
 
-        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
-        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val nowMillis = System.currentTimeMillis()
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date(nowMillis))
+        val lastLoginStr = todayStr
         val finalEmail = currentUserEmail.ifBlank { "veli@biriz.app" }
         val finalName = currentUserFullName.ifBlank { "Öğrenci Velisi" }
 
@@ -280,7 +281,9 @@ class ClassRegistryRepository(
             phone = "",
             relationship = "Veli",
             linkedAt = todayStr,
-            lastLoginAt = lastLoginStr
+            lastLoginAt = lastLoginStr,
+            isOnline = true,
+            lastActiveMillis = nowMillis
         )
         val updatedParents = listOf(newParentAccount) + match.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
         val updatedStudent = match.copy(
@@ -288,6 +291,8 @@ class ClassRegistryRepository(
             parentEmail = finalEmail,
             parentLinkedAt = todayStr,
             parentLastLoginAt = lastLoginStr,
+            parentIsOnline = true,
+            parentLastActiveMillis = nowMillis,
             linkedParents = updatedParents
         )
         _students.value = _students.value.map { if (it.id == updatedStudent.id) updatedStudent else it }
@@ -303,8 +308,9 @@ class ClassRegistryRepository(
         parentName: String = "Öğrenci Velisi"
     ) {
         if (linkedStudentIds.isEmpty()) return
-        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
-        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val nowMillis = System.currentTimeMillis()
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date(nowMillis))
+        val lastLoginStr = todayStr
         val finalEmail = parentEmail.ifBlank { "veli@biriz.app" }
         val finalName = parentName.ifBlank { "Öğrenci Velisi" }
 
@@ -314,7 +320,9 @@ class ClassRegistryRepository(
             phone = "",
             relationship = "Veli",
             linkedAt = todayStr,
-            lastLoginAt = lastLoginStr
+            lastLoginAt = lastLoginStr,
+            isOnline = true,
+            lastActiveMillis = nowMillis
         )
 
         _students.value = _students.value.map { s ->
@@ -327,6 +335,8 @@ class ClassRegistryRepository(
                         parentEmail = s.parentEmail ?: finalEmail,
                         parentLinkedAt = s.parentLinkedAt ?: todayStr,
                         parentLastLoginAt = lastLoginStr,
+                        parentIsOnline = true,
+                        parentLastActiveMillis = nowMillis,
                         linkedParents = updatedParents
                     )
                 } else s
@@ -342,8 +352,9 @@ class ClassRegistryRepository(
         val normTarget = TurkishTextHelper.normalizeVeliKatilimKodu(sanitizedCode)
         if (normTarget.isBlank()) return null
 
-        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
-        val lastLoginStr = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
+        val nowMillis = System.currentTimeMillis()
+        val todayStr = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date(nowMillis))
+        val lastLoginStr = todayStr
         val finalEmail = currentUserEmail.ifBlank { "veli@biriz.app" }
         val finalName = currentUserFullName.ifBlank { "Öğrenci Velisi" }
 
@@ -353,7 +364,9 @@ class ClassRegistryRepository(
             phone = "",
             relationship = "Veli",
             linkedAt = todayStr,
-            lastLoginAt = lastLoginStr
+            lastLoginAt = lastLoginStr,
+            isOnline = true,
+            lastActiveMillis = nowMillis
         )
 
         // 1. Önce hafızadaki öğrencilerden kontrol et (eğer sınıf zaten yüklüyse)
@@ -371,6 +384,8 @@ class ClassRegistryRepository(
                 parentEmail = finalEmail,
                 parentLinkedAt = todayStr,
                 parentLastLoginAt = lastLoginStr,
+                parentIsOnline = true,
+                parentLastActiveMillis = nowMillis,
                 linkedParents = updatedParents
             )
 
@@ -388,6 +403,8 @@ class ClassRegistryRepository(
                         "parentName" to finalName,
                         "parentLinkedAt" to todayStr,
                         "parentLastLoginAt" to lastLoginStr,
+                        "parentIsOnline" to true,
+                        "parentLastActiveMillis" to nowMillis,
                         "linkedParents" to updatedParents.map { p ->
                             mapOf(
                                 "email" to p.email,
@@ -395,7 +412,9 @@ class ClassRegistryRepository(
                                 "phone" to p.phone,
                                 "relationship" to p.relationship,
                                 "linkedAt" to p.linkedAt,
-                                "lastLoginAt" to p.lastLoginAt
+                                "lastLoginAt" to p.lastLoginAt,
+                                "isOnline" to p.isOnline,
+                                "lastActiveMillis" to p.lastActiveMillis
                             )
                         },
                         "updatedAt" to FieldValue.serverTimestamp()
@@ -440,6 +459,8 @@ class ClassRegistryRepository(
                                 "parentName" to finalName,
                                 "parentLinkedAt" to todayStr,
                                 "parentLastLoginAt" to lastLoginStr,
+                                "parentIsOnline" to true,
+                                "parentLastActiveMillis" to nowMillis,
                                 "linkedParents" to updatedParents.map { p ->
                                     mapOf(
                                         "email" to p.email,
@@ -447,7 +468,9 @@ class ClassRegistryRepository(
                                         "phone" to p.phone,
                                         "relationship" to p.relationship,
                                         "linkedAt" to p.linkedAt,
-                                        "lastLoginAt" to p.lastLoginAt
+                                        "lastLoginAt" to p.lastLoginAt,
+                                        "isOnline" to p.isOnline,
+                                        "lastActiveMillis" to p.lastActiveMillis
                                     )
                                 },
                                 "updatedAt" to FieldValue.serverTimestamp()
@@ -479,6 +502,8 @@ class ClassRegistryRepository(
                                 parentEmail = finalEmail,
                                 parentLinkedAt = todayStr,
                                 parentLastLoginAt = lastLoginStr,
+                                parentIsOnline = true,
+                                parentLastActiveMillis = nowMillis,
                                 linkedParents = updatedParents
                             )
 
@@ -734,19 +759,25 @@ class ClassRegistryRepository(
                         val parentEmail = doc.getString("parentEmail")
                         val parentLinkedAt = doc.getString("parentLinkedAt")
                         val parentLastLoginAt = doc.getString("parentLastLoginAt")
+                        val parentIsOnline = doc.getBoolean("parentIsOnline") ?: false
+                        val parentLastActiveMillis = doc.getLong("parentLastActiveMillis")
                         @Suppress("UNCHECKED_CAST")
                         val rawLinkedParents = doc.get("linkedParents") as? List<Map<String, Any?>>
                         val parsedLinked = rawLinkedParents?.mapNotNull { map ->
                             val e = map["email"] as? String
                             val n = map["name"] as? String
                             if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
+                                val pOnline = (map["isOnline"] as? Boolean) ?: parentIsOnline
+                                val pActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong() ?: parentLastActiveMillis
                                 LinkedParentAccount(
                                     email = e,
                                     name = n,
                                     phone = (map["phone"] as? String) ?: "",
                                     relationship = (map["relationship"] as? String) ?: "Veli",
                                     linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
-                                    lastLoginAt = map["lastLoginAt"] as? String
+                                    lastLoginAt = map["lastLoginAt"] as? String,
+                                    isOnline = pOnline,
+                                    lastActiveMillis = pActiveMillis
                                 )
                             } else null
                         } ?: emptyList()
@@ -761,6 +792,8 @@ class ClassRegistryRepository(
                             parentEmail = parentEmail,
                             parentLinkedAt = parentLinkedAt,
                             parentLastLoginAt = parentLastLoginAt,
+                            parentIsOnline = parentIsOnline,
+                            parentLastActiveMillis = parentLastActiveMillis,
                             linkedParents = parsedLinked
                         )
                     }.sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
@@ -921,30 +954,81 @@ class ClassRegistryRepository(
         parentLinkedAt: String? = null,
         parentLastLoginAt: String? = null
     ) {
-        if (Firebase.auth.currentUser != null) {
+        val isDisconnecting = parentName == null && parentEmail == null
+        val nowMillis = System.currentTimeMillis()
+        if (isFirebaseAuthAvailable) {
             val studentRef = db.collection("classrooms").document(classroomId).collection("students").document(studentId)
-            val updates = mutableMapOf<String, Any?>(
-                "parentName" to parentName,
-                "parentEmail" to parentEmail,
-                "parentLinkedAt" to parentLinkedAt,
-                "parentLastLoginAt" to parentLastLoginAt,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
+            val updates = if (isDisconnecting) {
+                mutableMapOf<String, Any?>(
+                    "parentName" to null,
+                    "parentEmail" to null,
+                    "parentLinkedAt" to null,
+                    "parentLastLoginAt" to null,
+                    "parentIsOnline" to false,
+                    "parentLastActiveMillis" to null,
+                    "linkedParents" to emptyList<Any>(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            } else {
+                mutableMapOf<String, Any?>(
+                    "parentName" to parentName,
+                    "parentEmail" to parentEmail,
+                    "parentLinkedAt" to parentLinkedAt,
+                    "parentLastLoginAt" to parentLastLoginAt,
+                    "parentIsOnline" to true,
+                    "parentLastActiveMillis" to nowMillis,
+                    "linkedParents" to listOf(
+                        mapOf(
+                            "email" to (parentEmail ?: ""),
+                            "name" to (parentName ?: ""),
+                            "phone" to "",
+                            "relationship" to "Veli",
+                            "linkedAt" to (parentLinkedAt ?: ""),
+                            "lastLoginAt" to parentLastLoginAt,
+                            "isOnline" to true,
+                            "lastActiveMillis" to nowMillis
+                        )
+                    ),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            }
             try {
                 studentRef.update(updates).await()
             } catch (e: Exception) {
                 handleFirestoreError(e, OperationType.UPDATE, studentRef.path)
-                throw e
             }
         }
         _students.value = _students.value.map { current ->
             if (current.id == studentId) {
-                current.copy(
-                    parentName = parentName,
-                    parentEmail = parentEmail,
-                    parentLinkedAt = parentLinkedAt,
-                    parentLastLoginAt = parentLastLoginAt
-                )
+                if (isDisconnecting) {
+                    current.copy(
+                        parentName = null,
+                        parentEmail = null,
+                        parentLinkedAt = null,
+                        parentLastLoginAt = null,
+                        parentIsOnline = false,
+                        parentLastActiveMillis = null,
+                        linkedParents = emptyList()
+                    )
+                } else {
+                    val newAccount = LinkedParentAccount(
+                        email = parentEmail ?: "veli@biriz.app",
+                        name = parentName ?: "Öğrenci Velisi",
+                        linkedAt = parentLinkedAt ?: "Bağlandı",
+                        lastLoginAt = parentLastLoginAt,
+                        isOnline = true,
+                        lastActiveMillis = nowMillis
+                    )
+                    current.copy(
+                        parentName = parentName,
+                        parentEmail = parentEmail,
+                        parentLinkedAt = parentLinkedAt,
+                        parentLastLoginAt = parentLastLoginAt,
+                        parentIsOnline = true,
+                        parentLastActiveMillis = nowMillis,
+                        linkedParents = listOf(newAccount)
+                    )
+                }
             } else current
         }
     }
@@ -954,19 +1038,21 @@ class ClassRegistryRepository(
         studentId: String,
         parentEmail: String
     ) {
-        if (Firebase.auth.currentUser != null) {
+        if (isFirebaseAuthAvailable) {
+            val disconnectPayload = mapOf<String, Any?>(
+                "parentName" to null,
+                "parentEmail" to null,
+                "parentLinkedAt" to null,
+                "parentLastLoginAt" to null,
+                "parentIsOnline" to false,
+                "parentLastActiveMillis" to null,
+                "linkedParents" to emptyList<Any>(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
             try {
                 if (!classroomId.isNullOrBlank()) {
                     val studentRef = db.collection("classrooms").document(classroomId).collection("students").document(studentId)
-                    studentRef.update(
-                        mapOf(
-                            "parentName" to null,
-                            "parentEmail" to null,
-                            "parentLinkedAt" to null,
-                            "parentLastLoginAt" to null,
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        )
-                    ).await()
+                    studentRef.update(disconnectPayload).await()
                 } else {
                     val classSnap = db.collection("classrooms").get().await()
                     for (cDoc in classSnap.documents) {
@@ -974,15 +1060,7 @@ class ClassRegistryRepository(
                             .collection("students").document(studentId)
                         val sDoc = studentRef.get().await()
                         if (sDoc.exists()) {
-                            studentRef.update(
-                                mapOf(
-                                    "parentName" to null,
-                                    "parentEmail" to null,
-                                    "parentLinkedAt" to null,
-                                    "parentLastLoginAt" to null,
-                                    "updatedAt" to FieldValue.serverTimestamp()
-                                )
-                            ).await()
+                            studentRef.update(disconnectPayload).await()
                             break
                         }
                     }
@@ -996,9 +1074,85 @@ class ClassRegistryRepository(
                     parentEmail = null,
                     parentLinkedAt = null,
                     parentLastLoginAt = null,
-                    linkedParents = current.linkedParents.filter { it.email != parentEmail }
+                    parentIsOnline = false,
+                    parentLastActiveMillis = null,
+                    linkedParents = emptyList()
                 )
             } else current
+        }
+    }
+
+    suspend fun updateParentPresence(
+        classroomId: String?,
+        studentIds: List<String>,
+        parentEmail: String,
+        parentName: String,
+        isOnline: Boolean
+    ) {
+        if (studentIds.isEmpty()) return
+        val nowMillis = System.currentTimeMillis()
+        val nowFormatted = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
+            .format(java.util.Date(nowMillis))
+        val cleanEmail = parentEmail.trim().ifBlank { "veli@biriz.app" }
+
+        // 1. Update local _students StateFlow immediately
+        _students.value = _students.value.map { current ->
+            if (current.id in studentIds && current.isParentLinked) {
+                val updatedLinked = current.allLinkedParents.map { p ->
+                    if (p.email.equals(cleanEmail, ignoreCase = true) || current.allLinkedParents.size == 1) {
+                        p.copy(
+                            lastLoginAt = nowFormatted,
+                            isOnline = isOnline,
+                            lastActiveMillis = nowMillis
+                        )
+                    } else p
+                }
+                current.copy(
+                    parentLastLoginAt = nowFormatted,
+                    parentIsOnline = isOnline,
+                    parentLastActiveMillis = nowMillis,
+                    linkedParents = updatedLinked
+                )
+            } else current
+        }
+
+        // 2. Sync to Firestore so Teacher sees real-time active/offline & exact last login timestamp
+        if (isFirebaseAuthAvailable && !classroomId.isNullOrBlank() && classroomId != "default") {
+            for (sId in studentIds) {
+                try {
+                    val sRef = db.collection("classrooms").document(classroomId).collection("students").document(sId)
+                    val sSnap = sRef.get().await()
+                    if (!sSnap.exists()) continue
+
+                    val currentParentEmail = sSnap.getString("parentEmail")
+                    @Suppress("UNCHECKED_CAST")
+                    val rawLinked = sSnap.get("linkedParents") as? List<Map<String, Any?>>
+                    // Sadece gerçekten bağlıysa güncelle (öğretmen bağlantıyı kopardıysa tekrar yazma!)
+                    if (currentParentEmail.isNullOrBlank() && rawLinked.isNullOrEmpty()) continue
+
+                    val updatedRawLinked = rawLinked?.map { map ->
+                        val e = (map["email"] as? String) ?: ""
+                        if (e.equals(cleanEmail, ignoreCase = true) || rawLinked.size == 1) {
+                            map.toMutableMap().apply {
+                                put("lastLoginAt", nowFormatted)
+                                put("isOnline", isOnline)
+                                put("lastActiveMillis", nowMillis)
+                            }
+                        } else map
+                    }
+
+                    val updates = mutableMapOf<String, Any?>(
+                        "parentLastLoginAt" to nowFormatted,
+                        "parentIsOnline" to isOnline,
+                        "parentLastActiveMillis" to nowMillis,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    if (updatedRawLinked != null) {
+                        updates["linkedParents"] = updatedRawLinked
+                    }
+                    sRef.update(updates).await()
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -1417,6 +1571,8 @@ class ClassRegistryRepository(
                             val pName = sDoc.getString("parentName")
                             val pLinkedAt = sDoc.getString("parentLinkedAt")
                             val pLastLoginAt = sDoc.getString("parentLastLoginAt")
+                            val pIsOnline = sDoc.getBoolean("parentIsOnline") ?: false
+                            val pLastActiveMillis = sDoc.getLong("parentLastActiveMillis")
 
                             val parsedLinked = rawLinked?.mapNotNull { map ->
                                 val e = map["email"] as? String
@@ -1428,7 +1584,9 @@ class ClassRegistryRepository(
                                         phone = (map["phone"] as? String) ?: "",
                                         relationship = (map["relationship"] as? String) ?: "Veli",
                                         linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
-                                        lastLoginAt = map["lastLoginAt"] as? String
+                                        lastLoginAt = map["lastLoginAt"] as? String,
+                                        isOnline = (map["isOnline"] as? Boolean) ?: pIsOnline,
+                                        lastActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong() ?: pLastActiveMillis
                                     )
                                 } else null
                             } ?: emptyList()
@@ -1443,6 +1601,8 @@ class ClassRegistryRepository(
                                 parentEmail = sParentEmail,
                                 parentLinkedAt = pLinkedAt,
                                 parentLastLoginAt = pLastLoginAt,
+                                parentIsOnline = pIsOnline,
+                                parentLastActiveMillis = pLastActiveMillis,
                                 linkedParents = parsedLinked
                             )
 

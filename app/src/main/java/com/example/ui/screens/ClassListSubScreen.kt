@@ -1475,13 +1475,14 @@ fun ClassListSubScreen(
             },
             onSimulateOrUpdateParent = { name, email ->
                 val nowTime = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr")).format(java.util.Date())
-                val lastLogin = "Bugün, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale("tr")).format(java.util.Date())
-                onUpdateParentInfo?.invoke(student.id, name, email, nowTime, lastLogin)
+                onUpdateParentInfo?.invoke(student.id, name, email, nowTime, nowTime)
                 selectedStudentForDetail = student.copy(
                     parentName = name,
                     parentEmail = email,
                     parentLinkedAt = nowTime,
-                    parentLastLoginAt = lastLogin
+                    parentLastLoginAt = nowTime,
+                    parentIsOnline = true,
+                    parentLastActiveMillis = System.currentTimeMillis()
                 )
                 Toast.makeText(context, "$name sisteme başarıyla bağlandı.", Toast.LENGTH_SHORT).show()
             },
@@ -1491,9 +1492,12 @@ fun ClassListSubScreen(
                     parentName = null,
                     parentEmail = null,
                     parentLinkedAt = null,
-                    parentLastLoginAt = null
+                    parentLastLoginAt = null,
+                    parentIsOnline = false,
+                    parentLastActiveMillis = null,
+                    linkedParents = emptyList()
                 )
-                Toast.makeText(context, "Veli bağlantısı kaldırıldı.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "${student.fullName} veli bağlantısı kaldırıldı.", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -2123,6 +2127,84 @@ fun StudentDetailDialog(
 
                 // --- VELİ BİLGİ ALANI: BAĞLI VELİ MEVCUTSA BİLGİLER, DEĞİLSE KATILIM KODU ---
                 if (student.isParentLinked) {
+                    val nowMillis by androidx.compose.runtime.produceState(initialValue = System.currentTimeMillis()) {
+                        while (true) {
+                            kotlinx.coroutines.delay(10_000L)
+                            value = System.currentTimeMillis()
+                        }
+                    }
+                    var showDisconnectConfirmDialog by remember { mutableStateOf(false) }
+
+                    val primaryParent = student.allLinkedParents.firstOrNull()
+                    val displayParentName = primaryParent?.name ?: student.parentName ?: "Belirtilmemiş"
+                    val displayParentEmail = primaryParent?.email ?: student.parentEmail ?: "Belirtilmemiş"
+                    val displayLinkedAt = primaryParent?.linkedAt ?: student.parentLinkedAt ?: "Belirtilmemiş"
+                    val displayLastLoginAt = student.resolvedParentLastLoginDisplay()
+                    val isParentActiveNow = student.isParentCurrentlyActive(nowMillis)
+
+                    if (showDisconnectConfirmDialog) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showDisconnectConfirmDialog = false },
+                            containerColor = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.LinkOff,
+                                    contentDescription = null,
+                                    tint = BirizError,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            },
+                            title = {
+                                Text(
+                                    text = "Veli Bağlantısını Kaldır",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 17.sp,
+                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = "${student.fullName} adlı öğrencimiz ile velisi ($displayParentName) arasındaki bağlantıyı kesmek istediğinize emin misiniz?\n\nEvet dediğiniz anda velinin öğrenciye erişimi anında sonlandırılacaktır.",
+                                    fontSize = 13.5.sp,
+                                    lineHeight = 19.sp,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showDisconnectConfirmDialog = false
+                                        onDisconnectParent?.invoke()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = BirizError,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.testTag("btn_confirm_disconnect_parent_yes")
+                                ) {
+                                    Text(
+                                        text = "Evet, Bağlantıyı Kes",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(
+                                    onClick = { showDisconnectConfirmDialog = false },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.testTag("btn_confirm_disconnect_parent_no")
+                                ) {
+                                    Text(
+                                        text = "Hayır",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                    )
+                                }
+                            }
+                        )
+                    }
+
                     // 1. BAĞLI VELİ BİLGİLERİ KARTI
                     Surface(
                         shape = RoundedCornerShape(16.dp),
@@ -2135,7 +2217,7 @@ fun StudentDetailDialog(
                                 .fillMaxWidth()
                                 .padding(14.dp)
                         ) {
-                            // Üst Başlık & Aktif Rozeti
+                            // Üst Başlık & Canlı Aktif / Son Giriş Rozeti
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2167,25 +2249,39 @@ fun StudentDetailDialog(
 
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = if (isDarkTheme) Color(0x4010B981) else Color(0xFFDCFCE7)
+                                    color = if (isParentActiveNow) {
+                                        if (isDarkTheme) Color(0x4010B981) else Color(0xFFDCFCE7)
+                                    } else {
+                                        if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0)
+                                    },
+                                    border = BorderStroke(
+                                        0.8.dp,
+                                        if (isParentActiveNow) {
+                                            Color(0xFF10B981).copy(alpha = 0.5f)
+                                        } else {
+                                            if (isDarkTheme) Color(0x5064748B) else Color(0xFFCBD5E1)
+                                        }
+                                    )
                                 ) {
                                     Text(
-                                        text = "● Sistemde Aktif",
-                                        fontSize = 10.sp,
+                                        text = if (isParentActiveNow) {
+                                            "● Aktif"
+                                        } else {
+                                            "Son Giriş: $displayLastLoginAt"
+                                        },
+                                        fontSize = 9.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isDarkTheme) Color(0xFF34D399) else Color(0xFF15803D),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = if (isParentActiveNow) {
+                                            if (isDarkTheme) Color(0xFF34D399) else Color(0xFF15803D)
+                                        } else {
+                                            if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF334155)
+                                        },
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                     )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-
-                            val primaryParent = student.allLinkedParents.firstOrNull()
-                            val displayParentName = primaryParent?.name ?: student.parentName ?: "Belirtilmemiş"
-                            val displayParentEmail = primaryParent?.email ?: student.parentEmail ?: "Belirtilmemiş"
-                            val displayLinkedAt = primaryParent?.linkedAt ?: student.parentLinkedAt ?: "Belirtilmemiş"
-                            val displayLastLoginAt = primaryParent?.lastLoginAt ?: student.parentLastLoginAt ?: "Giriş bilgisi bulunmuyor"
 
                             // 1. Veli Ad Soyad
                             ParentDetailRowItem(
@@ -2229,7 +2325,7 @@ fun StudentDetailDialog(
                             ParentDetailRowItem(
                                 icon = Icons.Default.AccessTime,
                                 label = "Sisteme Son Giriş",
-                                value = displayLastLoginAt,
+                                value = if (isParentActiveNow) "Şu An Sistemde Aktif ($displayLastLoginAt)" else displayLastLoginAt,
                                 isDarkTheme = isDarkTheme,
                                 valueHighlight = true
                             )
@@ -2279,31 +2375,33 @@ fun StudentDetailDialog(
 
                             // Veli Bağlantısını Kaldır Butonu
                             if (onDisconnectParent != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.End
                                 ) {
                                     Surface(
-                                        onClick = onDisconnectParent,
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = Color.Transparent
+                                        onClick = { showDisconnectConfirmDialog = true },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isDarkTheme) Color(0x25EF4444) else Color(0xFFFEF2F2),
+                                        border = BorderStroke(1.dp, BirizError.copy(alpha = 0.5f)),
+                                        modifier = Modifier.testTag("btn_disconnect_parent")
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.LinkOff,
-                                                contentDescription = null,
+                                                contentDescription = "Bağlantıyı Kaldır",
                                                 tint = BirizError,
-                                                modifier = Modifier.size(13.dp)
+                                                modifier = Modifier.size(14.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(5.dp))
                                             Text(
                                                 text = "Bağlantıyı Kaldır",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold,
                                                 color = BirizError
                                             )
                                         }

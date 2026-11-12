@@ -237,6 +237,7 @@ fun TeacherDashboardScreen(
     }
 
     val selectedDockId = when (currentSubPage) {
+        DashboardSubPage.ANA_SAYFA,
         DashboardSubPage.SINIF_LISTESI,
         DashboardSubPage.DERS_PROGRAMI,
         DashboardSubPage.OTURMA_PLANI -> "SINIF"
@@ -320,7 +321,7 @@ fun TeacherDashboardScreen(
                                     onCloseSeatingConfig()
                                     onCloseGroupWizard()
                                     onCloseGroupSwapModal()
-                                    onSelectSubPage(DashboardSubPage.SINIF_LISTESI)
+                                    onSelectSubPage(DashboardSubPage.ANA_SAYFA)
                                 }
                                 .testTag("teacher_header_home_logo")
                         ) {
@@ -494,6 +495,7 @@ fun TeacherDashboardScreen(
             // --- 2. ALT KATEGORİ PİLL ÇUBUĞU (Aktif Kategoriye Göre Hızlı Geçiş) ---
             val activeCategorySubPages = when (selectedDockId) {
                 "SINIF" -> listOf(
+                    DashboardSubPage.ANA_SAYFA,
                     DashboardSubPage.SINIF_LISTESI,
                     DashboardSubPage.DERS_PROGRAMI,
                     DashboardSubPage.OTURMA_PLANI
@@ -543,6 +545,7 @@ fun TeacherDashboardScreen(
                     activeCategorySubPages.forEach { subPage ->
                         val isSelected = currentSubPage == subPage
                         val isLocked = !hasStudents &&
+                                subPage != DashboardSubPage.ANA_SAYFA &&
                                 subPage != DashboardSubPage.SINIF_LISTESI &&
                                 subPage != DashboardSubPage.PROFIL_AYARLARI &&
                                 subPage.category != "ÖĞRETMEN ODASI"
@@ -601,6 +604,22 @@ fun TeacherDashboardScreen(
                     .weight(1f)
             ) {
                 when (currentSubPage) {
+                    DashboardSubPage.ANA_SAYFA -> {
+                        TeacherHomeSubScreen(
+                            classRoom = classRoom,
+                            students = students,
+                            scheduleConfig = scheduleConfig,
+                            scheduleLessons = scheduleLessons,
+                            seatingPlanState = seatingPlanState,
+                            groupMakerState = groupMakerState,
+                            announcements = announcements,
+                            chatMessages = chatMessages,
+                            isDarkTheme = isDarkTheme,
+                            onSelectSubPage = onSelectSubPage,
+                            onOpenAddStudentDialog = onOpenAddStudentDialog
+                        )
+                    }
+
                     DashboardSubPage.SINIF_LISTESI -> {
                         ClassListSubScreen(
                             classRoom = classRoom,
@@ -795,7 +814,7 @@ fun TeacherDashboardScreen(
                     selectedId = selectedDockId,
                     onItemSelected = { dockId ->
                         when (dockId) {
-                            "SINIF" -> onSelectSubPage(DashboardSubPage.SINIF_LISTESI)
+                            "SINIF" -> onSelectSubPage(DashboardSubPage.ANA_SAYFA)
                             "DERS" -> onSelectSubPage(DashboardSubPage.GRUP_OLUSTURMA)
                             "ILETISIM" -> onSelectSubPage(DashboardSubPage.ILETISIM_DUYURULAR)
                             "KITAPLIK" -> onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE)

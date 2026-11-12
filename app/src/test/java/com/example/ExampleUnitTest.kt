@@ -1305,8 +1305,54 @@ class ExampleUnitTest {
     val unlinked = repo.findStudentsLinkedToParent("nonexistent.parent@gmail.com")
     assertTrue(unlinked.isEmpty())
   }
+
+  @Test
+  fun testParentPresenceAndInstantDisconnect() = kotlinx.coroutines.runBlocking {
+    val now = System.currentTimeMillis()
+    val repo = com.example.data.repository.ClassRegistryRepository()
+    val sampleClass = repo.seedDefaultTestClassroom("test_teacher_uid")
+
+    // Link student 402 with a parent
+    val linkResult = repo.findInSampleStudents(
+      sanitizedCode = "TD8GDLU8",
+      currentUserEmail = "cihanogretmeniletisim@gmail.com",
+      currentUserFullName = "Cihan Öğretmen İLETİŞİM"
+    )
+    assertNotNull(linkResult)
+    val linkedStudent = linkResult!!.first
+    assertTrue(linkedStudent.isParentLinked)
+    assertTrue(linkedStudent.isParentCurrentlyActive(System.currentTimeMillis()))
+
+    // When parent goes offline, isParentCurrentlyActive must be false and resolvedParentLastLoginDisplay must show the real date/time
+    repo.updateParentPresence(
+      classroomId = sampleClass.id,
+      studentIds = listOf(linkedStudent.id),
+      parentEmail = "cihanogretmeniletisim@gmail.com",
+      parentName = "Cihan Öğretmen İLETİŞİM",
+      isOnline = false
+    )
+    val offlineStudent = repo.students.value.first { it.id == linkedStudent.id }
+    assertFalse(offlineStudent.isParentCurrentlyActive(System.currentTimeMillis()))
+    assertTrue(offlineStudent.resolvedParentLastLoginDisplay().isNotBlank())
+    assertFalse(offlineStudent.resolvedParentLastLoginDisplay().startsWith("Bugün"))
+
+    // When teacher disconnects parent ("Bağlantıyı Kaldır" -> Evet), isParentLinked must immediately become false and linkedParents must be empty
+    repo.updateStudentParentInfo(
+      classroomId = sampleClass.id,
+      studentId = linkedStudent.id,
+      parentName = null,
+      parentEmail = null,
+      parentLinkedAt = null,
+      parentLastLoginAt = null
+    )
+    val disconnectedStudent = repo.students.value.first { it.id == linkedStudent.id }
+    assertFalse(disconnectedStudent.isParentLinked)
+    assertTrue(disconnectedStudent.allLinkedParents.isEmpty())
+    assertTrue(disconnectedStudent.linkedParents.isEmpty())
+
+    // Default Teacher dashboard sub-page must be ANA_SAYFA
+    val initialUiState = com.example.ui.viewmodel.BirizUiState()
+    assertEquals(com.example.ui.viewmodel.DashboardSubPage.ANA_SAYFA, initialUiState.currentSubPage)
+  }
 }
-
-
-
 

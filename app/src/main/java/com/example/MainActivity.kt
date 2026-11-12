@@ -171,14 +171,16 @@ fun BirizApp(viewModel: BirizViewModel) {
 
     // Geri tuşu yönetimi (BackHandler)
     val canGoBack = uiState.currentScreen != ScreenState.GOOGLE_SIGN_IN &&
-                    uiState.currentScreen != ScreenState.ROLE_AND_KVKK
+                    uiState.currentScreen != ScreenState.ROLE_AND_KVKK &&
+                    !(uiState.currentScreen == ScreenState.TEACHER_DASHBOARD && uiState.currentSubPage == com.example.ui.viewmodel.DashboardSubPage.ANA_SAYFA) &&
+                    uiState.currentScreen != ScreenState.PARENT_PORTAL
     BackHandler(enabled = canGoBack) {
         when (uiState.currentScreen) {
             ScreenState.TEACHER_SETUP -> viewModel.resetToRoleSelection()
             ScreenState.SETUP_SUCCESS -> viewModel.navigateToTeacherDashboard()
             ScreenState.TEACHER_DASHBOARD -> {
-                if (uiState.currentSubPage != com.example.ui.viewmodel.DashboardSubPage.SINIF_LISTESI) {
-                    viewModel.selectSubPage(com.example.ui.viewmodel.DashboardSubPage.SINIF_LISTESI)
+                if (uiState.currentSubPage != com.example.ui.viewmodel.DashboardSubPage.ANA_SAYFA) {
+                    viewModel.selectSubPage(com.example.ui.viewmodel.DashboardSubPage.ANA_SAYFA)
                 }
             }
             else -> {}
@@ -372,8 +374,38 @@ fun BirizApp(viewModel: BirizViewModel) {
 
                 ScreenState.PARENT_PORTAL -> {
                     val students by viewModel.students.collectAsStateWithLifecycle()
-                    val linkedStudents = students.filter { it.id in uiState.linkedParentStudentIds }
-                    val activeStudent = students.firstOrNull { it.id == uiState.activeParentStudentId } ?: linkedStudents.firstOrNull()
+                    val linkedStudents = students.filter { it.id in uiState.linkedParentStudentIds && it.isParentLinked }
+                    val activeStudent = linkedStudents.firstOrNull { it.id == uiState.activeParentStudentId } ?: linkedStudents.firstOrNull()
+
+                    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner, uiState.linkedParentStudentIds) {
+                        viewModel.updateParentPresence(isOnline = true)
+                        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                            when (event) {
+                                androidx.lifecycle.Lifecycle.Event.ON_START,
+                                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                                    viewModel.updateParentPresence(isOnline = true)
+                                }
+                                androidx.lifecycle.Lifecycle.Event.ON_STOP,
+                                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
+                                    viewModel.updateParentPresence(isOnline = false)
+                                }
+                                else -> {}
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                            viewModel.updateParentPresence(isOnline = false)
+                        }
+                    }
+
+                    LaunchedEffect(uiState.linkedParentStudentIds) {
+                        while (true) {
+                            viewModel.updateParentPresence(isOnline = true)
+                            kotlinx.coroutines.delay(25_000L)
+                        }
+                    }
 
                     ParentPortalSubScreen(
                         classRoom = uiState.activeClassRoom,
