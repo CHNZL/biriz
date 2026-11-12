@@ -95,28 +95,28 @@ data class Student(
 
     /**
      * Velinin şu an sistemde gerçekten aktif olup olmadığını döndürür.
-     * Veli ekranı açıkken periyodik (25 sn) canlı kalp atışı (heartbeat) gönderir ve
-     * uygulamadan çıktığında anında parentIsOnline = false yazar.
+     * Veli ekranı açıkken periyodik (15 sn) canlı kalp atışı (heartbeat) gönderir ve
+     * uygulama penceresi alta alındığı / kapatıldığı anda (onPause/onStop) anında parentIsOnline = false yazar.
      */
     fun isParentCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
         if (!isParentLinked) return false
         val primary = allLinkedParents.firstOrNull()
-        val onlineFlag = primary?.isOnline ?: parentIsOnline
-        val activeTs = primary?.lastActiveMillis ?: parentLastActiveMillis
-        return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..75_000L
+        val onlineFlag = if (!parentIsOnline) false else (primary?.isOnline ?: parentIsOnline)
+        val activeTs = parentLastActiveMillis ?: primary?.lastActiveMillis
+        return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..35_000L
     }
 
     /**
-     * Velinin gerçek son giriş tarih ve saatini döndürür (sanal veri üretmez).
+     * Velinin gerçek son giriş / son aktiflik tarih ve saatini döndürür (sanal veri üretmez).
      */
     fun resolvedParentLastLoginDisplay(): String {
         val primary = allLinkedParents.firstOrNull()
-        val activeTs = primary?.lastActiveMillis ?: parentLastActiveMillis
+        val activeTs = parentLastActiveMillis ?: primary?.lastActiveMillis
         if (activeTs != null && activeTs > 0L) {
             return java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
                 .format(java.util.Date(activeTs))
         }
-        val rawLogin = primary?.lastLoginAt ?: parentLastLoginAt
+        val rawLogin = parentLastLoginAt ?: primary?.lastLoginAt
         if (!rawLogin.isNullOrBlank()) return rawLogin
         val rawLinked = primary?.linkedAt ?: parentLinkedAt
         if (!rawLinked.isNullOrBlank()) return rawLinked

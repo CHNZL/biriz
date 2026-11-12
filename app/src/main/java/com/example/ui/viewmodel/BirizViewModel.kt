@@ -198,6 +198,9 @@ class BirizViewModel(
     private var communicationMessagesListener: ListenerRegistration? = null
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
     private var groupMakerListenerRegistration: ListenerRegistration? = null
+    private var parentPresenceJob: Job? = null
+    @Volatile
+    private var isAppInForeground: Boolean = true
 
     private fun resolveActiveClassId(): String {
         val activeId = _uiState.value.activeClassRoom?.id
@@ -326,7 +329,20 @@ class BirizViewModel(
         startPeriodicUpdateChecker()
     }
 
+    fun onAppForegrounded() {
+        isAppInForeground = true
+        if (_uiState.value.currentRole == UserRole.PARENT) {
+            updateParentPresence(isOnline = true)
+        }
+    }
+
+    fun onAppBackgrounded() {
+        isAppInForeground = false
+        updateParentPresence(isOnline = false)
+    }
+
     fun updateParentPresence(isOnline: Boolean) {
+        if (isOnline && !isAppInForeground) return
         val state = _uiState.value
         if (state.currentRole != UserRole.PARENT && isOnline) return
         val linkedIds = state.linkedParentStudentIds
@@ -334,14 +350,29 @@ class BirizViewModel(
         val classId = resolveActiveClassId()
         val email = state.currentUser.email.ifBlank { "veli@biriz.app" }
         val name = state.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
-        viewModelScope.launch {
-            repository.updateParentPresence(
-                classroomId = classId,
-                studentIds = linkedIds,
-                parentEmail = email,
-                parentName = name,
-                isOnline = isOnline
-            )
+
+        parentPresenceJob?.cancel()
+        parentPresenceJob = viewModelScope.launch {
+            if (!isOnline) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    repository.updateParentPresence(
+                        classroomId = classId,
+                        studentIds = linkedIds,
+                        parentEmail = email,
+                        parentName = name,
+                        isOnline = false
+                    )
+                }
+            } else {
+                if (!isAppInForeground) return@launch
+                repository.updateParentPresence(
+                    classroomId = classId,
+                    studentIds = linkedIds,
+                    parentEmail = email,
+                    parentName = name,
+                    isOnline = true
+                )
+            }
         }
     }
 

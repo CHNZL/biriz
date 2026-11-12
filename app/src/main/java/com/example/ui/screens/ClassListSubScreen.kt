@@ -2127,9 +2127,14 @@ fun StudentDetailDialog(
 
                 // --- VELİ BİLGİ ALANI: BAĞLI VELİ MEVCUTSA BİLGİLER, DEĞİLSE KATILIM KODU ---
                 if (student.isParentLinked) {
-                    val nowMillis by androidx.compose.runtime.produceState(initialValue = System.currentTimeMillis()) {
+                    val nowMillis by androidx.compose.runtime.produceState(
+                        initialValue = System.currentTimeMillis(),
+                        key1 = student.parentIsOnline,
+                        key2 = student.parentLastActiveMillis
+                    ) {
+                        value = System.currentTimeMillis()
                         while (true) {
-                            kotlinx.coroutines.delay(10_000L)
+                            kotlinx.coroutines.delay(3_000L)
                             value = System.currentTimeMillis()
                         }
                     }
@@ -2321,11 +2326,15 @@ fun StudentDetailDialog(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // 4. Sisteme Son Giriş
+                            // 4. Sisteme Son Giriş / Son Aktiflik
                             ParentDetailRowItem(
                                 icon = Icons.Default.AccessTime,
-                                label = "Sisteme Son Giriş",
-                                value = if (isParentActiveNow) "Şu An Sistemde Aktif ($displayLastLoginAt)" else displayLastLoginAt,
+                                label = "Sisteme Son Giriş / Aktiflik",
+                                value = if (isParentActiveNow) {
+                                    "Şu An Sistemde Aktif ($displayLastLoginAt)"
+                                } else {
+                                    "Çevrimdışı • $displayLastLoginAt"
+                                },
                                 isDarkTheme = isDarkTheme,
                                 valueHighlight = true
                             )

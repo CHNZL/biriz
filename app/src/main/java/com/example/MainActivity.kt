@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.data.repository.ClassRegistryRepository
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.screens.GoogleSignInScreen
@@ -106,9 +107,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.onAppForegrounded()
+    }
+
     override fun onResume() {
         super.onResume()
+        viewModel.onAppForegrounded()
         viewModel.triggerLiveUpdateCheck()
+    }
+
+    override fun onPause() {
+        viewModel.onAppBackgrounded()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        viewModel.onAppBackgrounded()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        viewModel.onAppBackgrounded()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -384,16 +406,19 @@ fun BirizApp(viewModel: BirizViewModel) {
 
                     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
                     DisposableEffect(lifecycleOwner, uiState.linkedParentStudentIds) {
-                        viewModel.updateParentPresence(isOnline = true)
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            viewModel.onAppForegrounded()
+                        }
                         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                             when (event) {
                                 androidx.lifecycle.Lifecycle.Event.ON_START,
                                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                                    viewModel.updateParentPresence(isOnline = true)
+                                    viewModel.onAppForegrounded()
                                 }
+                                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
                                 androidx.lifecycle.Lifecycle.Event.ON_STOP,
                                 androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
-                                    viewModel.updateParentPresence(isOnline = false)
+                                    viewModel.onAppBackgrounded()
                                 }
                                 else -> {}
                             }
@@ -405,10 +430,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                         }
                     }
 
-                    LaunchedEffect(uiState.linkedParentStudentIds) {
-                        while (true) {
-                            viewModel.updateParentPresence(isOnline = true)
-                            kotlinx.coroutines.delay(25_000L)
+                    LaunchedEffect(lifecycleOwner, uiState.linkedParentStudentIds) {
+                        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                            while (true) {
+                                viewModel.updateParentPresence(isOnline = true)
+                                kotlinx.coroutines.delay(15_000L)
+                            }
                         }
                     }
 
