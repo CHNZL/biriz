@@ -91,16 +91,20 @@ import com.example.data.model.BirizNotification
 import com.example.data.model.Book
 import com.example.data.model.ChatMessage
 import com.example.data.model.ClassRoom
+import com.example.data.model.DeskPosition
+import com.example.data.model.DoorPosition
 import com.example.data.model.NotificationType
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.ScheduleTimelineItem
+import com.example.data.model.SeatingConfig
 import com.example.data.model.SeatingPlanState
 import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
 import com.example.data.model.Tournament
 import com.example.data.model.TournamentMatch
 import com.example.data.model.UserRole
+import com.example.data.model.WindowPosition
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
 import com.example.ui.components.NotificationCenterDialog
@@ -137,11 +141,17 @@ import java.util.Locale
 /**
  * Veli Portalı Navigasyon Sekmeleri
  */
-enum class ParentPortalTab(val title: String, val iconVector: ImageVector, val emoji: String) {
+enum class ParentPortalTab(
+    val title: String,
+    val iconVector: ImageVector,
+    val emoji: String,
+    val showInBottomBar: Boolean = true
+) {
     HOME("Ana Sayfa", Icons.Default.Home, "🏠"),
     STARS("Yıldızlar", Icons.Default.Star, "⭐"),
     READING("Kitaplık", Icons.Default.MenuBook, "📚"),
-    SCHEDULE_SEATING("Ders & Sıra", Icons.Default.Schedule, "📅"),
+    SCHEDULE("Dersler", Icons.Default.Schedule, "📅"),
+    SEATING("Sıra Düzeni", Icons.Default.EventSeat, "🪑", showInBottomBar = false),
     TOURNAMENT("Turnuva", Icons.Default.EmojiEvents, "🏆"),
     COMMUNICATION("İletişim", Icons.Default.Chat, "💬")
 }
@@ -631,12 +641,17 @@ fun ParentPortalSubScreen(
                             )
                         }
 
-                        ParentPortalTab.SCHEDULE_SEATING -> {
-                            ParentScheduleAndSeatingDetailView(
-                                student = activeStudent,
-                                classRoom = classRoom,
+                        ParentPortalTab.SCHEDULE -> {
+                            ParentScheduleDetailView(
                                 scheduleConfig = scheduleConfig,
                                 scheduleLessons = scheduleLessons,
+                                isDarkTheme = isDarkTheme
+                            )
+                        }
+
+                        ParentPortalTab.SEATING -> {
+                            ParentSeatingDetailView(
+                                student = activeStudent,
                                 seatingPlanState = seatingPlanState,
                                 allStudents = allStudents,
                                 linkedStudentIds = linkedStudentIds,
@@ -708,7 +723,7 @@ fun ParentPortalSubScreen(
                         windowInsets = WindowInsets(0, 0, 0, 0),
                         modifier = Modifier.height(74.dp)
                     ) {
-                        ParentPortalTab.entries.forEach { tab ->
+                        ParentPortalTab.entries.filter { it.showInBottomBar }.forEach { tab ->
                             val isSelected = activeTab == tab
                             NavigationBarItem(
                                 selected = isSelected,
@@ -1080,7 +1095,7 @@ private fun ParentDashboardHomeView(
                     modifier = Modifier.weight(1f),
                     accentColor = Color(0xFF0284C7),
                     isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.SCHEDULE_SEATING) }
+                    onClick = { onNavigate(ParentPortalTab.SCHEDULE) }
                 )
 
                 // Oturma Yeri
@@ -1092,7 +1107,7 @@ private fun ParentDashboardHomeView(
                     modifier = Modifier.weight(1f),
                     accentColor = Color(0xFF10B981),
                     isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.SCHEDULE_SEATING) }
+                    onClick = { onNavigate(ParentPortalTab.SEATING) }
                 )
             }
         }
@@ -1609,22 +1624,27 @@ private fun ParentReadingDetailView(
 }
 
 // =========================================================================
-// DETAY 3: DERS PROGRAMI & OTURMA PLANI KROKİSİ
+// DETAY 3A: SADECE HAFTALIK DERS PROGRAMI & ZİL SAATLERİ
 // =========================================================================
 @Composable
-private fun ParentScheduleAndSeatingDetailView(
-    student: Student,
-    classRoom: ClassRoom?,
+private fun ParentScheduleDetailView(
     scheduleConfig: ScheduleConfig,
     scheduleLessons: List<ScheduleLesson>,
-    seatingPlanState: SeatingPlanState,
-    allStudents: List<Student>,
-    linkedStudentIds: Set<String>,
     isDarkTheme: Boolean
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-    var selectedDay by remember { mutableStateOf("PZT") }
+    val defaultDayCode = remember {
+        when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "PZT"
+            Calendar.TUESDAY -> "SAL"
+            Calendar.WEDNESDAY -> "ÇAR"
+            Calendar.THURSDAY -> "PER"
+            Calendar.FRIDAY -> "CUM"
+            else -> "PZT"
+        }
+    }
+    var selectedDay by remember { mutableStateOf(defaultDayCode) }
     val dayNames = listOf("PZT" to "Pazartesi", "SAL" to "Salı", "ÇAR" to "Çarşamba", "PER" to "Perşembe", "CUM" to "Cuma")
     val dayLessons = remember(scheduleLessons, selectedDay) {
         scheduleLessons.filter {
@@ -1637,113 +1657,32 @@ private fun ParentScheduleAndSeatingDetailView(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("parent_schedule_detail_view"),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // --- 1. OTURMA PLANI KROKİSİ ---
         item {
-            Text(text = "🪑 Sınıf Oturma Düzeni & Çocuğunuzun Sırası", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
             Text(
-                text = "Çocuğunuzun sınıf içindeki yeri yeşil renkle vurgulanmıştır.",
-                fontSize = 11.sp,
+                text = "📅 Haftalık Ders Programı & Zil Saatleri",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = primaryText
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Sınıf öğretmeninin oluşturduğu güncel haftalık ders dağılımı ve ders saatleri",
+                fontSize = 12.sp,
                 color = secondaryText
             )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Yazı Tahtası & Öğretmen Masası
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFF0F172A),
-                        modifier = Modifier.fillMaxWidth(0.7f).height(32.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(text = "📋 YAZI TAHTASI & ÖĞRETMEN KÜRSÜSÜ", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Oturma Sıraları Krokisi
-                    val groups = listOf("g0", "g1", "g2")
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        groups.forEachIndexed { gIdx, gKey ->
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(text = "${gIdx + 1}. Grup", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryText)
-                                for (row in 0 until 4) {
-                                    val seatKey = "$gKey-r$row"
-                                    val studentIdInSeat = seatingPlanState.assignments[seatKey]
-                                    val isChildHere = studentIdInSeat == student.id
-                                    val isOccupied = !studentIdInSeat.isNullOrBlank()
-
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isChildHere) {
-                                            Color(0xFF10B981)
-                                        } else if (isOccupied) {
-                                            if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0)
-                                        } else {
-                                            if (isDarkTheme) Color(0x30334E68) else Color(0xFFF8FAFC)
-                                        },
-                                        border = BorderStroke(
-                                            if (isChildHere) 2.dp else 1.dp,
-                                            if (isChildHere) Color(0xFF059669) else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
-                                        ),
-                                        modifier = Modifier.size(width = 96.dp, height = 44.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (isChildHere) {
-                                                Text(
-                                                    text = "★ Çocuğunuz",
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    color = Color.White
-                                                )
-                                            } else if (isOccupied) {
-                                                Text(
-                                                    text = "Öğrenci",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = if (isDarkTheme) Color.LightGray else Color(0xFF475569)
-                                                )
-                                            } else {
-                                                Text(text = "Boş Sıra", fontSize = 10.sp, color = secondaryText)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- 2. HAFTALIK DERS PROGRAMI & GÜN SEÇİCİ ---
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "📅 Haftalık Ders Programı & Zil Saatleri", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Gün Seçici Çipleri
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 dayNames.forEach { (code, name) ->
@@ -1752,7 +1691,10 @@ private fun ParentScheduleAndSeatingDetailView(
                         onClick = { selectedDay = code },
                         shape = RoundedCornerShape(12.dp),
                         color = if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                        border = BorderStroke(1.5.dp, if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                        border = BorderStroke(
+                            1.5.dp,
+                            if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                        ),
                         modifier = Modifier.height(38.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
@@ -1773,7 +1715,10 @@ private fun ParentScheduleAndSeatingDetailView(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
                 ) {
                     Text(
                         text = "Bu gün için henüz ders programı girilmemiş.",
@@ -1807,13 +1752,22 @@ private fun ParentScheduleAndSeatingDetailView(
                                 modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(text = "${lesson.lessonIndex}", fontWeight = FontWeight.Black, fontSize = 15.sp, color = BirizNavyPrimary)
+                                    Text(
+                                        text = "${lesson.lessonIndex}",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                    )
                                 }
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(text = lesson.subjectName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryText)
-                                Text(text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" }, fontSize = 12.5.sp, color = secondaryText)
+                                Text(
+                                    text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" },
+                                    fontSize = 12.5.sp,
+                                    color = secondaryText
+                                )
                             }
                         }
                         Surface(
@@ -1832,6 +1786,495 @@ private fun ParentScheduleAndSeatingDetailView(
                 }
             }
         }
+    }
+}
+
+// =========================================================================
+// DETAY 3B: SADECE SINIF OTURMA PLANI KROKİSİ (ÖĞRETMENİN AYARLARI İLE BİREBİR)
+// =========================================================================
+@Composable
+private fun ParentSeatingDetailView(
+    student: Student,
+    seatingPlanState: SeatingPlanState,
+    allStudents: List<Student>,
+    linkedStudentIds: Set<String>,
+    isDarkTheme: Boolean
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    val config = seatingPlanState.config
+
+    // Öğretmenin aktif atamalarında config sınırlarını aşan indeks varsa dinamik genişlet
+    val maxAssignedGroup = remember(seatingPlanState.assignments) {
+        seatingPlanState.assignments.keys.mapNotNull { key ->
+            key.split("-").getOrNull(0)?.removePrefix("g")?.toIntOrNull()
+        }.maxOrNull() ?: -1
+    }
+    val maxAssignedSeat = remember(seatingPlanState.assignments) {
+        seatingPlanState.assignments.keys.mapNotNull { key ->
+            key.split("-").getOrNull(2)?.removePrefix("s")?.toIntOrNull()
+        }.maxOrNull() ?: -1
+    }
+
+    val effectiveGroupCount = maxOf(config.groupCount, maxAssignedGroup + 1).coerceAtLeast(1)
+    val effectivePeoplePerRow = maxOf(config.peoplePerRow, maxAssignedSeat + 1).coerceAtLeast(1)
+
+    val deskTypeLabel = when (effectivePeoplePerRow) {
+        1 -> "Tekli Sıra Düzeni"
+        2 -> "İkili Sıra Düzeni"
+        3 -> "Üçlü Sıra Düzeni"
+        else -> "${effectivePeoplePerRow}'lü Sıra Düzeni"
+    }
+
+    // Çocuğun tam sıra ve koltuk açıklaması
+    val childSeatPositionText = remember(seatingPlanState, student, effectivePeoplePerRow) {
+        val entry = seatingPlanState.assignments.entries.firstOrNull { it.value == student.id }
+        if (entry != null) {
+            val parts = entry.key.split("-")
+            val g = (parts.getOrNull(0)?.removePrefix("g")?.toIntOrNull() ?: 0) + 1
+            val r = (parts.getOrNull(1)?.removePrefix("r")?.toIntOrNull() ?: 0) + 1
+            val s = parts.getOrNull(2)?.removePrefix("s")?.toIntOrNull()
+            val seatPos = when {
+                effectivePeoplePerRow <= 1 || s == null -> ""
+                effectivePeoplePerRow == 2 -> if (s == 0) " • Sol Koltuk" else " • Sağ Koltuk"
+                effectivePeoplePerRow == 3 -> when (s) {
+                    0 -> " • Sol Koltuk"
+                    1 -> " • Orta Koltuk"
+                    else -> " • Sağ Koltuk"
+                }
+                else -> " • ${s + 1}. Koltuk"
+            }
+            "$g. Grup, $r. Sıra$seatPos"
+        } else {
+            "Henüz bir sıraya atanmadı"
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(14.dp)
+            .testTag("parent_seating_detail_view"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Üst Bilgi Kartı: Çocuğun Yeri & Öğretmenin Sıra Düzeni Özeti
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF10B981).copy(alpha = 0.14f),
+            border = BorderStroke(1.2.dp, Color(0xFF10B981)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "🪑 Çocuğunuzun Sınıftaki Yeri",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF059669)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = childSeatPositionText,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = primaryText
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Sınıf Düzeni: $effectiveGroupCount Grup • $deskTypeLabel",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = secondaryText
+                    )
+                }
+                Text(text = "🎯", fontSize = 32.sp)
+            }
+        }
+
+        // Renk Açıklama Lejantı
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0xFF10B981))
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text("Çocuğunuz", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryText)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0))
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text("Dolu Koltuk (Öğrenci)", fontSize = 11.sp, color = secondaryText)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (isDarkTheme) Color(0x20334E68) else Color.White)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text("Boş Koltuk", fontSize = 11.sp, color = secondaryText)
+            }
+        }
+
+        // Sınıf Ön Cephesi (Akıllı Tahta, Öğretmen Masası, Ön Kapı ve Yan Pencereler)
+        ParentClassroomFrontBanner(
+            config = config,
+            isDarkTheme = isDarkTheme
+        )
+
+        // Öğretmenin Sıra ve Grup Kolonları (Yatay Kaydırılabilir Birebir Kroki)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                for (groupIndex in 0 until effectiveGroupCount) {
+                    val configuredRows = config.rowsPerGroup.getOrElse(groupIndex) {
+                        config.rowsPerGroup.lastOrNull() ?: 5
+                    }
+                    val maxAssignedRowInGroup = seatingPlanState.assignments.keys.mapNotNull { key ->
+                        val parts = key.split("-")
+                        val g = parts.getOrNull(0)?.removePrefix("g")?.toIntOrNull()
+                        val r = parts.getOrNull(1)?.removePrefix("r")?.toIntOrNull()
+                        if (g == groupIndex) r else null
+                    }.maxOrNull() ?: -1
+                    val rowsInGroup = maxOf(configuredRows, maxAssignedRowInGroup + 1).coerceAtLeast(1)
+
+                    val columnWidth = when (effectivePeoplePerRow) {
+                        1 -> 125.dp
+                        2 -> 215.dp
+                        3 -> 295.dp
+                        else -> 360.dp
+                    }
+
+                    Column(
+                        modifier = Modifier.width(columnWidth),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Grup Başlığı
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDarkTheme) Color(0x4013294B) else Color(0xFFE2E8F0),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "${groupIndex + 1}. Grup • $rowsInGroup Sıra",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 5.dp)
+                            )
+                        }
+
+                        // Sıralar (Önden Arkaya)
+                        for (rowIndex in 0 until rowsInGroup) {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDarkTheme) Color(0xFF13203E) else Color(0xFFF8FAFC)
+                                ),
+                                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(6.dp)) {
+                                    Text(
+                                        text = if (rowIndex == 0) "1. Sıra (Ön)" else "${rowIndex + 1}. Sıra",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (rowIndex == 0) BirizAmber else secondaryText,
+                                        modifier = Modifier.padding(start = 2.dp, bottom = 4.dp)
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        for (seatIndex in 0 until effectivePeoplePerRow) {
+                                            val seatId = "g$groupIndex-r$rowIndex-s$seatIndex"
+                                            val legacySeatId = "g$groupIndex-r$rowIndex"
+                                            val studentIdInSeat = seatingPlanState.assignments[seatId]
+                                                ?: if (seatIndex == 0) seatingPlanState.assignments[legacySeatId] else null
+
+                                            val isActiveChild = studentIdInSeat == student.id
+                                            val isLinkedSibling = !isActiveChild &&
+                                                    studentIdInSeat != null &&
+                                                    linkedStudentIds.contains(studentIdInSeat)
+                                            val isOccupied = !studentIdInSeat.isNullOrBlank()
+                                            val matchedOwnStudent = if (isActiveChild) {
+                                                student
+                                            } else if (isLinkedSibling) {
+                                                allStudents.firstOrNull { it.id == studentIdInSeat }
+                                            } else null
+
+                                            val seatBg = when {
+                                                isActiveChild -> Color(0xFF10B981)
+                                                isLinkedSibling -> BirizTurquoise.copy(alpha = 0.25f)
+                                                isOccupied -> if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+                                                else -> if (isDarkTheme) Color(0x20334E68) else Color.White
+                                            }
+                                            val seatBorder = when {
+                                                isActiveChild -> Color(0xFF059669)
+                                                isLinkedSibling -> BirizTurquoise
+                                                isOccupied -> if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                                else -> if (isDarkTheme) Color(0x4064748B) else Color(0xFFE2E8F0)
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = seatBg,
+                                                border = BorderStroke(if (isActiveChild) 2.dp else 1.dp, seatBorder),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(54.dp)
+                                                    .testTag("parent_seat_$seatId")
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    when {
+                                                        matchedOwnStudent != null -> {
+                                                            Column(
+                                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                                verticalArrangement = Arrangement.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "★ ${matchedOwnStudent.studentNumber}",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.ExtraBold,
+                                                                    color = if (isActiveChild) Color.White else primaryText,
+                                                                    maxLines = 1
+                                                                )
+                                                                Text(
+                                                                    text = TurkishTextHelper.toTurkishUpperCase(matchedOwnStudent.fullName),
+                                                                    fontSize = 9.5.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (isActiveChild) Color.White else primaryText,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis,
+                                                                    textAlign = TextAlign.Center
+                                                                )
+                                                            }
+                                                        }
+                                                        isOccupied -> {
+                                                            Text(
+                                                                text = "Öğrenci",
+                                                                fontSize = 10.5.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = if (isDarkTheme) Color.LightGray else Color(0xFF475569),
+                                                                maxLines = 1
+                                                            )
+                                                        }
+                                                        else -> {
+                                                            Text(
+                                                                text = "Boş",
+                                                                fontSize = 10.sp,
+                                                                color = secondaryText,
+                                                                maxLines = 1
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sınıf Arka Cephesi (Arka Kapı ve Arka Pencereler)
+        ParentClassroomBackBanner(
+            config = config,
+            isDarkTheme = isDarkTheme
+        )
+    }
+}
+
+@Composable
+private fun ParentClassroomFrontBanner(
+    config: SeatingConfig,
+    isDarkTheme: Boolean
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = if (isDarkTheme) Color(0x600E1A38) else Color(0xFFF1F5F9),
+        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Sol Duvar Elemanları
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (config.doorPosition == DoorPosition.ON_SOL || config.doorPosition == DoorPosition.SOL_ON) {
+                    ParentArchBadge(label = "🚪 Kapı", isDarkTheme = isDarkTheme, isDoor = true)
+                }
+                if (config.windowPosition == WindowPosition.LEFT) {
+                    ParentArchBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
+                }
+                if (config.deskPosition == DeskPosition.LEFT) {
+                    ParentTeacherDeskBadge(isDarkTheme = isDarkTheme)
+                }
+            }
+
+            // Orta Duvar: Akıllı Tahta & Orta Öğretmen Masası
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(7.dp),
+                    color = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFF334155),
+                    border = BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text(
+                        text = "📋 AKILLI TAHTA",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    )
+                }
+                if (config.deskPosition == DeskPosition.CENTER) {
+                    ParentTeacherDeskBadge(isDarkTheme = isDarkTheme)
+                }
+            }
+
+            // Sağ Duvar Elemanları
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (config.deskPosition == DeskPosition.RIGHT) {
+                    ParentTeacherDeskBadge(isDarkTheme = isDarkTheme)
+                }
+                if (config.windowPosition == WindowPosition.RIGHT) {
+                    ParentArchBadge(label = "🪟 Pencere", isDarkTheme = isDarkTheme)
+                }
+                if (config.doorPosition == DoorPosition.ON_SAG || config.doorPosition == DoorPosition.SAG_ON) {
+                    ParentArchBadge(label = "🚪 Kapı", isDarkTheme = isDarkTheme, isDoor = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParentClassroomBackBanner(
+    config: SeatingConfig,
+    isDarkTheme: Boolean
+) {
+    val hasBackDoorLeft = config.doorPosition == DoorPosition.ARKA_SOL || config.doorPosition == DoorPosition.SOL_ARKA
+    val hasBackDoorRight = config.doorPosition == DoorPosition.ARKA_SAG || config.doorPosition == DoorPosition.SAG_ARKA
+    val hasBackWindow = config.windowPosition == WindowPosition.BACK
+
+    if (!hasBackDoorLeft && !hasBackDoorRight && !hasBackWindow) return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = if (isDarkTheme) Color(0x400E1A38) else Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (hasBackDoorLeft) {
+                Box(modifier = Modifier.align(Alignment.CenterStart)) {
+                    ParentArchBadge(label = "🚪 Kapı (Arka Sol)", isDarkTheme = isDarkTheme, isDoor = true)
+                }
+            }
+            if (hasBackWindow) {
+                ParentArchBadge(label = "🪟 Pencereler (Arka Cephe)", isDarkTheme = isDarkTheme)
+            }
+            if (hasBackDoorRight) {
+                Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    ParentArchBadge(label = "🚪 Kapı (Arka Sağ)", isDarkTheme = isDarkTheme, isDoor = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParentArchBadge(label: String, isDarkTheme: Boolean, isDoor: Boolean = false) {
+    Surface(
+        shape = RoundedCornerShape(7.dp),
+        color = if (isDoor) {
+            if (isDarkTheme) Color(0x40D97706) else Color(0xFFFEF3C7)
+        } else {
+            if (isDarkTheme) Color(0x400284C7) else Color(0xFFE0F2FE)
+        },
+        border = BorderStroke(1.dp, if (isDoor) Color(0xFFD97706) else Color(0xFF0284C7))
+    ) {
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isDoor) Color(0xFFB45309) else Color(0xFF0284C7),
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun ParentTeacherDeskBadge(isDarkTheme: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(7.dp),
+        color = if (isDarkTheme) Color(0x40F59E0B) else Color(0xFFFFFBEB),
+        border = BorderStroke(1.dp, Color(0xFFF59E0B))
+    ) {
+        Text(
+            text = "👩‍🏫 Öğretmen Masası",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFD97706),
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+        )
     }
 }
 

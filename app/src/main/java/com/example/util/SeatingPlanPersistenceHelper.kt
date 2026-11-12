@@ -148,9 +148,9 @@ object SeatingPlanPersistenceHelper {
             editor.putString("config_default", jsonStr)
             editor.apply()
 
-            // Mevcut aktif plan varsa config'i güncelleyip buluta da yaz
-            val currentPlan = loadActivePlan(context, classId)
-            if (currentPlan != null && classId.isNotBlank() && classId != "default") {
+            // Aktif planı yeni config ile güncelleyip buluta da yaz
+            if (classId.isNotBlank() && classId != "default") {
+                val currentPlan = loadActivePlan(context, classId) ?: SeatingPlanState(config = config)
                 saveActivePlan(context, classId, currentPlan.copy(config = config))
             }
         } catch (e: Exception) {
