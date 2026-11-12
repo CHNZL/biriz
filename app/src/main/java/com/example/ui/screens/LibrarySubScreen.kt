@@ -201,14 +201,35 @@ fun LibrarySubScreen(
 
     var showBatchClassReadDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showCleanupMaintenanceDialog by remember { mutableStateOf(false) }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var recordToDelete by remember { mutableStateOf<ReadingRecord?>(null) }
+
+    // Çoklu seçim ve toplu silme durumu
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedBookIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBulkDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     // Load data
     fun refreshData() {
         books = LibraryPersistenceHelper.loadBooks(context, classRoom.id)
         records = LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
         isLoading = false
+    }
+
+    // Sınıf değiştiğinde veya öğrenci listesi yüklendiğinde sahte/eski/bozuk kitaplık kayıtlarını otomatik temizle
+    LaunchedEffect(classRoom.id, students.size) {
+        if (classRoom.id.isNotBlank()) {
+            val report = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
+                context = context,
+                classId = classRoom.id,
+                validStudents = students,
+                resequenceNumbers = false
+            )
+            if (report.hasChanges) {
+                refreshData()
+            }
+        }
     }
 
     DisposableEffect(classRoom.id) {
@@ -261,10 +282,34 @@ fun LibrarySubScreen(
                         searchQuery = searchQuery,
                         statusFilter = statusFilter,
                         viewMode = viewMode,
+                        isSelectionMode = isSelectionMode,
+                        selectedBookIds = selectedBookIds,
                         isDarkTheme = isDarkTheme,
                         onSearchChange = { searchQuery = it },
                         onStatusFilterChange = { statusFilter = it },
                         onViewModeToggle = { viewMode = if (viewMode == "GRID") "LIST" else "GRID" },
+                        onToggleSelectionMode = {
+                            isSelectionMode = !isSelectionMode
+                            if (!isSelectionMode) selectedBookIds = emptySet()
+                        },
+                        onToggleSelectBook = { bookId ->
+                            selectedBookIds = if (selectedBookIds.contains(bookId)) {
+                                selectedBookIds - bookId
+                            } else {
+                                selectedBookIds + bookId
+                            }
+                        },
+                        onSelectAllBooks = { ids ->
+                            selectedBookIds = if (selectedBookIds.size == ids.size) emptySet() else ids.toSet()
+                        },
+                        onBulkDeleteSelected = {
+                            if (selectedBookIds.isNotEmpty()) {
+                                showBulkDeleteConfirmDialog = true
+                            }
+                        },
+                        onOpenCleanupMaintenance = {
+                            showCleanupMaintenanceDialog = true
+                        },
                         onExportClick = { showExportDialog = true },
                         onAddBookClick = {
                             bookToEdit = null
@@ -648,6 +693,108 @@ fun LibrarySubScreen(
                 onDismiss = { showExportDialog = false }
             )
         }
+
+        // 8. Çoklu Kitap Silme Onay Diyaloğu
+        if (showBulkDeleteConfirmDialog && selectedBookIds.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { showBulkDeleteConfirmDialog = false },
+                title = {
+                    Text(
+                        text = "🗑️ Seçili ${selectedBookIds.size} Kitabı Sil?",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.5.sp
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Seçtiğiniz ${selectedBookIds.size} adet kitap, bu kitaplara ait okuma geçmişi kayıtları ve kazanılan Kitap Kurdu yıldızları hem cihazdan hem buluttan kalıcı olarak silinecektir. Onaylıyor musunuz?",
+                        fontSize = 13.sp,
+                        color = primaryText
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val summary = LibraryPersistenceHelper.deleteBooksBatch(context, classRoom.id, selectedBookIds)
+                            selectedBookIds = emptySet()
+                            isSelectionMode = false
+                            showBulkDeleteConfirmDialog = false
+                            refreshData()
+                            Toast.makeText(
+                                context,
+                                "🗑️ ${summary.deletedBookName} ve ${summary.deletedRecordsCount} okuma kaydı temizlendi.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BirizError)
+                    ) {
+                        Text("Evet, Seçilenleri Sil", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBulkDeleteConfirmDialog = false }) {
+                        Text("Vazgeç", fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
+        // 9. Kitaplık Bakım, Eski/Sanal Kayıt Temizleme & Sıra No Düzenleme Diyaloğu
+        if (showCleanupMaintenanceDialog) {
+            AlertDialog(
+                onDismissRequest = { showCleanupMaintenanceDialog = false },
+                title = {
+                    Text(
+                        text = "🧹 Kitaplık Bakımı & Kayıt Temizliği",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Bu işlem sınıf kitaplığınızı tarayarak aşağıdaki bakım ve temizlik işlemlerini anında gerçekleştirir:",
+                            fontSize = 12.5.sp,
+                            color = primaryText
+                        )
+                        Text("• Eski / sanal veya mükerrer kitap kayıtlarını temizler", fontSize = 12.sp, color = secondaryText)
+                        Text("• Sınıftan ayrılmış öğrencilere ait askıda kalmış ödünçleri rafa döndürür", fontSize = 12.sp, color = secondaryText)
+                        Text("• Silinmiş kitaplara ait eski okuma geçmişi kayıtlarını ve fazla yıldızları temizler", fontSize = 12.sp, color = secondaryText)
+                        Text("• Mevcut kitapların demirbaş sıra numaralarını (#1, #2, #3...) boşluksuz yeniden sıralar", fontSize = 12.sp, color = secondaryText)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val report = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
+                                context = context,
+                                classId = classRoom.id,
+                                validStudents = students,
+                                resequenceNumbers = true
+                            )
+                            showCleanupMaintenanceDialog = false
+                            refreshData()
+                            val msg = if (report.hasChanges) {
+                                "✨ Temizlik tamamlandı: ${report.removedBooksCount} fazla kitap, ${report.removedRecordsCount} eski kayıt temizlendi, ${report.resequencedBooksCount} sıra no düzenlendi."
+                            } else {
+                                "✅ Kitaplığınız zaten tertemiz ve güncel! Sadece sizin eklediğiniz kitaplar mevcut."
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                        )
+                    ) {
+                        Text("Temizle ve Sıra No Düzenle", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCleanupMaintenanceDialog = false }) {
+                        Text("Kapat")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -661,10 +808,17 @@ private fun LibraryInventoryView(
     searchQuery: String,
     statusFilter: String,
     viewMode: String,
+    isSelectionMode: Boolean,
+    selectedBookIds: Set<String>,
     isDarkTheme: Boolean,
     onSearchChange: (String) -> Unit,
     onStatusFilterChange: (String) -> Unit,
     onViewModeToggle: () -> Unit,
+    onToggleSelectionMode: () -> Unit,
+    onToggleSelectBook: (String) -> Unit,
+    onSelectAllBooks: (List<String>) -> Unit,
+    onBulkDeleteSelected: () -> Unit,
+    onOpenCleanupMaintenance: () -> Unit,
     onExportClick: () -> Unit,
     onAddBookClick: () -> Unit,
     onBorrowClick: (Book) -> Unit,
@@ -681,7 +835,7 @@ private fun LibraryInventoryView(
                     book.author.contains(searchQuery, ignoreCase = true) ||
                     book.registrationNo.toString() == searchQuery.trim()
 
-            val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty()
+            val isReading = book.activeAssignments.isNotEmpty()
             val matchesStatus = when (statusFilter) {
                 "RAFTA" -> !isReading
                 "OKUNUYOR" -> isReading
@@ -691,7 +845,7 @@ private fun LibraryInventoryView(
         }.sortedBy { it.registrationNo }
     }
 
-    val shelfCount = remember(books) { books.count { it.status != "Okunuyor" && it.activeAssignments.isEmpty() } }
+    val shelfCount = remember(books) { books.count { it.activeAssignments.isEmpty() } }
     val readingCount = remember(books) { books.size - shelfCount }
 
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
@@ -810,48 +964,44 @@ private fun LibraryInventoryView(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Durum Filtre Çipleri & Toplu Dağıt Butonu
+        // Durum Filtre Çipleri & Toplu İşlem Butonları
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val filters = listOf(
-                    Triple("TÜMÜ", "Tümü (${books.size})", Color(0xFF64748B)),
-                    Triple("RAFTA", "🟢 Rafta ($shelfCount)", BirizSuccess),
-                    Triple("OKUNUYOR", "🟠 Okunuyor ($readingCount)", Color(0xFFD97706))
-                )
+            val filters = listOf(
+                Triple("TÜMÜ", "Tümü (${books.size})", Color(0xFF64748B)),
+                Triple("RAFTA", "🟢 Rafta ($shelfCount)", BirizSuccess),
+                Triple("OKUNUYOR", "🟠 Okunuyor ($readingCount)", Color(0xFFD97706))
+            )
 
-                filters.forEach { (key, label, color) ->
-                    val isSelected = statusFilter == key
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { onStatusFilterChange(key) },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected) color else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isSelected) color else if (isDarkTheme) Color(0x4064748B) else BirizBorder
-                        )
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.White else primaryText,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
+            filters.forEach { (key, label, color) ->
+                val isSelected = statusFilter == key
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onStatusFilterChange(key) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) color else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isSelected) color else if (isDarkTheme) Color(0x4064748B) else BirizBorder
+                    )
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else primaryText,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
                 }
             }
 
-            // Sınıfça Okuduk Butonu (Şık Buton Görünümü)
+            // Sınıfça Okuduk Butonu
             Surface(
                 onClick = onBatchClassReadClick,
                 shape = RoundedCornerShape(20.dp),
@@ -871,6 +1021,111 @@ private fun LibraryInventoryView(
                         fontWeight = FontWeight.ExtraBold,
                         color = if (isDarkTheme) BirizTurquoise else Color(0xFF1D4ED8)
                     )
+                }
+            }
+
+            // Çoklu Seç / Sil Butonu
+            if (books.isNotEmpty()) {
+                Surface(
+                    onClick = onToggleSelectionMode,
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelectionMode) BirizError else if (isDarkTheme) Color(0x30334E68) else Color(0xFFFEF2F2),
+                    border = BorderStroke(1.dp, BirizError.copy(alpha = 0.7f)),
+                    modifier = Modifier.testTag("library_multi_select_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(if (isSelectionMode) "✖" else "🗑️", fontSize = 11.sp)
+                        Text(
+                            text = if (isSelectionMode) "Seçimi Kapat" else "Çoklu Sil",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelectionMode) Color.White else BirizError
+                        )
+                    }
+                }
+            }
+
+            // Eski/Fazla Kayıtları Temizle & Sıra No Düzenle Butonu
+            Surface(
+                onClick = onOpenCleanupMaintenance,
+                shape = RoundedCornerShape(20.dp),
+                color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF0FDF4),
+                border = BorderStroke(1.dp, BirizSuccess.copy(alpha = 0.7f)),
+                modifier = Modifier.testTag("library_cleanup_button")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("🧹", fontSize = 11.sp)
+                    Text(
+                        text = "Temizle & Sırala",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
+                    )
+                }
+            }
+        }
+
+        // Çoklu Seçim Aktifse Üst Aksiyon Çubuğu
+        if (isSelectionMode && filteredBooks.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (isDarkTheme) Color(0x35DC2626) else Color(0xFFFEF2F2),
+                border = BorderStroke(1.dp, BirizError.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val allIds = filteredBooks.map { it.id }
+                    val allSelected = selectedBookIds.size == allIds.size && allIds.isNotEmpty()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onSelectAllBooks(allIds) }
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = { onSelectAllBooks(allIds) },
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (allSelected) "Tüm Seçimi Kaldır" else "Tümünü Seç (${allIds.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryText
+                        )
+                    }
+
+                    Button(
+                        onClick = onBulkDeleteSelected,
+                        enabled = selectedBookIds.isNotEmpty(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BirizError),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Seçilenleri Sil (${selectedBookIds.size})",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }
@@ -948,6 +1203,9 @@ private fun LibraryInventoryView(
                     BookCardGridItem(
                         book = book,
                         isDarkTheme = isDarkTheme,
+                        isSelectionMode = isSelectionMode,
+                        isSelected = selectedBookIds.contains(book.id),
+                        onToggleSelect = { onToggleSelectBook(book.id) },
                         onBorrowClick = { onBorrowClick(book) },
                         onReturnClick = { onReturnClick(book) },
                         onEditClick = { onEditClick(book) },
@@ -965,6 +1223,9 @@ private fun LibraryInventoryView(
                     BookListItem(
                         book = book,
                         isDarkTheme = isDarkTheme,
+                        isSelectionMode = isSelectionMode,
+                        isSelected = selectedBookIds.contains(book.id),
+                        onToggleSelect = { onToggleSelectBook(book.id) },
                         onBorrowClick = { onBorrowClick(book) },
                         onReturnClick = { onReturnClick(book) },
                         onEditClick = { onEditClick(book) },
@@ -984,6 +1245,9 @@ private fun LibraryInventoryView(
 private fun BookCardGridItem(
     book: Book,
     isDarkTheme: Boolean,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onBorrowClick: () -> Unit,
     onReturnClick: () -> Unit,
     onEditClick: () -> Unit,
@@ -995,18 +1259,29 @@ private fun BookCardGridItem(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
+    val isReading = book.activeAssignments.isNotEmpty()
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isSelectionMode) {
+                    Modifier.clickable { onToggleSelect() }
+                } else Modifier
+            )
             .testTag("book_card_${book.registrationNo}"),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBg),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) BirizError.copy(alpha = 0.12f) else cardBg
+        ),
         border = BorderStroke(
-            1.dp,
-            if (isReading) Color(0xFFF59E0B).copy(alpha = 0.5f) else cardBorder
+            if (isSelected) 1.5.dp else 1.dp,
+            when {
+                isSelected -> BirizError
+                isReading -> Color(0xFFF59E0B).copy(alpha = 0.5f)
+                else -> cardBorder
+            }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -1015,23 +1290,33 @@ private fun BookCardGridItem(
                 .fillMaxWidth()
                 .padding(10.dp)
         ) {
-            // Üst Satır: Demirbaş No + Menü
+            // Üst Satır: Demirbaş No + Menü / Seçim Kutusu
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
-                ) {
-                    Text(
-                        text = "#${book.registrationNo}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isSelectionMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggleSelect() },
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
+                    ) {
+                        Text(
+                            text = "#${book.registrationNo}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 Box {
@@ -1130,7 +1415,7 @@ private fun BookCardGridItem(
 
             // Durum Rozeti (Ödünçte ise okuyan(lar), değilse sadece Rafta)
             val readers = book.activeAssignments
-            val isGivenToStudents = readers.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
+            val isGivenToStudents = readers.isNotEmpty()
 
             if (isGivenToStudents) {
                 val isMultiple = readers.size > 1
@@ -1244,6 +1529,9 @@ private fun BookCardGridItem(
 private fun BookListItem(
     book: Book,
     isDarkTheme: Boolean,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onBorrowClick: () -> Unit,
     onReturnClick: () -> Unit,
     onEditClick: () -> Unit,
@@ -1255,13 +1543,24 @@ private fun BookListItem(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
-    val isReading = book.status == "Okunuyor" || book.activeAssignments.isNotEmpty() || !book.currentStudentName.isNullOrBlank()
+    val isReading = book.activeAssignments.isNotEmpty()
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isSelectionMode) {
+                    Modifier.clickable { onToggleSelect() }
+                } else Modifier
+            ),
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBg),
-        border = BorderStroke(1.dp, cardBorder)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) BirizError.copy(alpha = 0.12f) else cardBg
+        ),
+        border = BorderStroke(
+            if (isSelected) 1.5.dp else 1.dp,
+            if (isSelected) BirizError else cardBorder
+        )
     ) {
         Row(
             modifier = Modifier
@@ -1275,6 +1574,14 @@ private fun BookListItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() },
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)

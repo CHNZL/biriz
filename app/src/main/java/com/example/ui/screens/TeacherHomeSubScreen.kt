@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -128,6 +129,21 @@ fun TeacherHomeSubScreen(
     }
     var classTournaments by remember(classId) {
         mutableStateOf<List<Tournament>>(emptyList())
+    }
+
+    LaunchedEffect(classId, students.size) {
+        if (classId.isNotBlank() && classId != "default") {
+            val report = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
+                context = context,
+                classId = classId,
+                validStudents = students,
+                resequenceNumbers = false
+            )
+            if (report.hasChanges) {
+                classBooks = LibraryPersistenceHelper.loadBooks(context, classId)
+                readingRecords = LibraryPersistenceHelper.loadReadingRecords(context, classId)
+            }
+        }
     }
 
     DisposableEffect(classId) {
@@ -591,12 +607,13 @@ fun TeacherHomeSubScreen(
                     )
 
                     val totalPagesRead = readingRecords.sumOf { it.pageCount }
+                    val activeLoansCount = classBooks.count { it.activeAssignments.isNotEmpty() }
                     TeacherModuleBentoTile(
                         emoji = "📚",
                         title = "Sınıf Kitaplığı",
                         primaryStat = "${classBooks.size} Kitap",
                         secondaryInfo = "${readingRecords.size} Okuma • $totalPagesRead Sayfa",
-                        badgeText = "Kitaplık →",
+                        badgeText = if (activeLoansCount > 0) "🟠 $activeLoansCount Okunuyor" else "Kitaplık →",
                         accentColor = Color(0xFF7C3AED),
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE) },

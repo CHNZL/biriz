@@ -612,6 +612,7 @@ fun ParentPortalSubScreen(
                                 todayLessons = todayLessons,
                                 studentSeatDesc = studentSeatDesc,
                                 readingRecords = studentReadingRecords,
+                                classBooks = classBooks,
                                 activeTournament = activeTournament,
                                 lastAnnouncement = parentAnnouncements.firstOrNull(),
                                 lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
@@ -959,6 +960,7 @@ private fun ParentDashboardHomeView(
     todayLessons: List<ScheduleLesson>,
     studentSeatDesc: String,
     readingRecords: List<com.example.data.model.ReadingRecord>,
+    classBooks: List<Book> = emptyList(),
     activeTournament: Tournament?,
     lastAnnouncement: Announcement?,
     lastChatMessage: ChatMessage?,
@@ -967,6 +969,12 @@ private fun ParentDashboardHomeView(
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+
+    val currentlyReadingBook = remember(classBooks, student.id) {
+        classBooks.firstOrNull { book ->
+            book.activeAssignments.any { it.studentId == student.id } || book.currentStudentId == student.id
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1118,15 +1126,29 @@ private fun ParentDashboardHomeView(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Kitap Okuma
-                val lastBook = readingRecords.lastOrNull()
+                // Kitap Okuma (Aktif ödünç alınan kitap varsa öncelikli gösterilir)
+                val lastCompleted = readingRecords.lastOrNull()
+                val (highlightText, descText) = when {
+                    currentlyReadingBook != null -> {
+                        val activeAssign = currentlyReadingBook.activeAssignments.firstOrNull { it.studentId == student.id }
+                        val days = if (activeAssign != null) {
+                            ((System.currentTimeMillis() - activeAssign.assignmentDate) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
+                        } else 1
+                        "📖 ${currentlyReadingBook.name}" to "Şu An Okuyor (${days}. gün) • ${currentlyReadingBook.pageCount} Sayfa"
+                    }
+                    lastCompleted != null -> {
+                        lastCompleted.bookName to "Son Tamamlanan • Toplam: ${readingRecords.size} Kitap"
+                    }
+                    else -> "Kitap Bekleniyor" to "Henüz okuma kaydı girilmedi"
+                }
+
                 BentoCompactCard(
-                    icon = "📖",
-                    title = "Kitap & Okuma",
-                    highlight = lastBook?.bookName ?: "Kitap Bekleniyor",
-                    description = if (lastBook != null) "Toplam: ${readingRecords.size} Kitap Tamamlandı" else "Henüz okuma kaydı girilmedi",
+                    icon = if (currentlyReadingBook != null) "📖" else "📚",
+                    title = if (currentlyReadingBook != null) "Şu An Okuduğu Kitap" else "Kitap & Okuma",
+                    highlight = highlightText,
+                    description = descText,
                     modifier = Modifier.weight(1f),
-                    accentColor = Color(0xFF8B5CF6),
+                    accentColor = if (currentlyReadingBook != null) Color(0xFFD97706) else Color(0xFF8B5CF6),
                     isDarkTheme = isDarkTheme,
                     onClick = { onNavigate(ParentPortalTab.READING) }
                 )
@@ -1508,6 +1530,12 @@ private fun ParentReadingDetailView(
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
+    val activeReadingBooks = remember(classBooks, student.id) {
+        classBooks.filter { book ->
+            book.activeAssignments.any { it.studentId == student.id } || book.currentStudentId == student.id
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
@@ -1528,21 +1556,191 @@ private fun ParentReadingDetailView(
                 ) {
                     Column {
                         Text("📚 Okuma Karnesi", fontSize = 12.sp, color = Color(0xFF8B5CF6), fontWeight = FontWeight.Bold)
-                        Text("${records.size} Kitap Okundu", fontSize = 22.sp, fontWeight = FontWeight.Black, color = primaryText)
+                        Text("${records.size} Kitap Tamamlandı", fontSize = 22.sp, fontWeight = FontWeight.Black, color = primaryText)
                         Text(
-                            "Toplam ${records.sumOf { it.pageCount }} sayfa okundu • +${records.sumOf { it.earnedStars }} ⭐",
+                            "Toplam ${records.sumOf { it.pageCount }} sayfa okundu • +${records.sumOf { it.earnedStars }} ⭐ kazanıldı",
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = primaryText
                         )
+                        if (activeReadingBooks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "📖 Şu an ${activeReadingBooks.size} kitap ödünçte okunuyor",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFD97706)
+                            )
+                        }
                     }
                     Text("📖", fontSize = 36.sp)
                 }
             }
         }
 
+        // --- 1. ŞU AN OKUDUĞU KİTAPLAR (ÖDÜNÇ ALINAN) ---
         item {
-            Text(text = "📕 Tamamlanan Kitaplar", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "📖 Şu An Okuduğu Kitaplar",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.5.sp,
+                    color = primaryText
+                )
+                if (activeReadingBooks.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, Color(0xFFFCD34D))
+                    ) {
+                        Text(
+                            text = "${activeReadingBooks.size} Kitap Ödünçte",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF92400E),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        if (activeReadingBooks.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("📗", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Şu an ödünç alınmış aktif bir kitap bulunmuyor.",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryText
+                            )
+                            Text(
+                                text = "Öğretmeniniz sınıftan kitap verdiğinde veriliş tarihi ve detayları burada anlık görünecektir.",
+                                fontSize = 11.sp,
+                                color = secondaryText
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            items(activeReadingBooks, key = { it.id }) { book ->
+                val myAssignment = book.activeAssignments.firstOrNull { it.studentId == student.id }
+                val assignDateMs = myAssignment?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
+                val daysAgo = ((System.currentTimeMillis() - assignDateMs) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
+                val targetStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isDarkTheme) Color(0x3578350F) else Color(0xFFFEF3C7),
+                    border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(13.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFD97706)
+                                ) {
+                                    Text(
+                                        text = "#${book.registrationNo}",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = TurkishTextHelper.toTurkishTitleCase(book.name),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                    color = primaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFD97706)
+                            ) {
+                                Text(
+                                    text = "$daysAgo. Gününde",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        if (book.author.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Yazar: ${book.author}",
+                                fontSize = 11.5.sp,
+                                color = secondaryText
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📄 ${book.pageCount} Sayfa • Veriliş: ${SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(assignDateMs))}",
+                                fontSize = 11.5.sp,
+                                color = Color(0xFF92400E),
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = BirizGold.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, BirizGold)
+                            ) {
+                                Text(
+                                    text = "İade edilince +$targetStars ⭐",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB45309),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 2. TAMAMLANAN KİTAPLAR & OKUMA GEÇMİŞİ ---
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = "📕 Tamamlanan Kitaplar & Okuma Geçmişi", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
         }
 
         if (records.isEmpty()) {
@@ -1550,19 +1748,19 @@ private fun ParentReadingDetailView(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
                     Text(
                         text = "Henüz tamamlanmış kitap okuma kaydı bulunmuyor.",
                         fontSize = 12.sp,
                         color = secondaryText,
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(14.dp),
                         textAlign = TextAlign.Center
                     )
                 }
             }
         } else {
-            items(records) { rec ->
+            items(records, key = { it.id }) { rec ->
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
@@ -1574,22 +1772,24 @@ private fun ParentReadingDetailView(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
-                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 15.5.sp, color = primaryText)
-                            Spacer(modifier = Modifier.height(3.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = primaryText)
+                            Spacer(modifier = Modifier.height(2.dp))
                             val readingDays = maxOf(1, ((rec.endDate - rec.startDate) / (1000 * 60 * 60 * 24)).toInt())
-                            Text(text = "Sayfa: ${rec.pageCount} • $readingDays gün okuma", fontSize = 12.5.sp, color = secondaryText)
+                            val endStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(rec.endDate))
+                            Text(text = "${rec.pageCount} Sayfa • $readingDays günde okundu • Bitiş: $endStr", fontSize = 11.5.sp, color = secondaryText)
                         }
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = BirizAmber.copy(alpha = 0.2f)
+                            color = BirizAmber.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.5f))
                         ) {
                             Text(
                                 text = "+${rec.earnedStars} ⭐",
-                                fontSize = 14.sp,
+                                fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Black,
                                 color = BirizAmber,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -1597,26 +1797,121 @@ private fun ParentReadingDetailView(
             }
         }
 
-        // Sınıf Kitaplığındaki Kitaplar
+        // --- 3. SINIF KİTAPLIĞI ENVANTERİ (KVKK ANONİM GÖSTERİM) ---
         item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "📚 Sınıf Kitaplığında Mevcut Kitaplar", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "📚 Sınıf Kitaplığı Mevcut Envanteri",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = primaryText
+                )
+                Text(
+                    text = "${classBooks.size} Eser",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                )
+            }
         }
 
-        items(classBooks.take(10)) { b ->
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+        if (classBooks.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
-                    Text(text = b.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = primaryText)
-                    Text(text = "${b.pageCount} Sayfa", fontSize = 12.5.sp, color = secondaryText)
+                    Text(
+                        text = "Sınıf kütüphanesine henüz kitap eklenmedi.",
+                        fontSize = 12.sp,
+                        color = secondaryText,
+                        modifier = Modifier.padding(14.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            items(classBooks.sortedBy { it.registrationNo }, key = { it.id }) { b ->
+                val isMyChildReading = b.activeAssignments.any { it.studentId == student.id } || b.currentStudentId == student.id
+                val isAnotherChildReading = !isMyChildReading && b.activeAssignments.isNotEmpty()
+                val isCompletedByMyChild = records.any { it.bookId == b.id || it.bookName.trim().equals(b.name.trim(), ignoreCase = true) }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isMyChildReading) {
+                        if (isDarkTheme) Color(0x30D97706) else Color(0xFFFEF3C7)
+                    } else if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(
+                        if (isMyChildReading) 1.2.dp else 1.dp,
+                        if (isMyChildReading) Color(0xFFF59E0B) else (if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
+                            ) {
+                                Text(
+                                    text = "#${b.registrationNo}",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = TurkishTextHelper.toTurkishTitleCase(b.name),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${b.pageCount} Sayfa" + if (b.author.isNotBlank()) " • ${b.author}" else "",
+                                    fontSize = 11.sp,
+                                    color = secondaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Durum etiketi (KVKK kurallarına uygun: Başka bir öğrencinin adı ASLA veliye gösterilmez)
+                        val (statusText, statusColor, statusBg) = when {
+                            isMyChildReading -> Triple("Çocuğunuzda 📖", Color(0xFF92400E), Color(0xFFFDE68A))
+                            isCompletedByMyChild -> Triple("Okundu ✓", Color(0xFF047857), Color(0xFFD1FAE5))
+                            isAnotherChildReading -> Triple("Ödünçte", Color(0xFFB45309), Color(0xFFFEF3C7))
+                            else -> Triple("Rafta", Color(0xFF065F46), Color(0xFFD1FAE5))
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = statusBg
+                        ) {
+                            Text(
+                                text = statusText,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = statusColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
