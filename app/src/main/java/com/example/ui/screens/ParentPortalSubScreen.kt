@@ -854,7 +854,7 @@ fun ParentPortalSubScreen(
                                     label = {
                                         Text(
                                             text = tab.title,
-                                            fontSize = 11.5.sp,
+                                            fontSize = 10.5.sp,
                                             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                                             maxLines = 1,
                                             softWrap = false
@@ -1120,25 +1120,30 @@ private fun ParentDashboardHomeView(
                     .fillMaxWidth()
                     .clip(heroShape)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(heroBrush)
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(16.dp)
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (student.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                        modifier = Modifier.size(60.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 32.sp)
+                        Surface(
+                            shape = CircleShape,
+                            color = if (student.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 28.sp)
+                            }
                         }
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = BirizTurquoise
@@ -1148,43 +1153,45 @@ private fun ParentDashboardHomeView(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = BirizNavyDark,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = classRoom?.let { "${it.gradeLevel}/${it.section} • ${it.teacherName}" } ?: "Sınıf",
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isDarkTheme) Color.LightGray else Color(0xFF334155),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 2
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = student.fullName,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
-                            color = if (isDarkTheme) Color.White else BirizNavyPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = BirizAmber.copy(alpha = 0.16f),
-                        border = BorderStroke(1.5.dp, BirizAmber)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = BirizAmber.copy(alpha = 0.16f),
+                            border = BorderStroke(1.5.dp, BirizAmber)
                         ) {
-                            Text(text = "⭐ $totalStars", fontSize = 21.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                            Text(text = "Yıldız", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = BirizAmber)
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = "⭐ $totalStars", fontSize = 20.sp, fontWeight = FontWeight.Black, color = BirizAmber)
+                                Text(text = "Yıldız", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = BirizAmber)
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = student.fullName,
+                        fontSize = 20.sp,
+                        lineHeight = 25.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("parent_hero_student_name")
+                    )
                 }
             }
         }
@@ -3162,8 +3169,7 @@ private fun ParentCommunicationDetailView(
                                 text = "${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} • ${student.studentNumber} ${student.fullName}",
                                 fontSize = 11.sp,
                                 color = secondaryText,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 2
                             )
                         }
                         Surface(
