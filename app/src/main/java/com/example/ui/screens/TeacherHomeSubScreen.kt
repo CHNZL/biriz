@@ -133,15 +133,27 @@ fun TeacherHomeSubScreen(
 
     LaunchedEffect(classId, students.size) {
         if (classId.isNotBlank() && classId != "default") {
-            val report = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
+            val libReport = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
                 context = context,
                 classId = classId,
                 validStudents = students,
                 resequenceNumbers = false
             )
-            if (report.hasChanges) {
+            val tourneyCleaned = TournamentPersistenceHelper.cleanupStaleAndOrphanedTournamentData(
+                context = context,
+                classId = classId
+            )
+            val validStudentIds = students.map { it.id }.toSet()
+            val starCleaned = StarRewardPersistenceHelper.cleanupStaleAndOrphanedStarRecords(
+                context = context,
+                classId = classId,
+                validStudentIds = validStudentIds
+            )
+            if (libReport.hasChanges || tourneyCleaned > 0 || starCleaned > 0) {
                 classBooks = LibraryPersistenceHelper.loadBooks(context, classId)
                 readingRecords = LibraryPersistenceHelper.loadReadingRecords(context, classId)
+                classTournaments = TournamentPersistenceHelper.loadTournaments(context, classId)
+                allClassStars = StarRewardPersistenceHelper.loadStarRecords(context, classId)
             }
         }
     }

@@ -165,6 +165,15 @@ fun TournamentSubScreen(
         }
     }
 
+    LaunchedEffect(classRoom.id) {
+        if (classRoom.id.isNotBlank() && classRoom.id != "default") {
+            val cleaned = TournamentPersistenceHelper.cleanupStaleAndOrphanedTournamentData(context, classRoom.id)
+            if (cleaned > 0) {
+                refreshData()
+            }
+        }
+    }
+
     DisposableEffect(classRoom.id, selectedTournament?.id) {
         refreshData()
         val tournamentsListener = TournamentPersistenceHelper.observeFirestoreTournaments(context, classRoom.id) { updatedTournaments ->

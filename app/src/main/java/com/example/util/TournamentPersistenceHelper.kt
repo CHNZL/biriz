@@ -149,63 +149,33 @@ object TournamentPersistenceHelper {
                 saveTournaments(context, classId, list)
             }
 
-            list.sortedByDescending { it.createdAt }
+            list.filter { it.id.isNotBlank() && it.name.isNotBlank() }.sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading tournaments", e)
             emptyList()
         }
     }
 
-    fun saveTournaments(context: Context, classId: String, tournaments: List<Tournament>) {
+    private fun saveTournamentsToLocalPrefsOnly(context: Context, classId: String, tournaments: List<Tournament>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val array = JSONArray()
         tournaments.forEach { t ->
-            val starObj = JSONObject().apply {
-                put("enabled", t.starRewards.enabled)
-                put("firstPlaceStars", t.starRewards.firstPlaceStars)
-                put("secondPlaceStars", t.starRewards.secondPlaceStars)
-                put("thirdPlaceStars", t.starRewards.thirdPlaceStars)
-                put("participationStars", t.starRewards.participationStars)
-                put("winBonusStars", t.starRewards.winBonusStars)
-                put("distributed", t.starRewards.distributed)
-                t.starRewards.distributedAt?.let { put("distributedAt", it) }
-            }
-
-            val partArray = JSONArray()
-            t.participants.forEach { partArray.put(it) }
-
-            val obj = JSONObject().apply {
-                put("id", t.id)
-                put("classRoomId", t.classRoomId)
-                put("name", t.name)
-                put("description", t.description)
-                put("type", t.type.name)
-                put("matchType", t.matchType.name)
-                put("fixtureType", t.fixtureType)
-                put("winnerSelectionMethod", t.winnerSelectionMethod.name)
-                put("currentRound", t.currentRound)
-                put("participants", partArray)
-                put("status", t.status.name)
-                t.winnerName?.let { put("winnerName", it) }
-                t.winnerId?.let { put("winnerId", it) }
-                t.runnerUpName?.let { put("runnerUpName", it) }
-                t.runnerUpId?.let { put("runnerUpId", it) }
-                t.thirdPlaceName?.let { put("thirdPlaceName", it) }
-                t.thirdPlaceId?.let { put("thirdPlaceId", it) }
-                put("pointsWin", t.pointsWin)
-                put("pointsDraw", t.pointsDraw)
-                put("pointsLoss", t.pointsLoss)
-                put("groupCount", t.groupCount)
-                put("groupNaming", t.groupNaming)
-                put("advancingPerGroup", t.advancingPerGroup)
-                put("currentStage", t.currentStage)
-                put("starRewards", starObj)
-                put("createdAt", t.createdAt)
-                put("updatedAt", t.updatedAt)
-            }
-            array.put(obj)
+            array.put(serializeTournament(t))
         }
         prefs.edit().putString("$KEY_TOURNAMENTS_PREFIX$classId", array.toString()).apply()
+    }
+
+    private fun saveMatchesToLocalPrefsOnly(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val array = JSONArray()
+        matches.forEach { m ->
+            array.put(serializeMatch(m))
+        }
+        prefs.edit().putString("$KEY_MATCHES_PREFIX$tournamentId", array.toString()).apply()
+    }
+
+    fun saveTournaments(context: Context, classId: String, tournaments: List<Tournament>) {
+        saveTournamentsToLocalPrefsOnly(context, classId, tournaments)
 
         syncScope.launch {
             uploadTournamentsToFirestore(context, classId, tournaments)
@@ -259,36 +229,7 @@ object TournamentPersistenceHelper {
     }
 
     fun saveMatches(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val array = JSONArray()
-        matches.forEach { m ->
-            val obj = JSONObject().apply {
-                put("id", m.id)
-                put("tournamentId", m.tournamentId)
-                put("round", m.round)
-                put("player1Id", m.player1Id)
-                put("player2Id", m.player2Id)
-                put("player1Name", m.player1Name)
-                put("player2Name", m.player2Name)
-                m.winnerId?.let { put("winnerId", it) }
-                m.score1?.let { put("score1", it) }
-                m.score2?.let { put("score2", it) }
-                put("status", m.status)
-                put("matchCode", m.matchCode)
-                put("isDoubleMatch", m.isDoubleMatch)
-                m.pairCode?.let { put("pairCode", it) }
-                put("isTieBreaker", m.isTieBreaker)
-                put("isThirdPlaceMatch", m.isThirdPlaceMatch)
-                m.player1Source?.let { put("player1Source", it) }
-                m.player2Source?.let { put("player2Source", it) }
-                m.groupId?.let { put("groupId", it) }
-                m.groupName?.let { put("groupName", it) }
-                put("stage", m.stage)
-                put("createdAt", m.createdAt)
-            }
-            array.put(obj)
-        }
-        prefs.edit().putString("$KEY_MATCHES_PREFIX$tournamentId", array.toString()).apply()
+        saveMatchesToLocalPrefsOnly(context, tournamentId, matches)
 
         syncScope.launch {
             uploadMatchesToFirestore(context, tournamentId, matches)
@@ -611,43 +552,90 @@ object TournamentPersistenceHelper {
 
     /**
      * Turnuva Silme ve Güvenli Geri Alma (Rollback)
-     * Turnuva silinirse o turnuvadan dağıtılan tüm yıldızlar hatasız silinir.
+     * Turnuva silinirse o turnuvaya ait tüm maç alt koleksiyonu ve dağıtılan yıldızlar hatasız silinir.
      */
     fun deleteTournament(context: Context, classRoomId: String, tournamentId: String) {
         val tournaments = loadTournaments(context, classRoomId).toMutableList()
         val tournament = tournaments.find { it.id == tournamentId }
 
         tournaments.removeAll { it.id == tournamentId }
-        saveTournaments(context, classRoomId, tournaments)
+        saveTournamentsToLocalPrefsOnly(context, classRoomId, tournaments)
 
-        // Maçları temizle
+        // Maçları yerelden temizle
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove("$KEY_MATCHES_PREFIX$tournamentId").apply()
 
         if (classRoomId.isNotBlank() && classRoomId != "default") {
-            syncScope.launch {
-                try {
-                    val db = getFirestore(context) ?: return@launch
-                    db.collection("classrooms").document(classRoomId)
-                        .collection("tournaments").document(tournamentId).delete()
-                } catch (_: Exception) {}
-            }
+            deleteTournamentDocsFromFirestore(context, classRoomId, setOf(tournamentId))
         }
 
         // Yıldızları Geri Al (Rollback)
         if (tournament != null) {
-            val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId).toMutableList()
+            val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
             val prefix = "Turnuva Ödülü: [${tournament.name}]"
             val participationPrefix = "Turnuva Katılım Ödülü: [${tournament.name}]"
 
-            val countBefore = starRecords.size
-            starRecords.removeAll { it.note.startsWith(prefix) || it.note.startsWith(participationPrefix) }
+            val idsToRemove = starRecords
+                .filter { it.note.startsWith(prefix) || it.note.startsWith(participationPrefix) }
+                .map { it.id }
+                .toSet()
 
-            if (starRecords.size != countBefore) {
-                StarRewardPersistenceHelper.saveStarRecords(context, classRoomId, starRecords)
-                Log.d(TAG, "Turnuva silindi ve dağıtılan yıldızlar geri çekildi.")
+            if (idsToRemove.isNotEmpty()) {
+                StarRewardPersistenceHelper.deleteRecordsByIds(context, classRoomId, idsToRemove)
+                Log.d(TAG, "Turnuva silindi ve dağıtılan ${idsToRemove.size} yıldız kaydı geri çekildi.")
             }
         }
+    }
+
+    /**
+     * Bozuk/hatalı turnuvaları, sahipsiz maç önbelleklerini ve silinmiş turnuvalara ait yetim yıldızları temizler.
+     */
+    fun cleanupStaleAndOrphanedTournamentData(context: Context, classId: String): Int {
+        if (classId.isBlank() || classId == "default") return 0
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        var cleanedCount = 0
+
+        val rawJson = prefs.getString("$KEY_TOURNAMENTS_PREFIX$classId", null)
+        val hasSyncedTournaments = rawJson != null
+        val currentTournaments = loadTournaments(context, classId)
+        val validTournaments = currentTournaments.filter { it.id.isNotBlank() && it.name.isNotBlank() && it.participants.isNotEmpty() }
+        val removedIds = currentTournaments.filter { it !in validTournaments }.map { it.id }.toSet()
+
+        if (removedIds.isNotEmpty()) {
+            cleanedCount += removedIds.size
+            saveTournamentsToLocalPrefsOnly(context, classId, validTournaments)
+            deleteTournamentDocsFromFirestore(context, classId, removedIds)
+        }
+
+        // Tüm sınıflardaki aktif turnuva ID'lerini topla ve sahipsiz local matches_* kayıtlarını temizle
+        val allActiveTournamentIds = mutableSetOf<String>()
+        prefs.all.keys.filter { it.startsWith(KEY_TOURNAMENTS_PREFIX) }.forEach { key ->
+            val cid = key.removePrefix(KEY_TOURNAMENTS_PREFIX)
+            loadTournaments(context, cid).forEach { t ->
+                if (t.id.isNotBlank()) allActiveTournamentIds.add(t.id)
+            }
+        }
+        val orphanMatchKeys = prefs.all.keys.filter { key ->
+            key.startsWith(KEY_MATCHES_PREFIX) && key.removePrefix(KEY_MATCHES_PREFIX) !in allActiveTournamentIds
+        }
+        if (orphanMatchKeys.isNotEmpty()) {
+            val editor = prefs.edit()
+            orphanMatchKeys.forEach { editor.remove(it) }
+            editor.apply()
+            cleanedCount += orphanMatchKeys.size
+        }
+
+        // Artık var olmayan turnuvalara ait sahipsiz turnuva yıldızlarını temizle
+        if (hasSyncedTournaments) {
+            val validNames = validTournaments.map { it.name }.toSet()
+            cleanedCount += StarRewardPersistenceHelper.cleanupStaleAndOrphanedStarRecords(
+                context = context,
+                classId = classId,
+                validTournamentNames = validNames
+            )
+        }
+
+        return cleanedCount
     }
 
     // -------------------------------------------------------------
@@ -804,31 +792,66 @@ object TournamentPersistenceHelper {
         )
     }
 
-    fun uploadTournamentsToFirestore(context: Context, classId: String, tournaments: List<Tournament>) {
-        if (classId.isBlank() || classId == "default") return
+    private fun deleteTournamentDocsFromFirestore(context: Context, classId: String, tournamentIds: Set<String>) {
+        if (classId.isBlank() || classId == "default" || tournamentIds.isEmpty()) return
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
-                val batch = db.batch()
-                tournaments.forEach { t ->
-                    val doc = db.collection("classrooms").document(classId).collection("tournaments").document(t.id)
-                    batch.set(
-                        doc,
-                        mapOf(
-                            "id" to t.id,
-                            "classRoomId" to classId,
-                            "name" to t.name,
-                            "type" to t.type.name,
-                            "status" to t.status.name,
-                            "winnerName" to (t.winnerName ?: ""),
-                            "participantCount" to t.participants.size,
-                            "json" to serializeTournament(t).toString(),
-                            "updatedAt" to System.currentTimeMillis()
-                        ),
-                        SetOptions.merge()
-                    )
+                val col = db.collection("classrooms").document(classId).collection("tournaments")
+                tournamentIds.filter { it.isNotBlank() }.chunked(400).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { tid -> batch.delete(col.document(tid)) }
+                    batch.commit()
                 }
-                batch.commit()
+
+                // Bağlı maç alt koleksiyonunu da temizle
+                tournamentIds.filter { it.isNotBlank() }.forEach { tid ->
+                    val matchesCol = db.collection("tournaments").document(tid).collection("matches")
+                    matchesCol.get().addOnSuccessListener { snap ->
+                        if (snap != null && !snap.isEmpty) {
+                            snap.documents.chunked(400).forEach { mChunk ->
+                                val mBatch = db.batch()
+                                mChunk.forEach { doc -> mBatch.delete(doc.reference) }
+                                mBatch.commit()
+                            }
+                        }
+                        db.collection("tournaments").document(tid).delete()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed deleting tournaments from Firestore", e)
+            }
+        }
+    }
+
+    fun uploadTournamentsToFirestore(context: Context, classId: String, tournaments: List<Tournament>) {
+        if (classId.isBlank() || classId == "default" || tournaments.isEmpty()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val col = db.collection("classrooms").document(classId).collection("tournaments")
+                tournaments.chunked(400).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { t ->
+                        val doc = col.document(t.id)
+                        batch.set(
+                            doc,
+                            mapOf(
+                                "id" to t.id,
+                                "classRoomId" to classId,
+                                "name" to t.name,
+                                "type" to t.type.name,
+                                "status" to t.status.name,
+                                "winnerName" to (t.winnerName ?: ""),
+                                "participantCount" to t.participants.size,
+                                "json" to serializeTournament(t).toString(),
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        )
+                    }
+                    batch.commit()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed uploading tournaments to Firestore", e)
             }
@@ -836,32 +859,35 @@ object TournamentPersistenceHelper {
     }
 
     fun uploadMatchesToFirestore(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
-        if (tournamentId.isBlank()) return
+        if (tournamentId.isBlank() || matches.isEmpty()) return
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
-                val batch = db.batch()
-                matches.take(80).forEach { m ->
-                    val doc = db.collection("tournaments").document(tournamentId).collection("matches").document(m.id)
-                    batch.set(
-                        doc,
-                        mapOf(
-                            "id" to m.id,
-                            "tournamentId" to tournamentId,
-                            "round" to m.round,
-                            "player1Name" to m.player1Name,
-                            "player2Name" to m.player2Name,
-                            "status" to m.status,
-                            "score1" to (m.score1 ?: -1),
-                            "score2" to (m.score2 ?: -1),
-                            "winnerId" to (m.winnerId ?: ""),
-                            "json" to serializeMatch(m).toString(),
-                            "updatedAt" to System.currentTimeMillis()
-                        ),
-                        SetOptions.merge()
-                    )
+                val col = db.collection("tournaments").document(tournamentId).collection("matches")
+                matches.chunked(400).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { m ->
+                        val doc = col.document(m.id)
+                        batch.set(
+                            doc,
+                            mapOf(
+                                "id" to m.id,
+                                "tournamentId" to tournamentId,
+                                "round" to m.round,
+                                "player1Name" to m.player1Name,
+                                "player2Name" to m.player2Name,
+                                "status" to m.status,
+                                "score1" to (m.score1 ?: -1),
+                                "score2" to (m.score2 ?: -1),
+                                "winnerId" to (m.winnerId ?: ""),
+                                "json" to serializeMatch(m).toString(),
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        )
+                    }
+                    batch.commit()
                 }
-                batch.commit()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed uploading matches to Firestore", e)
             }
@@ -881,36 +907,33 @@ object TournamentPersistenceHelper {
                     if (error != null || snapshot == null) return@addSnapshotListener
                     try {
                         val list = mutableListOf<Tournament>()
+                        val invalidDocIds = mutableSetOf<String>()
                         for (doc in snapshot.documents) {
                             val jsonStr = doc.getString("json")
                             if (!jsonStr.isNullOrBlank()) {
                                 try {
-                                    list.add(deserializeTournament(JSONObject(jsonStr), classId))
-                                } catch (_: Exception) {}
-                            }
-                        }
-                        if (list.isEmpty()) {
-                            val localTournaments = loadTournaments(context, classId)
-                            if (localTournaments.isNotEmpty()) {
-                                uploadTournamentsToFirestore(context, classId, localTournaments)
-                                localTournaments.forEach { t ->
-                                    val localMatches = loadMatches(context, t.id)
-                                    if (localMatches.isNotEmpty()) {
-                                        uploadMatchesToFirestore(context, t.id, localMatches)
+                                    val t = deserializeTournament(JSONObject(jsonStr), classId)
+                                    if (t.id.isBlank() || t.name.isBlank() || t.participants.isEmpty()) {
+                                        invalidDocIds.add(doc.id)
+                                    } else {
+                                        list.add(t)
                                     }
+                                } catch (_: Exception) {
+                                    invalidDocIds.add(doc.id)
                                 }
-                                onUpdate(localTournaments)
-                                return@addSnapshotListener
+                            } else {
+                                invalidDocIds.add(doc.id)
                             }
                         }
-                        list.sortByDescending { it.createdAt }
-                        if (list.isNotEmpty()) {
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            val array = JSONArray()
-                            list.forEach { array.put(serializeTournament(it)) }
-                            prefs.edit().putString("$KEY_TOURNAMENTS_PREFIX$classId", array.toString()).apply()
+                        if (invalidDocIds.isNotEmpty()) {
+                            deleteTournamentDocsFromFirestore(context, classId, invalidDocIds)
                         }
-                        onUpdate(list)
+
+                        val sorted = list.distinctBy { it.id }.sortedByDescending { it.createdAt }
+                        // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan turnuvaları geri yükleme!)
+                        saveTournamentsToLocalPrefsOnly(context, classId, sorted)
+                        cleanupStaleAndOrphanedTournamentData(context, classId)
+                        onUpdate(sorted)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in observeFirestoreTournaments", e)
                     }
@@ -941,21 +964,9 @@ object TournamentPersistenceHelper {
                                 } catch (_: Exception) {}
                             }
                         }
-                        if (list.isEmpty()) {
-                            val localMatches = loadMatches(context, tournamentId)
-                            if (localMatches.isNotEmpty()) {
-                                uploadMatchesToFirestore(context, tournamentId, localMatches)
-                                onUpdate(localMatches)
-                                return@addSnapshotListener
-                            }
-                        }
-                        val sorted = list.sortedWith(compareBy({ it.round }, { it.matchCode }))
-                        if (sorted.isNotEmpty()) {
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            val array = JSONArray()
-                            sorted.forEach { array.put(serializeMatch(it)) }
-                            prefs.edit().putString("$KEY_MATCHES_PREFIX$tournamentId", array.toString()).apply()
-                        }
+                        val sorted = list.distinctBy { it.id }.sortedWith(compareBy({ it.round }, { it.matchCode }))
+                        // Firestore SSOT: Boş olsa bile yerel önbelleği güncelle
+                        saveMatchesToLocalPrefsOnly(context, tournamentId, sorted)
                         onUpdate(sorted)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in observeFirestoreMatches", e)

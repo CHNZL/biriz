@@ -43,28 +43,45 @@ object StarRewardPersistenceHelper {
         return try {
             val jsonArray = JSONArray(jsonStr)
             val list = mutableListOf<StarRewardRecord>()
+            var hadCorrupt = false
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
+                val id = obj.optString("id", "").trim()
+                val studentId = obj.optString("studentId", "").trim()
+                val starCount = obj.optInt("starCount", 1)
+                if (id.isBlank() || studentId.isBlank() || starCount <= 0) {
+                    hadCorrupt = true
+                    continue
+                }
                 list.add(
                     StarRewardRecord(
-                        id = obj.optString("id", ""),
+                        id = id,
                         classId = obj.optString("classId", classId),
-                        studentId = obj.optString("studentId", ""),
+                        studentId = studentId,
                         studentName = obj.optString("studentName", ""),
                         studentNumber = obj.optString("studentNumber", ""),
                         categoryId = obj.optString("categoryId", ""),
                         categoryName = obj.optString("categoryName", ""),
-                        starCount = obj.optInt("starCount", 1),
+                        starCount = starCount,
                         note = obj.optString("note", ""),
                         isLuckyBonus = obj.optBoolean("isLuckyBonus", false),
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis())
                     )
                 )
             }
-            list.sortedByDescending { it.timestamp }
+            val cleaned = list.distinctBy { it.id }.sortedByDescending { it.timestamp }
+            if (hadCorrupt || cleaned.size != list.size) {
+                saveStarRecords(context, classId, cleaned)
+            }
+            cleaned
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    fun hasSyncedStarCache(context: Context, classId: String): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.contains("$KEY_RECORDS_PREFIX$classId")
     }
 
     fun saveStarRecords(context: Context, classId: String, records: List<StarRewardRecord>) {
@@ -127,15 +144,49 @@ object StarRewardPersistenceHelper {
     }
 
     fun deleteRecordsByIds(context: Context, classId: String, recordIds: Set<String>): List<StarRewardRecord> {
+        if (recordIds.isEmpty()) return loadStarRecords(context, classId)
         val current = loadStarRecords(context, classId).filter { !recordIds.contains(it.id) }
         saveStarRecords(context, classId, current)
 
         syncScope.launch {
-            recordIds.forEach { recordId ->
-                deleteRecordFromFirestore(context, classId, recordId)
-            }
+            deleteRecordIdsBatchFromFirestore(context, classId, recordIds)
         }
         return current
+    }
+
+    /**
+     * Belirli bir kategoriye (örn. "cat_kitap_kurdu") ait tüm yıldız kayıtlarını hem yerelden hem Firestore'dan siler.
+     */
+    fun deleteRecordsByCategory(context: Context, classId: String, categoryId: String): Int {
+        val current = loadStarRecords(context, classId)
+        val toRemove = current.filter { it.categoryId == categoryId }
+        val removedStars = toRemove.sumOf { it.starCount }
+        val remaining = current.filter { it.categoryId != categoryId }
+        if (remaining.size != current.size) {
+            saveStarRecords(context, classId, remaining)
+        }
+
+        syncScope.launch {
+            if (classId.isBlank() || classId == "default") return@launch
+            val db = getFirestore(context) ?: return@launch
+            val collRef = db.collection("classrooms").document(classId).collection("stars")
+            collRef.whereEqualTo("categoryId", categoryId).get()
+                .addOnSuccessListener { snapshot ->
+                    if (snapshot != null && !snapshot.isEmpty) {
+                        snapshot.documents.chunked(400).forEach { chunk ->
+                            val batch = db.batch()
+                            chunk.forEach { doc -> batch.delete(doc.reference) }
+                            batch.commit().addOnFailureListener { e ->
+                                handleFirestoreError(e, OperationType.DELETE, collRef.path)
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    handleFirestoreError(e, OperationType.LIST, collRef.path)
+                }
+        }
+        return removedStars
     }
 
     fun clearAllRecords(context: Context, classId: String): List<StarRewardRecord> {
@@ -148,12 +199,14 @@ object StarRewardPersistenceHelper {
             collRef.get()
                 .addOnSuccessListener { snapshot ->
                     if (snapshot != null && !snapshot.isEmpty) {
-                        val batch = db.batch()
-                        snapshot.documents.forEach { doc ->
-                            batch.delete(doc.reference)
-                        }
-                        batch.commit().addOnFailureListener { e ->
-                            handleFirestoreError(e, OperationType.DELETE, collRef.path)
+                        snapshot.documents.chunked(400).forEach { chunk ->
+                            val batch = db.batch()
+                            chunk.forEach { doc ->
+                                batch.delete(doc.reference)
+                            }
+                            batch.commit().addOnFailureListener { e ->
+                                handleFirestoreError(e, OperationType.DELETE, collRef.path)
+                            }
                         }
                     }
                 }
@@ -164,12 +217,64 @@ object StarRewardPersistenceHelper {
         return emptyList()
     }
 
+    /**
+     * Sınıftan ayrılmış öğrencilere, bozuk/eksik alanlara veya artık var olmayan okuma/turnuva kayıtlarına ait
+     * yetim/hatalı yıldızları yerelden ve Firestore'dan otomatik temizler.
+     */
+    fun cleanupStaleAndOrphanedStarRecords(
+        context: Context,
+        classId: String,
+        validStudentIds: Set<String> = emptySet(),
+        validTournamentNames: Set<String>? = null,
+        readingRecordsSynced: Boolean = false,
+        validReadingRecords: List<com.example.data.model.ReadingRecord> = emptyList()
+    ): Int {
+        if (classId.isBlank() || classId == "default") return 0
+        val current = loadStarRecords(context, classId)
+        if (current.isEmpty()) return 0
+
+        val idsToRemove = mutableSetOf<String>()
+        current.forEach { sr ->
+            val isCorrupt = sr.id.isBlank() || sr.studentId.isBlank() || sr.starCount <= 0
+            val isInvalidStudent = validStudentIds.isNotEmpty() && sr.studentId !in validStudentIds
+
+            val isOrphanTournamentStar = if (validTournamentNames != null &&
+                (sr.note.startsWith("Turnuva Ödülü: [") || sr.note.startsWith("Turnuva Katılım Ödülü: ["))
+            ) {
+                val startIdx = sr.note.indexOf('[')
+                val endIdx = sr.note.indexOf(']', startIdx + 1)
+                if (startIdx != -1 && endIdx > startIdx) {
+                    val tName = sr.note.substring(startIdx + 1, endIdx)
+                    tName !in validTournamentNames
+                } else {
+                    validTournamentNames.isEmpty()
+                }
+            } else false
+
+            val isOrphanReadingStar = if (readingRecordsSynced && sr.categoryId == "cat_kitap_kurdu") {
+                validReadingRecords.none { rec ->
+                    rec.studentId == sr.studentId &&
+                        (sr.note.contains(rec.bookName, ignoreCase = true) || kotlin.math.abs(sr.timestamp - rec.endDate) < 60000L)
+                }
+            } else false
+
+            if (isCorrupt || isInvalidStudent || isOrphanTournamentStar || isOrphanReadingStar) {
+                idsToRemove.add(sr.id)
+            }
+        }
+
+        if (idsToRemove.isNotEmpty()) {
+            deleteRecordsByIds(context, classId, idsToRemove)
+        }
+        return idsToRemove.size
+    }
+
     fun getStudentTotalStars(records: List<StarRewardRecord>, studentId: String): Int {
         return records.filter { it.studentId == studentId }.sumOf { it.starCount }
     }
 
     /**
-     * Firebase Firestore gerçek zamanlı senkronizasyon dinleyicisi
+     * Firebase Firestore gerçek zamanlı senkronizasyon dinleyicisi (Firestore SSOT)
      */
     fun observeFirestoreStars(
         context: Context,
@@ -188,16 +293,22 @@ object StarRewardPersistenceHelper {
                         return@addSnapshotListener
                     }
                     if (snapshot != null) {
+                        val invalidDocIds = mutableSetOf<String>()
                         val cloudRecords = snapshot.documents.mapNotNull { doc ->
-                            val sId = doc.getString("studentId") ?: return@mapNotNull null
+                            val sId = doc.getString("studentId")?.trim()
                             val sName = doc.getString("studentName") ?: ""
                             val sNum = doc.getString("studentNumber") ?: ""
                             val catId = doc.getString("categoryId") ?: ""
                             val catName = doc.getString("categoryName") ?: ""
-                            val count = (doc.getLong("starCount") ?: 1L).toInt()
+                            val count = (doc.getLong("starCount") ?: 0L).toInt()
                             val note = doc.getString("note") ?: ""
                             val isLucky = doc.getBoolean("isLuckyBonus") ?: false
                             val ts = doc.getLong("timestamp") ?: System.currentTimeMillis()
+
+                            if (sId.isNullOrBlank() || count <= 0) {
+                                invalidDocIds.add(doc.id)
+                                return@mapNotNull null
+                            }
 
                             StarRewardRecord(
                                 id = doc.id,
@@ -214,15 +325,13 @@ object StarRewardPersistenceHelper {
                             )
                         }.sortedByDescending { it.timestamp }
 
-                        if (cloudRecords.isEmpty()) {
-                            val localRecords = loadStarRecords(context, classId)
-                            if (localRecords.isNotEmpty()) {
-                                uploadRecordsBatchToFirestore(context, classId, localRecords)
-                                onUpdate(localRecords)
-                                return@addSnapshotListener
+                        if (invalidDocIds.isNotEmpty()) {
+                            syncScope.launch {
+                                deleteRecordIdsBatchFromFirestore(context, classId, invalidDocIds)
                             }
                         }
 
+                        // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan yıldızları geri yükleme!)
                         saveStarRecords(context, classId, cloudRecords)
                         onUpdate(cloudRecords)
                     }
@@ -260,38 +369,56 @@ object StarRewardPersistenceHelper {
     private fun uploadRecordsBatchToFirestore(context: Context, classId: String, records: List<StarRewardRecord>) {
         if (classId.isBlank() || classId == "default" || records.isEmpty()) return
         val db = getFirestore(context) ?: return
-        val batch = db.batch()
-        records.forEach { record ->
-            val docRef = db.collection("classrooms").document(classId).collection("stars").document(record.id)
-            val payload = mapOf(
-                "classId" to classId,
-                "studentId" to record.studentId,
-                "studentName" to record.studentName,
-                "studentNumber" to record.studentNumber,
-                "categoryId" to record.categoryId,
-                "categoryName" to record.categoryName,
-                "starCount" to record.starCount,
-                "note" to record.note,
-                "isLuckyBonus" to record.isLuckyBonus,
-                "timestamp" to record.timestamp,
-                "createdAt" to FieldValue.serverTimestamp(),
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            batch.set(docRef, payload)
-        }
-        batch.commit()
-            .addOnFailureListener { e ->
-                handleFirestoreError(e, OperationType.WRITE, "classrooms/$classId/stars/batch")
+        records.chunked(400).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { record ->
+                val docRef = db.collection("classrooms").document(classId).collection("stars").document(record.id)
+                val payload = mapOf(
+                    "classId" to classId,
+                    "studentId" to record.studentId,
+                    "studentName" to record.studentName,
+                    "studentNumber" to record.studentNumber,
+                    "categoryId" to record.categoryId,
+                    "categoryName" to record.categoryName,
+                    "starCount" to record.starCount,
+                    "note" to record.note,
+                    "isLuckyBonus" to record.isLuckyBonus,
+                    "timestamp" to record.timestamp,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                batch.set(docRef, payload)
             }
+            batch.commit()
+                .addOnFailureListener { e ->
+                    handleFirestoreError(e, OperationType.WRITE, "classrooms/$classId/stars/batch")
+                }
+        }
     }
 
     private fun deleteRecordFromFirestore(context: Context, classId: String, recordId: String) {
-        if (classId.isBlank() || classId == "default") return
+        if (classId.isBlank() || classId == "default" || recordId.isBlank()) return
         val db = getFirestore(context) ?: return
         val docRef = db.collection("classrooms").document(classId).collection("stars").document(recordId)
         docRef.delete()
             .addOnFailureListener { e ->
                 handleFirestoreError(e, OperationType.DELETE, docRef.path)
             }
+    }
+
+    private fun deleteRecordIdsBatchFromFirestore(context: Context, classId: String, recordIds: Set<String>) {
+        if (classId.isBlank() || classId == "default" || recordIds.isEmpty()) return
+        val db = getFirestore(context) ?: return
+        val collRef = db.collection("classrooms").document(classId).collection("stars")
+        recordIds.filter { it.isNotBlank() }.chunked(400).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { id ->
+                batch.delete(collRef.document(id))
+            }
+            batch.commit()
+                .addOnFailureListener { e ->
+                    handleFirestoreError(e, OperationType.DELETE, collRef.path)
+                }
+        }
     }
 }

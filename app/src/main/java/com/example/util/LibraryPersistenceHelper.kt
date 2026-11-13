@@ -249,7 +249,7 @@ object LibraryPersistenceHelper {
         val knownUserIds = getUserAddedBookIds(context, classId)
         val array = JSONArray()
         books.forEach { book ->
-            array.put(serializeBook(book, userCreated = knownUserIds.contains(book.id) || true))
+            array.put(serializeBook(book, userCreated = knownUserIds.contains(book.id)))
         }
         prefs.edit().putString("$KEY_BOOKS_PREFIX$classId", array.toString()).apply()
     }
@@ -284,6 +284,7 @@ object LibraryPersistenceHelper {
         val jsonStr = prefs.getString("$KEY_RECORDS_PREFIX$classId", null) ?: return emptyList()
 
         return try {
+            val knownUserIds = getUserAddedBookIds(context, classId)
             val array = JSONArray(jsonStr)
             val list = mutableListOf<ReadingRecord>()
             val removedIds = mutableSetOf<String>()
@@ -291,8 +292,9 @@ object LibraryPersistenceHelper {
                 val obj = array.getJSONObject(i)
                 val rec = deserializeReadingRecord(obj)
                 val upperBookName = TurkishTextHelper.toTurkishUpperCase(rec.bookName.trim())
-                if (rec.bookName.isBlank() || rec.studentId.isBlank() || upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER) {
-                    removedIds.add(rec.id)
+                val isLegacySample = upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && rec.bookId !in knownUserIds
+                if (rec.id.isBlank() || rec.bookName.isBlank() || rec.studentId.isBlank() || isLegacySample) {
+                    if (rec.id.isNotBlank()) removedIds.add(rec.id)
                     continue
                 }
                 list.add(rec)
@@ -400,6 +402,13 @@ object LibraryPersistenceHelper {
         val deletedRecordsCount: Int,
         val revokedStarsCount: Int,
         val affectedStudentsCount: Int
+    )
+
+    data class ReadingHistoryDeletionSummary(
+        val deletedRecordsCount: Int,
+        val revokedStarsCount: Int,
+        val affectedStudentsCount: Int,
+        val cancelledActiveLoansCount: Int = 0
     )
 
     data class LibraryCleanupReport(
@@ -510,6 +519,109 @@ object LibraryPersistenceHelper {
     }
 
     /**
+     * Tüm Kitaplık Listesini Tek Seferde Kalıcı Olarak Sil (Kitaplar, Aktif Ödünçler, Okuma Kayıtları ve Kitap Kurdu Yıldızları)
+     */
+    fun deleteAllBooks(context: Context, classRoomId: String): BookDeletionSummary {
+        val books = loadBooks(context, classRoomId)
+        val records = loadReadingRecords(context, classRoomId)
+        val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
+
+        val readingStarIds = starRecords.filter { it.categoryId == "cat_kitap_kurdu" }.map { it.id }.toSet()
+        val revokedStars = starRecords.filter { it.id in readingStarIds }.sumOf { it.starCount }
+            .coerceAtLeast(records.sumOf { if (it.earnedStars > 0) it.earnedStars else calculateReadingStars(it.pageCount) })
+        val affectedStudents = records.map { it.studentId }.toSet().size
+
+        // 1. Yerel tercihleri sıfırla (boş dizi yazarak senkron durumunu koru)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("$KEY_BOOKS_PREFIX$classRoomId", "[]")
+            .putString("$KEY_RECORDS_PREFIX$classRoomId", "[]")
+            .remove("$KEY_USER_ADDED_IDS_PREFIX$classRoomId")
+            .apply()
+
+        // 2. İlgili Kitap Kurdu yıldızlarını yerelden ve Firestore'dan temizle
+        if (readingStarIds.isNotEmpty()) {
+            StarRewardPersistenceHelper.deleteRecordsByIds(context, classRoomId, readingStarIds)
+        }
+        StarRewardPersistenceHelper.deleteRecordsByCategory(context, classRoomId, "cat_kitap_kurdu")
+
+        // 3. Firestore'daki tüm library_books ve reading_records belgelerini sorgulayarak topluca sil
+        if (classRoomId.isNotBlank() && classRoomId != "default") {
+            deleteAllCollectionDocsFromFirestore(context, classRoomId, "library_books", books.map { it.id }.toSet())
+            deleteAllCollectionDocsFromFirestore(context, classRoomId, "reading_records", records.map { it.id }.toSet())
+        }
+
+        return BookDeletionSummary(
+            deletedBookName = "${books.size} Kitap",
+            deletedRecordsCount = records.size,
+            revokedStarsCount = revokedStars,
+            affectedStudentsCount = affectedStudents
+        )
+    }
+
+    /**
+     * Tüm Sınıfın Okuma Geçmişini Güvenlikli Olarak Sıfırla (Okuma Kayıtları + Kitap Kurdu Yıldızları)
+     * Kitaplıktaki kitap envanteri korunur; isteğe bağlı olarak aktif ödünç kayıtları da rafa döndürülür.
+     */
+    fun deleteAllReadingRecords(
+        context: Context,
+        classRoomId: String,
+        alsoCancelActiveLoans: Boolean = false
+    ): ReadingHistoryDeletionSummary {
+        val records = loadReadingRecords(context, classRoomId)
+        val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoomId)
+        val readingStarIds = starRecords.filter { it.categoryId == "cat_kitap_kurdu" }.map { it.id }.toSet()
+        val revokedStars = starRecords.filter { it.id in readingStarIds }.sumOf { it.starCount }
+            .coerceAtLeast(records.sumOf { if (it.earnedStars > 0) it.earnedStars else calculateReadingStars(it.pageCount) })
+        val affectedStudents = records.map { it.studentId }.toSet().size
+
+        // 1. Yerel okuma kayıtlarını sıfırla
+        saveRecordsToLocalPrefsOnly(context, classRoomId, emptyList())
+
+        // 2. Kitap Kurdu yıldızlarını yerelden ve Firestore'dan temizle
+        if (readingStarIds.isNotEmpty()) {
+            StarRewardPersistenceHelper.deleteRecordsByIds(context, classRoomId, readingStarIds)
+        }
+        StarRewardPersistenceHelper.deleteRecordsByCategory(context, classRoomId, "cat_kitap_kurdu")
+
+        // 3. Firestore reading_records koleksiyonundaki tüm belgeleri temizle
+        if (classRoomId.isNotBlank() && classRoomId != "default") {
+            deleteAllCollectionDocsFromFirestore(context, classRoomId, "reading_records", records.map { it.id }.toSet())
+        }
+
+        // 4. İsteğe bağlı olarak aktif okunmakta olan ödünçleri rafa döndür
+        var cancelledLoans = 0
+        if (alsoCancelActiveLoans) {
+            val currentBooks = loadBooks(context, classRoomId)
+            val updatedBooks = currentBooks.map { book ->
+                if (book.activeAssignments.isNotEmpty()) {
+                    cancelledLoans += book.activeAssignments.size
+                    normalizeBookState(
+                        book.copy(
+                            status = "Rafta",
+                            activeAssignments = emptyList(),
+                            currentStudentId = null,
+                            currentStudentName = null,
+                            assignmentDate = null,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                } else book
+            }
+            if (cancelledLoans > 0) {
+                saveBooks(context, classRoomId, updatedBooks)
+            }
+        }
+
+        return ReadingHistoryDeletionSummary(
+            deletedRecordsCount = records.size,
+            revokedStarsCount = revokedStars,
+            affectedStudentsCount = affectedStudents,
+            cancelledActiveLoansCount = cancelledLoans
+        )
+    }
+
+    /**
      * Kitaplıktaki eski, sahte/sanal, mükerrer kitapları, silinmiş öğrencilere ait askıda kalmış ödünçleri
      * ve karşılığı olmayan okuma kayıtlarını otomatik temizler ve senkronize eder.
      */
@@ -526,6 +638,8 @@ object LibraryPersistenceHelper {
         val validStudentIds = validStudents.map { it.id }.toSet()
         val knownUserIds = getUserAddedBookIds(context, classId)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val libraryKnownSynced = prefs.contains("$KEY_BOOKS_PREFIX$classId")
+        val recordsKnownSynced = prefs.contains("$KEY_RECORDS_PREFIX$classId")
 
         // 1. Ham kitapları incele
         val rawBooksJson = prefs.getString("$KEY_BOOKS_PREFIX$classId", null)
@@ -598,13 +712,14 @@ object LibraryPersistenceHelper {
 
         for (rec in rawRecords) {
             val upperBookName = TurkishTextHelper.toTurkishUpperCase(rec.bookName.trim())
+            val isCorruptRecord = rec.id.isBlank() || rec.bookName.isBlank() || rec.studentId.isBlank()
             val isSampleBook = upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && upperBookName !in validBookNamesUpper
             val isStudentInvalid = validStudentIds.isNotEmpty() && rec.studentId !in validStudentIds
-            val isBookOrphaned = finalBooks.isNotEmpty() && rec.bookId !in validBookIds && upperBookName !in validBookNamesUpper
+            val isBookOrphaned = (finalBooks.isNotEmpty() || libraryKnownSynced) && rec.bookId !in validBookIds && upperBookName !in validBookNamesUpper
 
-            if (isSampleBook || isStudentInvalid || isBookOrphaned) {
+            if (isCorruptRecord || isSampleBook || isStudentInvalid || isBookOrphaned) {
                 removedRecords.add(rec)
-                recordIdsToDeleteFromCloud.add(rec.id)
+                if (rec.id.isNotBlank()) recordIdsToDeleteFromCloud.add(rec.id)
             } else {
                 // Öğrenci adını güncel sınıf listesinden senkronize et
                 val matchedStudent = validStudents.firstOrNull { it.id == rec.studentId }
@@ -615,10 +730,10 @@ object LibraryPersistenceHelper {
             }
         }
 
-        // 3. Silinen okuma kayıtlarına veya sanal kitaplara ait Kitap Kurdu yıldızlarını temizle
+        // 3. Silinen okuma kayıtlarına, sanal kitaplara veya karşılıksız kalan okuma işlemlerine ait Kitap Kurdu yıldızlarını temizle
         var revokedStarsCount = 0
-        if (removedRecords.isNotEmpty() || removedBooksCount > 0) {
-            val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classId)
+        val starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classId)
+        if (starRecords.isNotEmpty()) {
             val starIdsToRemove = mutableSetOf<String>()
 
             removedRecords.forEach { rec ->
@@ -626,11 +741,27 @@ object LibraryPersistenceHelper {
                     !starIdsToRemove.contains(sr.id) &&
                     sr.studentId == rec.studentId &&
                     sr.categoryId == "cat_kitap_kurdu" &&
-                    (sr.note.contains(rec.bookName, ignoreCase = true) || Math.abs(sr.timestamp - rec.endDate) < 60000L)
+                    (sr.note.contains(rec.bookName, ignoreCase = true) || kotlin.math.abs(sr.timestamp - rec.endDate) < 60000L)
                 }
                 if (matching != null) {
                     starIdsToRemove.add(matching.id)
                     revokedStarsCount += matching.starCount
+                }
+            }
+
+            // Okuma geçmişi senkronize ise ve hala karşılığı olmayan cat_kitap_kurdu yıldızları varsa temizle
+            if (recordsKnownSynced) {
+                starRecords.filter { sr ->
+                    !starIdsToRemove.contains(sr.id) && sr.categoryId == "cat_kitap_kurdu"
+                }.forEach { sr ->
+                    val hasMatchingRecord = keptRecords.any { rec ->
+                        rec.studentId == sr.studentId &&
+                            (sr.note.contains(rec.bookName, ignoreCase = true) || kotlin.math.abs(sr.timestamp - rec.endDate) < 60000L)
+                    }
+                    if (!hasMatchingRecord) {
+                        starIdsToRemove.add(sr.id)
+                        revokedStarsCount += sr.starCount
+                    }
                 }
             }
 
@@ -1133,9 +1264,43 @@ object LibraryPersistenceHelper {
         }
     }
 
-    fun uploadBooksToFirestore(context: Context, classId: String, books: List<Book>) {
+    private fun deleteAllCollectionDocsFromFirestore(
+        context: Context,
+        classId: String,
+        collectionName: String,
+        knownIds: Set<String> = emptySet()
+    ) {
         if (classId.isBlank() || classId == "default") return
         val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val col = db.collection("classrooms").document(classId).collection(collectionName)
+                if (knownIds.isNotEmpty()) {
+                    knownIds.filter { it.isNotBlank() }.chunked(400).forEach { chunk ->
+                        val batch = db.batch()
+                        chunk.forEach { id -> batch.delete(col.document(id)) }
+                        batch.commit()
+                    }
+                }
+                col.get().addOnSuccessListener { snapshot ->
+                    if (snapshot != null && !snapshot.isEmpty) {
+                        snapshot.documents.chunked(400).forEach { chunk ->
+                            val batch = db.batch()
+                            chunk.forEach { doc -> batch.delete(doc.reference) }
+                            batch.commit()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed clearing collection $collectionName from Firestore", e)
+            }
+        }
+    }
+
+    fun uploadBooksToFirestore(context: Context, classId: String, books: List<Book>) {
+        if (classId.isBlank() || classId == "default" || books.isEmpty()) return
+        val db = getFirestore(context) ?: return
+        val knownUserIds = getUserAddedBookIds(context, classId)
         syncScope.launch {
             try {
                 val col = db.collection("classrooms").document(classId).collection("library_books")
@@ -1143,6 +1308,7 @@ object LibraryPersistenceHelper {
                     val batch = db.batch()
                     chunk.forEach { rawBook ->
                         val book = normalizeBookState(rawBook)
+                        val isExplicitTeacherBook = knownUserIds.contains(book.id)
                         val doc = col.document(book.id)
                         batch.set(
                             doc,
@@ -1155,8 +1321,9 @@ object LibraryPersistenceHelper {
                                 "status" to book.status,
                                 "currentStudentId" to (book.currentStudentId ?: ""),
                                 "currentStudentName" to (book.currentStudentName ?: ""),
-                                "userCreated" to true,
-                                "json" to serializeBook(book, userCreated = true).toString(),
+                                "userCreated" to isExplicitTeacherBook,
+                                "explicitlyAddedByTeacher" to isExplicitTeacherBook,
+                                "json" to serializeBook(book, userCreated = isExplicitTeacherBook).toString(),
                                 "updatedAt" to System.currentTimeMillis()
                             ),
                             SetOptions.merge()
@@ -1171,7 +1338,7 @@ object LibraryPersistenceHelper {
     }
 
     fun uploadRecordsToFirestore(context: Context, classId: String, records: List<ReadingRecord>) {
-        if (classId.isBlank() || classId == "default") return
+        if (classId.isBlank() || classId == "default" || records.isEmpty()) return
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
@@ -1226,13 +1393,13 @@ object LibraryPersistenceHelper {
                         val invalidDocIds = mutableSetOf<String>()
 
                         for (doc in snapshot.documents) {
-                            val docUserCreated = doc.getBoolean("userCreated") ?: false
+                            val docExplicitlyAdded = doc.getBoolean("explicitlyAddedByTeacher") == true
                             val jsonStr = doc.getString("json")
                             if (!jsonStr.isNullOrBlank()) {
                                 try {
                                     val obj = JSONObject(jsonStr)
-                                    val isUserCreated = docUserCreated || obj.optBoolean("userCreated", false)
                                     val book = deserializeBook(obj)
+                                    val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
                                     rawDocs.add(book to isUserCreated)
                                 } catch (_: Exception) {
                                     invalidDocIds.add(doc.id)
@@ -1261,7 +1428,8 @@ object LibraryPersistenceHelper {
                                         currentStudentName = sName
                                     )
                                 )
-                                rawDocs.add(book to docUserCreated)
+                                val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
+                                rawDocs.add(book to isUserCreated)
                             }
                         }
 
@@ -1283,6 +1451,9 @@ object LibraryPersistenceHelper {
                             if (!seenNames.add(normName)) {
                                 invalidDocIds.add(book.id)
                                 continue
+                            }
+                            if (isUserCreated && !knownUserIds.contains(book.id)) {
+                                markBookAsUserAdded(context, classId, book.id)
                             }
                             cleanList.add(normalizeBookState(book))
                         }
@@ -1316,6 +1487,8 @@ object LibraryPersistenceHelper {
                 .addSnapshotListener { snapshot, error ->
                     if (error != null || snapshot == null) return@addSnapshotListener
                     try {
+                        val knownUserIds = getUserAddedBookIds(context, classId)
+                        val validBookIds = loadBooks(context, classId).map { it.id }.toSet()
                         val list = mutableListOf<ReadingRecord>()
                         val invalidRecordIds = mutableSetOf<String>()
 
@@ -1361,7 +1534,8 @@ object LibraryPersistenceHelper {
                             }
 
                             val upperBookName = TurkishTextHelper.toTurkishUpperCase(record.bookName.trim())
-                            if (upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER) {
+                            val isTeacherBook = record.bookId in knownUserIds || record.bookId in validBookIds
+                            if (upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && !isTeacherBook) {
                                 invalidRecordIds.add(doc.id)
                                 continue
                             }

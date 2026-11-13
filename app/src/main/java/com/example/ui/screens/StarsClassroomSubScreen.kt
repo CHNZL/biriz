@@ -144,6 +144,20 @@ fun StarsClassroomSubScreen(
         mutableStateOf(StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id))
     }
 
+    LaunchedEffect(classRoom.id, students.size) {
+        if (classRoom.id.isNotBlank() && classRoom.id != "default") {
+            val validStudentIds = students.map { it.id }.toSet()
+            val cleaned = StarRewardPersistenceHelper.cleanupStaleAndOrphanedStarRecords(
+                context = context,
+                classId = classRoom.id,
+                validStudentIds = validStudentIds
+            )
+            if (cleaned > 0) {
+                starRecords = StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id)
+            }
+        }
+    }
+
     DisposableEffect(classRoom.id) {
         val listener = StarRewardPersistenceHelper.observeFirestoreStars(context, classRoom.id) { updated ->
             starRecords = updated
