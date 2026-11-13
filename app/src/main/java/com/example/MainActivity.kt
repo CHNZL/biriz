@@ -387,6 +387,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onSendChatMessage = { sId, text, isTeacher, email, name -> viewModel.sendChatMessage(sId, text, isTeacher, email, name) },
                             onSimulateParentReply = { sId, text -> viewModel.simulateParentReply(sId, text) },
                             onMarkChatAsRead = { sId, email -> viewModel.markChatMessagesAsRead(sId, email) },
+                            onDeleteChatMessagesForMe = { viewModel.deleteChatMessagesForMe(it) },
+                            onDeleteChatMessagesForEveryone = { viewModel.deleteChatMessagesForEveryone(it) },
+                            onClearChatHistoryForMe = { sId, email -> viewModel.clearChatHistoryForMe(sId, email) },
                             onOpenNotificationCenter = { viewModel.setNotificationCenterOpen(true) },
                             onCloseNotificationCenter = { viewModel.setNotificationCenterOpen(false) },
                             onMarkNotificationAsRead = { viewModel.markNotificationAsRead(it) },
@@ -492,7 +495,10 @@ fun BirizApp(viewModel: BirizViewModel) {
                         },
                         onMarkChatAsRead = { sId ->
                             viewModel.markChatMessagesAsRead(sId, viewerIsTeacher = false)
-                        }
+                        },
+                        onDeleteChatMessagesForMe = { viewModel.deleteChatMessagesForMe(it) },
+                        onDeleteChatMessagesForEveryone = { viewModel.deleteChatMessagesForEveryone(it) },
+                        onClearChatHistoryForMe = { sId -> viewModel.clearChatHistoryForMe(sId) }
                     )
                 }
             }

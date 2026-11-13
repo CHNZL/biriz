@@ -79,7 +79,10 @@ data class ChatMessage(
     val senderName: String,
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val status: MessageStatus = MessageStatus.READ
+    val status: MessageStatus = MessageStatus.READ,
+    val hiddenForTeacher: Boolean = false,
+    val hiddenForParentEmails: List<String> = emptyList(),
+    val isDeletedForEveryone: Boolean = false
 )
 
 /**

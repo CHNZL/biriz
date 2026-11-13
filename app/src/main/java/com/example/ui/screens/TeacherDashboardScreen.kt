@@ -188,6 +188,9 @@ fun TeacherDashboardScreen(
     onSendChatMessage: (String, String, Boolean, String, String) -> Unit = { _, _, _, _, _ -> },
     onSimulateParentReply: (String, String) -> Unit = { _, _ -> },
     onMarkChatAsRead: (String, String) -> Unit = { _, _ -> },
+    onDeleteChatMessagesForMe: (Set<String>) -> Unit = {},
+    onDeleteChatMessagesForEveryone: (Set<String>) -> Unit = {},
+    onClearChatHistoryForMe: (String, String) -> Unit = { _, _ -> },
     onOpenNotificationCenter: () -> Unit = {},
     onCloseNotificationCenter: () -> Unit = {},
     onMarkNotificationAsRead: (String) -> Unit = {},
@@ -735,7 +738,10 @@ fun TeacherDashboardScreen(
                             onSendMessage = onSendChatMessage,
                             onSimulateParentReply = onSimulateParentReply,
                             onMarkChatAsRead = onMarkChatAsRead,
-                            onActiveChatStudentChange = onSetActiveChatStudent
+                            onActiveChatStudentChange = onSetActiveChatStudent,
+                            onDeleteMessagesForMe = onDeleteChatMessagesForMe,
+                            onDeleteMessagesForEveryone = onDeleteChatMessagesForEveryone,
+                            onClearChatHistoryForMe = onClearChatHistoryForMe
                         )
                     }
 

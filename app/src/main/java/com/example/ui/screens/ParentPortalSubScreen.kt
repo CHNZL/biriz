@@ -1,11 +1,16 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,17 +47,23 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -63,7 +74,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
@@ -95,6 +109,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -144,6 +159,7 @@ import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
+import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.ParentPrivacyHelper
@@ -207,7 +223,10 @@ fun ParentPortalSubScreen(
     requestedTab: ParentPortalTab? = null,
     onRequestedTabConsumed: () -> Unit = {},
     onCommunicationTabStateChanged: (isCommTabActive: Boolean, isChatSubTabActive: Boolean) -> Unit = { _, _ -> },
-    onMarkChatAsRead: (String) -> Unit = {}
+    onMarkChatAsRead: (String) -> Unit = {},
+    onDeleteChatMessagesForMe: (Set<String>) -> Unit = {},
+    onDeleteChatMessagesForEveryone: (Set<String>) -> Unit = {},
+    onClearChatHistoryForMe: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
@@ -279,16 +298,6 @@ fun ParentPortalSubScreen(
         } else emptyList()
     }
     val totalStars = remember(activeStudentStars) { activeStudentStars.sumOf { it.starCount } }
-
-    val starLevelBadge = remember(totalStars) {
-        when {
-            totalStars >= 100 -> Pair("💎 Süper Nova / Sınıf Efsanesi", Color(0xFF9333EA))
-            totalStars >= 50 -> Pair("🥇 Sınıf Yıldızı", BirizAmber)
-            totalStars >= 25 -> Pair("🥈 Yıldız Avcısı", Color(0xFF0284C7))
-            totalStars >= 10 -> Pair("🥉 Çırak Yıldız", Color(0xFF10B981))
-            else -> Pair("⭐ Yıldız Adayı", Color(0xFF64748B))
-        }
-    }
 
     // Aktif öğrencinin kütüphane ve turnuva verilerini Firestore'dan canlı dinle
     var classBooks by remember { mutableStateOf(emptyList<Book>()) }
@@ -658,7 +667,6 @@ fun ParentPortalSubScreen(
                                 student = activeStudent,
                                 classRoom = classRoom,
                                 totalStars = totalStars,
-                                starLevelBadge = starLevelBadge,
                                 lastStarRecord = activeStudentStars.maxByOrNull { it.timestamp },
                                 todayLessons = todayLessons,
                                 studentSeatDesc = studentSeatDesc,
@@ -749,7 +757,10 @@ fun ParentPortalSubScreen(
                                     if (text.isNotBlank()) {
                                         onSendChatMessage(activeStudent.id, text)
                                     }
-                                }
+                                },
+                                onDeleteMessagesForMe = onDeleteChatMessagesForMe,
+                                onDeleteMessagesForEveryone = onDeleteChatMessagesForEveryone,
+                                onClearChatHistoryForMe = { onClearChatHistoryForMe(activeStudent.id) }
                             )
                         }
                     }
@@ -1067,7 +1078,6 @@ private fun ParentDashboardHomeView(
     student: Student,
     classRoom: ClassRoom?,
     totalStars: Int,
-    starLevelBadge: Pair<String, Color>,
     lastStarRecord: StarRewardRecord?,
     todayLessons: List<ScheduleLesson>,
     studentSeatDesc: String,
@@ -1160,20 +1170,6 @@ private fun ParentDashboardHomeView(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = starLevelBadge.second.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, starLevelBadge.second)
-                        ) {
-                            Text(
-                                text = starLevelBadge.first,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = starLevelBadge.second,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
@@ -2965,6 +2961,7 @@ private fun ParentTournamentDetailView(
 // =========================================================================
 // DETAY 5: DUYURU & ANKET & BİREBİR ANLIK MESAJLAŞMA
 // =========================================================================
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ParentCommunicationDetailView(
     student: Student,
@@ -2978,15 +2975,55 @@ private fun ParentCommunicationDetailView(
     onVotePoll: (String, String) -> Unit,
     onMarkAnnouncementRead: (String) -> Unit = {},
     onMarkChatAsRead: () -> Unit = {},
-    onSendMessage: (String) -> Unit
+    onSendMessage: (String) -> Unit,
+    onDeleteMessagesForMe: (Set<String>) -> Unit = {},
+    onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
+    onClearChatHistoryForMe: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     var chatText by remember { mutableStateOf("") }
     val chatListState = rememberLazyListState()
 
+    var isSearchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var showDeleteChoiceDialog by remember { mutableStateOf(false) }
+
+    val displayedMessages = remember(chatMessages, isSearchOpen, searchQuery) {
+        if (!isSearchOpen || searchQuery.isBlank()) {
+            chatMessages
+        } else {
+            val q = searchQuery.trim()
+            chatMessages.filter {
+                !it.isDeletedForEveryone && it.text.contains(q, ignoreCase = true)
+            }
+        }
+    }
+
+    LaunchedEffect(student.id) {
+        selectedMessageIds = emptySet()
+        isSelectionMode = false
+        isSearchOpen = false
+        searchQuery = ""
+    }
+
+    BackHandler(enabled = isChatSubTabActive && (isSelectionMode || isSearchOpen)) {
+        if (isSelectionMode) {
+            selectedMessageIds = emptySet()
+            isSelectionMode = false
+        } else if (isSearchOpen) {
+            isSearchOpen = false
+            searchQuery = ""
+        }
+    }
+
     val unreadFromTeacherCount = remember(chatMessages) {
-        chatMessages.count { it.isFromTeacher && it.status != MessageStatus.READ }
+        chatMessages.count { it.isFromTeacher && !it.isDeletedForEveryone && it.status != MessageStatus.READ }
     }
 
     val parentDisplayName = currentUser.fullName.ifBlank { "Veli" }
@@ -3003,11 +3040,11 @@ private fun ParentCommunicationDetailView(
     }
 
     // Sohbet sekmesi açıkken gelen öğretmen mesajlarını anında okundu işaretle ve en alta kaydır
-    LaunchedEffect(student.id, chatMessages.size, isChatSubTabActive) {
+    LaunchedEffect(student.id, chatMessages.size, isChatSubTabActive, isSearchOpen) {
         if (isChatSubTabActive) {
             onMarkChatAsRead()
-            if (chatMessages.isNotEmpty()) {
-                chatListState.animateScrollToItem(chatMessages.size)
+            if (!isSearchOpen && displayedMessages.isNotEmpty()) {
+                chatListState.animateScrollToItem(displayedMessages.size)
             }
         }
     }
@@ -3026,140 +3063,304 @@ private fun ParentCommunicationDetailView(
         }
     }
 
+    val toggleMessageSelection: (String) -> Unit = { msgId ->
+        val next = if (msgId in selectedMessageIds) selectedMessageIds - msgId else selectedMessageIds + msgId
+        selectedMessageIds = next
+        if (next.isEmpty()) isSelectionMode = false
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        // --- 0. ÖĞRETMEN İLETİŞİM ÖZETİ & SEKME SEÇİCİ ---
+        // --- 0. ÖĞRETMEN İLETİŞİM ÖZETİ & SEKME SEÇİCİ (veya WhatsApp Seçim Çubuğu) ---
         Surface(
-            color = if (isDarkTheme) Color(0xFF0C1829) else Color.White,
+            color = if (isSelectionMode && isChatSubTabActive) {
+                if (isDarkTheme) Color(0xFF0F2F3C) else BirizNavyPrimary
+            } else {
+                if (isDarkTheme) Color(0xFF0C1829) else Color.White
+            },
             shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            if (isSelectionMode && isChatSubTabActive) {
+                val selectedMessages = chatMessages.filter { it.id in selectedMessageIds }
+                val copyableText = selectedMessages.filter { !it.isDeletedForEveryone && it.text.isNotBlank() }
+                    .joinToString("\n") { it.text }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = BirizNavyPrimary,
-                        modifier = Modifier.size(40.dp)
+                    IconButton(
+                        onClick = {
+                            selectedMessageIds = emptySet()
+                            isSelectionMode = false
+                        },
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("👨‍🏫", fontSize = 20.sp)
-                        }
+                        Icon(Icons.Default.Close, contentDescription = "Seçimi İptal Et", tint = Color.White)
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = classRoom?.teacherName?.ifBlank { "Sınıf Öğretmeni" } ?: "Sınıf Öğretmeni",
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) Color.White else BirizNavyPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} • ${student.studentNumber} ${student.fullName}",
-                            fontSize = 11.sp,
-                            color = secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF10B981).copy(alpha = 0.14f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        text = "${selectedMessageIds.size} mesaj seçildi",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (copyableText.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("BİRİZ Mesaj", copyableText))
+                                Toast.makeText(context, "Mesaj kopyalandı", Toast.LENGTH_SHORT).show()
+                                selectedMessageIds = emptySet()
+                                isSelectionMode = false
+                            },
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "Anlık Hat",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF10B981)
-                            )
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Kopyala", tint = Color.White)
                         }
+                    }
+                    IconButton(
+                        onClick = {
+                            if (selectedMessageIds.isNotEmpty()) {
+                                showDeleteChoiceDialog = true
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("btn_parent_delete_selected_messages")
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Seçilenleri Sil", tint = Color(0xFFFCA5A5))
                     }
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // İletişim Alt Sekmeleri: Birebir Sohbet | Duyurular & Anketler
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        onClick = { onSelectChatSubTab(true) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 42.dp)
-                            .testTag("parent_tab_chat")
+            } else {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            shape = CircleShape,
+                            color = BirizNavyPrimary,
+                            modifier = Modifier.size(40.dp)
                         ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("👨‍🏫", fontSize = 20.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "💬 Birebir Sohbet",
-                                fontSize = 12.5.sp,
-                                fontWeight = if (isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                color = if (isChatSubTabActive) BirizNavyDark else primaryText
+                                text = classRoom?.teacherName?.ifBlank { "Sınıf Öğretmeni" } ?: "Sınıf Öğretmeni",
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            if (unreadFromTeacherCount > 0) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(shape = CircleShape, color = BirizAmber) {
-                                    Text(
-                                        text = "$unreadFromTeacherCount",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            Text(
+                                text = "${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} • ${student.studentNumber} ${student.fullName}",
+                                fontSize = 11.sp,
+                                color = secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF10B981).copy(alpha = 0.14f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981))
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Anlık Hat",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF10B981)
+                                )
+                            }
+                        }
+                        if (isChatSubTabActive) {
+                            IconButton(
+                                onClick = {
+                                    isSearchOpen = !isSearchOpen
+                                    if (!isSearchOpen) searchQuery = ""
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Sohbette Ara",
+                                    tint = primaryText,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Box {
+                                IconButton(
+                                    onClick = { showOverflowMenu = true },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .testTag("btn_parent_chat_menu")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Sohbet Seçenekleri",
+                                        tint = primaryText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflowMenu,
+                                    onDismissRequest = { showOverflowMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Sohbette Ara") },
+                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            isSearchOpen = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Mesajları Seç ve Sil") },
+                                        leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
+                                        enabled = chatMessages.isNotEmpty(),
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            isSelectionMode = true
+                                            selectedMessageIds = emptySet()
+                                            Toast.makeText(context, "Silmek istediğiniz mesajlara dokunun veya uzun basın", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("Sohbet Geçmişini Temizle", color = Color(0xFFEF4444)) },
+                                        leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
+                                        enabled = chatMessages.isNotEmpty(),
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showClearHistoryDialog = true
+                                        }
                                     )
                                 }
                             }
                         }
                     }
 
-                    Surface(
-                        onClick = { onSelectChatSubTab(false) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
-                        border = BorderStroke(
-                            1.dp,
-                            if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 42.dp)
-                            .testTag("parent_tab_announcements")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "📢 Duyurular (${announcements.size})",
-                                fontSize = 12.5.sp,
-                                fontWeight = if (!isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                color = if (!isChatSubTabActive) Color.White else primaryText
+                    AnimatedVisibility(visible = isChatSubTabActive && isSearchOpen) {
+                        Column {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Mesajlarda ara...", fontSize = 12.5.sp) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                trailingIcon = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (searchQuery.isNotBlank()) {
+                                            Text(
+                                                text = "${displayedMessages.size}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BirizTurquoise,
+                                                modifier = Modifier.padding(end = 4.dp)
+                                            )
+                                        }
+                                        IconButton(onClick = {
+                                            isSearchOpen = false
+                                            searchQuery = ""
+                                        }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Aramayı Kapat", modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
                             )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // İletişim Alt Sekmeleri: Birebir Sohbet | Duyurular & Anketler
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            onClick = { onSelectChatSubTab(true) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 42.dp)
+                                .testTag("parent_tab_chat")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "💬 Birebir Sohbet",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    color = if (isChatSubTabActive) BirizNavyDark else primaryText
+                                )
+                                if (unreadFromTeacherCount > 0) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(shape = CircleShape, color = BirizAmber) {
+                                        Text(
+                                            text = "$unreadFromTeacherCount",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Surface(
+                            onClick = { onSelectChatSubTab(false) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
+                            border = BorderStroke(
+                                1.dp,
+                                if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 42.dp)
+                                .testTag("parent_tab_announcements")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "📢 Duyurular (${announcements.size})",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (!isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    color = if (!isChatSubTabActive) Color.White else primaryText
+                                )
+                            }
                         }
                     }
                 }
@@ -3190,7 +3391,7 @@ private fun ParentCommunicationDetailView(
                                 color = if (isDarkTheme) Color(0x401E293B) else Color(0x90FFFBEB)
                             ) {
                                 Text(
-                                    text = "🔒 Bu sohbet yalnızca sizin (${currentUser.email.ifBlank { "Doğrulanmış Veli" }}) ve sınıf öğretmeniniz arasındadır.",
+                                    text = "🔒 Bu sohbet yalnızca sizin (${currentUser.email.ifBlank { "Doğrulanmış Veli" }}) ve sınıf öğretmeniniz arasındadır. Uzun basarak mesaj silebilirsiniz.",
                                     fontSize = 10.sp,
                                     color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
                                     textAlign = TextAlign.Center,
@@ -3200,7 +3401,7 @@ private fun ParentCommunicationDetailView(
                         }
                     }
 
-                    if (chatMessages.isEmpty()) {
+                    if (displayedMessages.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier
@@ -3214,7 +3415,11 @@ private fun ParentCommunicationDetailView(
                                     border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
                                 ) {
                                     Text(
-                                        text = "💬 Öğretmeniniz ile henüz mesajlaşmanız yok.\nAşağıdan mesaj yazarak anlık sohbeti başlatabilirsiniz.",
+                                        text = if (isSearchOpen && searchQuery.isNotBlank()) {
+                                            "🔍 \"$searchQuery\" ile eşleşen mesaj bulunamadı."
+                                        } else {
+                                            "💬 Öğretmeniniz ile gösterilecek mesaj bulunmuyor.\nAşağıdan mesaj yazarak anlık sohbeti başlatabilirsiniz."
+                                        },
                                         fontSize = 12.5.sp,
                                         color = secondaryText,
                                         textAlign = TextAlign.Center,
@@ -3225,11 +3430,54 @@ private fun ParentCommunicationDetailView(
                             }
                         }
                     } else {
-                        items(chatMessages, key = { it.id }) { msg ->
+                        items(displayedMessages.indices.toList(), key = { idx -> displayedMessages[idx].id }) { idx ->
+                            val msg = displayedMessages[idx]
+                            val prevDayKey = if (idx > 0) ChatVisibilityHelper.dayKeyForTimestamp(displayedMessages[idx - 1].timestamp) else null
+                            val currDayKey = ChatVisibilityHelper.dayKeyForTimestamp(msg.timestamp)
+                            if (idx == 0 || prevDayKey != currDayKey) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isDarkTheme) Color(0xFF182229) else Color(0xFFE1F3FB)
+                                    ) {
+                                        Text(
+                                            text = ChatVisibilityHelper.formatChatDateDivider(msg.timestamp),
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF334155),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
+
                             val isMe = !msg.isFromTeacher
+                            val isSelected = msg.id in selectedMessageIds
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) BirizTurquoise.copy(alpha = 0.22f) else Color.Transparent)
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                toggleMessageSelection(msg.id)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            isSelectionMode = true
+                                            selectedMessageIds = selectedMessageIds + msg.id
+                                        }
+                                    )
+                                    .padding(horizontal = 2.dp, vertical = 1.dp),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(
@@ -3243,6 +3491,7 @@ private fun ParentCommunicationDetailView(
                                     } else {
                                         if (isDarkTheme) Color(0xFF202C33) else Color.White
                                     },
+                                    border = if (isSelected) BorderStroke(1.5.dp, BirizTurquoise) else null,
                                     shadowElevation = 1.dp,
                                     modifier = Modifier.widthIn(max = 290.dp)
                                 ) {
@@ -3257,9 +3506,14 @@ private fun ParentCommunicationDetailView(
                                             Spacer(modifier = Modifier.height(2.dp))
                                         }
                                         Text(
-                                            text = msg.text,
+                                            text = if (msg.isDeletedForEveryone) "🚫 Bu mesaj silindi" else msg.text,
                                             fontSize = 13.sp,
-                                            color = if (isDarkTheme) Color.White else Color(0xFF111B21),
+                                            fontStyle = if (msg.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal,
+                                            color = if (msg.isDeletedForEveryone) {
+                                                if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                            } else {
+                                                if (isDarkTheme) Color.White else Color(0xFF111B21)
+                                            },
                                             lineHeight = 18.sp
                                         )
                                         Spacer(modifier = Modifier.height(3.dp))
@@ -3272,7 +3526,7 @@ private fun ParentCommunicationDetailView(
                                                 fontSize = 9.5.sp,
                                                 color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
                                             )
-                                            if (isMe) {
+                                            if (isMe && !msg.isDeletedForEveryone) {
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Icon(
                                                     imageVector = if (msg.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
@@ -3375,6 +3629,99 @@ private fun ParentCommunicationDetailView(
                         }
                     }
                 }
+            }
+
+            if (showDeleteChoiceDialog && selectedMessageIds.isNotEmpty()) {
+                val selectedMessages = chatMessages.filter { it.id in selectedMessageIds }
+                val allSelectedAreMine = selectedMessages.isNotEmpty() && selectedMessages.all { !it.isFromTeacher && !it.isDeletedForEveryone }
+                AlertDialog(
+                    onDismissRequest = { showDeleteChoiceDialog = false },
+                    title = {
+                        Text(
+                            text = if (selectedMessages.size == 1) "Mesajı Sil" else "${selectedMessages.size} Mesajı Sil",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = if (allSelectedAreMine) {
+                                    "Mesajları yalnızca kendi sohbetinizden silebilirsiniz (öğretmeninizdeki mesaj kalır) veya her iki taraftan da kaldırabilirsiniz."
+                                } else {
+                                    "Seçilen mesajlar yalnızca sizin sohbet geçmişinizden silinecek. Öğretmeninizin sohbet geçmişi silinmez."
+                                },
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = {
+                                    val ids = selectedMessageIds
+                                    showDeleteChoiceDialog = false
+                                    selectedMessageIds = emptySet()
+                                    isSelectionMode = false
+                                    onDeleteMessagesForMe(ids)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Benden Sil (Karşı Taraf Etkilenmez)", fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            if (allSelectedAreMine) {
+                                Button(
+                                    onClick = {
+                                        val ids = selectedMessageIds
+                                        showDeleteChoiceDialog = false
+                                        selectedMessageIds = emptySet()
+                                        isSelectionMode = false
+                                        onDeleteMessagesForEveryone(ids)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Herkesten Sil", fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteChoiceDialog = false }) { Text("İptal") }
+                    }
+                )
+            }
+
+            if (showClearHistoryDialog) {
+                AlertDialog(
+                    onDismissRequest = { showClearHistoryDialog = false },
+                    title = { Text("Sohbet Geçmişini Temizle", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text(
+                            text = "Bu sohbetteki tüm mesaj geçmişi yalnızca sizin veli hesabınızdan temizlenecektir. Öğretmeninizin sohbet geçmişi silinmez ve yeni gelecek mesajlar görünmeye devam eder.",
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showClearHistoryDialog = false
+                                selectedMessageIds = emptySet()
+                                isSelectionMode = false
+                                onClearChatHistoryForMe()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Benden Temizle", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showClearHistoryDialog = false }) { Text("Vazgeç") }
+                    }
+                )
             }
         } else {
             // --- 2. SINIF DUYURULARI & VELİ ANKETLERİ ---

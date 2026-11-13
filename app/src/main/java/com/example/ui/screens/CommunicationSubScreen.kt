@@ -10,8 +10,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -61,11 +64,13 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
@@ -75,7 +80,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -86,6 +94,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -104,6 +113,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -136,6 +146,7 @@ import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
+import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import java.util.UUID
 
@@ -155,7 +166,10 @@ fun CommunicationSubScreen(
     onSendMessage: (String, String, Boolean, String, String) -> Unit,
     onSimulateParentReply: (String, String) -> Unit,
     onMarkChatAsRead: (String, String) -> Unit,
-    onActiveChatStudentChange: (String?) -> Unit = {}
+    onActiveChatStudentChange: (String?) -> Unit = {},
+    onDeleteMessagesForMe: (Set<String>) -> Unit = {},
+    onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
+    onClearChatHistoryForMe: (String, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
 
@@ -268,6 +282,11 @@ fun CommunicationSubScreen(
                     },
                     onSimulateParentReply = { text ->
                         onSimulateParentReply(chatStudent.id, text)
+                    },
+                    onDeleteMessagesForMe = onDeleteMessagesForMe,
+                    onDeleteMessagesForEveryone = onDeleteMessagesForEveryone,
+                    onClearChatHistoryForMe = {
+                        onClearChatHistoryForMe(chatStudent.id, chatParent.email)
                     }
                 )
             } else if (activeTab == 0) {
@@ -2306,7 +2325,7 @@ private fun ActiveStudentChatCard(
                             parents.size <= 1 || it.parentEmail.isBlank() || it.parentEmail.equals(parentAccount.email, ignoreCase = true)
                         }
                         val lastMessage = parentMessages.maxByOrNull { it.timestamp }
-                        val parentUnread = parentMessages.count { !it.isFromTeacher && it.status != MessageStatus.READ }
+                        val parentUnread = parentMessages.count { !it.isFromTeacher && !it.isDeletedForEveryone && it.status != MessageStatus.READ }
 
                         ParentAccountSubRowItem(
                             student = student,
@@ -2445,7 +2464,7 @@ private fun ParentAccountSubRowItem(
 
                 // Son Mesaj Önizlemesi & Çift Tik
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (lastMessage != null && lastMessage.isFromTeacher) {
+                    if (lastMessage != null && lastMessage.isFromTeacher && !lastMessage.isDeletedForEveryone) {
                         Icon(
                             imageVector = if (lastMessage.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
                             contentDescription = null,
@@ -2460,8 +2479,13 @@ private fun ParentAccountSubRowItem(
                     }
 
                     Text(
-                        text = lastMessage?.text ?: "Öğretmen - veli mesajını başlatmak için dokunun...",
+                        text = when {
+                            lastMessage == null -> "Öğretmen - veli mesajını başlatmak için dokunun..."
+                            lastMessage.isDeletedForEveryone -> "🚫 Bu mesaj silindi"
+                            else -> lastMessage.text
+                        },
                         fontSize = (11 + fontOffset).sp,
+                        fontStyle = if (lastMessage?.isDeletedForEveryone == true) FontStyle.Italic else FontStyle.Normal,
                         color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -2652,6 +2676,7 @@ private fun InactiveStudentCodeDialog(
 // 5. BİREYSEL SOHBET GÖRÜNÜMÜ (WHATSAPP STİLİ DİYALOG EKRANI)
 // =========================================================================
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun OneOnOneChatView(
     student: Student,
@@ -2664,12 +2689,50 @@ private fun OneOnOneChatView(
     onBack: () -> Unit,
     onMarkAsRead: () -> Unit,
     onSendMessage: (String) -> Unit,
-    onSimulateParentReply: (String) -> Unit
+    onSimulateParentReply: (String) -> Unit,
+    onDeleteMessagesForMe: (Set<String>) -> Unit = {},
+    onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
+    onClearChatHistoryForMe: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var messageInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val isKiz = student.gender.equals("Kız", ignoreCase = true)
     val isParentOnline = student.isParentCurrentlyActive()
+
+    var isSearchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedMessageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var showDeleteChoiceDialog by remember { mutableStateOf(false) }
+
+    val displayedMessages = remember(messages, isSearchOpen, searchQuery) {
+        if (!isSearchOpen || searchQuery.isBlank()) {
+            messages
+        } else {
+            val q = searchQuery.trim()
+            messages.filter { !it.isDeletedForEveryone && it.text.contains(q, ignoreCase = true) }
+        }
+    }
+
+    LaunchedEffect(student.id, parentAccount.email) {
+        selectedMessageIds = emptySet()
+        isSelectionMode = false
+        isSearchOpen = false
+        searchQuery = ""
+    }
+
+    BackHandler(enabled = isSelectionMode || isSearchOpen) {
+        if (isSelectionMode) {
+            selectedMessageIds = emptySet()
+            isSelectionMode = false
+        } else if (isSearchOpen) {
+            isSearchOpen = false
+            searchQuery = ""
+        }
+    }
 
     // Hazır Hızlı Yanıt Şablonları
     val quickTemplates = listOf(
@@ -2687,10 +2750,16 @@ private fun OneOnOneChatView(
         }
     }
 
-    LaunchedEffect(student.id, messages.size) {
+    val toggleSelection: (String) -> Unit = { msgId ->
+        val next = if (msgId in selectedMessageIds) selectedMessageIds - msgId else selectedMessageIds + msgId
+        selectedMessageIds = next
+        if (next.isEmpty()) isSelectionMode = false
+    }
+
+    LaunchedEffect(student.id, messages.size, isSearchOpen) {
         onMarkAsRead()
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size)
+        if (!isSearchOpen && displayedMessages.isNotEmpty()) {
+            listState.animateScrollToItem(displayedMessages.size)
         }
     }
 
@@ -2701,114 +2770,306 @@ private fun OneOnOneChatView(
             .imePadding()
             .navigationBarsPadding()
     ) {
-        // WhatsApp Tarzı Üst Başlık Barı (Doğrulanmış Veli Google Hesabı ile)
+        // WhatsApp Tarzı Üst Başlık Barı (veya Seçim Modu İşlem Barı)
         Surface(
-            color = if (isDarkTheme) BirizDarkSurfaceGlass else BirizNavyPrimary,
+            color = if (isSelectionMode) {
+                if (isDarkTheme) Color(0xFF0F2F3C) else BirizNavyDark
+            } else {
+                if (isDarkTheme) BirizDarkSurfaceGlass else BirizNavyPrimary
+            },
             modifier = Modifier.fillMaxWidth(),
             shadowElevation = 4.dp
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Geri",
-                        tint = Color.White
-                    )
-                }
-
-                Surface(
-                    shape = CircleShape,
-                    color = if (isKiz) Color(0xFFF472B6) else Color(0xFF38BDF8),
-                    modifier = Modifier.size(38.dp)
+            if (isSelectionMode) {
+                val selectedMsgs = messages.filter { it.id in selectedMessageIds }
+                val copyableText = selectedMsgs
+                    .filter { !it.isDeletedForEveryone && it.text.isNotBlank() }
+                    .joinToString("\n") { it.text }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = student.studentNumber,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "${parentAccount.name} (${parentAccount.relationship})",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Doğrulanmış Veli",
-                            tint = BirizTurquoise,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                    Text(
-                        text = if (isParentOnline) {
-                            "● Çevrimiçi • ${student.studentNumber} ${student.fullName}"
-                        } else {
-                            "${parentAccount.email} • ${student.studentNumber} ${student.fullName}"
+                    IconButton(
+                        onClick = {
+                            selectedMessageIds = emptySet()
+                            isSelectionMode = false
                         },
-                        fontSize = 10.sp,
-                        fontFamily = if (isParentOnline) FontFamily.SansSerif else FontFamily.Monospace,
-                        color = if (isParentOnline) Color(0xFF6EE7B7) else Color.White.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Seçimi Kapat",
+                            tint = Color.White
+                        )
+                    }
 
-                // Punto Boyutu Küçült (A⁻)
-                Surface(
-                    onClick = { if (fontOffset > -2) onFontOffsetChange(fontOffset - 2) },
-                    enabled = fontOffset > -2,
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (fontOffset > -2) Color(0x35FFFFFF) else Color(0x15FFFFFF),
-                    modifier = Modifier
-                        .size(30.dp)
-                        .testTag("chat_font_decrease")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "A⁻",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (fontOffset > -2) Color.White else Color.White.copy(alpha = 0.4f)
+                    Text(
+                        text = "${selectedMessageIds.size} mesaj seçildi",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (copyableText.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("BİRİZ Mesaj", copyableText))
+                                Toast.makeText(context, "Mesaj kopyalandı", Toast.LENGTH_SHORT).show()
+                                selectedMessageIds = emptySet()
+                                isSelectionMode = false
+                            },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Kopyala",
+                                tint = Color.White
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (selectedMessageIds.isNotEmpty()) {
+                                showDeleteChoiceDialog = true
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("btn_teacher_delete_selected_messages")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Seçilenleri Sil",
+                            tint = Color(0xFFFCA5A5)
                         )
                     }
                 }
+            } else {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Geri",
+                                tint = Color.White
+                            )
+                        }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isKiz) Color(0xFFF472B6) else Color(0xFF38BDF8),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = student.studentNumber,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
 
-                // Punto Boyutu Büyüt (A⁺)
-                Surface(
-                    onClick = { if (fontOffset < 6) onFontOffsetChange(fontOffset + 2) },
-                    enabled = fontOffset < 6,
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (fontOffset < 6) Color(0x35FFFFFF) else Color(0x15FFFFFF),
-                    modifier = Modifier
-                        .size(30.dp)
-                        .testTag("chat_font_increase")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "A⁺",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Black,
-                            color = if (fontOffset < 6) Color.White else Color.White.copy(alpha = 0.4f)
-                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${parentAccount.name} (${parentAccount.relationship})",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Doğrulanmış Veli",
+                                    tint = BirizTurquoise,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                            Text(
+                                text = if (isParentOnline) {
+                                    "● Çevrimiçi • ${student.studentNumber} ${student.fullName}"
+                                } else {
+                                    "${parentAccount.email} • ${student.studentNumber} ${student.fullName}"
+                                },
+                                fontSize = 10.sp,
+                                fontFamily = if (isParentOnline) FontFamily.SansSerif else FontFamily.Monospace,
+                                color = if (isParentOnline) Color(0xFF6EE7B7) else Color.White.copy(alpha = 0.85f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        // Arama Butonu
+                        IconButton(
+                            onClick = {
+                                isSearchOpen = !isSearchOpen
+                                if (!isSearchOpen) searchQuery = ""
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Sohbette Ara",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Punto Boyutu Küçült (A⁻)
+                        Surface(
+                            onClick = { if (fontOffset > -2) onFontOffsetChange(fontOffset - 2) },
+                            enabled = fontOffset > -2,
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (fontOffset > -2) Color(0x35FFFFFF) else Color(0x15FFFFFF),
+                            modifier = Modifier
+                                .size(28.dp)
+                                .testTag("chat_font_decrease")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "A⁻",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (fontOffset > -2) Color.White else Color.White.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(3.dp))
+
+                        // Punto Boyutu Büyüt (A⁺)
+                        Surface(
+                            onClick = { if (fontOffset < 6) onFontOffsetChange(fontOffset + 2) },
+                            enabled = fontOffset < 6,
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (fontOffset < 6) Color(0x35FFFFFF) else Color(0x15FFFFFF),
+                            modifier = Modifier
+                                .size(28.dp)
+                                .testTag("chat_font_increase")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "A⁺",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (fontOffset < 6) Color.White else Color.White.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+
+                        // Sohbet Seçenekleri Menüsü (⋮)
+                        Box {
+                            IconButton(
+                                onClick = { showOverflowMenu = true },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .testTag("btn_teacher_chat_menu")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Sohbet Seçenekleri",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Sohbette Ara") },
+                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        isSearchOpen = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Mesajları Seç ve Sil") },
+                                    leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
+                                    enabled = messages.isNotEmpty(),
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        isSelectionMode = true
+                                        selectedMessageIds = emptySet()
+                                        Toast.makeText(context, "Silmek istediğiniz mesajlara dokunun veya uzun basın", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Sohbet Geçmişini Temizle", color = Color(0xFFEF4444)) },
+                                    leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
+                                    enabled = messages.isNotEmpty(),
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        showClearHistoryDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = isSearchOpen) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = {
+                                    Text("Mesajlarda ara...", fontSize = 12.5.sp, color = Color.White.copy(alpha = 0.7f))
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (searchQuery.isNotBlank()) {
+                                            Text(
+                                                text = "${displayedMessages.size}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BirizTurquoise,
+                                                modifier = Modifier.padding(end = 4.dp)
+                                            )
+                                        }
+                                        IconButton(onClick = {
+                                            isSearchOpen = false
+                                            searchQuery = ""
+                                        }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Aramayı Kapat", tint = Color.White, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = BirizTurquoise,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.35f),
+                                    cursorColor = BirizTurquoise
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
             }
@@ -2833,7 +3094,7 @@ private fun OneOnOneChatView(
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
                         Text(
-                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında anlık olarak şifrelenip senkronize edilir.",
+                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında anlık olarak senkronize edilir. Uzun basarak mesaj silebilirsiniz.",
                             fontSize = 10.sp,
                             color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -2843,7 +3104,7 @@ private fun OneOnOneChatView(
                 }
             }
 
-            if (messages.isEmpty()) {
+            if (displayedMessages.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -2857,7 +3118,11 @@ private fun OneOnOneChatView(
                             border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
                         ) {
                             Text(
-                                text = "💬 Henüz mesaj yok.\nAşağıdan mesaj yazarak veli ile anlık sohbeti başlatabilirsiniz.",
+                                text = if (isSearchOpen && searchQuery.isNotBlank()) {
+                                    "🔍 \"$searchQuery\" ile eşleşen mesaj bulunamadı."
+                                } else {
+                                    "💬 Gösterilecek mesaj bulunmuyor.\nAşağıdan mesaj yazarak veli ile anlık sohbeti başlatabilirsiniz."
+                                },
                                 fontSize = 12.sp,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                                 textAlign = TextAlign.Center,
@@ -2868,11 +3133,47 @@ private fun OneOnOneChatView(
                     }
                 }
             } else {
-                items(messages, key = { it.id }) { msg ->
+                items(displayedMessages.indices.toList(), key = { idx -> displayedMessages[idx].id }) { idx ->
+                    val msg = displayedMessages[idx]
+                    val prevDayKey = if (idx > 0) ChatVisibilityHelper.dayKeyForTimestamp(displayedMessages[idx - 1].timestamp) else null
+                    val currDayKey = ChatVisibilityHelper.dayKeyForTimestamp(msg.timestamp)
+                    if (idx == 0 || prevDayKey != currDayKey) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0xFF182229) else Color(0xFFE1F3FB)
+                            ) {
+                                Text(
+                                    text = ChatVisibilityHelper.formatChatDateDivider(msg.timestamp),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF334155),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
                     ChatMessageBubble(
                         message = msg,
                         isDarkTheme = isDarkTheme,
-                        fontOffset = fontOffset
+                        fontOffset = fontOffset,
+                        isSelected = msg.id in selectedMessageIds,
+                        onClick = {
+                            if (isSelectionMode) {
+                                toggleSelection(msg.id)
+                            }
+                        },
+                        onLongClick = {
+                            isSelectionMode = true
+                            selectedMessageIds = selectedMessageIds + msg.id
+                        }
                     )
                 }
             }
@@ -2959,18 +3260,123 @@ private fun OneOnOneChatView(
             }
         }
     }
+
+    if (showDeleteChoiceDialog && selectedMessageIds.isNotEmpty()) {
+        val selectedMessages = messages.filter { it.id in selectedMessageIds }
+        val allSelectedAreMine = selectedMessages.isNotEmpty() && selectedMessages.all { it.isFromTeacher && !it.isDeletedForEveryone }
+        AlertDialog(
+            onDismissRequest = { showDeleteChoiceDialog = false },
+            title = {
+                Text(
+                    text = if (selectedMessages.size == 1) "Mesajı Sil" else "${selectedMessages.size} Mesajı Sil",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (allSelectedAreMine) {
+                            "Mesajları yalnızca kendi ekranınızdan silebilirsiniz (velideki mesaj kalır) veya her iki taraftan da kaldırabilirsiniz."
+                        } else {
+                            "Seçilen mesajlar yalnızca sizin öğretmen sohbet geçmişinizden silinecek. Velinin sohbet geçmişi silinmez."
+                        },
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            val ids = selectedMessageIds
+                            showDeleteChoiceDialog = false
+                            selectedMessageIds = emptySet()
+                            isSelectionMode = false
+                            onDeleteMessagesForMe(ids)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Benden Sil (Karşı Taraf Etkilenmez)", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    if (allSelectedAreMine) {
+                        Button(
+                            onClick = {
+                                val ids = selectedMessageIds
+                                showDeleteChoiceDialog = false
+                                selectedMessageIds = emptySet()
+                                isSelectionMode = false
+                                onDeleteMessagesForEveryone(ids)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Herkesten Sil", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDeleteChoiceDialog = false }) { Text("İptal") }
+            }
+        )
+    }
+
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = { Text("Sohbet Geçmişini Temizle", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = "Bu veliyle olan sohbet geçmişiniz yalnızca sizin öğretmen hesabınızdan temizlenecektir. Velinin sohbet geçmişi silinmez ve yeni gelecek mesajlar görünmeye devam eder.",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearHistoryDialog = false
+                        selectedMessageIds = emptySet()
+                        isSelectionMode = false
+                        onClearChatHistoryForMe()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Benden Temizle", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryDialog = false }) { Text("Vazgeç") }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatMessageBubble(
     message: ChatMessage,
     isDarkTheme: Boolean,
-    fontOffset: Int
+    fontOffset: Int,
+    isSelected: Boolean = false,
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {}
 ) {
     val isMe = message.isFromTeacher
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) BirizTurquoise.copy(alpha = 0.22f) else Color.Transparent)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 2.dp, vertical = 1.dp),
         horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
     ) {
         Surface(
@@ -2987,6 +3393,7 @@ private fun ChatMessageBubble(
                 // Veli mesajı (Koyu modda lacivert, açık modda beyaz)
                 if (isDarkTheme) Color(0xFF202C33) else Color.White
             },
+            border = if (isSelected) BorderStroke(1.5.dp, BirizTurquoise) else null,
             shadowElevation = 1.dp,
             modifier = Modifier.widthIn(max = 280.dp + (fontOffset * 12).dp)
         ) {
@@ -3015,9 +3422,14 @@ private fun ChatMessageBubble(
                 }
 
                 Text(
-                    text = message.text,
+                    text = if (message.isDeletedForEveryone) "🚫 Bu mesaj silindi" else message.text,
                     fontSize = (12.5 + fontOffset).sp,
-                    color = if (isDarkTheme) Color.White else Color(0xFF111B21),
+                    fontStyle = if (message.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal,
+                    color = if (message.isDeletedForEveryone) {
+                        if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                    } else {
+                        if (isDarkTheme) Color.White else Color(0xFF111B21)
+                    },
                     lineHeight = (17 + fontOffset).sp
                 )
 
@@ -3033,7 +3445,7 @@ private fun ChatMessageBubble(
                         color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
                     )
 
-                    if (isMe) {
+                    if (isMe && !message.isDeletedForEveryone) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = if (message.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,

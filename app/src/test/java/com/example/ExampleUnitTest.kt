@@ -1626,6 +1626,132 @@ class ExampleUnitTest {
       )
     )
   }
+
+  @Test
+  fun testPerUserMessageDeletionIsolation() {
+    val msg = com.example.data.model.ChatMessage(
+      id = "msg_100",
+      classId = "c1",
+      studentId = "std_1",
+      studentName = "Ali",
+      studentNumber = "1",
+      parentName = "Ali Velisi",
+      parentEmail = "veli1@example.com",
+      isFromTeacher = true,
+      senderName = "Öğretmen",
+      text = "Ödev kontrolü",
+      timestamp = 1_000L
+    )
+
+    // Öğretmen "Benden Sil" yaptığında sadece öğretmenden gizlenir; velide görünmeye devam eder
+    val hiddenFromTeacher = msg.copy(hiddenForTeacher = true)
+    assertFalse(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = hiddenFromTeacher,
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        currentParentEmail = "ogretmen@example.com",
+        clearTimestamps = emptyMap()
+      )
+    )
+    assertTrue(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = hiddenFromTeacher,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        currentParentEmail = "veli1@example.com",
+        clearTimestamps = emptyMap()
+      )
+    )
+
+    // Veli "Benden Sil" yaptığında sadece o veliden gizlenir; öğretmende ve 2. velide görünmeye devam eder
+    val hiddenFromParent1 = msg.copy(hiddenForParentEmails = listOf("veli1@example.com"))
+    assertFalse(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = hiddenFromParent1,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        currentParentEmail = "veli1@example.com",
+        clearTimestamps = emptyMap()
+      )
+    )
+    assertTrue(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = hiddenFromParent1,
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        currentParentEmail = "ogretmen@example.com",
+        clearTimestamps = emptyMap()
+      )
+    )
+    assertTrue(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = hiddenFromParent1,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        currentParentEmail = "veli2@example.com",
+        clearTimestamps = emptyMap()
+      )
+    )
+  }
+
+  @Test
+  fun testClearChatHistoryWatermarkIsolation() {
+    val oldMsg = com.example.data.model.ChatMessage(
+      id = "msg_old",
+      classId = "c1",
+      studentId = "std_1",
+      studentName = "Ali",
+      studentNumber = "1",
+      parentName = "Veli",
+      parentEmail = "veli1@example.com",
+      isFromTeacher = false,
+      senderName = "Veli",
+      text = "Eski mesaj",
+      timestamp = 1_000L
+    )
+    val newMsg = oldMsg.copy(id = "msg_new", text = "Yeni mesaj", timestamp = 2_000L)
+
+    // Öğretmen 1500ms'de std_1|veli1@example.com sohbetini temizlerse
+    val clearKeys = com.example.util.ChatVisibilityHelper.teacherConversationClearKeys(
+      studentId = "std_1",
+      parentEmail = "veli1@example.com",
+      isSingleParentStudent = false
+    )
+    assertEquals(listOf("std_1|veli1@example.com"), clearKeys)
+    val teacherClearMap = mapOf("std_1|veli1@example.com" to 1_500L)
+
+    val visibleForTeacher = com.example.util.ChatVisibilityHelper.filterVisibleMessages(
+      messages = listOf(oldMsg, newMsg),
+      viewerIsTeacher = true,
+      viewerIsParent = false,
+      currentParentEmail = "ogretmen@example.com",
+      clearTimestamps = teacherClearMap
+    )
+    assertEquals(listOf("msg_new"), visibleForTeacher.map { it.id })
+
+    // Veli geçmişi temizlemediği için eski + yeni tüm mesajları görmeye devam eder
+    val visibleForParent = com.example.util.ChatVisibilityHelper.filterVisibleMessages(
+      messages = listOf(oldMsg, newMsg),
+      viewerIsTeacher = false,
+      viewerIsParent = true,
+      currentParentEmail = "veli1@example.com",
+      clearTimestamps = emptyMap()
+    )
+    assertEquals(listOf("msg_old", "msg_new"), visibleForParent.map { it.id })
+  }
+
+  @Test
+  fun testChatDateDividerLabels() {
+    val cal = java.util.Calendar.getInstance()
+    cal.set(2026, java.util.Calendar.MAY, 15, 14, 30, 0)
+    val now = cal.timeInMillis
+    val sameDayEarlier = now - 3_600_000L
+    val yesterday = now - 86_400_000L
+
+    assertEquals("Bugün", com.example.util.ChatVisibilityHelper.formatChatDateDivider(sameDayEarlier, now))
+    assertEquals("Dün", com.example.util.ChatVisibilityHelper.formatChatDateDivider(yesterday, now))
+  }
 }
 
 

@@ -218,6 +218,7 @@ object CommunicationPersistenceHelper {
 
     private val SAMPLE_MESSAGE_IDS = setOf("msg_1", "msg_2", "msg_3", "msg_4", "msg_5")
     private const val KEY_NOTIFIED_MESSAGE_IDS_PREFIX = "notified_msg_ids_"
+    private const val KEY_CHAT_CLEAR_TIMESTAMPS_PREFIX = "chat_clear_ts_"
 
     fun isSampleChatMessage(msg: ChatMessage): Boolean {
         return msg.id in SAMPLE_MESSAGE_IDS || msg.studentId.startsWith("student_test_")
@@ -394,7 +395,24 @@ object CommunicationPersistenceHelper {
                                     val statusOverride = doc.getString("status")?.let {
                                         try { MessageStatus.valueOf(it) } catch (_: Exception) { null }
                                     }
-                                    val resolved = if (statusOverride != null) msg.copy(status = statusOverride) else msg
+                                    val hiddenForTeacherOverride = doc.getBoolean("hiddenForTeacher")
+                                    val hiddenForParentsOverride = (doc.get("hiddenForParents") as? List<*>)
+                                        ?.mapNotNull { it?.toString() }
+                                    val deletedForEveryoneOverride = doc.getBoolean("isDeletedForEveryone")
+
+                                    val mergedHiddenParents = if (hiddenForParentsOverride != null) {
+                                        (msg.hiddenForParentEmails + hiddenForParentsOverride).distinct()
+                                    } else {
+                                        msg.hiddenForParentEmails
+                                    }
+                                    val resolvedDeleted = deletedForEveryoneOverride ?: msg.isDeletedForEveryone
+                                    val resolved = msg.copy(
+                                        status = statusOverride ?: msg.status,
+                                        text = if (resolvedDeleted) "" else msg.text,
+                                        hiddenForTeacher = hiddenForTeacherOverride ?: msg.hiddenForTeacher,
+                                        hiddenForParentEmails = mergedHiddenParents,
+                                        isDeletedForEveryone = resolvedDeleted
+                                    )
                                     if (!isSampleChatMessage(resolved)) {
                                         list.add(resolved)
                                     }
@@ -418,6 +436,161 @@ object CommunicationPersistenceHelper {
                 }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register chat messages snapshot listener", e)
+            null
+        }
+    }
+
+    /**
+     * WhatsApp "Benden Sil": Seçilen mesajları yalnızca ilgili kullanıcı (öğretmen veya belirli veli) için gizler.
+     * Karşı tarafın mesaj geçmişine ve belgedeki diğer kullanıcılara dokunmaz.
+     */
+    fun hideChatMessagesForUserInFirestore(
+        context: Context,
+        classId: String,
+        messageIds: Set<String>,
+        viewerIsTeacher: Boolean,
+        parentKey: String
+    ) {
+        if (classId.isBlank() || classId == "default" || messageIds.isEmpty()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                messageIds.forEach { msgId ->
+                    val patch = if (viewerIsTeacher) {
+                        mapOf<String, Any>(
+                            "hiddenForTeacher" to true,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    } else {
+                        mapOf<String, Any>(
+                            "hiddenForParents" to FieldValue.arrayUnion(parentKey),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    }
+                    db.collection("classrooms").document(classId)
+                        .collection("messages").document(msgId)
+                        .set(patch, SetOptions.merge())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to hide messages for user in Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * WhatsApp "Herkesten Sil": Kullanıcının kendi gönderdiği mesajı her iki tarafta "Bu mesaj silindi" olarak işaretler.
+     */
+    fun deleteChatMessagesForEveryoneInFirestore(
+        context: Context,
+        classId: String,
+        messageIds: Set<String>
+    ) {
+        if (classId.isBlank() || classId == "default" || messageIds.isEmpty()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                messageIds.forEach { msgId ->
+                    val patch = mapOf<String, Any>(
+                        "isDeletedForEveryone" to true,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    db.collection("classrooms").document(classId)
+                        .collection("messages").document(msgId)
+                        .set(patch, SetOptions.merge())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete messages for everyone in Firestore", e)
+            }
+        }
+    }
+
+    fun loadChatClearTimestamps(context: Context, classId: String, viewerDocKey: String): Map<String, Long> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "${KEY_CHAT_CLEAR_TIMESTAMPS_PREFIX}${classId}_$viewerDocKey"
+        val raw = prefs.getString(key, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(raw)
+            val result = mutableMapOf<String, Long>()
+            val iter = obj.keys()
+            while (iter.hasNext()) {
+                val k = iter.next()
+                result[k] = obj.optLong(k, 0L)
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveChatClearTimestampsLocal(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        clearMap: Map<String, Long>
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "${KEY_CHAT_CLEAR_TIMESTAMPS_PREFIX}${classId}_$viewerDocKey"
+        val obj = JSONObject()
+        clearMap.forEach { (k, v) -> obj.put(k, v) }
+        prefs.edit().putString(key, obj.toString()).apply()
+    }
+
+    fun updateChatClearTimestampsInFirestore(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        clearMap: Map<String, Long>
+    ) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val data = mapOf(
+                    "clearedBeforeByKey" to clearMap,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                db.collection("classrooms").document(classId)
+                    .collection("chat_clear_state").document(viewerDocKey)
+                    .set(data, SetOptions.merge())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update chat clear state in Firestore", e)
+            }
+        }
+    }
+
+    fun observeFirestoreChatClearTimestamps(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        onUpdate: (Map<String, Long>) -> Unit
+    ): ListenerRegistration? {
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId)
+                .collection("chat_clear_state").document(viewerDocKey)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        val remoteRaw = snapshot.get("clearedBeforeByKey") as? Map<*, *> ?: emptyMap<Any?, Any?>()
+                        val local = loadChatClearTimestamps(context, classId, viewerDocKey)
+                        val merged = local.toMutableMap()
+                        remoteRaw.forEach { (k, v) ->
+                            val keyStr = k?.toString()
+                            val ts = (v as? Number)?.toLong()
+                            if (!keyStr.isNullOrBlank() && ts != null) {
+                                merged[keyStr] = maxOf(merged[keyStr] ?: 0L, ts)
+                            }
+                        }
+                        saveChatClearTimestampsLocal(context, classId, viewerDocKey, merged)
+                        onUpdate(merged)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed parsing chat clear state snapshot", e)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed registering chat clear state listener", e)
             null
         }
     }
@@ -691,10 +864,24 @@ object CommunicationPersistenceHelper {
             put("text", msg.text)
             put("timestamp", msg.timestamp)
             put("status", msg.status.name)
+            put("hiddenForTeacher", msg.hiddenForTeacher)
+            val hiddenArr = JSONArray()
+            msg.hiddenForParentEmails.forEach { hiddenArr.put(it) }
+            put("hiddenForParentEmails", hiddenArr)
+            put("isDeletedForEveryone", msg.isDeletedForEveryone)
         }
     }
 
     private fun parseChatMessageJson(obj: JSONObject): ChatMessage {
+        val hiddenParents = mutableListOf<String>()
+        val hiddenArr = obj.optJSONArray("hiddenForParentEmails")
+        if (hiddenArr != null) {
+            for (i in 0 until hiddenArr.length()) {
+                val value = hiddenArr.optString(i, "")
+                if (value.isNotBlank()) hiddenParents.add(value)
+            }
+        }
+        val deletedForAll = obj.optBoolean("isDeletedForEveryone", false)
         return ChatMessage(
             id = obj.getString("id"),
             classId = obj.getString("classId"),
@@ -705,9 +892,12 @@ object CommunicationPersistenceHelper {
             parentEmail = obj.optString("parentEmail", ""),
             isFromTeacher = obj.getBoolean("isFromTeacher"),
             senderName = obj.getString("senderName"),
-            text = obj.getString("text"),
+            text = if (deletedForAll) "" else obj.getString("text"),
             timestamp = obj.getLong("timestamp"),
-            status = MessageStatus.valueOf(obj.optString("status", "READ"))
+            status = MessageStatus.valueOf(obj.optString("status", "READ")),
+            hiddenForTeacher = obj.optBoolean("hiddenForTeacher", false),
+            hiddenForParentEmails = hiddenParents,
+            isDeletedForEveryone = deletedForAll
         )
     }
 }
