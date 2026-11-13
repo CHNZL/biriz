@@ -285,7 +285,7 @@ fun TeacherHomeSubScreen(
                                 border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.6f))
                             ) {
                                 Text(
-                                    text = "🏫 ${classRoom.gradeLevel}/${classRoom.section} Şubesi • ${classRoom.cityName}",
+                                    text = "🏫 ${classRoom.gradeLevel}/${classRoom.section} Sınıfı",
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = Color(0xFF5EEAD4),
@@ -321,6 +321,21 @@ fun TeacherHomeSubScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        val locationHeader = listOf(classRoom.cityName, classRoom.districtName)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" ")
+                        if (locationHeader.isNotBlank()) {
+                            Text(
+                                text = locationHeader,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+
                         Text(
                             text = classRoom.schoolName,
                             fontSize = 17.sp,
@@ -331,7 +346,7 @@ fun TeacherHomeSubScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Sınıf Öğretmeni: ${classRoom.teacherName} • ${classRoom.districtName}",
+                            text = "Sınıf Öğretmeni: ${classRoom.teacherName}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White.copy(alpha = 0.84f)

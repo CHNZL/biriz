@@ -1,8 +1,18 @@
 package com.example.util
 
+import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
 import com.example.data.model.TournamentMatch
 import com.example.data.model.TournamentStanding
+
+data class MaskedClassStarRank(
+    val rank: Int,
+    val studentId: String,
+    val displayName: String,
+    val starCount: Int,
+    val isMyChild: Boolean,
+    val isActiveChild: Boolean
+)
 
 /**
  * BİRİZ Veli Modülü KVKK ve Veri Gizliliği Yardımcısı
@@ -13,6 +23,36 @@ import com.example.data.model.TournamentStanding
  * Diğer tüm öğrenciler "Öğrenci" veya anonim biçimde maskelenir.
  */
 object ParentPrivacyHelper {
+
+    /**
+     * Sınıftaki TÜM öğrencilerin yıldız sıralamasını KVKK'ya uygun biçimde oluşturur.
+     * Kaç öğrenci varsa hepsi dahil edilir; kendi çocuğu/çocukları açık, diğerleri "Öğrenci" olarak gösterilir.
+     */
+    fun buildMaskedClassStarRanking(
+        allStudents: List<Student>,
+        allClassStars: List<StarRewardRecord>,
+        linkedStudentIds: Set<String>,
+        activeStudentId: String
+    ): List<MaskedClassStarRank> {
+        val starSumByStudent = allClassStars.groupBy { it.studentId }
+            .mapValues { (_, list) -> list.sumOf { it.starCount } }
+        val sorted = allStudents.sortedWith(
+            compareByDescending<Student> { starSumByStudent[it.id] ?: 0 }
+                .thenByDescending { it.id == activeStudentId }
+                .thenByDescending { linkedStudentIds.contains(it.id) }
+        )
+        return sorted.mapIndexed { index, s ->
+            val isMine = linkedStudentIds.contains(s.id)
+            MaskedClassStarRank(
+                rank = index + 1,
+                studentId = s.id,
+                displayName = if (isMine) "${s.fullName} (Çocuğunuz)" else "Öğrenci",
+                starCount = starSumByStudent[s.id] ?: 0,
+                isMyChild = isMine,
+                isActiveChild = s.id == activeStudentId
+            )
+        }
+    }
 
     /**
      * Öğrenci ismini velinin bağlı çocuklarına göre maskeler.

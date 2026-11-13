@@ -1799,9 +1799,8 @@ class ExampleUnitTest {
     )
     assertTrue("Old items before baseline must not notify", initialRes.newNotifications.isEmpty())
     assertTrue(initialRes.updatedSeenKeys.contains("ann_ann_old_1000"))
-    assertTrue(initialRes.updatedSeenKeys.contains("book_add_book_old"))
 
-    // Now trigger ALL 9 events after baseline!
+    // Now trigger active events after baseline (adding a book alone must NOT notify)
     val fullSnapshot = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
       announcements = oldSnapshot.announcements + listOf(
         com.example.data.model.Announcement(
@@ -1952,8 +1951,8 @@ class ExampleUnitTest {
     assertTrue(titles.any { it.contains("Yeni Sınıf Duyurusu") })
     // 2. Yıldız eklendi
     assertTrue(titles.any { it.contains("Yıldız Kazandı") })
-    // 3. Kitap eklendi
-    assertTrue(titles.any { it.contains("Yeni Kitap Eklendi") })
+    // 3. Kitaplığa yeni kitap eklendiğinde bildirim OLUŞMAMALI
+    assertFalse("Adding a new book must not generate a notification", titles.any { it.contains("Yeni Kitap") })
     // 4. Kitap ödünç alındı
     assertTrue(titles.any { it.contains("Ödünç Alındı") })
     // 5. Kitap iade edildi
@@ -2130,6 +2129,64 @@ class ExampleUnitTest {
     assertEquals(123456L, helper.findStudentReadTimestamp(student, ann.readReceipts))
     val summary = helper.resolveAnnouncementReadSummary(ann, listOf(student))
     assertEquals(1 to 1, summary)
+  }
+
+  @Test
+  fun testFullClassroomStarRankingWithKvkkAnonymization() {
+    val allStudents = (1..25).map { idx ->
+      com.example.data.model.Student(
+        id = "std_$idx",
+        studentNumber = "$idx",
+        fullName = "ÖĞRENCİ $idx",
+        gender = if (idx % 2 == 0) "Kız" else "Erkek"
+      )
+    }
+    val stars = listOf(
+      com.example.data.model.StarRewardRecord(
+        id = "sr1", classId = "c1", studentId = "std_5", studentName = "ÖĞRENCİ 5",
+        studentNumber = "5", categoryId = "math", categoryName = "Matematik", starCount = 48,
+        note = "Ders başarısı"
+      ),
+      com.example.data.model.StarRewardRecord(
+        id = "sr2", classId = "c1", studentId = "std_12", studentName = "ÖĞRENCİ 12",
+        studentNumber = "12", categoryId = "book", categoryName = "Kitap Kurdu", starCount = 24,
+        note = "Kitap okuma"
+      ),
+      com.example.data.model.StarRewardRecord(
+        id = "sr3", classId = "c1", studentId = "std_20", studentName = "ÖĞRENCİ 20",
+        studentNumber = "20", categoryId = "tr", categoryName = "Türkçe", starCount = 30,
+        note = "Ödev tamamlama"
+      )
+    )
+
+    val ranked = com.example.util.ParentPrivacyHelper.buildMaskedClassStarRanking(
+      allStudents = allStudents,
+      allClassStars = stars,
+      linkedStudentIds = setOf("std_5", "std_12"),
+      activeStudentId = "std_5"
+    )
+
+    // All 25 students MUST appear (no 15-student cap!)
+    assertEquals(25, ranked.size)
+    // Order: std_5 (48), std_20 (30), std_12 (24), then all remaining 0-star students
+    assertEquals(1, ranked[0].rank)
+    assertEquals("ÖĞRENCİ 5 (Çocuğunuz)", ranked[0].displayName)
+    assertEquals(48, ranked[0].starCount)
+    assertTrue(ranked[0].isActiveChild)
+
+    // Classmate std_20 MUST be KVKK anonymized to "Öğrenci" while still showing 30 stars!
+    assertEquals(2, ranked[1].rank)
+    assertEquals("Öğrenci", ranked[1].displayName)
+    assertEquals(30, ranked[1].starCount)
+    assertFalse(ranked[1].isMyChild)
+
+    // Second linked child std_12 is 3rd
+    assertEquals(3, ranked[2].rank)
+    assertEquals("ÖĞRENCİ 12 (Çocuğunuz)", ranked[2].displayName)
+    assertEquals(24, ranked[2].starCount)
+
+    // 0-star classmates also included and anonymized
+    assertTrue(ranked.drop(3).all { it.displayName == "Öğrenci" && it.starCount == 0 })
   }
 }
 

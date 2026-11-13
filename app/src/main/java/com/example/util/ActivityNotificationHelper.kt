@@ -14,7 +14,7 @@ import com.example.data.model.TournamentStatus
 import com.example.data.model.TournamentType
 
 /**
- * Duyuru, yıldız, kitaplık (ekleme / ödünç / iade) ve turnuva (katılım / maç / tur atlama / derece-sıra sonucu)
+ * Duyuru, yıldız, kitaplık (ödünç / iade) ve turnuva (katılım / maç / tur atlama / derece-sıra sonucu)
  * olaylarından üst menü bildirim zilinde gösterilecek bildirimleri deterministik ve mükerrersiz üreten katman.
  */
 object ActivityNotificationHelper {
@@ -271,29 +271,11 @@ object ActivityNotificationHelper {
             }
         }
 
-        // 3. Kitaplığa Yeni Kitap Eklendiğinde
+        // 3 & 4. Kitaplık Olayları (Yalnızca ödünç alma ve iade; yeni kitap ekleme bildirim üretmez)
         val canDiffBooks = previous != null && previous.hasBooks
         val prevBooksById = previous?.books?.associateBy { it.id }.orEmpty()
         current.books.forEach { book ->
-            val eventKey = "book_add_${book.id}"
-            val isLiveTransition = canDiffBooks && book.id !in prevBooksById
-            val authorPart = if (book.author.isNotBlank()) " — ${book.author}" else ""
-            val pagesPart = if (book.pageCount > 0) " (${book.pageCount} sayfa)" else ""
-            val tsAdd = if (book.createdAt > 0L) book.createdAt else book.updatedAt
-            processCandidate(eventKey, tsAdd, isLiveTransition) {
-                BirizNotification(
-                    id = "notif_$eventKey",
-                    title = "📚 Kitaplığa Yeni Kitap Eklendi",
-                    message = "\"${book.name}\"$authorPart$pagesPart sınıf kitaplığına eklendi.",
-                    timestamp = tsAdd.takeIf { it > 0L } ?: nowMs,
-                    type = NotificationType.LIBRARY,
-                    targetSubPageName = "READING",
-                    targetId = book.id,
-                    isRead = false
-                )
-            }
-
-            // 4. Öğrenci Kitap Ödünç Aldığında
+            // Öğrenci Kitap Ödünç Aldığında
             val currentAssignments = if (book.activeAssignments.isNotEmpty()) {
                 book.activeAssignments.map { it.studentId to it.assignmentDate }
             } else if (!book.currentStudentId.isNullOrBlank()) {

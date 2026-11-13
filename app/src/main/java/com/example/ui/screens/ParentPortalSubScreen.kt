@@ -1621,166 +1621,341 @@ private fun ParentStarsDetailView(
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    var selectedSubTab by remember { mutableIntStateOf(0) } // 0 = Yıldız Geçmişi, 1 = Sınıf Sıralaması
 
-    // Sınıf yıldız sıralaması (Diğer öğrenciler 'Öğrenci' olarak anonimleştirilir)
-    val studentStarTotals = remember(allStudents, allClassStars) {
-        allStudents.map { s ->
-            val sum = allClassStars.filter { it.studentId == s.id }.sumOf { it.starCount }
-            Triple(s.id, s.fullName, sum)
-        }.sortedByDescending { it.third }
+    // Sınıftaki TÜM öğrencilerin yıldız sıralaması (Diğer öğrenciler KVKK gereği 'Öğrenci' olarak maskelenir)
+    val rankedStudents = remember(allStudents, allClassStars, linkedStudentIds, student.id) {
+        ParentPrivacyHelper.buildMaskedClassStarRanking(
+            allStudents = allStudents,
+            allClassStars = allClassStars,
+            linkedStudentIds = linkedStudentIds,
+            activeStudentId = student.id
+        )
     }
-    val studentRank = remember(studentStarTotals, student) {
-        val idx = studentStarTotals.indexOfFirst { it.first == student.id }
-        if (idx >= 0) idx + 1 else 1
+    val studentRank = remember(rankedStudents, student.id) {
+        rankedStudents.firstOrNull { it.studentId == student.id }?.rank ?: 1
+    }
+    val sortedStarHistory = remember(stars) {
+        stars.sortedByDescending { it.timestamp }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Özet Kartı
-        item {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Üst Özet Kartı & İki Sekmeli Seçici
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = BirizAmber.copy(alpha = 0.12f),
                 border = BorderStroke(1.5.dp, BirizAmber),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
-                        Text(text = "⭐ Toplam Yıldız", fontSize = 13.5.sp, color = BirizAmber, fontWeight = FontWeight.Bold)
-                        Text(text = "${stars.sumOf { it.starCount }} Yıldız", fontSize = 28.sp, fontWeight = FontWeight.Black, color = primaryText)
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "🏆 Sınıfta ${studentRank}. Sırada (İlk %${(studentRank * 100 / maxOf(1, allStudents.size))} dilim)",
-                            fontSize = 13.5.sp,
+                            text = "⭐ Toplam Yıldız",
+                            fontSize = 12.5.sp,
+                            color = BirizAmber,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${stars.sumOf { it.starCount }} Yıldız",
+                            fontSize = 25.sp,
+                            fontWeight = FontWeight.Black,
+                            color = primaryText
+                        )
+                        Text(
+                            text = "🏆 Sınıfta $studentRank. / ${maxOf(1, rankedStudents.size)} Öğrenci (İlk %${(studentRank * 100 / maxOf(1, rankedStudents.size))} dilim)",
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryText
                         )
                     }
-                    Text(text = "🌟", fontSize = 42.sp)
+                    Text(text = "🌟", fontSize = 36.sp)
                 }
             }
-        }
 
-        // Yıldız Geçmişi Listesi
-        item {
-            Text(text = "📜 Yıldız Kazanım Geçmişi & Notlar", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-        }
-
-        if (stars.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                ) {
-                    Text(
-                        text = "Henüz öğretmen tarafından verilmiş bir yıldız kaydı bulunmuyor.",
-                        fontSize = 13.sp,
-                        color = secondaryText,
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(stars.sortedByDescending { it.timestamp }) { rec ->
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = rec.note.ifBlank { rec.categoryName },
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = primaryText
-                            )
-                            Spacer(modifier = Modifier.height(3.dp))
-                            val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(rec.timestamp))
-                            Text(text = "$dateStr • ${rec.categoryName}", fontSize = 12.5.sp, color = secondaryText)
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = BirizAmber.copy(alpha = 0.2f)
-                        ) {
-                            Text(
-                                text = "+${rec.starCount} ⭐",
-                                fontSize = 14.5.sp,
-                                fontWeight = FontWeight.Black,
-                                color = BirizAmber,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sınıf Sıralama Tablosu
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "🏆 Sınıf Başarı Sıralaması", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Sınıf mevcudundaki puan dağılımı ve çocuğunuzun konumu",
-                fontSize = 12.sp,
-                color = secondaryText
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-
-        items(studentStarTotals.take(15)) { (sId, sName, count) ->
-            val isMyChild = linkedStudentIds.contains(sId)
+            // İki Sekmeli Geçiş Çubuğu: 1. Yıldız Geçmişi | 2. Sınıf Sıralaması
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isMyChild) BirizTurquoise.copy(alpha = 0.2f) else if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                border = BorderStroke(
-                    if (isMyChild) 1.5.dp else 1.dp,
-                    if (isMyChild) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                ),
+                shape = RoundedCornerShape(14.dp),
+                color = if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9),
+                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (isMyChild) "★" else "•",
-                            fontSize = 15.sp,
-                            color = if (isMyChild) BirizTurquoise else secondaryText,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = if (isMyChild) "$sName (Çocuğunuz)" else "Öğrenci",
-                            fontWeight = if (isMyChild) FontWeight.ExtraBold else FontWeight.Medium,
-                            fontSize = 13.5.sp,
-                            color = if (isMyChild) primaryText else secondaryText
-                        )
-                    }
-                    Text(
-                        text = "$count ⭐",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 13.5.sp,
-                        color = if (isMyChild) BirizAmber else secondaryText
+                    val tabs = listOf(
+                        "📜 Yıldız Geçmişi (${sortedStarHistory.size})" to "tab_star_history",
+                        "🏆 Sınıf Sıralaması (${rankedStudents.size})" to "tab_class_ranking"
                     )
+                    tabs.forEachIndexed { index, (label, tag) ->
+                        val isSelected = selectedSubTab == index
+                        Surface(
+                            onClick = { selectedSubTab = index },
+                            shape = RoundedCornerShape(10.dp),
+                            color = when {
+                                isSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                else -> Color.Transparent
+                            },
+                            shadowElevation = if (isSelected) 2.dp else 0.dp,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag(tag)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    color = when {
+                                        isSelected -> if (isDarkTheme) BirizNavyDark else Color.White
+                                        else -> secondaryText
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Seçili Sekme İçeriği
+        if (selectedSubTab == 0) {
+            // SEKME 1: YILDIZ KAZANIM GEÇMİŞİ & NOTLAR
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (sortedStarHistory.isEmpty()) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Henüz öğretmen tarafından verilmiş bir yıldız kaydı bulunmuyor.",
+                                fontSize = 13.sp,
+                                color = secondaryText,
+                                modifier = Modifier.padding(18.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(sortedStarHistory, key = { it.id }) { rec ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = rec.note.ifBlank { rec.categoryName },
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryText
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(rec.timestamp))
+                                    Text(
+                                        text = "$dateStr • ${rec.categoryName}",
+                                        fontSize = 12.sp,
+                                        color = secondaryText
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = BirizAmber.copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "+${rec.starCount} ⭐",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = BirizAmber,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // SEKME 2: SINIF BAŞARI SIRALAMASI (Sınıftaki TÜM Öğrenciler - KVKK Korumalı)
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isDarkTheme) Color(0x300284C7) else Color(0xFFF0F9FF),
+                        border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5538BDF8) else Color(0xFFBAE6FD)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "KVKK Gizliliği",
+                                tint = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0284C7),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "KVKK gereği sınıftaki tüm ${rankedStudents.size} öğrencinin yıldız sayısı gösterilir; diğer öğrenciler anonim olarak listelenir.",
+                                fontSize = 11.5.sp,
+                                color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF0369A1),
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+
+                if (rankedStudents.isEmpty()) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Sınıfta kayıtlı öğrenci bilgisi bulunamadı.",
+                                fontSize = 13.sp,
+                                color = secondaryText,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(rankedStudents, key = { it.studentId }) { entry ->
+                        val rankLabel = when (entry.rank) {
+                            1 -> "🥇 1."
+                            2 -> "🥈 2."
+                            3 -> "🥉 3."
+                            else -> "${entry.rank}."
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = when {
+                                entry.isActiveChild -> BirizTurquoise.copy(alpha = 0.22f)
+                                entry.isMyChild -> BirizTurquoise.copy(alpha = 0.12f)
+                                isDarkTheme -> BirizDarkCardGlass
+                                else -> Color.White
+                            },
+                            border = BorderStroke(
+                                if (entry.isActiveChild) 1.6.dp else 1.dp,
+                                when {
+                                    entry.isActiveChild -> BirizTurquoise
+                                    entry.isMyChild -> BirizTurquoise.copy(alpha = 0.6f)
+                                    isDarkTheme -> BirizDarkCardBorder
+                                    else -> BirizBorder
+                                }
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = when {
+                                            entry.rank <= 3 -> BirizAmber.copy(alpha = 0.18f)
+                                            entry.isMyChild -> BirizTurquoise.copy(alpha = 0.18f)
+                                            isDarkTheme -> Color(0x30334E68)
+                                            else -> Color(0xFFF1F5F9)
+                                        },
+                                        modifier = Modifier.widthIn(min = 42.dp)
+                                    ) {
+                                        Text(
+                                            text = rankLabel,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = when {
+                                                entry.rank <= 3 -> BirizAmber
+                                                entry.isMyChild -> BirizTurquoise
+                                                else -> secondaryText
+                                            },
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Text(
+                                        text = entry.displayName,
+                                        fontWeight = if (entry.isMyChild) FontWeight.ExtraBold else FontWeight.Medium,
+                                        fontSize = 13.5.sp,
+                                        color = if (entry.isMyChild) primaryText else secondaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (entry.isMyChild) BirizAmber.copy(alpha = 0.18f) else Color.Transparent
+                                ) {
+                                    Text(
+                                        text = "${entry.starCount} ⭐",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 13.5.sp,
+                                        color = if (entry.isMyChild) BirizAmber else secondaryText,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
