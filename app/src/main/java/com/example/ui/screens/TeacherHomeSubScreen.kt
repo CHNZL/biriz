@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,9 +46,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -710,8 +709,8 @@ fun TeacherHomeSubScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Şanslı Öğrenci",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -758,8 +757,8 @@ fun TeacherHomeSubScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Zamanlayıcı",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1053,26 +1052,26 @@ private fun DistinctTeacherCard(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(18.dp)
     val cardBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
                 Color(0xFF132240),
-                accentColor.copy(alpha = 0.14f)
+                lerp(Color(0xFF132240), accentColor, 0.16f)
             )
         )
     } else {
         Brush.linearGradient(
             listOf(
                 Color.White,
-                accentColor.copy(alpha = 0.08f)
+                lerp(Color.White, accentColor, 0.09f)
             )
         )
     }
     val borderColor = if (isDark) {
-        accentColor.copy(alpha = 0.48f)
+        accentColor.copy(alpha = 0.52f)
     } else {
-        accentColor.copy(alpha = 0.36f)
+        accentColor.copy(alpha = 0.38f)
     }
 
     val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
@@ -1080,16 +1079,11 @@ private fun DistinctTeacherCard(
     Surface(
         modifier = taggedModifier
             .fillMaxWidth()
-            .shadow(
-                elevation = if (isDark) 0.dp else 5.dp,
-                shape = shape,
-                ambientColor = accentColor.copy(alpha = 0.22f),
-                spotColor = accentColor.copy(alpha = 0.28f)
-            )
             .clip(shape)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         shape = shape,
-        color = Color.Transparent,
+        color = if (isDark) Color(0xFF132240) else Color.White,
+        shadowElevation = if (isDark) 0.dp else 4.dp,
         border = BorderStroke(1.5.dp, borderColor)
     ) {
         Column(
@@ -1101,8 +1095,8 @@ private fun DistinctTeacherCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(accentColor.copy(alpha = if (isDark) 0.85f else 0.78f))
+                    .height(3.5.dp)
+                    .background(accentColor.copy(alpha = if (isDark) 0.88f else 0.82f))
             )
             Column(
                 modifier = Modifier
@@ -1175,43 +1169,37 @@ private fun TeacherModuleBentoTile(
     modifier: Modifier = Modifier,
     testTag: String? = null
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(18.dp)
     val tileBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
                 Color(0xFF132240),
-                accentColor.copy(alpha = 0.16f)
+                lerp(Color(0xFF132240), accentColor, 0.18f)
             )
         )
     } else {
         Brush.linearGradient(
             listOf(
                 Color.White,
-                accentColor.copy(alpha = 0.10f)
+                lerp(Color.White, accentColor, 0.11f)
             )
         )
     }
     val borderColor = if (isDark) {
-        accentColor.copy(alpha = 0.52f)
+        accentColor.copy(alpha = 0.54f)
     } else {
-        accentColor.copy(alpha = 0.38f)
+        accentColor.copy(alpha = 0.40f)
     }
 
     val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
 
     Surface(
         modifier = taggedModifier
-            .heightIn(min = 128.dp)
-            .shadow(
-                elevation = if (isDark) 0.dp else 5.dp,
-                shape = shape,
-                ambientColor = accentColor.copy(alpha = 0.22f),
-                spotColor = accentColor.copy(alpha = 0.30f)
-            )
             .clip(shape)
             .clickable { onClick() },
         shape = shape,
-        color = Color.Transparent,
+        color = if (isDark) Color(0xFF132240) else Color.White,
+        shadowElevation = if (isDark) 0.dp else 4.dp,
         border = BorderStroke(1.5.dp, borderColor)
     ) {
         Column(
@@ -1223,15 +1211,14 @@ private fun TeacherModuleBentoTile(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(accentColor.copy(alpha = if (isDark) 0.90f else 0.82f))
+                    .height(3.5.dp)
+                    .background(accentColor.copy(alpha = if (isDark) 0.90f else 0.85f))
             )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 13.dp, vertical = 9.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1239,18 +1226,18 @@ private fun TeacherModuleBentoTile(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f),
                         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = emoji, fontSize = 20.sp)
+                            Text(text = emoji, fontSize = 16.sp)
                         }
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(7.dp),
                         color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f)
                     ) {
                         Text(
@@ -1258,26 +1245,26 @@ private fun TeacherModuleBentoTile(
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDark) Color.White else accentColor,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(7.dp))
 
                 // 1. Büyük ve dikkat çekici başlık
                 Text(
                     text = title,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Black,
                     color = if (isDark) Color.White else BirizNavyPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
-                // 2. Mevcut bilgi / özet (tek temiz satır, 3. küçük satır yok)
+                // 2. Mevcut bilgi / özet (tek temiz satır)
                 Text(
                     text = subtitle,
                     fontSize = 12.5.sp,
