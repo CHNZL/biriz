@@ -76,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -969,9 +970,7 @@ private fun ParentDashboardHomeView(
     isDarkTheme: Boolean,
     onNavigate: (ParentPortalTab) -> Unit
 ) {
-    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
-    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-
+    val canvasBackground = if (isDarkTheme) Color(0xFF070E1B) else Color(0xFFEAF0F6)
     val currentlyReadingBook = remember(classBooks, student.id) {
         classBooks.firstOrNull { book ->
             book.activeAssignments.any { it.studentId == student.id } || book.currentStudentId == student.id
@@ -979,31 +978,43 @@ private fun ParentDashboardHomeView(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(canvasBackground),
         contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         // --- 1. HERO PROFİL KARTI ---
         item {
+            val heroShape = RoundedCornerShape(20.dp)
+            val heroBrush = if (isDarkTheme) {
+                Brush.linearGradient(listOf(Color(0xFF0F2038), lerp(Color(0xFF0F2038), BirizTurquoise, 0.16f)))
+            } else {
+                Brush.linearGradient(listOf(Color.White, lerp(Color.White, Color(0xFF0284C7), 0.10f)))
+            }
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = if (isDarkTheme) Color(0xFF0F2038) else Color(0xFFEFF6FF),
-                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizTurquoise else Color(0xFFBFDBFE)),
-                modifier = Modifier.fillMaxWidth()
+                shape = heroShape,
+                color = if (isDarkTheme) Color(0xFF0F2038) else Color.White,
+                shadowElevation = if (isDarkTheme) 0.dp else 5.dp,
+                border = BorderStroke(1.5.dp, if (isDarkTheme) BirizTurquoise.copy(alpha = 0.55f) else Color(0xFF60A5FA)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(heroShape)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(heroBrush)
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = if (student.gender.equals("Kız", ignoreCase = true)) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
-                        modifier = Modifier.size(62.dp)
+                        modifier = Modifier.size(60.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 34.sp)
+                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 32.sp)
                         }
                     }
                     Spacer(modifier = Modifier.width(14.dp))
@@ -1015,7 +1026,7 @@ private fun ParentDashboardHomeView(
                             ) {
                                 Text(
                                     text = "NO: ${student.studentNumber}",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = BirizNavyDark,
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
@@ -1023,18 +1034,22 @@ private fun ParentDashboardHomeView(
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = classRoom?.let { "${it.gradeLevel}/${it.section} • Öğretmen: ${it.teacherName}" } ?: "Sınıf",
-                                fontSize = 13.sp,
+                                text = classRoom?.let { "${it.gradeLevel}/${it.section} • ${it.teacherName}" } ?: "Sınıf",
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) Color.LightGray else Color(0xFF334155)
+                                color = if (isDarkTheme) Color.LightGray else Color(0xFF334155),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = student.fullName,
-                            fontSize = 21.sp,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
-                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                            color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Surface(
@@ -1044,26 +1059,25 @@ private fun ParentDashboardHomeView(
                         ) {
                             Text(
                                 text = starLevelBadge.first,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = starLevelBadge.second,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = BirizAmber.copy(alpha = 0.15f),
-                            border = BorderStroke(1.5.dp, BirizAmber)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = BirizAmber.copy(alpha = 0.16f),
+                        border = BorderStroke(1.5.dp, BirizAmber)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(text = "⭐ $totalStars", fontSize = 22.sp, fontWeight = FontWeight.Black, color = BirizAmber)
-                                Text(text = "Yıldız", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = BirizAmber)
-                            }
+                            Text(text = "⭐ $totalStars", fontSize = 21.sp, fontWeight = FontWeight.Black, color = BirizAmber)
+                            Text(text = "Yıldız", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = BirizAmber)
                         }
                     }
                 }
@@ -1074,130 +1088,135 @@ private fun ParentDashboardHomeView(
         item {
             BentoSummaryCard(
                 icon = "⭐",
-                title = "Günün Başarı & Yıldız Akışı",
+                title = "Yıldız & Başarı Akışı",
                 subtitle = if (lastStarRecord != null) {
                     val timeStr = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(lastStarRecord.timestamp))
-                    "Son Ödül: ${lastStarRecord.note.ifBlank { lastStarRecord.categoryName }} (+${lastStarRecord.starCount} ⭐) • $timeStr"
+                    "Son: ${lastStarRecord.note.ifBlank { lastStarRecord.categoryName }} (+${lastStarRecord.starCount} ★) • $timeStr"
                 } else {
-                    "Henüz bugün yıldız kaydı bulunmuyor."
+                    "Toplam $totalStars yıldız • Henüz yeni ödül yok"
                 },
                 badgeText = "Detaylar →",
-                accentColor = BirizAmber,
+                accentColor = Color(0xFFD97706),
                 isDarkTheme = isDarkTheme,
                 onClick = { onNavigate(ParentPortalTab.STARS) }
             )
         }
 
-        // --- 3. BENTO 2'Lİ GRID: BUGÜNKÜ DERSLER & OTURMA YERİ ---
+        // --- 3. ÖĞRENCİ TAKİP MODÜLLERİ (2x2 BELİRGİN KUTULAR) ---
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Bugünkü Dersler
-                BentoCompactCard(
-                    icon = "📅",
-                    title = "Bugünkü Dersler",
-                    highlight = if (todayLessons.isNotEmpty()) "${todayLessons.size} Ders Planlı" else "Program Yok",
-                    description = if (todayLessons.isNotEmpty()) {
-                        todayLessons.take(3).joinToString(", ") { "${it.lessonIndex}. ${it.subjectName}" }
-                    } else "Bugün için ders girilmemiş",
-                    modifier = Modifier.weight(1f),
-                    accentColor = Color(0xFF0284C7),
-                    isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.SCHEDULE) }
+                ParentSectionHeader(
+                    title = "GÜNLÜK TAKİP MODÜLLERİ",
+                    isDark = isDarkTheme
                 )
 
-                // Oturma Yeri
-                BentoCompactCard(
-                    icon = "🪑",
-                    title = "Sınıftaki Yeri",
-                    highlight = studentSeatDesc,
-                    description = "Öğretmen masası & tahta karşısı konumu",
-                    modifier = Modifier.weight(1f),
-                    accentColor = Color(0xFF10B981),
-                    isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.SEATING) }
-                )
-            }
-        }
+                // 1. Satır: Bugünkü Dersler & Sınıftaki Yeri
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BentoCompactCard(
+                        icon = "📅",
+                        title = "Bugünkü Dersler",
+                        subtitle = if (todayLessons.isNotEmpty()) {
+                            "${todayLessons.size} Ders • İlk: ${todayLessons.first().subjectName}"
+                        } else {
+                            "Bugün için ders yok"
+                        },
+                        modifier = Modifier.weight(1f),
+                        accentColor = Color(0xFF0284C7),
+                        isDarkTheme = isDarkTheme,
+                        onClick = { onNavigate(ParentPortalTab.SCHEDULE) }
+                    )
 
-        // --- 4. BENTO 2'Lİ GRID: KİTAP OKUMA & TURNUVA ---
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Kitap Okuma (Aktif ödünç alınan kitap varsa öncelikli gösterilir)
-                val lastCompleted = readingRecords.lastOrNull()
-                val (highlightText, descText) = when {
-                    currentlyReadingBook != null -> {
-                        val activeAssign = currentlyReadingBook.activeAssignments.firstOrNull { it.studentId == student.id }
-                        val rawAssignMs = activeAssign?.assignmentDate ?: currentlyReadingBook.assignmentDate ?: System.currentTimeMillis()
-                        val validAssignMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
-                        val days = ((System.currentTimeMillis() - validAssignMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
-                        "📖 ${currentlyReadingBook.name}" to "Şu An Okuyor (${days}. gün) • ${currentlyReadingBook.pageCount} Sayfa"
-                    }
-                    lastCompleted != null -> {
-                        lastCompleted.bookName to "Son Tamamlanan • Toplam: ${readingRecords.size} Kitap"
-                    }
-                    else -> "Kitap Bekleniyor" to "Henüz okuma kaydı girilmedi"
+                    BentoCompactCard(
+                        icon = "🪑",
+                        title = "Sınıftaki Yeri",
+                        subtitle = studentSeatDesc,
+                        modifier = Modifier.weight(1f),
+                        accentColor = Color(0xFF0D9488),
+                        isDarkTheme = isDarkTheme,
+                        onClick = { onNavigate(ParentPortalTab.SEATING) }
+                    )
                 }
 
-                BentoCompactCard(
-                    icon = if (currentlyReadingBook != null) "📖" else "📚",
-                    title = if (currentlyReadingBook != null) "Şu An Okuduğu Kitap" else "Kitap & Okuma",
-                    highlight = highlightText,
-                    description = descText,
-                    modifier = Modifier.weight(1f),
-                    accentColor = if (currentlyReadingBook != null) Color(0xFFD97706) else Color(0xFF8B5CF6),
-                    isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.READING) }
-                )
+                // 2. Satır: Kitap & Okuma & Turnuva Durumu
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val readingSubtitle = when {
+                        currentlyReadingBook != null -> {
+                            val activeAssign = currentlyReadingBook.activeAssignments.firstOrNull { it.studentId == student.id }
+                            val rawAssignMs = activeAssign?.assignmentDate ?: currentlyReadingBook.assignmentDate ?: System.currentTimeMillis()
+                            val validAssignMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
+                            val days = ((System.currentTimeMillis() - validAssignMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
+                            "📖 ${currentlyReadingBook.name} (${days}. gün)"
+                        }
+                        readingRecords.isNotEmpty() -> "${readingRecords.size} Kitap Tamamlandı"
+                        else -> "Henüz okuma kaydı yok"
+                    }
 
-                // Turnuva
-                BentoCompactCard(
-                    icon = "🏆",
-                    title = "Turnuva Durumu",
-                    highlight = activeTournament?.name ?: "Aktif Turnuva Yok",
-                    description = if (activeTournament != null) {
-                        "Format: ${activeTournament.type.displayName} • Katılımcı"
-                    } else "Sınıfta turnuva planlanınca görünür",
-                    modifier = Modifier.weight(1f),
-                    accentColor = BirizGold,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.TOURNAMENT) }
-                )
+                    BentoCompactCard(
+                        icon = if (currentlyReadingBook != null) "📖" else "📚",
+                        title = "Kitap & Okuma",
+                        subtitle = readingSubtitle,
+                        modifier = Modifier.weight(1f),
+                        accentColor = if (currentlyReadingBook != null) Color(0xFFEA580C) else Color(0xFF7C3AED),
+                        isDarkTheme = isDarkTheme,
+                        onClick = { onNavigate(ParentPortalTab.READING) }
+                    )
+
+                    BentoCompactCard(
+                        icon = "🏆",
+                        title = "Turnuvalar",
+                        subtitle = activeTournament?.name ?: "Aktif turnuva bulunmuyor",
+                        modifier = Modifier.weight(1f),
+                        accentColor = Color(0xFFE11D48),
+                        isDarkTheme = isDarkTheme,
+                        onClick = { onNavigate(ParentPortalTab.TOURNAMENT) }
+                    )
+                }
             }
         }
 
-        // --- 5. BENTO KART: ÖĞRETMENDEN SON DUYURU ---
+        // --- 4. İLETİŞİM & DUYURULAR ---
         item {
-            BentoSummaryCard(
-                icon = "📢",
-                title = "Öğretmenden Son Duyuru",
-                subtitle = lastAnnouncement?.let { "${it.title}: ${it.content.take(70)}..." } ?: "Henüz yeni bir duyuru bulunmuyor.",
-                badgeText = if (lastAnnouncement?.poll?.options?.isNotEmpty() == true) "Anket Var 🗳️" else "Tüm Duyurular →",
-                accentColor = Color(0xFFEC4899),
-                isDarkTheme = isDarkTheme,
-                onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
-            )
-        }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ParentSectionHeader(
+                    title = "İLETİŞİM & DUYURULAR",
+                    isDark = isDarkTheme
+                )
 
-        // --- 6. BENTO KART: ÖĞRETMENLE BİREBİR İLETİŞİM ---
-        item {
-            BentoSummaryCard(
-                icon = "💬",
-                title = "Öğretmen İletişimi",
-                subtitle = lastChatMessage?.let {
-                    val sender = if (it.isFromTeacher) "Öğretmen" else "Siz"
-                    "$sender: ${it.text.take(60)}..."
-                } ?: "Öğretmeniniz ile buradan birebir özel mesajlaşabilirsiniz.",
-                badgeText = "Mesaj Yaz →",
-                accentColor = BirizTurquoise,
-                isDarkTheme = isDarkTheme,
-                onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
-            )
+                BentoSummaryCard(
+                    icon = "📢",
+                    title = "Sınıf Duyuruları",
+                    subtitle = lastAnnouncement?.let { "${it.title}: ${it.content}" } ?: "Henüz yeni bir duyuru bulunmuyor.",
+                    badgeText = if (lastAnnouncement?.poll?.options?.isNotEmpty() == true) "Anket Var 🗳️" else "Duyurular →",
+                    accentColor = Color(0xFFDB2777),
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+                )
+
+                BentoSummaryCard(
+                    icon = "💬",
+                    title = "Öğretmen İletişimi",
+                    subtitle = lastChatMessage?.let {
+                        val sender = if (it.isFromTeacher) "Öğretmen" else "Siz"
+                        "$sender: ${it.text}"
+                    } ?: "Öğretmeninizle buradan birebir mesajlaşabilirsiniz.",
+                    badgeText = "Mesaj Yaz →",
+                    accentColor = Color(0xFF059669),
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+                )
+            }
         }
     }
 }
@@ -1205,6 +1224,35 @@ private fun ParentDashboardHomeView(
 // =========================================================================
 // YARDIMCI BENTO KARTLARI
 // =========================================================================
+@Composable
+private fun ParentSectionHeader(
+    title: String,
+    isDark: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (isDark) BirizTurquoise else BirizNavyPrimary)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.6.sp,
+            color = if (isDark) BirizTurquoise else BirizNavyPrimary
+        )
+    }
+}
+
 @Composable
 private fun BentoSummaryCard(
     icon: String,
@@ -1215,58 +1263,98 @@ private fun BentoSummaryCard(
     isDarkTheme: Boolean,
     onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(18.dp)
+    val cardBrush = if (isDarkTheme) {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF132240),
+                lerp(Color(0xFF132240), accentColor, 0.16f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color.White,
+                lerp(Color.White, accentColor, 0.09f)
+            )
+        )
+    }
+    val borderColor = if (isDarkTheme) {
+        accentColor.copy(alpha = 0.52f)
+    } else {
+        accentColor.copy(alpha = 0.38f)
+    }
+
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-        modifier = Modifier.fillMaxWidth()
+        shape = shape,
+        color = if (isDarkTheme) Color(0xFF132240) else Color.White,
+        shadowElevation = if (isDarkTheme) 0.dp else 4.dp,
+        border = BorderStroke(1.5.dp, borderColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(cardBrush)
         ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = accentColor.copy(alpha = 0.15f),
-                modifier = Modifier.size(50.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.5.dp)
+                    .background(accentColor.copy(alpha = if (isDarkTheme) 0.88f else 0.82f))
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(text = icon, fontSize = 26.sp)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = accentColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
+                    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = icon, fontSize = 21.sp)
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 15.5.sp,
-                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 13.sp,
-                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 18.sp
-                )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = accentColor.copy(alpha = 0.15f)
-            ) {
-                Text(
-                    text = badgeText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = accentColor,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 17.sp,
+                        color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF475569),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = accentColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f)
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isDarkTheme) Color.White else accentColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    )
+                }
             }
         }
     }
@@ -1276,60 +1364,110 @@ private fun BentoSummaryCard(
 private fun BentoCompactCard(
     icon: String,
     title: String,
-    highlight: String,
-    description: String,
+    subtitle: String,
     modifier: Modifier = Modifier,
     accentColor: Color,
     isDarkTheme: Boolean,
     onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(18.dp)
+    val tileBrush = if (isDarkTheme) {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF132240),
+                lerp(Color(0xFF132240), accentColor, 0.18f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color.White,
+                lerp(Color.White, accentColor, 0.11f)
+            )
+        )
+    }
+    val borderColor = if (isDarkTheme) {
+        accentColor.copy(alpha = 0.54f)
+    } else {
+        accentColor.copy(alpha = 0.40f)
+    }
+
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-        modifier = modifier.height(148.dp)
+        shape = shape,
+        color = if (isDarkTheme) Color(0xFF132240) else Color.White,
+        shadowElevation = if (isDarkTheme) 0.dp else 4.dp,
+        border = BorderStroke(1.5.dp, borderColor),
+        modifier = modifier.clip(shape)
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .fillMaxWidth()
+                .background(tileBrush)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            // Her modül kartını görsel olarak ayıran renkli üst şerit
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.5.dp)
+                    .background(accentColor.copy(alpha = if (isDarkTheme) 0.90f else 0.85f))
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 13.dp, vertical = 9.dp)
             ) {
-                Text(text = icon, fontSize = 24.sp)
-                Text(
-                    text = "Detay →",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = accentColor
-                )
-            }
-            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = accentColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
+                        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = icon, fontSize = 16.sp)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(7.dp),
+                        color = accentColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f)
+                    ) {
+                        Text(
+                            text = "Detay →",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color.White else accentColor,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(7.dp))
+
+                // 1. Büyük ve dikkat çekici başlık
                 Text(
                     text = title,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = highlight,
-                    fontSize = 14.5.sp,
+                    fontSize = 17.5.sp,
                     fontWeight = FontWeight.Black,
                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
                 Spacer(modifier = Modifier.height(2.dp))
+
+                // 2. Tek temiz alt satır
                 Text(
-                    text = description,
-                    fontSize = 12.sp,
-                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                    text = subtitle,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF475569),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
