@@ -40,6 +40,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
@@ -80,6 +81,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -89,6 +91,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -118,6 +121,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.Announcement
+import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.Book
 import com.example.data.model.ChatMessage
@@ -3194,6 +3198,11 @@ private fun ParentCommunicationDetailView(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showDeleteChoiceDialog by remember { mutableStateOf(false) }
+    var selectedAnnouncementId by remember { mutableStateOf<String?>(null) }
+
+    val selectedAnnouncement = remember(announcements, selectedAnnouncementId) {
+        selectedAnnouncementId?.let { id -> announcements.firstOrNull { it.id == id } }
+    }
 
     val displayedMessages = remember(chatMessages, isSearchOpen, searchQuery) {
         if (!isSearchOpen || searchQuery.isBlank()) {
@@ -3211,6 +3220,19 @@ private fun ParentCommunicationDetailView(
         isSelectionMode = false
         isSearchOpen = false
         searchQuery = ""
+        selectedAnnouncementId = null
+    }
+
+    LaunchedEffect(isChatSubTabActive) {
+        if (isChatSubTabActive) {
+            selectedAnnouncementId = null
+        }
+    }
+
+    LaunchedEffect(selectedAnnouncementId, selectedAnnouncement) {
+        if (selectedAnnouncementId != null && selectedAnnouncement == null) {
+            selectedAnnouncementId = null
+        }
     }
 
     BackHandler(enabled = isChatSubTabActive && (isSelectionMode || isSearchOpen)) {
@@ -3223,19 +3245,28 @@ private fun ParentCommunicationDetailView(
         }
     }
 
+    BackHandler(enabled = !isChatSubTabActive && selectedAnnouncement != null) {
+        selectedAnnouncementId = null
+    }
+
     val unreadFromTeacherCount = remember(chatMessages) {
         chatMessages.count { it.isFromTeacher && !it.isDeletedForEveryone && it.status != MessageStatus.READ }
     }
 
+    val unreadAnnouncementsCount = remember(announcements, student) {
+        announcements.count {
+            AnnouncementIdentityHelper.findStudentReadTimestamp(student, it.readReceipts) == null
+        }
+    }
+
     val parentDisplayName = currentUser.fullName.ifBlank { "Veli" }
 
-    // Duyurular sekmesindeyken duyuruları okundu işaretle
-    LaunchedEffect(announcements, isChatSubTabActive, student.id) {
-        if (!isChatSubTabActive) {
-            announcements.forEach { ann ->
-                if (AnnouncementIdentityHelper.findStudentReadTimestamp(student, ann.readReceipts) == null) {
-                    onMarkAnnouncementRead(ann.id)
-                }
+    // Veli duyuru satırına dokunup detayını açtığında yalnızca o duyuruyu okundu işaretle
+    LaunchedEffect(selectedAnnouncement?.id, isChatSubTabActive, student.id) {
+        val opened = selectedAnnouncement
+        if (!isChatSubTabActive && opened != null) {
+            if (AnnouncementIdentityHelper.findStudentReadTimestamp(student, opened.readReceipts) == null) {
+                onMarkAnnouncementRead(opened.id)
             }
         }
     }
@@ -3560,6 +3591,18 @@ private fun ParentCommunicationDetailView(
                                     fontWeight = if (!isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
                                     color = if (!isChatSubTabActive) Color.White else primaryText
                                 )
+                                if (unreadAnnouncementsCount > 0) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(shape = CircleShape, color = BirizAmber) {
+                                        Text(
+                                            text = "$unreadAnnouncementsCount",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -3924,125 +3967,698 @@ private fun ParentCommunicationDetailView(
                 )
             }
         } else {
-            // --- 2. SINIF DUYURULARI & VELİ ANKETLERİ ---
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            // --- 2. SINIF DUYURULARI & VELİ ANKETLERİ (Kompakt Satır Listesi + Detay Görünümü) ---
+            if (selectedAnnouncement != null) {
+                ParentAnnouncementDetailView(
+                    announcement = selectedAnnouncement,
+                    student = student,
+                    linkedStudents = linkedStudents,
+                    parentDisplayName = parentDisplayName,
+                    isDarkTheme = isDarkTheme,
+                    onBack = { selectedAnnouncementId = null },
+                    onVotePoll = { optionId -> onVotePoll(selectedAnnouncement.id, optionId) }
+                )
+            } else {
+                ParentAnnouncementsListView(
+                    announcements = announcements,
+                    student = student,
+                    linkedStudents = linkedStudents,
+                    parentDisplayName = parentDisplayName,
+                    isDarkTheme = isDarkTheme,
+                    onAnnouncementClick = { ann -> selectedAnnouncementId = ann.id }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParentAnnouncementsListView(
+    announcements: List<Announcement>,
+    student: Student,
+    linkedStudents: List<Student>,
+    parentDisplayName: String,
+    isDarkTheme: Boolean,
+    onAnnouncementClick: (Announcement) -> Unit
+) {
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    var selectedFilter by remember { mutableStateOf("Tümü") }
+    val filters = listOf("Tümü", "Okunmamış", "Anketli", "Özel")
+
+    val voterAliases = remember(student, linkedStudents, parentDisplayName) {
+        AnnouncementIdentityHelper.voterAliasesForParent(
+            activeStudent = student,
+            linkedStudents = linkedStudents,
+            rawParentName = parentDisplayName
+        )
+    }
+
+    val filteredList = remember(announcements, selectedFilter, student.id) {
+        when (selectedFilter) {
+            "Okunmamış" -> announcements.filter {
+                AnnouncementIdentityHelper.findStudentReadTimestamp(student, it.readReceipts) == null
+            }
+            "Anketli" -> announcements.filter { it.poll != null && it.poll.options.isNotEmpty() }
+            "Özel" -> announcements.filter { it.targetType == AnnouncementTargetType.SPECIFIC_STUDENTS }
+            else -> announcements
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Üst Bilgi Kartı
+        item {
+            BentoCard(
+                isDark = isDarkTheme,
+                glowColor = BirizAmber,
+                shape = RoundedCornerShape(16.dp)
             ) {
-                if (announcements.isEmpty()) {
-                    item {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor.",
-                                fontSize = 13.sp,
-                                color = secondaryText,
-                                modifier = Modifier.padding(16.dp),
-                                textAlign = TextAlign.Center
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = BirizAmber.copy(alpha = 0.16f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Campaign,
+                                contentDescription = null,
+                                tint = BirizAmber,
+                                modifier = Modifier.size(21.dp)
                             )
                         }
                     }
-                } else {
-                    items(announcements) { ann ->
+                    Spacer(modifier = Modifier.width(11.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "📢 Sınıf Duyuruları & Anketler",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                        Text(
+                            text = "İçeriği okumak ve anketlere oy vermek için duyuru satırına dokunun.",
+                            fontSize = 11.5.sp,
+                            color = secondaryText,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Filtre Çipleri
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                filters.forEach { filter ->
+                    val isSelected = selectedFilter == filter
+                    Surface(
+                        onClick = { selectedFilter = filter },
+                        shape = RoundedCornerShape(10.dp),
+                        color = when {
+                            isSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            else -> if (isDarkTheme) Color(0x351E293B) else Color(0xFFF1F5F9)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else BirizBorder
+                        ),
+                        modifier = Modifier.heightIn(min = 36.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = filter,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = when {
+                                    isSelected -> if (isDarkTheme) BirizNavyDark else Color.White
+                                    else -> if (isDarkTheme) Color.White else BirizNavyPrimary
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Kompakt Duyuru Başlık Satırları
+        if (filteredList.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 36.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Campaign,
+                            contentDescription = null,
+                            tint = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (announcements.isEmpty()) {
+                                "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor."
+                            } else {
+                                "Bu filtreye uygun duyuru bulunmuyor."
+                            },
+                            fontSize = 13.sp,
+                            color = secondaryText,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(filteredList, key = { it.id }) { ann ->
+                val isRead = AnnouncementIdentityHelper.findStudentReadTimestamp(student, ann.readReceipts) != null
+                val hasVoted = ann.poll?.let { AnnouncementIdentityHelper.hasVotedInPoll(it, voterAliases) } ?: false
+                ParentAnnouncementSummaryRowCard(
+                    announcement = ann,
+                    isRead = isRead,
+                    hasVoted = hasVoted,
+                    isDarkTheme = isDarkTheme,
+                    onClick = { onAnnouncementClick(ann) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParentAnnouncementSummaryRowCard(
+    announcement: Announcement,
+    isRead: Boolean,
+    hasVoted: Boolean,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit
+) {
+    val isAll = announcement.targetType == AnnouncementTargetType.ALL_CLASS
+    val hasPoll = announcement.poll != null && announcement.poll.options.isNotEmpty()
+    val accentColor = when {
+        !isRead -> BirizAmber
+        hasPoll -> Color(0xFF10B981)
+        isAll -> BirizTurquoise
+        else -> BirizAmber
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(15.dp),
+        color = if (!isRead) {
+            if (isDarkTheme) Color(0x38251C12) else Color(0xFFFFFBEB)
+        } else {
+            if (isDarkTheme) Color(0x30101F36) else Color.White
+        },
+        border = BorderStroke(
+            if (!isRead) 1.4.dp else 1.dp,
+            if (!isRead) BirizAmber.copy(alpha = 0.7f)
+            else if (isDarkTheme) BirizDarkCardBorder
+            else accentColor.copy(alpha = 0.35f)
+        ),
+        shadowElevation = if (!isRead) 2.dp else 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("parent_announcement_row_${announcement.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Sol Tür İkonu
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = accentColor.copy(alpha = if (isDarkTheme) 0.22f else 0.14f),
+                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (hasPoll) Icons.Default.Poll else Icons.Default.Campaign,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(21.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(11.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                // Üst satır: Hedef + Anket + Okunma rozeti + Tarih
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (!isRead) {
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = BirizAmber
+                            ) {
+                                Text(
+                                    text = "YENİ",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = if (isAll) {
+                                if (isDarkTheme) Color(0x300284C7) else Color(0xFFE0F2FE)
+                            } else {
+                                if (isDarkTheme) Color(0x30D97706) else Color(0xFFFEF3C7)
+                            }
+                        ) {
+                            Text(
+                                text = if (isAll) "Tüm Sınıf" else "Size Özel",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isAll) Color(0xFF0284C7) else Color(0xFFD97706),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        if (hasPoll) {
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = if (isDarkTheme) Color(0x3010B981) else Color(0xFFDCFCE7)
+                            ) {
+                                Text(
+                                    text = if (hasVoted) "Anket ✓" else "Anketli",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF059669),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (announcement.isEdited) {
+                            Text(
+                                text = "✏️",
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = CommunicationPersistenceHelper.formatDateTime(announcement.createdAt),
+                        fontSize = 9.5.sp,
+                        color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Ana Duyuru Başlığı
+                Text(
+                    text = announcement.title,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 19.sp
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Alt özet satırı
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.DoneAll,
+                            contentDescription = null,
+                            tint = if (isRead) Color(0xFF0284C7) else BirizAmber,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (isRead) "Okundu" else "Okunmadı • Açmak için dokunun",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isRead) {
+                                if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                            } else BirizAmber
+                        )
+                    }
+
+                    announcement.poll?.takeIf { it.options.isNotEmpty() }?.let { poll ->
+                        Text(
+                            text = "• 🗳️ ${poll.totalVotes} Oy" + if (hasVoted) " (Oylandı)" else "",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF059669)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Duyuru Detayını Aç",
+                tint = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ParentAnnouncementDetailView(
+    announcement: Announcement,
+    student: Student,
+    linkedStudents: List<Student>,
+    parentDisplayName: String,
+    isDarkTheme: Boolean,
+    onBack: () -> Unit,
+    onVotePoll: (String) -> Unit
+) {
+    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
+    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    val isAll = announcement.targetType == AnnouncementTargetType.ALL_CLASS
+    val readTimestamp = AnnouncementIdentityHelper.findStudentReadTimestamp(student, announcement.readReceipts)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Üst Geri Dönüş Başlığı
+        Surface(
+            color = if (isDarkTheme) Color(0xFF0C1829) else Color.White,
+            shadowElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("btn_parent_back_announcement_list")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Duyurulara Dön",
+                            tint = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Duyuru Detayı",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                        Text(
+                            text = "Tüm duyurulara dönmek için geri tuşuna dokunun",
+                            fontSize = 10.sp,
+                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isDarkTheme) Color(0x3510B981) else Color(0xFFDCFCE7),
+                    border = BorderStroke(0.8.dp, Color(0xFF10B981).copy(alpha = 0.6f)),
+                    modifier = Modifier.padding(end = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DoneAll,
+                            contentDescription = null,
+                            tint = Color(0xFF059669),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (readTimestamp != null) "Okundu" else "Okunuyor",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF059669)
+                        )
+                    }
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 14.dp)
+                .padding(bottom = 96.dp)
+        ) {
+            BentoCard(
+                isDark = isDarkTheme,
+                glowColor = if (isAll) BirizTurquoise else BirizAmber,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    // 1. Rozetler & Tarih
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isAll) {
+                                    if (isDarkTheme) Color(0x350284C7) else Color(0xFFE0F2FE)
+                                } else {
+                                    if (isDarkTheme) Color(0x35D97706) else Color(0xFFFEF3C7)
+                                },
+                                border = BorderStroke(
+                                    0.8.dp,
+                                    if (isAll) Color(0xFF38BDF8) else Color(0xFFF59E0B)
+                                )
+                            ) {
+                                Text(
+                                    text = if (isAll) "Tüm Sınıf" else "Size Özel",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isAll) Color(0xFF0284C7) else Color(0xFFD97706),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+
+                            if (announcement.isEdited) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isDarkTheme) Color(0x30F97316) else Color(0xFFFFEDD5),
+                                    border = BorderStroke(0.8.dp, Color(0xFFF97316))
+                                ) {
+                                    Text(
+                                        text = "✏️ Düzenlendi",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFC2410C),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = CommunicationPersistenceHelper.formatDateTime(announcement.createdAt),
+                            fontSize = 10.5.sp,
+                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 2. Duyuru Başlığı
+                    Text(
+                        text = announcement.title,
+                        fontSize = 16.5.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 3. Duyuru Metni
+                    Text(
+                        text = announcement.content,
+                        fontSize = 13.5.sp,
+                        color = secondaryText,
+                        lineHeight = 20.sp
+                    )
+
+                    // 4. Anket Bölümü (Tek Oy Kısıtlamalı & KVKK Korumalı)
+                    val poll = announcement.poll
+                    if (poll != null && poll.options.isNotEmpty()) {
+                        val voterAliases = remember(student, linkedStudents, parentDisplayName) {
+                            AnnouncementIdentityHelper.voterAliasesForParent(
+                                activeStudent = student,
+                                linkedStudents = linkedStudents,
+                                rawParentName = parentDisplayName
+                            )
+                        }
+                        val hasVotedInPoll = AnnouncementIdentityHelper.hasVotedInPoll(poll, voterAliases)
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            color = if (isDarkTheme) Color(0x40132238) else Color(0xFFF0FDF4),
+                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5010B981) else Color(0xFF86EFAC)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-                                    val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ann.createdAt))
-                                    Text(text = dateStr, fontSize = 12.sp, color = secondaryText)
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(text = ann.content, fontSize = 13.5.sp, color = secondaryText, lineHeight = 19.sp)
-
-                                val poll = ann.poll
-                                if (poll != null && poll.options.isNotEmpty()) {
-                                    val voterAliases = remember(student, linkedStudents, parentDisplayName) {
-                                        AnnouncementIdentityHelper.voterAliasesForParent(
-                                            activeStudent = student,
-                                            linkedStudents = linkedStudents,
-                                            rawParentName = parentDisplayName
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Poll,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "📊 ANKET",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color(0xFF10B981)
                                         )
                                     }
-                                    val hasVotedInPoll = AnnouncementIdentityHelper.hasVotedInPoll(poll, voterAliases)
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (hasVotedInPoll) {
+                                            Color(0xFF10B981).copy(alpha = 0.16f)
+                                        } else {
+                                            BirizTurquoise.copy(alpha = 0.14f)
+                                        }
                                     ) {
                                         Text(
-                                            text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }}",
-                                            fontSize = 13.5.sp,
+                                            text = if (hasVotedInPoll) "🔒 Oyunuz Kaydedildi" else "Tek Oy Hakkı",
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = primaryText,
-                                            modifier = Modifier.weight(1f)
+                                            color = if (hasVotedInPoll) Color(0xFF059669) else BirizTurquoise,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (hasVotedInPoll) {
-                                                Color(0xFF10B981).copy(alpha = 0.16f)
-                                            } else {
-                                                BirizTurquoise.copy(alpha = 0.14f)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = poll.question.ifBlank { "Veli Anketi" },
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryText
+                                )
+
+                                if (!hasVotedInPoll) {
+                                    Text(
+                                        text = "Tercihinizi seçin (oy verdikten sonra cevap değiştirilemez):",
+                                        fontSize = 11.5.sp,
+                                        color = secondaryText,
+                                        modifier = Modifier.padding(top = 3.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                poll.options.forEach { opt ->
+                                    val isVotedByMe = AnnouncementIdentityHelper.isOptionVotedByParent(opt, voterAliases)
+                                    val percent = if (poll.totalVotes > 0) {
+                                        (opt.voteCount * 100) / poll.totalVotes
+                                    } else 0
+
+                                    Surface(
+                                        onClick = {
+                                            if (!hasVotedInPoll) {
+                                                onVotePoll(opt.id)
                                             }
-                                        ) {
-                                            Text(
-                                                text = if (hasVotedInPoll) "🔒 Oyunuz Kaydedildi" else "Tek Oy Hakkı",
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (hasVotedInPoll) Color(0xFF059669) else BirizTurquoise,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                            )
-                                        }
-                                    }
-                                    if (!hasVotedInPoll) {
-                                        Text(
-                                            text = "Tercihinizi seçin (oy verdikten sonra cevap değiştirilemez):",
-                                            fontSize = 11.5.sp,
-                                            color = secondaryText,
-                                            modifier = Modifier.padding(top = 3.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    poll.options.forEach { opt ->
-                                        val isVotedByMe = AnnouncementIdentityHelper.isOptionVotedByParent(opt, voterAliases)
-                                        Surface(
-                                            onClick = {
-                                                if (!hasVotedInPoll) {
-                                                    onVotePoll(ann.id, opt.id)
-                                                }
-                                            },
-                                            enabled = !hasVotedInPoll,
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = when {
-                                                isVotedByMe -> BirizTurquoise.copy(alpha = 0.25f)
-                                                hasVotedInPoll -> if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
-                                                else -> if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
-                                            },
-                                            border = BorderStroke(
-                                                if (isVotedByMe) 1.5.dp else 1.dp,
-                                                if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
-                                            ),
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        ) {
+                                        },
+                                        enabled = !hasVotedInPoll,
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = when {
+                                            isVotedByMe -> if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1)
+                                            hasVotedInPoll -> if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
+                                            else -> if (isDarkTheme) Color(0x301E293B) else Color.White
+                                        },
+                                        border = BorderStroke(
+                                            if (isVotedByMe) 1.5.dp else 1.dp,
+                                            if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
@@ -4055,31 +4671,47 @@ private fun ParentCommunicationDetailView(
                                                     }
                                                     Text(
                                                         text = opt.text,
-                                                        fontSize = 13.5.sp,
-                                                        fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.Medium,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.SemiBold,
                                                         color = if (hasVotedInPoll && !isVotedByMe) secondaryText else primaryText
                                                     )
                                                 }
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
-                                                    text = "${opt.voteCount} Oy",
-                                                    fontSize = 12.sp,
-                                                    color = if (isVotedByMe) BirizTurquoise else secondaryText,
+                                                    text = "%$percent (${opt.voteCount} Oy)",
+                                                    fontSize = 11.5.sp,
+                                                    color = if (isVotedByMe) BirizTurquoise else Color(0xFF10B981),
                                                     fontWeight = FontWeight.Bold
                                                 )
                                             }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+
+                                            LinearProgressIndicator(
+                                                progress = { if (poll.totalVotes > 0) opt.voteCount.toFloat() / poll.totalVotes else 0f },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(6.dp)
+                                                    .clip(RoundedCornerShape(3.dp)),
+                                                color = if (isVotedByMe) BirizTurquoise else Color(0xFF10B981),
+                                                trackColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
+                                            )
                                         }
                                     }
-                                    if (hasVotedInPoll) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "🔒 Ankete oy kullandınız. Verilen oy değiştirilemez.",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = secondaryText
-                                        )
-                                    }
                                 }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = if (hasVotedInPoll) {
+                                        "🔒 Ankete oy kullandınız (Toplam ${poll.totalVotes} oy). Verilen oy değiştirilemez."
+                                    } else {
+                                        "Toplam ${poll.totalVotes} oy kullanıldı."
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = secondaryText
+                                )
                             }
                         }
                     }
