@@ -23,8 +23,11 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -133,7 +136,7 @@ fun NotificationCenterDialog(
                                 }
                             }
                             Text(
-                                text = "Duyurular, veli mesajları ve bildirimler",
+                                text = "Duyurular, mesajlar, yıldızlar, kitaplık ve turnuvalar",
                                 fontSize = 11.sp,
                                 color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
                             )
@@ -254,6 +257,21 @@ private fun NotificationRowItem(
             Icons.Default.SystemUpdate,
             Color(0xFF6366F1),
             Color(0xFFEEF2FF)
+        )
+        NotificationType.STAR_REWARD -> Triple(
+            Icons.Default.Star,
+            Color(0xFFD97706),
+            Color(0xFFFEF3C7)
+        )
+        NotificationType.LIBRARY -> Triple(
+            Icons.Default.MenuBook,
+            Color(0xFF7C3AED),
+            Color(0xFFF3E8FF)
+        )
+        NotificationType.TOURNAMENT -> Triple(
+            Icons.Default.EmojiEvents,
+            Color(0xFFE11D48),
+            Color(0xFFFFE4E6)
         )
     }
 

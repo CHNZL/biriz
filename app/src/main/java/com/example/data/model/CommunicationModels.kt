@@ -107,7 +107,10 @@ enum class NotificationType {
     ANNOUNCEMENT,
     MESSAGE,
     PARENT_REGISTRATION,
-    APP_UPDATE
+    APP_UPDATE,
+    STAR_REWARD,
+    LIBRARY,
+    TOURNAMENT
 }
 
 /**

@@ -146,6 +146,7 @@ import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
+import com.example.util.AnnouncementIdentityHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import java.util.UUID
@@ -357,12 +358,11 @@ fun CommunicationSubScreen(
                         targetStudentNames
                     )
                 } else {
-                    val allParentNames = if (targetType == AnnouncementTargetType.ALL_CLASS) {
-                        students.map { it.parentName ?: "${it.fullName} Velisi" }
-                    } else {
-                        students.filter { targetStudentIds.contains(it.id) }
-                            .map { it.parentName ?: "${it.fullName} Velisi" }
-                    }
+                    val allParentNames = AnnouncementIdentityHelper.formatExpectedRecipientsForAnnouncement(
+                        targetType = targetType,
+                        targetStudentIds = targetStudentIds,
+                        allStudents = students
+                    )
 
                     val newAnn = Announcement(
                         id = UUID.randomUUID().toString(),
@@ -390,6 +390,7 @@ fun CommunicationSubScreen(
     reportAnnouncement?.let { ann ->
         AnnouncementReadReportDialog(
             announcement = ann,
+            students = students,
             isDarkTheme = isDarkTheme,
             onDismiss = { reportAnnouncement = null }
         )
@@ -589,6 +590,7 @@ private fun AnnouncementsListView(
                 AnnouncementItemCard(
                     announcement = ann,
                     classRoom = classRoom,
+                    students = students,
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,
                     onEditClick = { onEditClick(ann) },
@@ -619,6 +621,7 @@ private fun AnnouncementsListView(
 private fun AnnouncementItemCard(
     announcement: Announcement,
     classRoom: ClassRoom,
+    students: List<Student>,
     isDarkTheme: Boolean,
     fontOffset: Int,
     onEditClick: () -> Unit,
@@ -627,6 +630,9 @@ private fun AnnouncementItemCard(
     onShareWhatsApp: () -> Unit,
     onVotePollOption: (String) -> Unit
 ) {
+    val (resolvedReadCount, resolvedDeliveredCount) = remember(announcement, students) {
+        AnnouncementIdentityHelper.resolveAnnouncementReadSummary(announcement, students)
+    }
     BentoCard(
         isDark = isDarkTheme,
         glowColor = if (announcement.targetType == AnnouncementTargetType.ALL_CLASS) BirizTurquoise else BirizAmber,
@@ -674,7 +680,7 @@ private fun AnnouncementItemCard(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isAll) "Tüm Sınıf (${announcement.deliveredCount} Veli)" else "Özel (${announcement.targetStudentNames.size} Öğrenci)",
+                                text = if (isAll) "Tüm Sınıf (${resolvedDeliveredCount} Veli)" else "Özel (${announcement.targetStudentNames.size} Öğrenci)",
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isAll) Color(0xFF0284C7) else Color(0xFFD97706)
@@ -744,7 +750,8 @@ private fun AnnouncementItemCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 PollCardComponent(
                     poll = poll,
-                    totalDelivered = announcement.deliveredCount,
+                    students = students,
+                    totalDelivered = resolvedDeliveredCount,
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,
                     onVote = onVotePollOption
@@ -772,19 +779,19 @@ private fun AnnouncementItemCard(
                         Icon(
                             imageVector = Icons.Default.DoneAll,
                             contentDescription = "Okundu",
-                            tint = if (announcement.readCount > 0) Color(0xFF38BDF8) else Color.Gray, // Mavi çift tik
+                            tint = if (resolvedReadCount > 0) Color(0xFF38BDF8) else Color.Gray, // Mavi çift tik
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Column {
                             Text(
-                                text = "${announcement.readCount} / ${announcement.deliveredCount} Veli Okudu",
+                                text = "$resolvedReadCount / $resolvedDeliveredCount Veli Okudu",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
-                            val percent = if (announcement.deliveredCount > 0) {
-                                (announcement.readCount * 100) / announcement.deliveredCount
+                            val percent = if (resolvedDeliveredCount > 0) {
+                                (resolvedReadCount * 100) / resolvedDeliveredCount
                             } else 0
                             Text(
                                 text = "%$percent Görüldü Oranı",
@@ -913,12 +920,16 @@ private fun AnnouncementItemCard(
 @Composable
 private fun PollCardComponent(
     poll: AnnouncementPoll,
+    students: List<Student>,
     totalDelivered: Int,
     isDarkTheme: Boolean,
     fontOffset: Int,
     onVote: (String) -> Unit
 ) {
     var expandedOptionId by remember { mutableStateOf<String?>(null) }
+    val hasTeacherTestedVote = remember(poll) {
+        AnnouncementIdentityHelper.hasVotedInPoll(poll, setOf("Öğretmen (Test)"))
+    }
 
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -968,7 +979,8 @@ private fun PollCardComponent(
                         .padding(vertical = 4.dp)
                 ) {
                     Surface(
-                        onClick = { onVote(option.id) },
+                        onClick = { if (!hasTeacherTestedVote) onVote(option.id) },
+                        enabled = !hasTeacherTestedVote,
                         shape = RoundedCornerShape(8.dp),
                         color = if (isDarkTheme) Color(0x301E293B) else Color.White,
                         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
@@ -1030,19 +1042,29 @@ private fun PollCardComponent(
                         }
 
                         if (isExpanded) {
+                            val resolvedVoters = option.voterParentNames.map { rawVoter ->
+                                AnnouncementIdentityHelper.resolveDisplayLabelForTeacher(rawVoter, students)
+                            }
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = if (isDarkTheme) Color(0x300F243E) else Color(0xFFF1F5F9),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 6.dp, end = 6.dp, bottom = 6.dp)
                             ) {
-                                Text(
-                                    text = option.voterParentNames.joinToString(", "),
-                                    fontSize = 10.5.sp,
-                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                    modifier = Modifier.padding(6.dp)
-                                )
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    resolvedVoters.forEach { voterLabel ->
+                                        Text(
+                                            text = "• $voterLabel",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1066,9 +1088,47 @@ private fun PollCardComponent(
 @Composable
 private fun AnnouncementReadReportDialog(
     announcement: Announcement,
+    students: List<Student>,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit
 ) {
+    val (resolvedReadCount, resolvedDeliveredCount) = remember(announcement, students) {
+        AnnouncementIdentityHelper.resolveAnnouncementReadSummary(announcement, students)
+    }
+
+    val reportRows = remember(announcement, students) {
+        val targetStudents = if (announcement.targetType == AnnouncementTargetType.ALL_CLASS) {
+            students
+        } else {
+            students.filter { it.id in announcement.targetStudentIds }
+        }
+        if (targetStudents.isNotEmpty()) {
+            val studentRows = targetStudents.map { student ->
+                val primaryParent = student.allLinkedParents.firstOrNull()?.name ?: student.parentName
+                val formattedLabel = AnnouncementIdentityHelper.formatStudentParentLabel(student, primaryParent)
+                val ts = AnnouncementIdentityHelper.findStudentReadTimestamp(student, announcement.readReceipts)
+                Triple(formattedLabel, ts != null, ts)
+            }
+            val matchedStudentsSet = targetStudents.filter {
+                AnnouncementIdentityHelper.findStudentReadTimestamp(it, announcement.readReceipts) != null
+            }
+            val unmatchedReceipts = announcement.readReceipts.entries.filter { (key, _) ->
+                matchedStudentsSet.none { s ->
+                    AnnouncementIdentityHelper.findStudentReadTimestamp(s, mapOf(key to 1L)) != null
+                }
+            }.map { (key, ts) ->
+                Triple(AnnouncementIdentityHelper.resolveDisplayLabelForTeacher(key, students), true, ts as Long?)
+            }
+            (studentRows + unmatchedReceipts).sortedByDescending { it.second }
+        } else {
+            announcement.deliveredToParentNames.map { raw ->
+                val resolved = AnnouncementIdentityHelper.resolveDisplayLabelForTeacher(raw, students)
+                val ts = announcement.readReceipts[raw] ?: announcement.readReceipts[resolved]
+                Triple(resolved, ts != null, ts)
+            }.sortedByDescending { it.second }
+        }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(22.dp),
@@ -1150,7 +1210,7 @@ private fun AnnouncementReadReportDialog(
                         ) {
                             Text("Okuyan Veliler", fontSize = 10.sp, color = Color(0xFF15803D))
                             Text(
-                                "${announcement.readCount}",
+                                "$resolvedReadCount",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color(0xFF15803D)
@@ -1158,7 +1218,7 @@ private fun AnnouncementReadReportDialog(
                         }
                     }
 
-                    val unreadCount = (announcement.deliveredCount - announcement.readCount).coerceAtLeast(0)
+                    val unreadCount = (resolvedDeliveredCount - resolvedReadCount).coerceAtLeast(0)
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = if (isDarkTheme) Color(0x3064748B) else Color(0xFFF1F5F9),
@@ -1188,14 +1248,7 @@ private fun AnnouncementReadReportDialog(
                         .heightIn(max = 340.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val sortedParents = announcement.deliveredToParentNames.sortedByDescending {
-                        announcement.readReceipts.containsKey(it)
-                    }
-
-                    items(sortedParents) { parentName ->
-                        val isRead = announcement.readReceipts.containsKey(parentName)
-                        val readTimestamp = announcement.readReceipts[parentName]
-
+                    items(reportRows) { (displayName, isRead, readTimestamp) ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isRead) {
@@ -1216,7 +1269,10 @@ private fun AnnouncementReadReportDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Icon(
                                         imageVector = Icons.Default.DoneAll,
                                         contentDescription = null,
@@ -1225,13 +1281,14 @@ private fun AnnouncementReadReportDialog(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = parentName,
-                                        fontSize = 12.sp,
+                                        text = displayName,
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                                     )
                                 }
 
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (isRead && readTimestamp != null) {
                                         CommunicationPersistenceHelper.formatTime(readTimestamp)

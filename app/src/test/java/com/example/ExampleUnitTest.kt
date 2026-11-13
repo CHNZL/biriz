@@ -1752,6 +1752,386 @@ class ExampleUnitTest {
     assertEquals("Bugün", com.example.util.ChatVisibilityHelper.formatChatDateDivider(sameDayEarlier, now))
     assertEquals("Dün", com.example.util.ChatVisibilityHelper.formatChatDateDivider(yesterday, now))
   }
+
+  @Test
+  fun testActivityNotificationsAllNineEventsAndDeduplication() {
+    val helper = com.example.util.ActivityNotificationHelper
+    val baseline = 10_000L
+    val now = 20_000L
+    val students = listOf(
+      com.example.data.model.Student(id = "std_1", studentNumber = "12", fullName = "Ali Yılmaz", gender = "Erkek"),
+      com.example.data.model.Student(id = "std_2", studentNumber = "18", fullName = "Zeynep Demir", gender = "Kız"),
+      com.example.data.model.Student(id = "std_3", studentNumber = "21", fullName = "Mehmet Kaya", gender = "Erkek"),
+      com.example.data.model.Student(id = "std_4", studentNumber = "25", fullName = "Elif Can", gender = "Kız")
+    )
+
+    // Pre-baseline old items must be silently recorded without generating bell notifications
+    val oldSnapshot = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+      announcements = listOf(
+        com.example.data.model.Announcement(
+          id = "ann_old",
+          classId = "c1",
+          title = "Eski Duyuru",
+          content = "Geçen haftadan",
+          targetType = com.example.data.model.AnnouncementTargetType.ALL_CLASS,
+          createdAt = 1_000L,
+          updatedAt = 1_000L
+        )
+      ),
+      books = listOf(
+        com.example.data.model.Book(
+          id = "book_old",
+          registrationNo = 1,
+          name = "Eski Kitap",
+          createdAt = 2_000L,
+          updatedAt = 2_000L
+        )
+      ),
+      students = students
+    )
+    val initialRes = helper.evaluateParentNotifications(
+      previous = null,
+      current = oldSnapshot,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = now
+    )
+    assertTrue("Old items before baseline must not notify", initialRes.newNotifications.isEmpty())
+    assertTrue(initialRes.updatedSeenKeys.contains("ann_ann_old_1000"))
+    assertTrue(initialRes.updatedSeenKeys.contains("book_add_book_old"))
+
+    // Now trigger ALL 9 events after baseline!
+    val fullSnapshot = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+      announcements = oldSnapshot.announcements + listOf(
+        com.example.data.model.Announcement(
+          id = "ann_new",
+          classId = "c1",
+          title = "Gezi İzni",
+          content = "Yarın müze gezimiz var.",
+          targetType = com.example.data.model.AnnouncementTargetType.ALL_CLASS,
+          createdAt = 12_000L,
+          updatedAt = 12_000L
+        ),
+        com.example.data.model.Announcement(
+          id = "ann_other",
+          classId = "c1",
+          title = "Diğer Öğrenci Duyurusu",
+          content = "Sadece std_2 için",
+          targetType = com.example.data.model.AnnouncementTargetType.SPECIFIC_STUDENTS,
+          targetStudentIds = listOf("std_2"),
+          createdAt = 12_500L,
+          updatedAt = 12_500L
+        )
+      ),
+      starRecords = listOf(
+        com.example.data.model.StarRewardRecord(
+          id = "star_1",
+          classId = "c1",
+          studentId = "std_1",
+          studentName = "Ali Yılmaz",
+          studentNumber = "12",
+          categoryId = "cat_math",
+          categoryName = "Matematik",
+          starCount = 3,
+          note = "Harika çözüm",
+          timestamp = 13_000L
+        ),
+        com.example.data.model.StarRewardRecord(
+          id = "star_other",
+          classId = "c1",
+          studentId = "std_2",
+          studentName = "Zeynep Demir",
+          studentNumber = "18",
+          categoryId = "cat_tr",
+          categoryName = "Türkçe",
+          starCount = 5,
+          note = "",
+          timestamp = 13_100L
+        )
+      ),
+      books = listOf(
+        oldSnapshot.books.first().copy(
+          activeAssignments = listOf(
+            com.example.data.model.ActiveAssignment("std_1", "Ali Yılmaz", 14_000L)
+          ),
+          status = "Okunuyor",
+          updatedAt = 14_000L
+        ),
+        com.example.data.model.Book(
+          id = "book_new",
+          registrationNo = 2,
+          name = "Küçük Prens",
+          author = "Antoine de Saint-Exupéry",
+          pageCount = 96,
+          createdAt = 13_500L,
+          updatedAt = 13_500L
+        )
+      ),
+      readingRecords = listOf(
+        com.example.data.model.ReadingRecord(
+          id = "read_1",
+          bookId = "book_new",
+          bookName = "Küçük Prens",
+          pageCount = 96,
+          studentId = "std_1",
+          studentName = "Ali Yılmaz",
+          startDate = 13_600L,
+          endDate = 14_500L,
+          earnedStars = 10,
+          createdAt = 14_500L
+        )
+      ),
+      tournaments = listOf(
+        com.example.data.model.Tournament(
+          id = "tour_1",
+          classRoomId = "c1",
+          name = "Bahar Satranç Turnuvası",
+          type = com.example.data.model.TournamentType.ELEME,
+          participants = listOf("std_1", "std_2", "std_3", "std_4"),
+          status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+          winnerId = "std_1",
+          runnerUpId = "std_3",
+          thirdPlaceId = "std_2",
+          createdAt = 15_000L,
+          updatedAt = 18_000L
+        )
+      ),
+      matchesByTournament = mapOf(
+        "tour_1" to listOf(
+          com.example.data.model.TournamentMatch(
+            id = "m_sf1",
+            tournamentId = "tour_1",
+            round = 1,
+            stage = "knockout",
+            matchCode = "R1-M1",
+            player1Id = "std_1",
+            player1Name = "Ali Yılmaz",
+            player2Id = "std_2",
+            player2Name = "Zeynep Demir",
+            score1 = 2,
+            score2 = 0,
+            winnerId = "std_1",
+            status = "completed",
+            createdAt = 16_000L
+          ),
+          com.example.data.model.TournamentMatch(
+            id = "m_final",
+            tournamentId = "tour_1",
+            round = 2,
+            stage = "knockout",
+            matchCode = "R2-M1",
+            player1Id = "std_1",
+            player1Name = "Ali Yılmaz",
+            player2Id = "std_3",
+            player2Name = "Mehmet Kaya",
+            score1 = 2,
+            score2 = 1,
+            winnerId = "std_1",
+            status = "completed",
+            createdAt = 17_000L
+          )
+        )
+      ),
+      students = students
+    )
+
+    val evalRes = helper.evaluateParentNotifications(
+      previous = oldSnapshot,
+      current = fullSnapshot,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = initialRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now
+    )
+
+    val titles = evalRes.newNotifications.map { it.title }
+    // Other students' targeted items must not leak
+    assertFalse(evalRes.newNotifications.any { it.message.contains("Zeynep Demir +5") || it.id.contains("ann_other") || it.id.contains("star_other") })
+    // 1. Duyuru yayınlandı
+    assertTrue(titles.any { it.contains("Yeni Sınıf Duyurusu") })
+    // 2. Yıldız eklendi
+    assertTrue(titles.any { it.contains("Yıldız Kazandı") })
+    // 3. Kitap eklendi
+    assertTrue(titles.any { it.contains("Yeni Kitap Eklendi") })
+    // 4. Kitap ödünç alındı
+    assertTrue(titles.any { it.contains("Ödünç Alındı") })
+    // 5. Kitap iade edildi
+    assertTrue(titles.any { it.contains("İade Edildi") })
+    // 6. Turnuvaya katıldı
+    assertTrue(titles.any { it.contains("Turnuvaya Katıldı") })
+    // 7. Turnuvada maç yaptı (2 maç tamamladı -> 2 maç bildirimi)
+    assertEquals(2, titles.count { it.contains("Turnuva Maçı Tamamlandı") })
+    // 8. Turnuvada tur atladı (Round 2 Final)
+    assertTrue(evalRes.newNotifications.any { it.title.contains("Tur Atladı") && it.message.contains("Final") })
+    // 9. Turnuvayı ne olarak / kaçıncı bitirdi
+    assertTrue(evalRes.newNotifications.any { it.title.contains("Turnuva Sonuçlandı") && it.message.contains("1. sırada") && it.message.contains("Şampiyon") })
+
+    // Re-evaluating the same snapshot must NOT generate duplicate notifications
+    val repeatRes = helper.evaluateParentNotifications(
+      previous = fullSnapshot,
+      current = fullSnapshot,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = evalRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 1_000L
+    )
+    assertTrue("No duplicate notifications on repeated snapshot", repeatRes.newNotifications.isEmpty())
+  }
+
+  @Test
+  fun testTournamentPlacementDescriptionsAcrossFormats() {
+    val helper = com.example.util.ActivityNotificationHelper
+    val students = (1..8).map {
+      com.example.data.model.Student(
+        id = "s$it",
+        studentNumber = "$it",
+        fullName = "Öğrenci $it",
+        gender = if (it % 2 == 0) "Kız" else "Erkek"
+      )
+    }
+
+    // 1. Knockout podium & 4th place & Quarter Finalist
+    val koTournament = com.example.data.model.Tournament(
+      id = "t_ko_place",
+      classRoomId = "c1",
+      name = "Mangala Kupası",
+      type = com.example.data.model.TournamentType.ELEME,
+      participants = (1..8).map { "s$it" },
+      status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+      winnerId = "s1",
+      runnerUpId = "s2",
+      thirdPlaceId = "s3"
+    )
+    val koMatches = listOf(
+      com.example.data.model.TournamentMatch(id = "qf1", tournamentId = "t_ko_place", round = 1, stage = "knockout", matchCode = "R1-M1", player1Id = "s1", player2Id = "s5", winnerId = "s1", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "qf2", tournamentId = "t_ko_place", round = 1, stage = "knockout", matchCode = "R1-M2", player1Id = "s2", player2Id = "s6", winnerId = "s2", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "qf3", tournamentId = "t_ko_place", round = 1, stage = "knockout", matchCode = "R1-M3", player1Id = "s3", player2Id = "s7", winnerId = "s3", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "qf4", tournamentId = "t_ko_place", round = 1, stage = "knockout", matchCode = "R1-M4", player1Id = "s4", player2Id = "s8", winnerId = "s4", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "sf1", tournamentId = "t_ko_place", round = 2, stage = "knockout", matchCode = "R2-M1", player1Id = "s1", player2Id = "s3", winnerId = "s1", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "sf2", tournamentId = "t_ko_place", round = 2, stage = "knockout", matchCode = "R2-M2", player1Id = "s2", player2Id = "s4", winnerId = "s2", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "3rd", tournamentId = "t_ko_place", round = 3, stage = "knockout", matchCode = "R3-3RD", player1Id = "s3", player2Id = "s4", winnerId = "s3", isThirdPlaceMatch = true, status = "completed"),
+      com.example.data.model.TournamentMatch(id = "fin", tournamentId = "t_ko_place", round = 3, stage = "knockout", matchCode = "R3-FIN", player1Id = "s1", player2Id = "s2", winnerId = "s1", status = "completed")
+    )
+
+    assertTrue(helper.computeStudentTournamentPlacement(koTournament, koMatches, "s1", students).contains("Şampiyon"))
+    assertTrue(helper.computeStudentTournamentPlacement(koTournament, koMatches, "s2", students).contains("2. sırada"))
+    assertTrue(helper.computeStudentTournamentPlacement(koTournament, koMatches, "s3", students).contains("3. sırada"))
+    assertEquals("4. sırada (Yarı Finalist)", helper.computeStudentTournamentPlacement(koTournament, koMatches, "s4", students))
+    val qfDesc = helper.computeStudentTournamentPlacement(koTournament, koMatches, "s5", students)
+    assertTrue("Expected Çeyrek Finalist in $qfDesc", qfDesc.contains("Çeyrek Finalist"))
+
+    // 2. League tournament ordinal rank + points
+    val leagueTournament = com.example.data.model.Tournament(
+      id = "t_lig_place",
+      classRoomId = "c1",
+      name = "Sınıf Ligi",
+      type = com.example.data.model.TournamentType.LIG,
+      participants = listOf("s1", "s2", "s3"),
+      status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+      winnerId = "s2"
+    )
+    val leagueMatches = listOf(
+      com.example.data.model.TournamentMatch(id = "lm1", tournamentId = "t_lig_place", round = 1, stage = "group", player1Id = "s2", player2Id = "s1", score1 = 3, score2 = 0, winnerId = "s2", status = "completed"),
+      com.example.data.model.TournamentMatch(id = "lm2", tournamentId = "t_lig_place", round = 2, stage = "group", player1Id = "s1", player2Id = "s3", score1 = 2, score2 = 0, winnerId = "s1", status = "completed")
+    )
+    val s1LeagueRank = helper.computeStudentTournamentPlacement(leagueTournament, leagueMatches, "s1", students)
+    assertTrue("Expected 2. sırada and 3 Puan in $s1LeagueRank", s1LeagueRank.contains("2. sırada") && s1LeagueRank.contains("3 Puan"))
+  }
+
+  @Test
+  fun testAnnouncementIdentityFormattingAndLegacyResolution() {
+    val helper = com.example.util.AnnouncementIdentityHelper
+    val student = com.example.data.model.Student(
+      id = "s45",
+      studentNumber = "45",
+      fullName = "SEMİH AHMET KAVAKOĞLU",
+      gender = "Erkek",
+      parentName = "Cihan Öğretmen İLETİŞİM",
+      linkedParents = listOf(
+        com.example.data.model.LinkedParentAccount(
+          email = "cihan@example.com",
+          name = "Cihan Öğretmen İLETİŞİM",
+          relationship = "Veli"
+        )
+      )
+    )
+
+    val label = helper.formatStudentParentLabel(student, "Cihan Öğretmen İLETİŞİM")
+    assertEquals("45 SEMİH AHMET KAVAKOĞLU Velisi (Cihan Öğretmen İLETİŞİM)", label)
+
+    // Existing/legacy raw Google display name should resolve cleanly to student+parent label for teacher display
+    val resolvedLegacy = helper.resolveDisplayLabelForTeacher("Cihan Öğretmen İLETİŞİM", listOf(student))
+    assertEquals("45 SEMİH AHMET KAVAKOĞLU Velisi (Cihan Öğretmen İLETİŞİM)", resolvedLegacy)
+
+    // Expected recipients list includes student+parent formatting
+    val expected = helper.formatExpectedRecipientsForAnnouncement(
+      targetType = com.example.data.model.AnnouncementTargetType.ALL_CLASS,
+      targetStudentIds = emptyList(),
+      allStudents = listOf(student)
+    )
+    assertEquals(listOf("45 SEMİH AHMET KAVAKOĞLU Velisi (Cihan Öğretmen İLETİŞİM)"), expected)
+  }
+
+  @Test
+  fun testAnnouncementPollSingleVoteImmutabilityAndReadReceiptMatching() {
+    val helper = com.example.util.AnnouncementIdentityHelper
+    val student = com.example.data.model.Student(
+      id = "s45",
+      studentNumber = "45",
+      fullName = "SEMİH AHMET KAVAKOĞLU",
+      gender = "Erkek",
+      parentName = "Cihan Öğretmen İLETİŞİM"
+    )
+    val voterLabel = helper.formatParentActionLabel(student, listOf(student), "Cihan Öğretmen İLETİŞİM")
+    val aliases = helper.voterAliasesForParent(student, listOf(student), "Cihan Öğretmen İLETİŞİM")
+
+    val poll = com.example.data.model.AnnouncementPoll(
+      id = "poll_1",
+      question = "Geziye katılacak mısınız?",
+      options = listOf(
+        com.example.data.model.PollOption(id = "opt_yes", text = "Evet"),
+        com.example.data.model.PollOption(id = "opt_no", text = "Hayır")
+      )
+    )
+
+    // First vote succeeds
+    val afterFirstVote = helper.applySingleVote(poll, "opt_yes", voterLabel, aliases)
+    assertNotNull(afterFirstVote)
+    assertEquals(1, afterFirstVote!!.totalVotes)
+    assertTrue(helper.hasVotedInPoll(afterFirstVote, aliases))
+
+    // Changing vote to "opt_no" MUST be blocked (returns null)
+    val attemptChange = helper.applySingleVote(afterFirstVote, "opt_no", voterLabel, aliases)
+    assertNull("Changing answer after voting must not be allowed", attemptChange)
+
+    // Even if voter already voted with legacy raw name, changing/re-voting must be blocked
+    val legacyVotedPoll = poll.copy(
+      options = listOf(
+        com.example.data.model.PollOption(
+          id = "opt_yes",
+          text = "Evet",
+          voterParentNames = listOf("Cihan Öğretmen İLETİŞİM")
+        ),
+        com.example.data.model.PollOption(id = "opt_no", text = "Hayır")
+      )
+    )
+    assertTrue(helper.hasVotedInPoll(legacyVotedPoll, aliases))
+    assertNull(helper.applySingleVote(legacyVotedPoll, "opt_no", voterLabel, aliases))
+
+    // Read receipt matching works for both formatted and legacy parent names
+    val ann = com.example.data.model.Announcement(
+      id = "ann1",
+      classId = "c1",
+      title = "Test",
+      content = "Test",
+      readReceipts = mapOf("Cihan Öğretmen İLETİŞİM" to 123456L)
+    )
+    assertEquals(123456L, helper.findStudentReadTimestamp(student, ann.readReceipts))
+    val summary = helper.resolveAnnouncementReadSummary(ann, listOf(student))
+    assertEquals(1 to 1, summary)
+  }
 }
+
 
 

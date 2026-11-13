@@ -31,17 +31,27 @@ import com.example.data.model.Announcement
 import com.example.data.model.AnnouncementPoll
 import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
+import com.example.data.model.Book
 import com.example.data.model.ChatMessage
 import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
+import com.example.data.model.ReadingRecord
+import com.example.data.model.StarRewardRecord
+import com.example.data.model.Tournament
+import com.example.data.model.TournamentMatch
+import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.BuildConfig
+import com.example.util.ActivityNotificationHelper
+import com.example.util.AnnouncementIdentityHelper
 import com.example.util.ChatNotificationHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.SmartBoardHelper
+import com.example.util.TournamentPersistenceHelper
 import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -203,21 +213,240 @@ class BirizViewModel(
     private var communicationAnnouncementsListener: ListenerRegistration? = null
     private var communicationMessagesListener: ListenerRegistration? = null
     private var communicationClearStateListener: ListenerRegistration? = null
+    private var starsNotificationListener: ListenerRegistration? = null
+    private var libraryBooksNotificationListener: ListenerRegistration? = null
+    private var libraryRecordsNotificationListener: ListenerRegistration? = null
+    private var tournamentsNotificationListener: ListenerRegistration? = null
+    private val tournamentMatchListeners = mutableMapOf<String, ListenerRegistration>()
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
     private var groupMakerListenerRegistration: ListenerRegistration? = null
     private var parentPresenceJob: Job? = null
     private val knownMessageIds = mutableSetOf<String>()
     private val processedNotifMessageIds = mutableSetOf<String>()
     private var loadedNotifiedClassId: String? = null
+    private var observedNotificationClassId: String? = null
     private var rawChatMessages: List<ChatMessage> = emptyList()
     private var chatClearTimestamps: Map<String, Long> = emptyMap()
     private var loadedClearStateKey: String? = null
+
+    private var latestAnnouncements: List<Announcement> = emptyList()
+    private var latestStars: List<StarRewardRecord> = emptyList()
+    private var latestBooks: List<Book> = emptyList()
+    private var latestReadingRecords: List<ReadingRecord> = emptyList()
+    private var latestTournaments: List<Tournament> = emptyList()
+    private val latestMatchesByTournament = mutableMapOf<String, List<TournamentMatch>>()
+
+    private var hasCloudAnnouncements: Boolean = false
+    private var hasCloudStars: Boolean = false
+    private var hasCloudBooks: Boolean = false
+    private var hasCloudReadingRecords: Boolean = false
+    private var hasCloudTournaments: Boolean = false
+    private val loadedCloudMatchTournamentIds = mutableSetOf<String>()
+
+    private var previousActivitySnapshot: ActivityNotificationHelper.ActivitySnapshot? = null
+    private var seenActivityEventKeys: Set<String> = emptySet()
+    private var activityBaselineTimestampMs: Long = 0L
+    private var loadedActivityStateKey: String? = null
     @Volatile
     private var isAppInForeground: Boolean = true
     @Volatile
     private var isParentCommunicationTabActive: Boolean = false
     @Volatile
     private var isParentChatSubTabActive: Boolean = true
+
+    private fun currentViewerKey(state: BirizUiState = _uiState.value): String {
+        return when (state.currentRole) {
+            UserRole.TEACHER -> "teacher"
+            UserRole.PARENT -> ChatVisibilityHelper.viewerDocumentKey(
+                viewerIsTeacher = false,
+                userEmail = state.currentUser.email
+            )
+            else -> "member"
+        }
+    }
+
+    private fun clearActivityListeners() {
+        communicationAnnouncementsListener?.remove()
+        communicationAnnouncementsListener = null
+        communicationMessagesListener?.remove()
+        communicationMessagesListener = null
+        communicationClearStateListener?.remove()
+        communicationClearStateListener = null
+        starsNotificationListener?.remove()
+        starsNotificationListener = null
+        libraryBooksNotificationListener?.remove()
+        libraryBooksNotificationListener = null
+        libraryRecordsNotificationListener?.remove()
+        libraryRecordsNotificationListener = null
+        tournamentsNotificationListener?.remove()
+        tournamentsNotificationListener = null
+        tournamentMatchListeners.values.forEach { it.remove() }
+        tournamentMatchListeners.clear()
+    }
+
+    private fun seedLocalActivitySnapshotsIfNeeded(
+        ctx: Context,
+        classId: String,
+        forceAllLocal: Boolean = false
+    ) {
+        if (forceAllLocal || !hasCloudAnnouncements) {
+            latestAnnouncements = CommunicationPersistenceHelper.loadAnnouncements(ctx, classId, repository.students.value)
+        }
+        if (forceAllLocal || !hasCloudStars) {
+            latestStars = StarRewardPersistenceHelper.loadStarRecords(ctx, classId)
+        }
+        if (forceAllLocal || !hasCloudBooks) {
+            latestBooks = LibraryPersistenceHelper.loadBooks(ctx, classId)
+        }
+        if (forceAllLocal || !hasCloudReadingRecords) {
+            latestReadingRecords = LibraryPersistenceHelper.loadReadingRecords(ctx, classId)
+        }
+        if (forceAllLocal || !hasCloudTournaments) {
+            latestTournaments = TournamentPersistenceHelper.loadTournaments(ctx, classId)
+        }
+        latestTournaments.forEach { t ->
+            if (forceAllLocal || t.id !in loadedCloudMatchTournamentIds) {
+                latestMatchesByTournament[t.id] = TournamentPersistenceHelper.loadMatches(ctx, t.id)
+            }
+        }
+    }
+
+    private fun syncTournamentMatchListeners(
+        ctx: Context,
+        classId: String,
+        cloudTournaments: List<Tournament>
+    ) {
+        val activeIds = cloudTournaments
+            .sortedByDescending { it.updatedAt }
+            .take(15)
+            .map { it.id }
+            .toSet()
+
+        val staleIds = tournamentMatchListeners.keys.filter { it !in activeIds }
+        staleIds.forEach { staleId ->
+            tournamentMatchListeners.remove(staleId)?.remove()
+            latestMatchesByTournament.remove(staleId)
+            loadedCloudMatchTournamentIds.remove(staleId)
+        }
+
+        cloudTournaments
+            .filter { it.id in activeIds && !tournamentMatchListeners.containsKey(it.id) }
+            .forEach { tournament ->
+                latestMatchesByTournament[tournament.id] = TournamentPersistenceHelper.loadMatches(ctx, tournament.id)
+                val reg = TournamentPersistenceHelper.observeFirestoreMatches(ctx, tournament.id) { cloudMatches ->
+                    latestMatchesByTournament[tournament.id] = cloudMatches
+                    loadedCloudMatchTournamentIds.add(tournament.id)
+                    evaluateActivityNotifications(classId)
+                }
+                if (reg != null) {
+                    tournamentMatchListeners[tournament.id] = reg
+                }
+            }
+    }
+
+    private fun evaluateActivityNotifications(
+        classId: String = resolveActiveClassId(),
+        forceReloadViewerNotifications: Boolean = false
+    ) {
+        val ctx = appContext ?: return
+        val state = _uiState.value
+        val viewerKey = currentViewerKey(state)
+        val stateKey = "$classId|$viewerKey"
+
+        if (forceReloadViewerNotifications || loadedActivityStateKey != stateKey) {
+            loadedActivityStateKey = stateKey
+            previousActivitySnapshot = null
+
+            val existingUpdateNotifs = state.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
+            val loadedViewerNotifs = CommunicationPersistenceHelper.loadNotifications(ctx, classId, viewerKey)
+            val merged = (existingUpdateNotifs + loadedViewerNotifs).distinctBy { it.id }
+            val pruned = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+                notifications = merged,
+                currentVersionCode = BuildConfig.VERSION_CODE,
+                currentVersionName = BuildConfig.VERSION_NAME,
+                latestCheckInfo = state.availableUpdateInfo
+            )
+            if (pruned != state.notifications) {
+                _uiState.value = _uiState.value.copy(notifications = pruned)
+            }
+            if (pruned.size != loadedViewerNotifs.size) {
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, pruned, viewerKey)
+                if (pruned.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
+                    AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+                }
+            }
+
+            val (loadedBaseline, loadedSeen) = CommunicationPersistenceHelper.loadActivityNotificationState(
+                context = ctx,
+                classId = classId,
+                viewerKey = viewerKey
+            )
+            activityBaselineTimestampMs = loadedBaseline
+            seenActivityEventKeys = loadedSeen
+        }
+
+        val freshState = _uiState.value
+        if (freshState.currentRole != UserRole.PARENT || freshState.linkedParentStudentIds.isEmpty()) {
+            previousActivitySnapshot = null
+            return
+        }
+
+        val currentSnapshot = ActivityNotificationHelper.ActivitySnapshot(
+            announcements = latestAnnouncements,
+            starRecords = latestStars,
+            books = latestBooks,
+            readingRecords = latestReadingRecords,
+            tournaments = latestTournaments,
+            matchesByTournament = latestMatchesByTournament.mapValues { it.value.toList() },
+            students = repository.students.value,
+            hasAnnouncements = hasCloudAnnouncements,
+            hasStars = hasCloudStars,
+            hasBooks = hasCloudBooks,
+            hasReadingRecords = hasCloudReadingRecords,
+            hasTournaments = hasCloudTournaments,
+            loadedMatchTournamentIds = loadedCloudMatchTournamentIds.toSet()
+        )
+
+        val result = ActivityNotificationHelper.evaluateParentNotifications(
+            previous = previousActivitySnapshot,
+            current = currentSnapshot,
+            linkedStudentIds = freshState.linkedParentStudentIds.toSet(),
+            seenEventKeys = seenActivityEventKeys,
+            baselineTimestampMs = activityBaselineTimestampMs
+        )
+        previousActivitySnapshot = currentSnapshot
+
+        val seenChanged = result.updatedSeenKeys.size != seenActivityEventKeys.size ||
+            result.updatedSeenKeys != seenActivityEventKeys
+        if (seenChanged) {
+            seenActivityEventKeys = result.updatedSeenKeys
+            CommunicationPersistenceHelper.saveActivityNotificationState(
+                context = ctx,
+                classId = classId,
+                viewerKey = viewerKey,
+                baselineMs = activityBaselineTimestampMs,
+                seenKeys = seenActivityEventKeys
+            )
+        }
+
+        if (result.newNotifications.isNotEmpty()) {
+            val latestUi = _uiState.value
+            val existingIds = latestUi.notifications.map { it.id }.toSet()
+            val uniqueNew = result.newNotifications.filter { it.id !in existingIds }
+            if (uniqueNew.isNotEmpty()) {
+                val updatedNotifs = (uniqueNew + latestUi.notifications)
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.timestamp }
+                    .take(150)
+                val bannerText = if (isAppInForeground) uniqueNew.firstOrNull()?.title else null
+                _uiState.value = latestUi.copy(
+                    notifications = updatedNotifs,
+                    snackbarMessage = bannerText ?: latestUi.snackbarMessage
+                )
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, viewerKey)
+            }
+        }
+    }
 
     private fun filterMessagesForCurrentViewer(
         messages: List<ChatMessage>,
@@ -385,6 +614,7 @@ class BirizViewModel(
                         saveParentSessionState()
                     }
                 }
+                evaluateActivityNotifications()
             }
         }
 
@@ -509,7 +739,7 @@ class BirizViewModel(
             _uiState.value = _uiState.value.copy(notifications = pruned)
             appContext?.let { ctx ->
                 val classId = resolveActiveClassId()
-                CommunicationPersistenceHelper.saveNotifications(ctx, classId, pruned)
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, pruned, currentViewerKey())
                 if (pruned.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
                     AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
                 }
@@ -567,11 +797,11 @@ class BirizViewModel(
             val updatedList = listOf(updateNotif) + cleanedNotifs
             _uiState.value = _uiState.value.copy(notifications = updatedList)
             val classId = resolveActiveClassId()
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedList)
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedList, currentViewerKey())
         } else if (cleanedNotifs.size != _uiState.value.notifications.size) {
             _uiState.value = _uiState.value.copy(notifications = cleanedNotifs)
             val classId = resolveActiveClassId()
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, cleanedNotifs)
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, cleanedNotifs, currentViewerKey())
         }
     }
 
@@ -706,19 +936,24 @@ class BirizViewModel(
     fun loadCommunicationFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
         val currentStudents = repository.students.value
+        val stateSnapshot = _uiState.value
+        val viewerKey = currentViewerKey(stateSnapshot)
+        val viewerIsTeacher = stateSnapshot.currentRole == UserRole.TEACHER
+        val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher, stateSnapshot.currentUser.email)
+
         val loadedAnnouncements = CommunicationPersistenceHelper.loadAnnouncements(ctx, classId, currentStudents)
         val loadedMessages = CommunicationPersistenceHelper.loadChatMessages(ctx, classId, currentStudents)
-        val existingUpdateNotifs = _uiState.value.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
-        val loadedNotifications = CommunicationPersistenceHelper.loadNotifications(ctx, classId)
+        val existingUpdateNotifs = stateSnapshot.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
+        val loadedNotifications = CommunicationPersistenceHelper.loadNotifications(ctx, classId, viewerKey)
         val rawMerged = (existingUpdateNotifs + loadedNotifications).distinctBy { it.id }
         val prunedNotifications = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
             notifications = rawMerged,
             currentVersionCode = BuildConfig.VERSION_CODE,
             currentVersionName = BuildConfig.VERSION_NAME,
-            latestCheckInfo = _uiState.value.availableUpdateInfo
+            latestCheckInfo = stateSnapshot.availableUpdateInfo
         )
         if (prunedNotifications.size != loadedNotifications.size && prunedNotifications != rawMerged) {
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, prunedNotifications)
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, prunedNotifications, viewerKey)
             if (prunedNotifications.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
                 AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
             }
@@ -733,40 +968,100 @@ class BirizViewModel(
         rawChatMessages = loadedMessages
         knownMessageIds.addAll(loadedMessages.map { it.id })
 
-        val stateSnapshot = _uiState.value
-        val viewerIsTeacher = stateSnapshot.currentRole == UserRole.TEACHER
-        val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher, stateSnapshot.currentUser.email)
         loadedClearStateKey = "$classId|$viewerDocKey"
         chatClearTimestamps = CommunicationPersistenceHelper.loadChatClearTimestamps(ctx, classId, viewerDocKey)
 
-        _uiState.value = stateSnapshot.copy(
+        _uiState.value = _uiState.value.copy(
             announcements = loadedAnnouncements,
-            chatMessages = filterMessagesForCurrentViewer(rawChatMessages, stateSnapshot, chatClearTimestamps),
+            chatMessages = filterMessagesForCurrentViewer(rawChatMessages, _uiState.value, chatClearTimestamps),
             notifications = prunedNotifications
         )
         _uiState.value.availableUpdateInfo?.let { syncUpdateNotification(it) }
 
-        communicationClearStateListener?.remove()
-        communicationClearStateListener = CommunicationPersistenceHelper.observeFirestoreChatClearTimestamps(
-            context = ctx,
-            classId = classId,
-            viewerDocKey = viewerDocKey
-        ) { mergedClearMap ->
-            chatClearTimestamps = mergedClearMap
-            val visible = filterMessagesForCurrentViewer(rawChatMessages, _uiState.value, mergedClearMap)
-            _uiState.value = _uiState.value.copy(chatMessages = visible)
+        val classChanged = observedNotificationClassId != classId
+        if (classChanged) {
+            observedNotificationClassId = classId
+            hasCloudAnnouncements = false
+            hasCloudStars = false
+            hasCloudBooks = false
+            hasCloudReadingRecords = false
+            hasCloudTournaments = false
+            loadedCloudMatchTournamentIds.clear()
+            latestMatchesByTournament.clear()
+            previousActivitySnapshot = null
+            clearActivityListeners()
         }
 
-        // Firestore üzerinden anlık canlı duyuru ve anket senkronizasyonu
-        communicationAnnouncementsListener?.remove()
-        communicationAnnouncementsListener = CommunicationPersistenceHelper.observeFirestoreAnnouncements(ctx, classId) { cloudAnnouncements ->
-            _uiState.value = _uiState.value.copy(announcements = cloudAnnouncements)
+        seedLocalActivitySnapshotsIfNeeded(ctx, classId, forceAllLocal = classChanged)
+        evaluateActivityNotifications(classId, forceReloadViewerNotifications = true)
+
+        if (classChanged || communicationClearStateListener == null) {
+            communicationClearStateListener?.remove()
+            communicationClearStateListener = CommunicationPersistenceHelper.observeFirestoreChatClearTimestamps(
+                context = ctx,
+                classId = classId,
+                viewerDocKey = viewerDocKey
+            ) { mergedClearMap ->
+                chatClearTimestamps = mergedClearMap
+                val visible = filterMessagesForCurrentViewer(rawChatMessages, _uiState.value, mergedClearMap)
+                _uiState.value = _uiState.value.copy(chatMessages = visible)
+            }
         }
 
-        // Firestore üzerinden anlık iki yönlü öğretmen-veli canlı mesajlaşma senkronizasyonu
-        communicationMessagesListener?.remove()
-        communicationMessagesListener = CommunicationPersistenceHelper.observeFirestoreChatMessages(ctx, classId) { cloudMessages ->
-            handleIncomingChatMessagesSnapshot(classId, cloudMessages)
+        if (classChanged || communicationAnnouncementsListener == null) {
+            // Firestore üzerinden anlık canlı duyuru ve anket senkronizasyonu
+            communicationAnnouncementsListener?.remove()
+            communicationAnnouncementsListener = CommunicationPersistenceHelper.observeFirestoreAnnouncements(ctx, classId) { cloudAnnouncements ->
+                latestAnnouncements = cloudAnnouncements
+                hasCloudAnnouncements = true
+                _uiState.value = _uiState.value.copy(announcements = cloudAnnouncements)
+                evaluateActivityNotifications(classId)
+            }
+        }
+
+        if (classChanged || communicationMessagesListener == null) {
+            // Firestore üzerinden anlık iki yönlü öğretmen-veli canlı mesajlaşma senkronizasyonu
+            communicationMessagesListener?.remove()
+            communicationMessagesListener = CommunicationPersistenceHelper.observeFirestoreChatMessages(ctx, classId) { cloudMessages ->
+                handleIncomingChatMessagesSnapshot(classId, cloudMessages)
+            }
+        }
+
+        if (classChanged || starsNotificationListener == null) {
+            starsNotificationListener?.remove()
+            starsNotificationListener = StarRewardPersistenceHelper.observeFirestoreStars(ctx, classId) { cloudStars ->
+                latestStars = cloudStars
+                hasCloudStars = true
+                evaluateActivityNotifications(classId)
+            }
+        }
+
+        if (classChanged || libraryBooksNotificationListener == null) {
+            libraryBooksNotificationListener?.remove()
+            libraryBooksNotificationListener = LibraryPersistenceHelper.observeFirestoreBooks(ctx, classId) { cloudBooks ->
+                latestBooks = cloudBooks
+                hasCloudBooks = true
+                evaluateActivityNotifications(classId)
+            }
+        }
+
+        if (classChanged || libraryRecordsNotificationListener == null) {
+            libraryRecordsNotificationListener?.remove()
+            libraryRecordsNotificationListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(ctx, classId) { cloudRecords ->
+                latestReadingRecords = cloudRecords
+                hasCloudReadingRecords = true
+                evaluateActivityNotifications(classId)
+            }
+        }
+
+        if (classChanged || tournamentsNotificationListener == null) {
+            tournamentsNotificationListener?.remove()
+            tournamentsNotificationListener = TournamentPersistenceHelper.observeFirestoreTournaments(ctx, classId) { cloudTournaments ->
+                latestTournaments = cloudTournaments
+                hasCloudTournaments = true
+                syncTournamentMatchListeners(ctx, classId, cloudTournaments)
+                evaluateActivityNotifications(classId)
+            }
         }
     }
 
@@ -791,21 +1086,47 @@ class BirizViewModel(
         )
         appContext?.let {
             CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
-            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs)
+            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs, currentViewerKey())
         }
     }
 
     fun markAnnouncementReadByParent(announcementId: String, parentName: String) {
+        val state = _uiState.value
         val classId = resolveActiveClassId()
-        val resolvedName = parentName.ifBlank { "Veli" }
-        val updatedList = _uiState.value.announcements.map { ann ->
-            if (ann.id == announcementId && !ann.readReceipts.containsKey(resolvedName)) {
-                val updatedReceipts = ann.readReceipts + (resolvedName to System.currentTimeMillis())
-                ann.copy(readReceipts = updatedReceipts)
+        val rawName = parentName.ifBlank { state.currentUser.fullName }.ifBlank { "Veli" }
+        val allStudents = repository.students.value
+        val linkedStudents = allStudents.filter { it.id in state.linkedParentStudentIds }
+        val activeStudent = allStudents.firstOrNull { it.id == state.activeParentStudentId } ?: linkedStudents.firstOrNull()
+        val resolvedLabel = AnnouncementIdentityHelper.formatParentActionLabel(
+            activeStudent = activeStudent,
+            linkedStudents = linkedStudents,
+            rawParentName = rawName
+        )
+        val readTs = System.currentTimeMillis()
+        var changedAnnouncement: Announcement? = null
+        val updatedList = state.announcements.map { ann ->
+            if (ann.id == announcementId) {
+                val alreadyReadForActive = activeStudent != null &&
+                    AnnouncementIdentityHelper.findStudentReadTimestamp(activeStudent, ann.readReceipts) != null
+                if (!alreadyReadForActive && !ann.readReceipts.containsKey(resolvedLabel)) {
+                    val updatedReceipts = ann.readReceipts + (resolvedLabel to readTs)
+                    ann.copy(readReceipts = updatedReceipts).also { changedAnnouncement = it }
+                } else ann
             } else ann
         }
+        val targetUpdated = changedAnnouncement ?: return
         _uiState.value = _uiState.value.copy(announcements = updatedList)
-        appContext?.let { CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList) }
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveAnnouncementsLocalOnly(ctx, classId, updatedList)
+            CommunicationPersistenceHelper.recordAnnouncementReadInFirestore(
+                context = ctx,
+                classId = classId,
+                announcementId = announcementId,
+                readerLabel = resolvedLabel,
+                readTimestamp = readTs,
+                fallbackAnnouncement = targetUpdated
+            )
+        }
     }
 
     fun editAnnouncement(
@@ -819,12 +1140,11 @@ class BirizViewModel(
     ) {
         val classId = resolveActiveClassId()
         val currentStudents = repository.students.value
-        val deliveredParents = if (targetType == AnnouncementTargetType.ALL_CLASS) {
-            currentStudents.map { it.parentName ?: "${it.fullName} Velisi" }
-        } else {
-            currentStudents.filter { targetStudentIds.contains(it.id) }
-                .map { it.parentName ?: "${it.fullName} Velisi" }
-        }
+        val deliveredParents = AnnouncementIdentityHelper.formatExpectedRecipientsForAnnouncement(
+            targetType = targetType,
+            targetStudentIds = targetStudentIds,
+            allStudents = currentStudents
+        )
 
         val updatedList = _uiState.value.announcements.map { ann ->
             if (ann.id == id) {
@@ -862,7 +1182,7 @@ class BirizViewModel(
         )
         appContext?.let {
             CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
-            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs)
+            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs, currentViewerKey())
         }
     }
 
@@ -880,23 +1200,75 @@ class BirizViewModel(
     }
 
     fun votePollOption(announcementId: String, optionId: String, voterName: String) {
+        val state = _uiState.value
         val classId = resolveActiveClassId()
-        val updatedList = _uiState.value.announcements.map { ann ->
-            if (ann.id == announcementId && ann.poll != null) {
-                val updatedOptions = ann.poll.options.map { opt ->
-                    if (opt.id == optionId) {
-                        if (!opt.voterParentNames.contains(voterName)) {
-                            opt.copy(voterParentNames = opt.voterParentNames + voterName)
-                        } else opt
-                    } else {
-                        opt.copy(voterParentNames = opt.voterParentNames.filter { it != voterName })
-                    }
-                }
-                ann.copy(poll = ann.poll.copy(options = updatedOptions))
+        val rawVoter = voterName.ifBlank { state.currentUser.fullName }.ifBlank { "Veli" }
+        val allStudents = repository.students.value
+        val isParentVoter = state.currentRole == UserRole.PARENT
+        val linkedStudents = if (isParentVoter) {
+            allStudents.filter { it.id in state.linkedParentStudentIds }
+        } else emptyList()
+        val activeStudent = if (isParentVoter) {
+            allStudents.firstOrNull { it.id == state.activeParentStudentId } ?: linkedStudents.firstOrNull()
+        } else null
+
+        val resolvedVoterLabel = if (isParentVoter) {
+            AnnouncementIdentityHelper.formatParentActionLabel(
+                activeStudent = activeStudent,
+                linkedStudents = linkedStudents,
+                rawParentName = rawVoter
+            )
+        } else {
+            rawVoter
+        }
+        val voterAliases = if (isParentVoter) {
+            AnnouncementIdentityHelper.voterAliasesForParent(
+                activeStudent = activeStudent,
+                linkedStudents = linkedStudents,
+                rawParentName = rawVoter
+            )
+        } else {
+            setOf(rawVoter)
+        }
+
+        val targetAnn = state.announcements.firstOrNull { it.id == announcementId } ?: return
+        val currentPoll = targetAnn.poll ?: return
+        val updatedPoll = AnnouncementIdentityHelper.applySingleVote(
+            poll = currentPoll,
+            optionId = optionId,
+            voterLabel = resolvedVoterLabel,
+            voterAliases = voterAliases
+        )
+        if (updatedPoll == null) {
+            _uiState.value = state.copy(
+                snackbarMessage = "🔒 Bu ankete zaten oy kullandınız. Verilen oy değiştirilemez."
+            )
+            return
+        }
+
+        var updatedAnnouncement: Announcement? = null
+        val updatedList = state.announcements.map { ann ->
+            if (ann.id == announcementId) {
+                ann.copy(poll = updatedPoll).also { updatedAnnouncement = it }
             } else ann
         }
-        _uiState.value = _uiState.value.copy(announcements = updatedList)
-        appContext?.let { CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList) }
+        val savedAnn = updatedAnnouncement ?: return
+        _uiState.value = state.copy(
+            announcements = updatedList,
+            snackbarMessage = "✅ Anket oyunuz kaydedildi (değiştirilemez)."
+        )
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveAnnouncementsLocalOnly(ctx, classId, updatedList)
+            CommunicationPersistenceHelper.recordPollVoteInFirestore(
+                context = ctx,
+                classId = classId,
+                announcementId = announcementId,
+                optionId = optionId,
+                voterLabel = resolvedVoterLabel,
+                voterAliases = voterAliases,
+                fallbackAnnouncement = savedAnn
+            )
+        }
     }
 
     fun sendChatMessage(
@@ -1165,7 +1537,7 @@ class BirizViewModel(
         }
 
         if (notifsChanged && ctx != null) {
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey(state))
         }
 
         _uiState.value = _uiState.value.copy(
@@ -1215,7 +1587,7 @@ class BirizViewModel(
                     CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
                 }
                 if (notifsChanged) {
-                    CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+                    CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
                 }
                 ChatNotificationHelper.cancelMessageNotification(ctx, studentId)
             }
@@ -1291,7 +1663,7 @@ class BirizViewModel(
             CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
             CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
             if (notifsChanged) {
-                CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey(state))
             }
             val parentKey = ChatVisibilityHelper.normalizeParentKey(
                 state.currentUser.email,
@@ -1404,7 +1776,7 @@ class BirizViewModel(
             CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
             CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
             if (notifsChanged) {
-                CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey(state))
             }
             ChatNotificationHelper.cancelMessageNotification(ctx, studentId)
         }
@@ -1416,7 +1788,7 @@ class BirizViewModel(
         val updatedNotifs = _uiState.value.notifications.filterNot { it.id == notificationId }
         _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
         appContext?.let { ctx ->
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
             if (removed?.type == NotificationType.MESSAGE && !removed.targetId.isNullOrBlank()) {
                 ChatNotificationHelper.cancelMessageNotification(ctx, removed.targetId)
             } else if (removed != null && NotificationLifecycleHelper.isUpdateNotification(removed)) {
@@ -1434,7 +1806,7 @@ class BirizViewModel(
             .distinct()
         _uiState.value = _uiState.value.copy(notifications = emptyList())
         appContext?.let { ctx ->
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, emptyList())
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, emptyList(), currentViewerKey())
             ChatNotificationHelper.cancelAllMessageNotifications(ctx, messageStudentIds)
             AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
         }
@@ -1815,6 +2187,10 @@ class BirizViewModel(
             currentScreen = ScreenState.PARENT_PORTAL,
             snackbarMessage = "BİRİZ Veli Modülüne Geçiş Yapıldı 👨‍👩‍👧‍👦"
         )
+        appContext?.let { ctx ->
+            seedLocalActivitySnapshotsIfNeeded(ctx, targetClass.id, forceAllLocal = !hasCloudTournaments && !hasCloudBooks)
+        }
+        evaluateActivityNotifications(targetClass.id, forceReloadViewerNotifications = true)
         refreshChatClearStateForCurrentViewer(targetClass.id, forceReload = true)
         saveParentSessionState()
     }
@@ -1840,6 +2216,7 @@ class BirizViewModel(
                 snackbarMessage = "Sınıf Öğretmeni Kurulum Modu"
             )
         }
+        evaluateActivityNotifications(forceReloadViewerNotifications = true)
         refreshChatClearStateForCurrentViewer(forceReload = true)
         saveParentSessionState()
     }
@@ -1889,6 +2266,7 @@ class BirizViewModel(
                     currentScreen = ScreenState.PARENT_PORTAL,
                     snackbarMessage = "🎉 ${matchedStudent.fullName} (${activeClass.gradeLevel}/${activeClass.section} - Öğr: ${activeClass.teacherName}) Veli Hesabınıza Başarıyla Bağlandı!"
                 )
+                evaluateActivityNotifications(activeClass.id, forceReloadViewerNotifications = true)
                 refreshChatClearStateForCurrentViewer(activeClass.id, forceReload = true)
                 saveParentSessionState()
             } else {
@@ -3129,6 +3507,10 @@ class BirizViewModel(
         }
         disconnectSmartBoard()
         repository.disableTestMode()
+        clearActivityListeners()
+        observedNotificationClassId = null
+        loadedActivityStateKey = null
+        previousActivitySnapshot = null
         context?.let { ctx ->
             viewModelScope.launch {
                 com.example.auth.GoogleAuthHelper.clearCredentialState(ctx)
@@ -3153,9 +3535,7 @@ class BirizViewModel(
     override fun onCleared() {
         super.onCleared()
         scheduleListenerRegistration?.remove()
-        communicationAnnouncementsListener?.remove()
-        communicationMessagesListener?.remove()
-        communicationClearStateListener?.remove()
+        clearActivityListeners()
         seatingPlanListenerRegistration?.remove()
         groupMakerListenerRegistration?.remove()
     }

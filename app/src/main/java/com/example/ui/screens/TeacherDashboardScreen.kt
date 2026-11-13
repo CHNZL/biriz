@@ -857,7 +857,15 @@ fun TeacherDashboardScreen(
                         val targetPage = try {
                             DashboardSubPage.valueOf(notif.targetSubPageName)
                         } catch (_: Exception) {
-                            if (notif.type == NotificationType.MESSAGE) DashboardSubPage.ILETISIM_MESAJLAR else DashboardSubPage.ILETISIM_DUYURULAR
+                            when (notif.type) {
+                                NotificationType.MESSAGE -> DashboardSubPage.ILETISIM_MESAJLAR
+                                NotificationType.PARENT_REGISTRATION -> DashboardSubPage.SINIF_LISTESI
+                                NotificationType.STAR_REWARD -> DashboardSubPage.YILDIZLAR_SINIFI
+                                NotificationType.LIBRARY -> DashboardSubPage.KITAPLIK_LISTE
+                                NotificationType.TOURNAMENT -> DashboardSubPage.TURNUVA_DEVAM_EDENLER
+                                NotificationType.ANNOUNCEMENT,
+                                NotificationType.APP_UPDATE -> DashboardSubPage.ILETISIM_DUYURULAR
+                            }
                         }
                         onSelectSubPage(targetPage)
                         if (notif.targetId != null && targetPage == DashboardSubPage.ILETISIM_MESAJLAR) {

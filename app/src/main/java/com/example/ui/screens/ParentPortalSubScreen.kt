@@ -159,6 +159,7 @@ import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
+import com.example.util.AnnouncementIdentityHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
@@ -743,6 +744,7 @@ fun ParentPortalSubScreen(
                             }
                             ParentCommunicationDetailView(
                                 student = activeStudent,
+                                linkedStudents = linkedStudents,
                                 classRoom = classRoom,
                                 announcements = parentAnnouncements,
                                 chatMessages = studentChatMessages,
@@ -980,18 +982,34 @@ fun ParentPortalSubScreen(
             onDismiss = onCloseNotificationCenter,
             onNotificationClick = { notif ->
                 onMarkNotificationAsRead(notif.id)
-                if (notif.type == NotificationType.APP_UPDATE) {
-                    onOpenUpdateDialog()
-                } else {
-                    if (notif.type == NotificationType.MESSAGE && !notif.targetId.isNullOrBlank()) {
-                        if (linkedStudents.any { it.id == notif.targetId }) {
-                            onSelectActiveStudent(notif.targetId)
-                        }
-                        isCommChatSubTabActive = true
-                    } else if (notif.type == NotificationType.ANNOUNCEMENT) {
-                        isCommChatSubTabActive = false
+                val targetStudentId = notif.targetId
+                if (!targetStudentId.isNullOrBlank() && linkedStudents.any { it.id == targetStudentId }) {
+                    onSelectActiveStudent(targetStudentId)
+                }
+                when (notif.type) {
+                    NotificationType.APP_UPDATE -> {
+                        onOpenUpdateDialog()
                     }
-                    activeTab = ParentPortalTab.COMMUNICATION
+                    NotificationType.STAR_REWARD -> {
+                        activeTab = ParentPortalTab.STARS
+                    }
+                    NotificationType.LIBRARY -> {
+                        activeTab = ParentPortalTab.READING
+                    }
+                    NotificationType.TOURNAMENT -> {
+                        activeTab = ParentPortalTab.TOURNAMENT
+                    }
+                    NotificationType.ANNOUNCEMENT -> {
+                        isCommChatSubTabActive = false
+                        activeTab = ParentPortalTab.COMMUNICATION
+                    }
+                    NotificationType.MESSAGE -> {
+                        isCommChatSubTabActive = true
+                        activeTab = ParentPortalTab.COMMUNICATION
+                    }
+                    NotificationType.PARENT_REGISTRATION -> {
+                        activeTab = ParentPortalTab.HOME
+                    }
                 }
             },
             onMarkAllAsRead = onMarkAllNotificationsAsRead
@@ -2972,6 +2990,7 @@ private fun ParentTournamentDetailView(
 @Composable
 private fun ParentCommunicationDetailView(
     student: Student,
+    linkedStudents: List<Student> = emptyList(),
     classRoom: ClassRoom?,
     announcements: List<Announcement>,
     chatMessages: List<ChatMessage>,
@@ -3036,10 +3055,10 @@ private fun ParentCommunicationDetailView(
     val parentDisplayName = currentUser.fullName.ifBlank { "Veli" }
 
     // Duyurular sekmesindeyken duyuruları okundu işaretle
-    LaunchedEffect(announcements, isChatSubTabActive) {
+    LaunchedEffect(announcements, isChatSubTabActive, student.id) {
         if (!isChatSubTabActive) {
             announcements.forEach { ann ->
-                if (!ann.readReceipts.containsKey(parentDisplayName)) {
+                if (AnnouncementIdentityHelper.findStudentReadTimestamp(student, ann.readReceipts) == null) {
                     onMarkAnnouncementRead(ann.id)
                 }
             }
@@ -3777,20 +3796,70 @@ private fun ParentCommunicationDetailView(
 
                                 val poll = ann.poll
                                 if (poll != null && poll.options.isNotEmpty()) {
+                                    val voterAliases = remember(student, linkedStudents, parentDisplayName) {
+                                        AnnouncementIdentityHelper.voterAliasesForParent(
+                                            activeStudent = student,
+                                            linkedStudents = linkedStudents,
+                                            rawParentName = parentDisplayName
+                                        )
+                                    }
+                                    val hasVotedInPoll = AnnouncementIdentityHelper.hasVotedInPoll(poll, voterAliases)
+
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:",
-                                        fontSize = 13.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = primaryText
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }}",
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryText,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (hasVotedInPoll) {
+                                                Color(0xFF10B981).copy(alpha = 0.16f)
+                                            } else {
+                                                BirizTurquoise.copy(alpha = 0.14f)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = if (hasVotedInPoll) "🔒 Oyunuz Kaydedildi" else "Tek Oy Hakkı",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (hasVotedInPoll) Color(0xFF059669) else BirizTurquoise,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                    if (!hasVotedInPoll) {
+                                        Text(
+                                            text = "Tercihinizi seçin (oy verdikten sonra cevap değiştirilemez):",
+                                            fontSize = 11.5.sp,
+                                            color = secondaryText,
+                                            modifier = Modifier.padding(top = 3.dp)
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     poll.options.forEach { opt ->
-                                        val isVotedByMe = opt.voterParentNames.contains(parentDisplayName)
+                                        val isVotedByMe = AnnouncementIdentityHelper.isOptionVotedByParent(opt, voterAliases)
                                         Surface(
-                                            onClick = { onVotePoll(ann.id, opt.id) },
+                                            onClick = {
+                                                if (!hasVotedInPoll) {
+                                                    onVotePoll(ann.id, opt.id)
+                                                }
+                                            },
+                                            enabled = !hasVotedInPoll,
                                             shape = RoundedCornerShape(10.dp),
-                                            color = if (isVotedByMe) BirizTurquoise.copy(alpha = 0.25f) else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                                            color = when {
+                                                isVotedByMe -> BirizTurquoise.copy(alpha = 0.25f)
+                                                hasVotedInPoll -> if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
+                                                else -> if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
+                                            },
                                             border = BorderStroke(
                                                 if (isVotedByMe) 1.5.dp else 1.dp,
                                                 if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
@@ -3802,7 +3871,10 @@ private fun ParentCommunicationDetailView(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
                                                     if (isVotedByMe) {
                                                         Text("✓ ", color = BirizTurquoise, fontWeight = FontWeight.Black)
                                                     }
@@ -3810,12 +3882,27 @@ private fun ParentCommunicationDetailView(
                                                         text = opt.text,
                                                         fontSize = 13.5.sp,
                                                         fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.Medium,
-                                                        color = primaryText
+                                                        color = if (hasVotedInPoll && !isVotedByMe) secondaryText else primaryText
                                                     )
                                                 }
-                                                Text(text = "${opt.voteCount} Oy", fontSize = 12.sp, color = secondaryText, fontWeight = FontWeight.Bold)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "${opt.voteCount} Oy",
+                                                    fontSize = 12.sp,
+                                                    color = if (isVotedByMe) BirizTurquoise else secondaryText,
+                                                    fontWeight = FontWeight.Bold
+                                                )
                                             }
                                         }
+                                    }
+                                    if (hasVotedInPoll) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "🔒 Ankete oy kullandınız. Verilen oy değiştirilemez.",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = secondaryText
+                                        )
                                     }
                                 }
                             }

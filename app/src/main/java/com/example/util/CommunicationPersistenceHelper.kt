@@ -94,14 +94,13 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Sınıfa ait duyuruları kaydeder ve buluta senkronize eder.
+     * Sınıfa ait duyuruları yalnızca yerel önbelleğe kaydeder.
      */
-    fun saveAnnouncements(context: Context, classId: String, announcements: List<Announcement>) {
+    fun saveAnnouncementsLocalOnly(context: Context, classId: String, announcements: List<Announcement>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (announcement in announcements) {
             jsonArray.put(serializeAnnouncementJson(announcement))
-            uploadAnnouncementToFirestore(context, classId, announcement)
         }
         val jsonStr = jsonArray.toString()
         val editor = prefs.edit()
@@ -110,6 +109,16 @@ object CommunicationPersistenceHelper {
         }
         editor.putString(KEY_ANNOUNCEMENTS_PREFIX + "default", jsonStr)
         editor.apply()
+    }
+
+    /**
+     * Sınıfa ait duyuruları kaydeder ve buluta senkronize eder.
+     */
+    fun saveAnnouncements(context: Context, classId: String, announcements: List<Announcement>) {
+        saveAnnouncementsLocalOnly(context, classId, announcements)
+        for (announcement in announcements) {
+            uploadAnnouncementToFirestore(context, classId, announcement)
+        }
     }
 
     /**
@@ -134,6 +143,109 @@ object CommunicationPersistenceHelper {
                     .set(data, SetOptions.merge())
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to upload announcement to Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Anket oyunu Firestore üzerinde atomik işlemle (mevcut oyları ezmeden ve tek oy kilidini koruyarak) kaydeder.
+     */
+    fun recordPollVoteInFirestore(
+        context: Context,
+        classId: String,
+        announcementId: String,
+        optionId: String,
+        voterLabel: String,
+        voterAliases: Set<String>,
+        fallbackAnnouncement: Announcement
+    ) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        val docRef = db.collection("classrooms").document(classId)
+            .collection("announcements").document(announcementId)
+        syncScope.launch {
+            try {
+                db.runTransaction { tx ->
+                    val snap = tx.get(docRef)
+                    val baseAnn = snap.getString("json")?.takeIf { it.isNotBlank() }?.let { raw ->
+                        try {
+                            parseAnnouncementJson(JSONObject(raw))
+                        } catch (_: Exception) {
+                            fallbackAnnouncement
+                        }
+                    } ?: fallbackAnnouncement
+
+                    val currentPoll = baseAnn.poll ?: return@runTransaction null
+                    val updatedPoll = AnnouncementIdentityHelper.applySingleVote(
+                        poll = currentPoll,
+                        optionId = optionId,
+                        voterLabel = voterLabel,
+                        voterAliases = voterAliases
+                    ) ?: return@runTransaction null
+
+                    val mergedAnn = baseAnn.copy(classId = classId, poll = updatedPoll)
+                    val data = mapOf(
+                        "id" to mergedAnn.id,
+                        "classId" to classId,
+                        "title" to mergedAnn.title,
+                        "createdAt" to mergedAnn.createdAt,
+                        "json" to serializeAnnouncementJson(mergedAnn).toString(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    tx.set(docRef, data, SetOptions.merge())
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed transactionally recording poll vote", e)
+                uploadAnnouncementToFirestore(context, classId, fallbackAnnouncement)
+            }
+        }
+    }
+
+    /**
+     * Duyuru okundu bilgisini Firestore üzerinde atomik işlemle (diğer velilerin okuma kayıtlarını ezmeden) kaydeder.
+     */
+    fun recordAnnouncementReadInFirestore(
+        context: Context,
+        classId: String,
+        announcementId: String,
+        readerLabel: String,
+        readTimestamp: Long,
+        fallbackAnnouncement: Announcement
+    ) {
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        val docRef = db.collection("classrooms").document(classId)
+            .collection("announcements").document(announcementId)
+        syncScope.launch {
+            try {
+                db.runTransaction { tx ->
+                    val snap = tx.get(docRef)
+                    val baseAnn = snap.getString("json")?.takeIf { it.isNotBlank() }?.let { raw ->
+                        try {
+                            parseAnnouncementJson(JSONObject(raw))
+                        } catch (_: Exception) {
+                            fallbackAnnouncement
+                        }
+                    } ?: fallbackAnnouncement
+
+                    if (baseAnn.readReceipts.containsKey(readerLabel)) return@runTransaction null
+                    val mergedReceipts = baseAnn.readReceipts + (readerLabel to readTimestamp)
+                    val mergedAnn = baseAnn.copy(classId = classId, readReceipts = mergedReceipts)
+                    val data = mapOf(
+                        "id" to mergedAnn.id,
+                        "classId" to classId,
+                        "title" to mergedAnn.title,
+                        "createdAt" to mergedAnn.createdAt,
+                        "json" to serializeAnnouncementJson(mergedAnn).toString(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    tx.set(docRef, data, SetOptions.merge())
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed transactionally recording read receipt", e)
+                uploadAnnouncementToFirestore(context, classId, fallbackAnnouncement)
             }
         }
     }
@@ -219,6 +331,8 @@ object CommunicationPersistenceHelper {
     private val SAMPLE_MESSAGE_IDS = setOf("msg_1", "msg_2", "msg_3", "msg_4", "msg_5")
     private const val KEY_NOTIFIED_MESSAGE_IDS_PREFIX = "notified_msg_ids_"
     private const val KEY_CHAT_CLEAR_TIMESTAMPS_PREFIX = "chat_clear_ts_"
+    private const val KEY_ACTIVITY_BASELINE_PREFIX = "activity_baseline_ts_"
+    private const val KEY_SEEN_ACTIVITY_EVENTS_PREFIX = "seen_activity_events_"
 
     fun isSampleChatMessage(msg: ChatMessage): Boolean {
         return msg.id in SAMPLE_MESSAGE_IDS || msg.studentId.startsWith("student_test_")
@@ -608,11 +722,82 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Bildirimleri yükler; sadece gerçek bildirimleri getirir.
+     * Belirli sınıf + rol/kullanıcı (viewerKey) için etkinlik bildirim taban zamanını ve görülen olay anahtarlarını yükler.
+     * İlk kurulumda varsayılan taban zamanını hemen kalıcı hale getirir ki eski kayıtlar yığılmasın, sonraki olaylar yakalansın.
      */
-    fun loadNotifications(context: Context, classId: String): List<BirizNotification> {
+    fun loadActivityNotificationState(
+        context: Context,
+        classId: String,
+        viewerKey: String,
+        defaultBaselineMs: Long = System.currentTimeMillis() - 5 * 60_000L
+    ): Pair<Long, Set<String>> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val rawJson = prefs.getString(KEY_NOTIFICATIONS_PREFIX + classId, null)
+        val scopedSuffix = if (viewerKey.isBlank()) classId else "${classId}_$viewerKey"
+        val baselinePrefKey = KEY_ACTIVITY_BASELINE_PREFIX + scopedSuffix
+        val seenPrefKey = KEY_SEEN_ACTIVITY_EVENTS_PREFIX + scopedSuffix
+
+        val savedBaseline = if (prefs.contains(baselinePrefKey)) {
+            prefs.getLong(baselinePrefKey, defaultBaselineMs)
+        } else {
+            prefs.edit().putLong(baselinePrefKey, defaultBaselineMs).apply()
+            defaultBaselineMs
+        }
+
+        val rawSeen = prefs.getString(seenPrefKey, null)
+        val seenSet = if (rawSeen.isNullOrBlank()) {
+            emptySet()
+        } else {
+            try {
+                val arr = JSONArray(rawSeen)
+                buildSet {
+                    for (i in 0 until arr.length()) {
+                        val value = arr.optString(i, "")
+                        if (value.isNotBlank()) add(value)
+                    }
+                }
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+        return savedBaseline to seenSet
+    }
+
+    fun saveActivityNotificationState(
+        context: Context,
+        classId: String,
+        viewerKey: String,
+        baselineMs: Long,
+        seenKeys: Set<String>
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val scopedSuffix = if (viewerKey.isBlank()) classId else "${classId}_$viewerKey"
+        val trimmed = if (seenKeys.size > 1500) seenKeys.toList().takeLast(1500) else seenKeys.toList()
+        val arr = JSONArray()
+        trimmed.forEach { arr.put(it) }
+        prefs.edit()
+            .putLong(KEY_ACTIVITY_BASELINE_PREFIX + scopedSuffix, baselineMs)
+            .putString(KEY_SEEN_ACTIVITY_EVENTS_PREFIX + scopedSuffix, arr.toString())
+            .apply()
+    }
+
+    /**
+     * Bildirimleri rol/kullanıcıya özel yükler; eski sürüm anahtarından yalnızca öğretmen görünümü için geçiş yapar.
+     */
+    fun loadNotifications(
+        context: Context,
+        classId: String,
+        viewerKey: String = ""
+    ): List<BirizNotification> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val scopedKey = if (viewerKey.isNotBlank()) {
+            "${KEY_NOTIFICATIONS_PREFIX}${classId}_$viewerKey"
+        } else {
+            KEY_NOTIFICATIONS_PREFIX + classId
+        }
+        val rawJson = prefs.getString(scopedKey, null)
+            ?: if (viewerKey == "teacher" || viewerKey.isBlank()) {
+                prefs.getString(KEY_NOTIFICATIONS_PREFIX + classId, null)
+            } else null
 
         if (!rawJson.isNullOrBlank()) {
             try {
@@ -623,13 +808,18 @@ object CommunicationPersistenceHelper {
                     val id = obj.getString("id")
                     // Örnek / sahte bildirimleri filtrele
                     if (id != "notif_1" && id != "notif_2" && id != "notif_3") {
+                        val parsedType = try {
+                            NotificationType.valueOf(obj.optString("type", "ANNOUNCEMENT"))
+                        } catch (_: Exception) {
+                            NotificationType.ANNOUNCEMENT
+                        }
                         list.add(
                             BirizNotification(
                                 id = id,
                                 title = obj.getString("title"),
                                 message = obj.getString("message"),
                                 timestamp = obj.getLong("timestamp"),
-                                type = NotificationType.valueOf(obj.optString("type", "ANNOUNCEMENT")),
+                                type = parsedType,
                                 targetSubPageName = obj.optString("targetSubPageName", "ILETISIM_DUYURULAR"),
                                 targetId = if (obj.has("targetId")) obj.getString("targetId") else null,
                                 isRead = obj.optBoolean("isRead", false)
@@ -646,9 +836,14 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Bildirimleri kaydeder.
+     * Bildirimleri rol/kullanıcıya özel kaydeder.
      */
-    fun saveNotifications(context: Context, classId: String, notifications: List<BirizNotification>) {
+    fun saveNotifications(
+        context: Context,
+        classId: String,
+        notifications: List<BirizNotification>,
+        viewerKey: String = ""
+    ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (item in notifications) {
@@ -664,7 +859,12 @@ object CommunicationPersistenceHelper {
             }
             jsonArray.put(obj)
         }
-        prefs.edit().putString(KEY_NOTIFICATIONS_PREFIX + classId, jsonArray.toString()).apply()
+        val storageKey = if (viewerKey.isNotBlank()) {
+            "${KEY_NOTIFICATIONS_PREFIX}${classId}_$viewerKey"
+        } else {
+            KEY_NOTIFICATIONS_PREFIX + classId
+        }
+        prefs.edit().putString(storageKey, jsonArray.toString()).apply()
     }
 
     /**
