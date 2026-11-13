@@ -51,8 +51,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Announcement
@@ -334,9 +337,9 @@ fun TeacherHomeSubScreen(
                             color = Color.White.copy(alpha = 0.84f)
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // 3'lü Canlı İstatistik Kutusu
+                        // 3'lü Canlı İstatistik Kutusu (2 satırlı kompakt görünüm)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -344,7 +347,7 @@ fun TeacherHomeSubScreen(
                             TeacherHeroStatPill(
                                 title = "Öğrenci",
                                 value = "${students.size}",
-                                subtitle = "$girlsCount Kız • $boysCount Erkek",
+                                detail = " (${girlsCount}K • ${boysCount}E)",
                                 accentColor = Color(0xFF38BDF8),
                                 modifier = Modifier.weight(1f),
                                 onClick = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
@@ -352,7 +355,7 @@ fun TeacherHomeSubScreen(
                             TeacherHeroStatPill(
                                 title = "Veli Bağlantısı",
                                 value = "$linkedStudentsCount Bağlı",
-                                subtitle = if (unlinkedStudentsCount > 0) "$unlinkedStudentsCount Bekleyen" else "Tamamı Bağlı ✓",
+                                detail = if (unlinkedStudentsCount > 0) " • $unlinkedStudentsCount Bek." else " ✓",
                                 accentColor = Color(0xFF34D399),
                                 modifier = Modifier.weight(1f),
                                 onClick = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) }
@@ -360,7 +363,7 @@ fun TeacherHomeSubScreen(
                             TeacherHeroStatPill(
                                 title = "İletişim",
                                 value = if (unreadParentMessagesCount > 0) "$unreadParentMessagesCount Yeni" else "${announcements.size} Duyuru",
-                                subtitle = if (unreadParentMessagesCount > 0) "Okunmamış Mesaj" else "Mesaj & Anket",
+                                detail = if (unreadParentMessagesCount > 0) " Mesaj" else " • Mesaj",
                                 accentColor = if (unreadParentMessagesCount > 0) BirizAmber else Color(0xFFC084FC),
                                 modifier = Modifier.weight(1f),
                                 onClick = {
@@ -373,7 +376,7 @@ fun TeacherHomeSubScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // Hızlı Eylem Butonları: Sınıf Listesi & Yeni Öğrenci Ekle
                         Row(
@@ -1113,20 +1116,20 @@ private fun DistinctTeacherCard(
 private fun TeacherHeroStatPill(
     title: String,
     value: String,
-    subtitle: String,
+    detail: String,
     accentColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         color = Color.White.copy(alpha = 0.11f),
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.50f)),
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)
         ) {
             Text(
                 text = title,
@@ -1138,18 +1141,26 @@ private fun TeacherHeroStatPill(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = value,
-                fontSize = 14.5.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = accentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.86f),
+                text = buildAnnotatedString {
+                    withStyle(
+                        SpanStyle(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = accentColor
+                        )
+                    ) {
+                        append(value)
+                    }
+                    withStyle(
+                        SpanStyle(
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.88f)
+                        )
+                    ) {
+                        append(detail)
+                    }
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
