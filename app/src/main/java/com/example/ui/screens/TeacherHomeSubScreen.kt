@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,8 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
@@ -48,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -70,9 +70,7 @@ import com.example.data.model.Student
 import com.example.data.model.Tournament
 import com.example.data.model.TournamentStatus
 import com.example.data.repository.StarRewardPersistenceHelper
-import com.example.ui.components.BentoCard
 import com.example.ui.theme.BirizAmber
-import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
 import com.example.ui.theme.BirizDarkTextMuted
 import com.example.ui.theme.BirizDarkTextPrimary
@@ -199,17 +197,6 @@ fun TeacherHomeSubScreen(
 
     // Yıldız İstatistikleri
     val totalClassStars = remember(allClassStars) { allClassStars.sumOf { it.starCount } }
-    val topStarStudentName = remember(allClassStars, students) {
-        if (allClassStars.isEmpty() || students.isEmpty()) null
-        else {
-            val grouped = allClassStars.groupBy { it.studentId }.mapValues { entry -> entry.value.sumOf { it.starCount } }
-            val bestEntry = grouped.maxByOrNull { it.value }
-            if (bestEntry != null && bestEntry.value > 0) {
-                val st = students.find { it.id == bestEntry.key }
-                if (st != null) "${st.fullName.split(" ").first()} (${bestEntry.value} ★)" else null
-            } else null
-        }
-    }
 
     // Aktif Turnuva
     val activeTournament = remember(classTournaments) {
@@ -245,22 +232,25 @@ fun TeacherHomeSubScreen(
         }.sortedBy { it.lessonIndex }
     }
 
+    val canvasBackground = if (isDarkTheme) Color(0xFF070E1B) else Color(0xFFEAF0F6)
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            .background(canvasBackground)
             .padding(horizontal = 14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // --- 1. HERO ÖĞRETMEN & SINIF ÖZET KARTI ---
         item {
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(22.dp),
                 color = Color.Transparent,
                 shadowElevation = if (isDarkTheme) 0.dp else 8.dp,
                 border = BorderStroke(
-                    1.2.dp,
-                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.45f) else Color(0x30FFFFFF)
+                    1.5.dp,
+                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.5f) else Color(0x45FFFFFF)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -278,7 +268,7 @@ fun TeacherHomeSubScreen(
                                 }
                             )
                         )
-                        .padding(18.dp)
+                        .padding(16.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         // Üst Satır: Şube Rozeti & Canlı Aktif Veli Rozeti
@@ -310,16 +300,16 @@ fun TeacherHomeSubScreen(
                                 },
                                 border = BorderStroke(
                                     1.dp,
-                                    if (activeOnlineParentsCount > 0) Color(0xFF34D399) else Color.White.copy(alpha = 0.25f)
+                                    if (activeOnlineParentsCount > 0) Color(0xFF34D399) else Color.White.copy(alpha = 0.28f)
                                 )
                             ) {
                                 Text(
                                     text = if (activeOnlineParentsCount > 0) {
-                                        "● $activeOnlineParentsCount Veli Şu An Aktif"
+                                        "● $activeOnlineParentsCount Veli Aktif"
                                     } else {
                                         "👨‍👩‍👧 $linkedStudentsCount/${students.size} Veli Bağlı"
                                     },
-                                    fontSize = 10.5.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (activeOnlineParentsCount > 0) Color(0xFF6EE7B7) else Color.White,
                                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
@@ -342,10 +332,10 @@ fun TeacherHomeSubScreen(
                             text = "Sınıf Öğretmeni: ${classRoom.teacherName} • ${classRoom.districtName}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.82f)
+                            color = Color.White.copy(alpha = 0.84f)
                         )
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // 3'lü Canlı İstatistik Kutusu
                         Row(
@@ -384,7 +374,7 @@ fun TeacherHomeSubScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Hızlı Eylem Butonları: Sınıf Listesi & Yeni Öğrenci Ekle
                         Row(
@@ -411,7 +401,7 @@ fun TeacherHomeSubScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Sınıf Listesi (${students.size})",
-                                    fontSize = 12.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -421,7 +411,7 @@ fun TeacherHomeSubScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.55f)),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = Color.White.copy(alpha = 0.10f),
+                                    containerColor = Color.White.copy(alpha = 0.12f),
                                     contentColor = Color.White
                                 ),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
@@ -437,7 +427,7 @@ fun TeacherHomeSubScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Öğrenci Ekle",
-                                    fontSize = 12.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -447,58 +437,73 @@ fun TeacherHomeSubScreen(
             }
         }
 
-        // --- 2. GÜNÜN DERS PROGRAMI BENTO KARTI ---
+        // --- 2. GÜNÜN DERS PROGRAMI KARTI ---
         item {
-            BentoCard(
+            val scheduleAccent = Color(0xFF0284C7)
+            DistinctTeacherCard(
+                accentColor = scheduleAccent,
                 isDark = isDarkTheme,
                 onClick = { onSelectSubPage(DashboardSubPage.DERS_PROGRAMI) },
-                testTag = "teacher_home_schedule_card",
-                contentPadding = PaddingValues(16.dp),
-                modifier = Modifier.fillMaxWidth()
+                testTag = "teacher_home_schedule_card"
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "📅", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = scheduleAccent.copy(alpha = if (isDarkTheme) 0.25f else 0.14f),
+                            border = BorderStroke(1.dp, scheduleAccent.copy(alpha = 0.45f)),
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "📅", fontSize = 20.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Günün Ders Programı ($todayTitle)",
-                                fontSize = 14.sp,
+                                text = "Günün Ders Programı",
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "İlk Ders: ${scheduleConfig.firstLessonStartTime} • ${scheduleConfig.dailyLessonCount} Ders (${scheduleConfig.lessonDurationMinutes} dk)",
-                                fontSize = 11.sp,
+                                text = "$todayTitle • İlk Ders ${scheduleConfig.firstLessonStartTime} (${scheduleConfig.dailyLessonCount} Ders)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                             )
                         }
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE)
+                        shape = RoundedCornerShape(10.dp),
+                        color = scheduleAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f)
                     ) {
                         Text(
                             text = "Program →",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0284C7),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color(0xFF7DD3FC) else scheduleAccent,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (todayLessons.isEmpty()) {
                     Text(
-                        text = "Bugün için henüz ders tanımlanmamış. Dokunarak ders programını düzenleyebilirsiniz.",
-                        fontSize = 12.sp,
+                        text = "Bugün için henüz ders tanımlanmamış. Dokunarak ders programını düzenleyin.",
+                        fontSize = 12.5.sp,
                         color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
                     )
                 } else {
@@ -515,7 +520,7 @@ fun TeacherHomeSubScreen(
                                 BirizNavyPrimary
                             }
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(9.dp),
                                 color = pillColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
                                 border = BorderStroke(1.dp, pillColor.copy(alpha = 0.55f))
                             ) {
@@ -526,12 +531,12 @@ fun TeacherHomeSubScreen(
                                     Surface(
                                         shape = CircleShape,
                                         color = pillColor,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(17.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
                                                 text = "${lesson.lessonIndex}",
-                                                fontSize = 9.5.sp,
+                                                fontSize = 10.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = Color.White
                                             )
@@ -540,7 +545,7 @@ fun TeacherHomeSubScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = lesson.subjectName,
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isDarkTheme) Color.White else BirizNavyPrimary
                                     )
@@ -552,31 +557,32 @@ fun TeacherHomeSubScreen(
             }
         }
 
-        // --- 3. 2x2 BENTO GRID: SINIF VE DERS YÖNETİM MODÜLLERİ ---
+        // --- 3. SINIF & DERS YÖNETİM MODÜLLERİ (2x3 BELİRGİN KUTULAR) ---
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "SINIF & DERS YÖNETİM MERKEZİ",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                TeacherSectionHeader(
+                    title = "SINIF & DERS MODÜLLERİ",
+                    isDark = isDarkTheme
                 )
 
                 // 1. Satır: Sınıf Listesi & Oturma Planı
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    val classSubtitle = if (students.isEmpty()) {
+                        "Henüz öğrenci yok"
+                    } else {
+                        "${students.size} Kayıtlı Öğrenci • $linkedStudentsCount Veli"
+                    }
                     TeacherModuleBentoTile(
                         emoji = "👥",
                         title = "Sınıf Listesi",
-                        primaryStat = "${students.size} Öğrenci",
-                        secondaryInfo = "$linkedStudentsCount Veli Bağlı • $unlinkedStudentsCount Bekleyen",
-                        badgeText = if (activeOnlineParentsCount > 0) "● $activeOnlineParentsCount Aktif" else "Yönet →",
+                        subtitle = classSubtitle,
+                        badgeText = if (activeOnlineParentsCount > 0) "● $activeOnlineParentsCount Aktif" else "Aç →",
                         accentColor = Color(0xFF0284C7),
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
@@ -585,12 +591,10 @@ fun TeacherHomeSubScreen(
                     )
 
                     val seatedCount = seatingPlanState.assignments.size
-                    val priorityCount = students.count { it.isPriority }
                     TeacherModuleBentoTile(
                         emoji = "🪑",
                         title = "Oturma Planı",
-                        primaryStat = "$seatedCount / ${students.size} Koltuk",
-                        secondaryInfo = if (priorityCount > 0) "👓 $priorityCount Ön Sıra Öncelikli" else seatingPlanState.activePlanName,
+                        subtitle = "$seatedCount / ${students.size} Öğrenci Yerleşti",
                         badgeText = "Planla →",
                         accentColor = Color(0xFF0D9488),
                         isDark = isDarkTheme,
@@ -603,29 +607,26 @@ fun TeacherHomeSubScreen(
                 // 2. Satır: Yıldızlar Sınıfı & Sınıf Kitaplığı
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TeacherModuleBentoTile(
                         emoji = "⭐",
                         title = "Yıldızlar Sınıfı",
-                        primaryStat = "$totalClassStars Toplam ★",
-                        secondaryInfo = topStarStudentName?.let { "Lider: $it" } ?: "Akademik & Değer Ödülleri",
-                        badgeText = "Ödül Ver →",
-                        accentColor = BirizAmber,
+                        subtitle = "$totalClassStars Toplam Yıldız ★",
+                        badgeText = "Ödül →",
+                        accentColor = Color(0xFFD97706),
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.YILDIZLAR_SINIFI) },
                         modifier = Modifier.weight(1f),
                         testTag = "teacher_bento_stars"
                     )
 
-                    val totalPagesRead = readingRecords.sumOf { it.pageCount }
                     val activeLoansCount = classBooks.count { it.activeAssignments.isNotEmpty() }
                     TeacherModuleBentoTile(
                         emoji = "📚",
                         title = "Sınıf Kitaplığı",
-                        primaryStat = "${classBooks.size} Kitap",
-                        secondaryInfo = "${readingRecords.size} Okuma • $totalPagesRead Sayfa",
-                        badgeText = if (activeLoansCount > 0) "🟠 $activeLoansCount Okunuyor" else "Kitaplık →",
+                        subtitle = "${classBooks.size} Kitap • ${readingRecords.size} Okuma",
+                        badgeText = if (activeLoansCount > 0) "$activeLoansCount Okunuyor" else "Aç →",
                         accentColor = Color(0xFF7C3AED),
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE) },
@@ -634,16 +635,19 @@ fun TeacherHomeSubScreen(
                     )
                 }
 
-                // 3. Satır: Grup Oluşturucu & Turnuvalar
+                // 3. Satır: Grup Oluşturma & Turnuvalar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TeacherModuleBentoTile(
                         emoji = "🎲",
                         title = "Grup Oluşturma",
-                        primaryStat = if (groupMakerState.groups.isNotEmpty()) "${groupMakerState.groups.size} Çalışma Grubu" else "Akıllı Takımlar",
-                        secondaryInfo = "Kız/Erkek Dengeli Dağıtım",
+                        subtitle = if (groupMakerState.groups.isNotEmpty()) {
+                            "${groupMakerState.groups.size} Çalışma Grubu"
+                        } else {
+                            "Dengeli Takım Kur"
+                        },
                         badgeText = "Gruplar →",
                         accentColor = Color(0xFFEA580C),
                         isDark = isDarkTheme,
@@ -655,12 +659,7 @@ fun TeacherHomeSubScreen(
                     TeacherModuleBentoTile(
                         emoji = "🏆",
                         title = "Turnuvalar",
-                        primaryStat = activeTournament?.name ?: "${classTournaments.size} Turnuva",
-                        secondaryInfo = if (activeTournament != null) {
-                            "${activeTournament.participants.size} Katılımcı • ${activeTournament.type.displayName}"
-                        } else {
-                            "Eleme & Lig Fikstürü"
-                        },
+                        subtitle = activeTournament?.name ?: "${classTournaments.size} Turnuva Kaydı",
                         badgeText = "Fikstür →",
                         accentColor = Color(0xFFE11D48),
                         isDark = isDarkTheme,
@@ -672,129 +671,172 @@ fun TeacherHomeSubScreen(
             }
         }
 
-        // --- 4. DERS İÇİ HIZLI ETKİLEŞİM ARAÇLARI (ŞANSLI ÖĞRENCİ & ZAMANLAYICI) ---
+        // --- 4. DERS İÇİ HIZLI ARAÇLAR (ŞANSLI ÖĞRENCİ & ZAMANLAYICI) ---
         item {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                BentoCard(
-                    isDark = isDarkTheme,
-                    onClick = { onSelectSubPage(DashboardSubPage.SANSLI_OGRENCI) },
-                    testTag = "teacher_bento_lucky_student",
-                    contentPadding = PaddingValues(14.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDarkTheme) Color(0x3010B981) else Color(0xFFDCFCE7),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(text = "🎯", fontSize = 18.sp)
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Şanslı Öğrenci",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                            Text(
-                                text = "Adil Kura & Yıldız",
-                                fontSize = 10.5.sp,
-                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                            )
-                        }
-                    }
-                }
+                TeacherSectionHeader(
+                    title = "HIZLI DERS ARAÇLARI",
+                    isDark = isDarkTheme
+                )
 
-                BentoCard(
-                    isDark = isDarkTheme,
-                    onClick = { onSelectSubPage(DashboardSubPage.ZAMANLAYICI) },
-                    testTag = "teacher_bento_timer",
-                    contentPadding = PaddingValues(14.dp),
-                    modifier = Modifier.weight(1f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Timer,
-                                    contentDescription = null,
-                                    tint = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0284C7),
-                                    modifier = Modifier.size(20.dp)
+                    val luckyAccent = Color(0xFF059669)
+                    DistinctTeacherCard(
+                        accentColor = luckyAccent,
+                        isDark = isDarkTheme,
+                        onClick = { onSelectSubPage(DashboardSubPage.SANSLI_OGRENCI) },
+                        testTag = "teacher_bento_lucky_student",
+                        contentPadding = PaddingValues(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = luckyAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
+                                border = BorderStroke(1.dp, luckyAccent.copy(alpha = 0.45f)),
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(text = "🎯", fontSize = 20.sp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Şanslı Öğrenci",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Adil Kura Çek",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Sınıf Zamanlayıcı",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                            Text(
-                                text = "Etkinlik & Sınav Sayacı",
-                                fontSize = 10.5.sp,
-                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                            )
+                    }
+
+                    val timerAccent = Color(0xFF2563EB)
+                    DistinctTeacherCard(
+                        accentColor = timerAccent,
+                        isDark = isDarkTheme,
+                        onClick = { onSelectSubPage(DashboardSubPage.ZAMANLAYICI) },
+                        testTag = "teacher_bento_timer",
+                        contentPadding = PaddingValues(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = timerAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
+                                border = BorderStroke(1.dp, timerAccent.copy(alpha = 0.45f)),
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Timer,
+                                        contentDescription = null,
+                                        tint = if (isDarkTheme) Color(0xFF93C5FD) else timerAccent,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Zamanlayıcı",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Etkinlik Sayacı",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // --- 5. VELİ İLETİŞİM & DUYURU MERKEZİ BENTO KARTI ---
+        // --- 5. VELİ İLETİŞİM & DUYURU MERKEZİ KARTI ---
         item {
-            BentoCard(
+            val commAccent = Color(0xFFDB2777)
+            DistinctTeacherCard(
+                accentColor = commAccent,
                 isDark = isDarkTheme,
-                contentPadding = PaddingValues(16.dp),
-                testTag = "teacher_home_communication_card",
-                modifier = Modifier.fillMaxWidth()
+                testTag = "teacher_home_communication_card"
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "💬", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = commAccent.copy(alpha = if (isDarkTheme) 0.26f else 0.14f),
+                            border = BorderStroke(1.dp, commAccent.copy(alpha = 0.45f)),
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "💬", fontSize = 20.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Veli İletişim & Sınıf Duyuruları",
-                                fontSize = 14.sp,
+                                text = "Veli İletişim & Duyurular",
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${announcements.size} Duyuru • ${chatMessages.size} Mesaj • $unreadParentMessagesCount Okunmamış",
-                                fontSize = 11.sp,
+                                text = "${announcements.size} Duyuru • $unreadParentMessagesCount Okunmamış Mesaj",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                             )
                         }
                     }
 
                     if (unreadParentMessagesCount > 0) {
+                        Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = BirizAmber
                         ) {
                             Text(
-                                text = "$unreadParentMessagesCount Yeni Mesaj",
-                                fontSize = 10.5.sp,
+                                text = "$unreadParentMessagesCount Yeni",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -805,8 +847,8 @@ fun TeacherHomeSubScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (isDarkTheme) Color(0x300F172A) else Color(0xFFF8FAFC),
-                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                        color = if (isDarkTheme) Color(0x450F172A) else Color.White.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else commAccent.copy(alpha = 0.25f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectSubPage(DashboardSubPage.ILETISIM_DUYURULAR) }
@@ -818,34 +860,35 @@ fun TeacherHomeSubScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "📢 Son Duyuru: ${latestAnnouncement.title}",
-                                    fontSize = 12.sp,
+                                    text = "📢 ${latestAnnouncement.title}",
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "${latestAnnouncement.readReceipts.size} Veli Okudu",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    text = "${latestAnnouncement.readReceipts.size} Okundu",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = Color(0xFF10B981)
                                 )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = latestAnnouncement.content,
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -858,7 +901,7 @@ fun TeacherHomeSubScreen(
                             containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                             contentColor = if (isDarkTheme) BirizNavyDark else Color.White
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
@@ -869,7 +912,7 @@ fun TeacherHomeSubScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Duyurular (${announcements.size})",
-                            fontSize = 12.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -878,10 +921,10 @@ fun TeacherHomeSubScreen(
                         onClick = { onSelectSubPage(DashboardSubPage.ILETISIM_MESAJLAR) },
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(
-                            1.dp,
+                            1.2.dp,
                             if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
@@ -893,7 +936,7 @@ fun TeacherHomeSubScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Veli Mesajları",
-                            fontSize = 12.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
                         )
@@ -904,37 +947,45 @@ fun TeacherHomeSubScreen(
 
         // --- 6. ÖĞRETMEN ODASI & RESMİ EVRAK MERKEZİ ---
         item {
-            BentoCard(
+            val roomAccent = Color(0xFF4F46E5)
+            DistinctTeacherCard(
+                accentColor = roomAccent,
                 isDark = isDarkTheme,
-                contentPadding = PaddingValues(16.dp),
-                testTag = "teacher_home_teacher_room_card",
-                modifier = Modifier.fillMaxWidth()
+                testTag = "teacher_home_teacher_room_card"
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "☕", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Öğretmen Odası & Resmi Evraklar",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
-                            )
-                            Text(
-                                text = "MEB standartlarında hazır tutanak, gezi planı ve dilekçe oluşturucu",
-                                fontSize = 11.sp,
-                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                            )
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = roomAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
+                        border = BorderStroke(1.dp, roomAccent.copy(alpha = 0.45f)),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "☕", fontSize = 20.sp)
                         }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Öğretmen Odası & Evraklar",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Tutanak, gezi planı ve hazır dilekçeler",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier
@@ -942,22 +993,123 @@ fun TeacherHomeSubScreen(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    TeacherDocQuickChip("📋 Zümre Toplantısı", isDarkTheme) {
+                    TeacherDocQuickChip("📋 Zümre Toplantısı", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE)
                     }
-                    TeacherDocQuickChip("👨‍👩‍👧 Veli Toplantısı", isDarkTheme) {
+                    TeacherDocQuickChip("👨‍👩‍👧 Veli Toplantısı", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_VELI)
                     }
-                    TeacherDocQuickChip("🎭 Sosyal Kulüp", isDarkTheme) {
+                    TeacherDocQuickChip("🎭 Sosyal Kulüp", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_KULUP)
                     }
-                    TeacherDocQuickChip("🚌 Okul Gezisi", isDarkTheme) {
+                    TeacherDocQuickChip("🚌 Okul Gezisi", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_GEZI)
                     }
-                    TeacherDocQuickChip("📄 Dilekçe & Formlar", isDarkTheme) {
+                    TeacherDocQuickChip("📄 Dilekçe & Formlar", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_DILEKCE)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeacherSectionHeader(
+    title: String,
+    isDark: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (isDark) BirizTurquoise else BirizNavyPrimary)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.6.sp,
+            color = if (isDark) BirizTurquoise else BirizNavyPrimary
+        )
+    }
+}
+
+@Composable
+private fun DistinctTeacherCard(
+    accentColor: Color,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    testTag: String? = null,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    val cardBrush = if (isDark) {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF132240),
+                accentColor.copy(alpha = 0.14f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color.White,
+                accentColor.copy(alpha = 0.08f)
+            )
+        )
+    }
+    val borderColor = if (isDark) {
+        accentColor.copy(alpha = 0.48f)
+    } else {
+        accentColor.copy(alpha = 0.36f)
+    }
+
+    val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
+
+    Surface(
+        modifier = taggedModifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = if (isDark) 0.dp else 5.dp,
+                shape = shape,
+                ambientColor = accentColor.copy(alpha = 0.22f),
+                spotColor = accentColor.copy(alpha = 0.28f)
+            )
+            .clip(shape)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(1.5.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cardBrush)
+        ) {
+            // Üstte ince vurgulu renk şeridi — her kartı anında birbirinden ayırır
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(accentColor.copy(alpha = if (isDark) 0.85f else 0.78f))
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(contentPadding)
+            ) {
+                content()
             }
         }
     }
@@ -975,8 +1127,8 @@ private fun TeacherHeroStatPill(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
-        color = Color.White.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+        color = Color.White.copy(alpha = 0.11f),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.50f)),
         modifier = modifier
     ) {
         Column(
@@ -984,16 +1136,16 @@ private fun TeacherHeroStatPill(
         ) {
             Text(
                 text = title,
-                fontSize = 10.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.78f),
+                color = Color.White.copy(alpha = 0.82f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
-                fontSize = 14.sp,
+                fontSize = 14.5.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = accentColor,
                 maxLines = 1,
@@ -1001,9 +1153,9 @@ private fun TeacherHeroStatPill(
             )
             Text(
                 text = subtitle,
-                fontSize = 9.5.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.85f),
+                color = Color.White.copy(alpha = 0.86f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1015,8 +1167,7 @@ private fun TeacherHeroStatPill(
 private fun TeacherModuleBentoTile(
     emoji: String,
     title: String,
-    primaryStat: String,
-    secondaryInfo: String,
+    subtitle: String,
     badgeText: String,
     accentColor: Color,
     isDark: Boolean,
@@ -1024,102 +1175,151 @@ private fun TeacherModuleBentoTile(
     modifier: Modifier = Modifier,
     testTag: String? = null
 ) {
-    BentoCard(
-        isDark = isDark,
-        onClick = onClick,
-        testTag = testTag,
-        contentPadding = PaddingValues(14.dp),
-        modifier = modifier
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = accentColor.copy(alpha = if (isDark) 0.25f else 0.12f),
-                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)),
-                modifier = Modifier.size(34.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(text = emoji, fontSize = 17.sp)
-                }
-            }
+    val shape = RoundedCornerShape(20.dp)
+    val tileBrush = if (isDark) {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF132240),
+                accentColor.copy(alpha = 0.16f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color.White,
+                accentColor.copy(alpha = 0.10f)
+            )
+        )
+    }
+    val borderColor = if (isDark) {
+        accentColor.copy(alpha = 0.52f)
+    } else {
+        accentColor.copy(alpha = 0.38f)
+    }
 
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = accentColor.copy(alpha = if (isDark) 0.25f else 0.12f)
+    val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
+
+    Surface(
+        modifier = taggedModifier
+            .heightIn(min = 128.dp)
+            .shadow(
+                elevation = if (isDark) 0.dp else 5.dp,
+                shape = shape,
+                ambientColor = accentColor.copy(alpha = 0.22f),
+                spotColor = accentColor.copy(alpha = 0.30f)
+            )
+            .clip(shape)
+            .clickable { onClick() },
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(1.5.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(tileBrush)
+        ) {
+            // Her modül kartını görsel olarak ayıran renkli üst şerit
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(accentColor.copy(alpha = if (isDark) 0.90f else 0.82f))
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f),
+                        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = emoji, fontSize = 20.sp)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDark) Color.White else accentColor,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 1. Büyük ve dikkat çekici başlık
                 Text(
-                    text = badgeText,
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDark) Color.White else accentColor,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = if (isDark) Color.White else BirizNavyPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                // 2. Mevcut bilgi / özet (tek temiz satır, 3. küçük satır yok)
+                Text(
+                    text = subtitle,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) BirizDarkTextSecondary else Color(0xFF475569),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = title,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isDark) BirizDarkTextSecondary else BirizTextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = primaryStat,
-            fontSize = 14.5.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = if (isDark) Color.White else BirizNavyPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = secondaryInfo,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (isDark) BirizDarkTextMuted else BirizTextMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
 @Composable
 private fun TeacherDocQuickChip(
     label: String,
+    accentColor: Color,
     isDark: Boolean,
     onClick: () -> Unit
 ) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
-        color = if (isDark) Color(0x351E293B) else Color(0xFFF1F5F9),
-        border = BorderStroke(1.dp, if (isDark) BirizDarkCardBorder else BirizBorder)
+        color = if (isDark) Color(0x451E293B) else Color.White,
+        border = BorderStroke(1.dp, if (isDark) accentColor.copy(alpha = 0.45f) else accentColor.copy(alpha = 0.30f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (isDark) Color.White else BirizNavyPrimary
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
-                tint = if (isDark) BirizTurquoise else BirizNavyPrimary,
-                modifier = Modifier.size(12.dp)
+                tint = if (isDark) BirizTurquoise else accentColor,
+                modifier = Modifier.size(13.dp)
             )
         }
     }

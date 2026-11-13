@@ -206,7 +206,6 @@ fun LibrarySubScreen(
 
     var showBatchClassReadDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showCleanupMaintenanceDialog by remember { mutableStateOf(false) }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var recordToDelete by remember { mutableStateOf<ReadingRecord?>(null) }
 
@@ -214,7 +213,6 @@ fun LibrarySubScreen(
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedBookIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showBulkDeleteConfirmDialog by remember { mutableStateOf(false) }
-    var showDeleteAllBooksDialog by remember { mutableStateOf(false) }
     var showClearReadingHistoryDialog by remember { mutableStateOf(false) }
 
     // Load data
@@ -313,12 +311,6 @@ fun LibrarySubScreen(
                             if (selectedBookIds.isNotEmpty()) {
                                 showBulkDeleteConfirmDialog = true
                             }
-                        },
-                        onOpenCleanupMaintenance = {
-                            showCleanupMaintenanceDialog = true
-                        },
-                        onDeleteAllBooksClick = {
-                            showDeleteAllBooksDialog = true
                         },
                         onExportClick = { showExportDialog = true },
                         onAddBookClick = {
@@ -756,190 +748,7 @@ fun LibrarySubScreen(
             )
         }
 
-        // 9. Kitaplık Bakım, Eski/Sanal Kayıt Temizleme & Sıra No Düzenleme Diyaloğu
-        if (showCleanupMaintenanceDialog) {
-            AlertDialog(
-                onDismissRequest = { showCleanupMaintenanceDialog = false },
-                title = {
-                    Text(
-                        text = "🧹 Kitaplık Bakımı & Kayıt Temizliği",
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 16.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "Bu işlem sınıf kitaplığınızı tarayarak aşağıdaki bakım ve temizlik işlemlerini anında gerçekleştirir:",
-                            fontSize = 12.5.sp,
-                            color = primaryText
-                        )
-                        Text("• Eski / sanal veya mükerrer kitap kayıtlarını temizler", fontSize = 12.sp, color = secondaryText)
-                        Text("• Sınıftan ayrılmış öğrencilere ait askıda kalmış ödünçleri rafa döndürür", fontSize = 12.sp, color = secondaryText)
-                        Text("• Silinmiş kitaplara ait eski okuma geçmişi kayıtlarını ve fazla yıldızları temizler", fontSize = 12.sp, color = secondaryText)
-                        Text("• Mevcut kitapların demirbaş sıra numaralarını (#1, #2, #3...) boşluksuz yeniden sıralar", fontSize = 12.sp, color = secondaryText)
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val report = LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
-                                context = context,
-                                classId = classRoom.id,
-                                validStudents = students,
-                                resequenceNumbers = true
-                            )
-                            showCleanupMaintenanceDialog = false
-                            refreshData()
-                            val msg = if (report.hasChanges) {
-                                "✨ Temizlik tamamlandı: ${report.removedBooksCount} fazla kitap, ${report.removedRecordsCount} eski kayıt temizlendi, ${report.resequencedBooksCount} sıra no düzenlendi."
-                            } else {
-                                "✅ Kitaplığınız zaten tertemiz ve güncel! Sadece sizin eklediğiniz kitaplar mevcut."
-                            }
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                        )
-                    ) {
-                        Text("Temizle ve Sıra No Düzenle", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showCleanupMaintenanceDialog = false }) {
-                        Text("Kapat")
-                    }
-                }
-            )
-        }
-
-        // 10. Tüm Kitaplık Listesini Tek Tuşla Silme Uyarı Diyaloğu
-        if (showDeleteAllBooksDialog) {
-            val activeLoanCount = remember(books) { books.sumOf { it.activeAssignments.size } }
-            val totalStarsToRevoke = remember(records) {
-                records.sumOf {
-                    if (it.earnedStars > 0) it.earnedStars else LibraryPersistenceHelper.calculateReadingStars(it.pageCount)
-                }
-            }
-
-            AlertDialog(
-                onDismissRequest = { showDeleteAllBooksDialog = false },
-                icon = {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFFFEE2E2),
-                        border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
-                        modifier = Modifier.size(50.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = BirizError,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
-                },
-                title = {
-                    Text(
-                        text = "Tüm Kitaplık Listesini Sil?",
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 17.sp,
-                        textAlign = TextAlign.Center
-                    )
-                },
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "${classRoom.gradeLevel}/${classRoom.section} sınıfının tüm kitaplık listesini tek seferde silmek üzeresiniz.",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryText
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isDarkTheme) Color(0x35DC2626) else Color(0xFFFEF2F2),
-                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFFEF4444) else Color(0xFFFCA5A5)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Text(
-                                    text = "⚠️ DİKKAT: Bu işlem geri alınamaz!",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
-                                )
-                                Text(
-                                    text = "• ${books.size} adet kitap envanterden tamamen silinecektir.",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) Color(0xFFFEE2E2) else Color(0xFF991B1B)
-                                )
-                                if (activeLoanCount > 0) {
-                                    Text(
-                                        text = "• Şu an okunmakta olan $activeLoanCount aktif ödünç kaydı iptal edilecektir.",
-                                        fontSize = 11.5.sp,
-                                        color = if (isDarkTheme) Color(0xFFFEE2E2) else Color(0xFF991B1B)
-                                    )
-                                }
-                                if (records.isNotEmpty()) {
-                                    Text(
-                                        text = "• Bağlı ${records.size} okuma geçmişi kaydı ve $totalStarsToRevoke ⭐ Kitap Kurdu yıldızı sıfırlanacaktır.",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
-                                    )
-                                }
-                                Text(
-                                    text = "• Tüm veriler hem cihazınızdan hem bulut senkronizasyonundan kalıcı olarak kaldırılır.",
-                                    fontSize = 11.sp,
-                                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val summary = LibraryPersistenceHelper.deleteAllBooks(context, classRoom.id)
-                            selectedBookIds = emptySet()
-                            isSelectionMode = false
-                            showDeleteAllBooksDialog = false
-                            refreshData()
-                            Toast.makeText(
-                                context,
-                                "🗑️ Tüm kitaplık (${summary.deletedBookName}) ve ${summary.deletedRecordsCount} okuma kaydı kalıcı olarak silindi.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = BirizError),
-                        modifier = Modifier.testTag("confirm_delete_all_books_button")
-                    ) {
-                        Icon(Icons.Default.DeleteForever, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Evet, Tüm Listeyi Sil", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteAllBooksDialog = false }) {
-                        Text("Vazgeç", fontWeight = FontWeight.Bold)
-                    }
-                }
-            )
-        }
-
-        // 11. Tüm Sınıfın Okuma Geçmişini Güvenlikli Silme Diyaloğu
+        // 9. Tüm Sınıfın Okuma Geçmişini Güvenlikli Silme Diyaloğu
         if (showClearReadingHistoryDialog) {
             val totalStarsToRevoke = remember(records) {
                 records.sumOf {
@@ -1152,8 +961,6 @@ private fun LibraryInventoryView(
     onToggleSelectBook: (String) -> Unit,
     onSelectAllBooks: (List<String>) -> Unit,
     onBulkDeleteSelected: () -> Unit,
-    onOpenCleanupMaintenance: () -> Unit,
-    onDeleteAllBooksClick: () -> Unit,
     onExportClick: () -> Unit,
     onAddBookClick: () -> Unit,
     onBorrowClick: (Book) -> Unit,
@@ -1357,29 +1164,6 @@ private fun LibraryInventoryView(
                 }
             }
 
-            // Eski/Fazla Kayıtları Temizle & Sıra No Düzenle Butonu
-            Surface(
-                onClick = onOpenCleanupMaintenance,
-                shape = RoundedCornerShape(20.dp),
-                color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF0FDF4),
-                border = BorderStroke(1.dp, BirizSuccess.copy(alpha = 0.7f)),
-                modifier = Modifier.testTag("library_cleanup_button")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text("🧹", fontSize = 11.sp)
-                    Text(
-                        text = "Temizle & Sırala",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
-                    )
-                }
-            }
-
             // Çoklu Seç / Sil Butonu
             if (books.isNotEmpty()) {
                 Surface(
@@ -1400,34 +1184,6 @@ private fun LibraryInventoryView(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isSelectionMode) Color.White else BirizError
-                        )
-                    }
-                }
-
-                // Tek Tuşla Tüm Kitaplığı Sil Butonu
-                Surface(
-                    onClick = onDeleteAllBooksClick,
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (isDarkTheme) Color(0x45DC2626) else Color(0xFFFEE2E2),
-                    border = BorderStroke(1.2.dp, BirizError),
-                    modifier = Modifier.testTag("library_delete_all_books_button")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteForever,
-                            contentDescription = "Tüm Kitaplığı Sil",
-                            tint = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Tüm Listeyi Sil",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
                         )
                     }
                 }
