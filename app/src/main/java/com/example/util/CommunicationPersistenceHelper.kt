@@ -216,13 +216,25 @@ object CommunicationPersistenceHelper {
         }
     }
 
+    private val SAMPLE_MESSAGE_IDS = setOf("msg_1", "msg_2", "msg_3", "msg_4", "msg_5")
+    private const val KEY_NOTIFIED_MESSAGE_IDS_PREFIX = "notified_msg_ids_"
+
+    fun isSampleChatMessage(msg: ChatMessage): Boolean {
+        return msg.id in SAMPLE_MESSAGE_IDS || msg.studentId.startsWith("student_test_")
+    }
+
     /**
      * Sınıfa ait sohbet mesajlarını yükler; sadece gerçek mesajları getirir.
      */
-    fun loadChatMessages(context: Context, classId: String, students: List<Student>): List<ChatMessage> {
+    fun loadChatMessages(
+        context: Context,
+        classId: String,
+        students: List<Student>,
+        allowDefaultFallback: Boolean = true
+    ): List<ChatMessage> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val rawJson = (if (classId.isNotBlank()) prefs.getString(KEY_CHAT_MESSAGES_PREFIX + classId, null) else null)
-            ?: prefs.getString(KEY_CHAT_MESSAGES_PREFIX + "default", null)
+            ?: if (allowDefaultFallback) prefs.getString(KEY_CHAT_MESSAGES_PREFIX + "default", null) else null
 
         if (!rawJson.isNullOrBlank()) {
             try {
@@ -231,15 +243,11 @@ object CommunicationPersistenceHelper {
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
                     val msg = parseChatMessageJson(obj)
-                    // Örnek / sahte mesajları filtrele
-                    val isSample = msg.id.startsWith("msg_1") || msg.id.startsWith("msg_2") ||
-                            msg.id.startsWith("msg_3") || msg.id.startsWith("msg_4") ||
-                            msg.id.startsWith("msg_5") || msg.studentId.startsWith("student_test_")
-                    if (!isSample) {
+                    if (!isSampleChatMessage(msg)) {
                         list.add(msg)
                     }
                 }
-                return list
+                return list.sortedBy { it.timestamp }
             } catch (_: Exception) {
             }
         }
@@ -248,14 +256,13 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Sohbet mesajlarını kaydeder ve buluta yükler.
+     * Sohbet mesajlarını yalnızca yerel önbelleğe (SharedPreferences) hızlıca kaydeder.
      */
-    fun saveChatMessages(context: Context, classId: String, messages: List<ChatMessage>) {
+    fun saveChatMessagesLocal(context: Context, classId: String, messages: List<ChatMessage>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
         for (msg in messages) {
             jsonArray.put(serializeChatMessageJson(msg))
-            uploadChatMessageToFirestore(context, classId, msg)
         }
         val str = jsonArray.toString()
         val editor = prefs.edit()
@@ -267,46 +274,90 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Tek bir sohbet mesajını Firestore'a canlı yükler.
+     * Sohbet mesajlarını kaydeder ve buluta yükler.
      */
-    fun uploadChatMessageToFirestore(context: Context, classId: String, message: ChatMessage) {
-        if (classId.isBlank() || classId == "default") return
-        val db = getFirestore(context) ?: return
+    fun saveChatMessages(context: Context, classId: String, messages: List<ChatMessage>) {
+        saveChatMessagesLocal(context, classId, messages)
+        messages.lastOrNull()?.let { latest ->
+            uploadChatMessageToFirestore(context, classId, latest)
+        }
+    }
+
+    /**
+     * Tek bir sohbet mesajını Firestore'a canlı yükler ve teslim durumunu günceller.
+     */
+    fun uploadChatMessageToFirestore(
+        context: Context,
+        classId: String,
+        message: ChatMessage,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        if (classId.isBlank() || classId == "default") {
+            onFailure?.invoke(IllegalStateException("Aktif sınıf bulunamadı"))
+            return
+        }
+        val db = getFirestore(context)
+        if (db == null) {
+            onFailure?.invoke(IllegalStateException("Firestore bağlantısı kurulamadı"))
+            return
+        }
         syncScope.launch {
             try {
-                val json = serializeChatMessageJson(message.copy(classId = classId)).toString()
+                val deliveredMessage = if (message.status == MessageStatus.SENT) {
+                    message.copy(classId = classId, status = MessageStatus.DELIVERED)
+                } else {
+                    message.copy(classId = classId)
+                }
+                val json = serializeChatMessageJson(deliveredMessage).toString()
                 val data = mapOf(
-                    "id" to message.id,
+                    "id" to deliveredMessage.id,
                     "classId" to classId,
-                    "studentId" to message.studentId,
-                    "parentEmail" to message.parentEmail,
-                    "isFromTeacher" to message.isFromTeacher,
-                    "timestamp" to message.timestamp,
-                    "status" to message.status.name,
+                    "studentId" to deliveredMessage.studentId,
+                    "parentEmail" to deliveredMessage.parentEmail,
+                    "isFromTeacher" to deliveredMessage.isFromTeacher,
+                    "timestamp" to deliveredMessage.timestamp,
+                    "status" to deliveredMessage.status.name,
                     "json" to json,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 db.collection("classrooms").document(classId)
-                    .collection("messages").document(message.id)
+                    .collection("messages").document(deliveredMessage.id)
                     .set(data, SetOptions.merge())
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "Failed to upload chat message ${deliveredMessage.id}", e)
+                        onFailure?.invoke(e)
+                    }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to upload chat message to Firestore", e)
+                onFailure?.invoke(e)
             }
         }
     }
 
     /**
-     * Okundu durumlarını Firestore'a işler.
+     * İki yönlü okundu durumlarını Firestore'a işler (yalnızca durumu READ olan mesajları yazar).
      */
-    fun markChatMessagesReadInFirestore(context: Context, classId: String, messages: List<ChatMessage>) {
-        if (classId.isBlank() || classId == "default") return
+    fun markChatMessagesReadInFirestore(context: Context, classId: String, readMessages: List<ChatMessage>) {
+        if (classId.isBlank() || classId == "default" || readMessages.isEmpty()) return
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
-                messages.filter { it.status == MessageStatus.READ }.forEach { msg ->
+                readMessages.forEach { msg ->
+                    val readMsg = msg.copy(classId = classId, status = MessageStatus.READ)
+                    val data = mapOf(
+                        "id" to readMsg.id,
+                        "classId" to classId,
+                        "studentId" to readMsg.studentId,
+                        "parentEmail" to readMsg.parentEmail,
+                        "isFromTeacher" to readMsg.isFromTeacher,
+                        "timestamp" to readMsg.timestamp,
+                        "status" to MessageStatus.READ.name,
+                        "json" to serializeChatMessageJson(readMsg).toString(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
                     db.collection("classrooms").document(classId)
-                        .collection("messages").document(msg.id)
-                        .update("status", MessageStatus.READ.name, "json", serializeChatMessageJson(msg).toString())
+                        .collection("messages").document(readMsg.id)
+                        .set(data, SetOptions.merge())
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to mark chat messages read in Firestore", e)
@@ -329,7 +380,10 @@ object CommunicationPersistenceHelper {
             db.collection("classrooms").document(classId)
                 .collection("messages")
                 .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
+                    if (error != null || snapshot == null) {
+                        if (error != null) Log.e(TAG, "Chat messages snapshot error", error)
+                        return@addSnapshotListener
+                    }
                     try {
                         val list = mutableListOf<ChatMessage>()
                         for (doc in snapshot.documents) {
@@ -337,17 +391,18 @@ object CommunicationPersistenceHelper {
                             if (!jsonStr.isNullOrBlank()) {
                                 try {
                                     val msg = parseChatMessageJson(JSONObject(jsonStr))
-                                    val isSample = msg.id.startsWith("msg_1") || msg.id.startsWith("msg_2") ||
-                                            msg.id.startsWith("msg_3") || msg.id.startsWith("msg_4") ||
-                                            msg.id.startsWith("msg_5") || msg.studentId.startsWith("student_test_")
-                                    if (!isSample) {
-                                        list.add(msg)
+                                    val statusOverride = doc.getString("status")?.let {
+                                        try { MessageStatus.valueOf(it) } catch (_: Exception) { null }
+                                    }
+                                    val resolved = if (statusOverride != null) msg.copy(status = statusOverride) else msg
+                                    if (!isSampleChatMessage(resolved)) {
+                                        list.add(resolved)
                                     }
                                 } catch (_: Exception) {}
                             }
                         }
-                        if (list.isEmpty()) {
-                            val localMessages = loadChatMessages(context, classId, emptyList())
+                        if (list.isEmpty() && !snapshot.metadata.isFromCache) {
+                            val localMessages = loadChatMessages(context, classId, emptyList(), allowDefaultFallback = false)
                             if (localMessages.isNotEmpty()) {
                                 localMessages.forEach { uploadChatMessageToFirestore(context, classId, it) }
                                 onUpdate(localMessages)
@@ -355,18 +410,7 @@ object CommunicationPersistenceHelper {
                             }
                         }
                         list.sortBy { it.timestamp }
-                        if (list.isNotEmpty()) {
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            val jsonArray = JSONArray()
-                            for (msg in list) {
-                                jsonArray.put(serializeChatMessageJson(msg))
-                            }
-                            val str = jsonArray.toString()
-                            prefs.edit()
-                                .putString(KEY_CHAT_MESSAGES_PREFIX + classId, str)
-                                .putString(KEY_CHAT_MESSAGES_PREFIX + "default", str)
-                                .apply()
-                        }
+                        saveChatMessagesLocal(context, classId, list)
                         onUpdate(list)
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed parsing chat messages snapshot", e)
@@ -376,6 +420,18 @@ object CommunicationPersistenceHelper {
             Log.e(TAG, "Failed to register chat messages snapshot listener", e)
             null
         }
+    }
+
+    fun loadNotifiedMessageIds(context: Context, classId: String): Set<String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_NOTIFIED_MESSAGE_IDS_PREFIX + classId, null) ?: return emptySet()
+        return raw.split(",").filter { it.isNotBlank() }.toSet()
+    }
+
+    fun saveNotifiedMessageIds(context: Context, classId: String, ids: Set<String>) {
+        val trimmed = if (ids.size > 400) ids.toList().takeLast(400) else ids.toList()
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_NOTIFIED_MESSAGE_IDS_PREFIX + classId, trimmed.joinToString(",")).apply()
     }
 
     /**

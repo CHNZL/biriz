@@ -34,14 +34,18 @@ import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
 import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
+import com.example.BuildConfig
+import com.example.util.ChatNotificationHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.NotificationLifecycleHelper
 import com.example.util.SmartBoardHelper
 import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.ListenerRegistration
+import java.util.UUID
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -163,6 +167,7 @@ data class BirizUiState(
     val notifications: List<BirizNotification> = emptyList(),
     val activeChatStudentId: String? = null,
     val isNotificationCenterOpen: Boolean = false,
+    val requestedParentTabName: String? = null,
 
     // Uygulama Güncelleme Durumu (Arka planda & gezinirken otomatik tespit)
     val availableUpdateInfo: UpdateInfo? = null,
@@ -199,8 +204,15 @@ class BirizViewModel(
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
     private var groupMakerListenerRegistration: ListenerRegistration? = null
     private var parentPresenceJob: Job? = null
+    private val knownMessageIds = mutableSetOf<String>()
+    private val processedNotifMessageIds = mutableSetOf<String>()
+    private var loadedNotifiedClassId: String? = null
     @Volatile
     private var isAppInForeground: Boolean = true
+    @Volatile
+    private var isParentCommunicationTabActive: Boolean = false
+    @Volatile
+    private var isParentChatSubTabActive: Boolean = true
 
     private fun resolveActiveClassId(): String {
         val activeId = _uiState.value.activeClassRoom?.id
@@ -331,8 +343,18 @@ class BirizViewModel(
 
     fun onAppForegrounded() {
         isAppInForeground = true
-        if (_uiState.value.currentRole == UserRole.PARENT) {
+        val state = _uiState.value
+        if (state.currentRole == UserRole.PARENT) {
             updateParentPresence(isOnline = true)
+            if (isParentCommunicationTabActive && isParentChatSubTabActive && !state.activeParentStudentId.isNullOrBlank()) {
+                markChatMessagesAsRead(state.activeParentStudentId, viewerIsTeacher = false)
+            }
+        } else if (state.currentRole == UserRole.TEACHER &&
+            state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
+            state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
+            !state.activeChatStudentId.isNullOrBlank()
+        ) {
+            markChatMessagesAsRead(state.activeChatStudentId, viewerIsTeacher = true)
         }
     }
 
@@ -424,6 +446,26 @@ class BirizViewModel(
         }
     }
 
+    fun pruneStaleUpdateNotifications(latestCheck: UpdateInfo? = _uiState.value.availableUpdateInfo) {
+        val current = _uiState.value.notifications
+        val pruned = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+            notifications = current,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            currentVersionName = BuildConfig.VERSION_NAME,
+            latestCheckInfo = latestCheck
+        )
+        if (pruned.size != current.size) {
+            _uiState.value = _uiState.value.copy(notifications = pruned)
+            appContext?.let { ctx ->
+                val classId = resolveActiveClassId()
+                CommunicationPersistenceHelper.saveNotifications(ctx, classId, pruned)
+                if (pruned.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
+                    AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+                }
+            }
+        }
+    }
+
     suspend fun checkUpdatesSilently(forceResendNotification: Boolean = false) {
         val ctx = appContext ?: return
         try {
@@ -433,18 +475,34 @@ class BirizViewModel(
                     availableUpdateInfo = update,
                     isUpdateBannerDismissed = false
                 )
+                pruneStaleUpdateNotifications(update)
                 syncUpdateNotification(update)
                 AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
+            } else {
+                if (update != null && !update.isUpdateAvailable) {
+                    _uiState.value = _uiState.value.copy(availableUpdateInfo = null)
+                }
+                pruneStaleUpdateNotifications(update)
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            pruneStaleUpdateNotifications(null)
+        }
     }
 
     private fun syncUpdateNotification(update: UpdateInfo) {
-        if (!update.isUpdateAvailable) return
+        if (!update.isUpdateAvailable) {
+            pruneStaleUpdateNotifications(update)
+            return
+        }
         val ctx = appContext ?: return
         val updateNotifId = "app_update_${update.latestVersionCode}"
-        val currentNotifs = _uiState.value.notifications
-        if (currentNotifs.none { it.id == updateNotifId }) {
+        val cleanedNotifs = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+            notifications = _uiState.value.notifications,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            currentVersionName = BuildConfig.VERSION_NAME,
+            latestCheckInfo = update
+        )
+        if (cleanedNotifs.none { it.id == updateNotifId }) {
             val updateNotif = BirizNotification(
                 id = updateNotifId,
                 title = "🚀 Yeni Güncelleme Yayında! (v${update.latestVersionName})",
@@ -452,12 +510,17 @@ class BirizViewModel(
                 timestamp = System.currentTimeMillis(),
                 type = NotificationType.APP_UPDATE,
                 targetSubPageName = "APP_UPDATE",
+                targetId = update.latestVersionCode.toString(),
                 isRead = false
             )
-            val updatedList = listOf(updateNotif) + currentNotifs
+            val updatedList = listOf(updateNotif) + cleanedNotifs
             _uiState.value = _uiState.value.copy(notifications = updatedList)
             val classId = resolveActiveClassId()
             CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedList)
+        } else if (cleanedNotifs.size != _uiState.value.notifications.size) {
+            _uiState.value = _uiState.value.copy(notifications = cleanedNotifs)
+            val classId = resolveActiveClassId()
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, cleanedNotifs)
         }
     }
 
@@ -467,7 +530,11 @@ class BirizViewModel(
                 availableUpdateInfo = update,
                 isUpdateBannerDismissed = false
             )
+            pruneStaleUpdateNotifications(update)
             syncUpdateNotification(update)
+        } else {
+            _uiState.value = _uiState.value.copy(availableUpdateInfo = null)
+            pruneStaleUpdateNotifications(update)
         }
     }
 
@@ -501,13 +568,19 @@ class BirizViewModel(
                         availableUpdateInfo = update,
                         isGlobalUpdateDialogOpen = true
                     )
+                    pruneStaleUpdateNotifications(update)
                     syncUpdateNotification(update)
                     AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
                     onResult?.invoke(true)
                 } else {
+                    if (update != null && !update.isUpdateAvailable) {
+                        _uiState.value = _uiState.value.copy(availableUpdateInfo = null)
+                    }
+                    pruneStaleUpdateNotifications(update)
                     onResult?.invoke(false)
                 }
             } catch (_: Exception) {
+                pruneStaleUpdateNotifications(null)
                 onResult?.invoke(false)
             }
         }
@@ -584,14 +657,34 @@ class BirizViewModel(
         val currentStudents = repository.students.value
         val loadedAnnouncements = CommunicationPersistenceHelper.loadAnnouncements(ctx, classId, currentStudents)
         val loadedMessages = CommunicationPersistenceHelper.loadChatMessages(ctx, classId, currentStudents)
-        val existingUpdateNotifs = _uiState.value.notifications.filter { it.type == NotificationType.APP_UPDATE }
+        val existingUpdateNotifs = _uiState.value.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
         val loadedNotifications = CommunicationPersistenceHelper.loadNotifications(ctx, classId)
-        val mergedNotifications = (existingUpdateNotifs + loadedNotifications).distinctBy { it.id }
+        val rawMerged = (existingUpdateNotifs + loadedNotifications).distinctBy { it.id }
+        val prunedNotifications = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+            notifications = rawMerged,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            currentVersionName = BuildConfig.VERSION_NAME,
+            latestCheckInfo = _uiState.value.availableUpdateInfo
+        )
+        if (prunedNotifications.size != loadedNotifications.size && prunedNotifications != rawMerged) {
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, prunedNotifications)
+            if (prunedNotifications.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
+                AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+            }
+        }
+
+        if (loadedNotifiedClassId != classId) {
+            loadedNotifiedClassId = classId
+            processedNotifMessageIds.clear()
+            processedNotifMessageIds.addAll(CommunicationPersistenceHelper.loadNotifiedMessageIds(ctx, classId))
+            knownMessageIds.clear()
+        }
+        knownMessageIds.addAll(loadedMessages.map { it.id })
 
         _uiState.value = _uiState.value.copy(
             announcements = loadedAnnouncements,
             chatMessages = loadedMessages,
-            notifications = mergedNotifications
+            notifications = prunedNotifications
         )
         _uiState.value.availableUpdateInfo?.let { syncUpdateNotification(it) }
 
@@ -604,7 +697,7 @@ class BirizViewModel(
         // Firestore üzerinden anlık iki yönlü öğretmen-veli canlı mesajlaşma senkronizasyonu
         communicationMessagesListener?.remove()
         communicationMessagesListener = CommunicationPersistenceHelper.observeFirestoreChatMessages(ctx, classId) { cloudMessages ->
-            _uiState.value = _uiState.value.copy(chatMessages = cloudMessages)
+            handleIncomingChatMessagesSnapshot(classId, cloudMessages)
         }
     }
 
@@ -744,7 +837,17 @@ class BirizViewModel(
         parentEmail: String = "",
         parentName: String = ""
     ) {
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) return
+
         val classId = resolveActiveClassId()
+        if (classId == "default" && !_uiState.value.isTestMode) {
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = "⚠️ Mesaj gönderebilmek için aktif bir sınıf bağlantısı gereklidir."
+            )
+            return
+        }
+
         val student = repository.students.value.find { it.id == studentId }
         val studentNo = student?.studentNumber ?: ""
         val studentName = student?.fullName ?: "Öğrenci"
@@ -752,11 +855,20 @@ class BirizViewModel(
         val targetParent = student?.allLinkedParents?.find { it.email.equals(parentEmail, ignoreCase = true) }
             ?: student?.allLinkedParents?.firstOrNull()
 
-        val resolvedEmail = if (parentEmail.isNotBlank()) parentEmail else (targetParent?.email ?: "")
-        val resolvedParentName = if (parentName.isNotBlank()) parentName else (targetParent?.name ?: (student?.parentName ?: "${studentName.split(" ").first()} Velisi"))
+        val resolvedEmail = if (parentEmail.isNotBlank()) parentEmail.trim() else (targetParent?.email ?: "")
+        val resolvedParentName = when {
+            parentName.isNotBlank() -> parentName.trim()
+            targetParent != null && targetParent.name.isNotBlank() -> targetParent.name
+            !student?.parentName.isNullOrBlank() -> student!!.parentName!!
+            else -> "${studentName.split(" ").first()} Velisi"
+        }
+
+        val resolvedTeacherName = _uiState.value.activeClassRoom?.teacherName?.takeIf { it.isNotBlank() }
+            ?: _uiState.value.currentUser.fullName.takeIf { it.isNotBlank() && isFromTeacher }
+            ?: "Sınıf Öğretmeni"
 
         val newMsg = ChatMessage(
-            id = "msg_${System.currentTimeMillis()}",
+            id = "chat_${UUID.randomUUID()}",
             classId = classId,
             studentId = studentId,
             studentNumber = studentNo,
@@ -764,44 +876,28 @@ class BirizViewModel(
             parentName = resolvedParentName,
             parentEmail = resolvedEmail,
             isFromTeacher = isFromTeacher,
-            senderName = if (isFromTeacher) _uiState.value.activeClassRoom?.teacherName ?: "Cihan Özel" else resolvedParentName,
-            text = text,
+            senderName = if (isFromTeacher) resolvedTeacherName else resolvedParentName,
+            text = cleanText,
             timestamp = System.currentTimeMillis(),
-            status = if (isFromTeacher) MessageStatus.READ else MessageStatus.DELIVERED
+            status = MessageStatus.SENT
         )
 
-        val updatedMessages = _uiState.value.chatMessages + newMsg
-        val notif = if (!isFromTeacher) {
-            BirizNotification(
-                id = "notif_${System.currentTimeMillis()}",
-                title = "Yeni Veli Mesajı 💬",
-                message = "$resolvedParentName ($studentNo $studentName): $text",
-                timestamp = System.currentTimeMillis(),
-                type = NotificationType.MESSAGE,
-                targetSubPageName = "ILETISIM_MESAJLAR",
-                targetId = studentId,
-                isRead = false
-            )
-        } else {
-            BirizNotification(
-                id = "notif_${System.currentTimeMillis()}",
-                title = "Öğretmenden Yeni Mesaj 💬",
-                message = "${_uiState.value.activeClassRoom?.teacherName ?: "Öğretmen"}: $text",
-                timestamp = System.currentTimeMillis(),
-                type = NotificationType.MESSAGE,
-                targetSubPageName = "ILETISIM",
-                targetId = studentId,
-                isRead = false
-            )
-        }
-        val updatedNotifs = listOf(notif) + _uiState.value.notifications
-        _uiState.value = _uiState.value.copy(
-            chatMessages = updatedMessages,
-            notifications = updatedNotifs
-        )
-        appContext?.let {
-            CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages)
-            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs)
+        knownMessageIds.add(newMsg.id)
+        processedNotifMessageIds.add(newMsg.id)
+
+        val updatedMessages = (_uiState.value.chatMessages + newMsg).sortedBy { it.timestamp }
+        _uiState.value = _uiState.value.copy(chatMessages = updatedMessages)
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedMessages)
+            CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            if (classId != "default") {
+                CommunicationPersistenceHelper.uploadChatMessageToFirestore(ctx, classId, newMsg) { err ->
+                    _uiState.value = _uiState.value.copy(
+                        snackbarMessage = "⚠️ Mesaj buluta gönderilemedi: ${err.localizedMessage ?: "Bağlantı hatası"}"
+                    )
+                }
+            }
         }
     }
 
@@ -811,55 +907,273 @@ class BirizViewModel(
         parentEmail: String = "",
         parentName: String = ""
     ) {
-        sendChatMessage(studentId, replyText, isFromTeacher = false, parentEmail = parentEmail, parentName = parentName)
+        val cleanText = replyText.trim()
+        if (cleanText.isEmpty()) return
+        val classId = resolveActiveClassId()
         val student = repository.students.value.find { it.id == studentId }
         val targetParent = student?.allLinkedParents?.find { it.email.equals(parentEmail, ignoreCase = true) }
-        val resolvedParentName = if (parentName.isNotBlank()) parentName else (targetParent?.name ?: "Veli")
-
-        val notif = BirizNotification(
-            id = "notif_${System.currentTimeMillis()}",
-            title = "Yeni Veli Mesajı 💬",
-            message = "$resolvedParentName (${student?.studentNumber} ${student?.fullName}): $replyText",
+            ?: student?.allLinkedParents?.firstOrNull()
+        val resolvedParentName = parentName.ifBlank { targetParent?.name ?: "Veli" }
+        val resolvedEmail = parentEmail.ifBlank { targetParent?.email ?: "" }
+        val simMsg = ChatMessage(
+            id = "chat_${UUID.randomUUID()}",
+            classId = classId,
+            studentId = studentId,
+            studentNumber = student?.studentNumber ?: "",
+            studentName = student?.fullName ?: "Öğrenci",
+            parentName = resolvedParentName,
+            parentEmail = resolvedEmail,
+            isFromTeacher = false,
+            senderName = resolvedParentName,
+            text = cleanText,
             timestamp = System.currentTimeMillis(),
-            type = NotificationType.MESSAGE,
-            targetSubPageName = "ILETISIM_MESAJLAR",
-            targetId = studentId,
-            isRead = false
+            status = MessageStatus.DELIVERED
         )
-        val updatedNotifs = listOf(notif) + _uiState.value.notifications
-        _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
-        appContext?.let {
-            CommunicationPersistenceHelper.saveNotifications(it, _uiState.value.activeClassRoom?.id ?: "default", updatedNotifs)
-        }
+        handleIncomingChatMessagesSnapshot(classId, _uiState.value.chatMessages + simMsg)
     }
 
-    fun markChatMessagesAsRead(studentId: String, parentEmail: String = "") {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+    private fun handleIncomingChatMessagesSnapshot(classId: String, cloudMessages: List<ChatMessage>) {
+        val ctx = appContext
+        val state = _uiState.value
+        val now = System.currentTimeMillis()
+        val cloudIds = cloudMessages.map { it.id }.toSet()
+        val pendingLocalMessages = state.chatMessages.filter { local ->
+            local.id !in cloudIds &&
+                local.status == MessageStatus.SENT &&
+                (now - local.timestamp) in -5_000L..12_000L
+        }
+        val mergedMessages = (cloudMessages + pendingLocalMessages)
+            .distinctBy { it.id }
+            .sortedBy { it.timestamp }
+
+        knownMessageIds.addAll(mergedMessages.map { it.id })
+
+        val viewerIsTeacher = state.currentRole == UserRole.TEACHER
+        val viewerIsParent = state.currentRole == UserRole.PARENT
+        if (!viewerIsTeacher && !viewerIsParent) {
+            _uiState.value = state.copy(chatMessages = mergedMessages)
+            return
+        }
+
+        val incomingUnread = mergedMessages.filter { msg ->
+            msg.status != MessageStatus.READ &&
+                NotificationLifecycleHelper.isIncomingMessageForViewer(
+                    msg = msg,
+                    viewerIsTeacher = viewerIsTeacher,
+                    viewerIsParent = viewerIsParent,
+                    linkedParentStudentIds = state.linkedParentStudentIds,
+                    currentUserEmail = state.currentUser.email
+                )
+        }
+
+        val isTeacherChatPageOpen = state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
+            state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR
+
+        val openChatUnread = incomingUnread.filter { msg ->
+            NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+                studentId = msg.studentId,
+                viewerIsTeacher = viewerIsTeacher,
+                viewerIsParent = viewerIsParent,
+                isAppInForeground = isAppInForeground,
+                isTeacherChatPageOpen = isTeacherChatPageOpen,
+                activeTeacherChatStudentId = state.activeChatStudentId,
+                isParentCommTabActive = isParentCommunicationTabActive,
+                isParentChatSubTabActive = isParentChatSubTabActive,
+                activeParentStudentId = state.activeParentStudentId,
+                isNotificationCenterOpen = state.isNotificationCenterOpen
+            )
+        }
+
+        var finalMessages = mergedMessages
+        var updatedNotifs = state.notifications
+        var notifsChanged = false
+
+        // Açık sohbet ekranına gelen mesajları anında OKUNDU say ve bildirim üretme
+        if (openChatUnread.isNotEmpty()) {
+            val openIds = openChatUnread.map { it.id }.toSet()
+            val newlyReadList = openChatUnread.map { it.copy(status = MessageStatus.READ) }
+            finalMessages = mergedMessages.map { msg ->
+                if (msg.id in openIds) msg.copy(status = MessageStatus.READ) else msg
+            }
+            processedNotifMessageIds.addAll(openIds)
+
+            val openStudentIds = openChatUnread.map { it.studentId }.distinct()
+            openStudentIds.forEach { sId ->
+                val beforeCount = updatedNotifs.size
+                updatedNotifs = NotificationLifecycleHelper.removeMessageNotificationsForStudent(updatedNotifs, sId)
+                if (updatedNotifs.size != beforeCount) notifsChanged = true
+                if (ctx != null) ChatNotificationHelper.cancelMessageNotification(ctx, sId)
+            }
+
+            if (ctx != null) {
+                CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, finalMessages)
+                CommunicationPersistenceHelper.markChatMessagesReadInFirestore(ctx, classId, newlyReadList)
+                CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            }
+        }
+
+        // Başka cihazda veya daha önce okunmuş öğrencilerin mesaj bildirimlerini temizle
+        val unreadByStudent = incomingUnread.filterNot { msg -> msg.id in openChatUnread.map { it.id }.toSet() }
+            .groupBy { it.studentId }
+        val staleMsgNotifStudentIds = updatedNotifs
+            .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+            .mapNotNull { it.targetId }
+            .filter { sId -> unreadByStudent[sId].isNullOrEmpty() }
+            .distinct()
+        staleMsgNotifStudentIds.forEach { sId ->
+            val beforeCount = updatedNotifs.size
+            updatedNotifs = NotificationLifecycleHelper.removeMessageNotificationsForStudent(updatedNotifs, sId)
+            if (updatedNotifs.size != beforeCount) notifsChanged = true
+            if (ctx != null) ChatNotificationHelper.cancelMessageNotification(ctx, sId)
+        }
+
+        // Kapalı sohbetlere gelen YENİ okunmamış mesajlar için alıcıya bildirim üret
+        val closedChatUnread = incomingUnread.filterNot { msg -> openChatUnread.any { it.id == msg.id } }
+        val newlyArrived = closedChatUnread.filter { it.id !in processedNotifMessageIds }
+        var bannerText: String? = null
+
+        if (newlyArrived.isNotEmpty()) {
+            processedNotifMessageIds.addAll(newlyArrived.map { it.id })
+            if (ctx != null) {
+                CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            }
+
+            val grouped = newlyArrived.groupBy { it.studentId }
+            grouped.forEach { (studentId, msgs) ->
+                val latestMsg = msgs.maxByOrNull { it.timestamp } ?: return@forEach
+                val totalUnreadForStudent = closedChatUnread.count { it.studentId == studentId }
+                val notifId = "msg_notif_$studentId"
+                val notifTitle = if (viewerIsTeacher) {
+                    if (totalUnreadForStudent > 1) "Yeni Veli Mesajları ($totalUnreadForStudent) 💬" else "Yeni Veli Mesajı 💬"
+                } else {
+                    if (totalUnreadForStudent > 1) "Öğretmenden Yeni Mesajlar ($totalUnreadForStudent) 💬" else "Öğretmenden Yeni Mesaj 💬"
+                }
+                val notifBody = if (viewerIsTeacher) {
+                    "${latestMsg.parentName} (${latestMsg.studentNumber} ${latestMsg.studentName}): ${latestMsg.text}"
+                } else {
+                    "${latestMsg.senderName}: ${latestMsg.text}"
+                }
+
+                val notif = BirizNotification(
+                    id = notifId,
+                    title = notifTitle,
+                    message = notifBody,
+                    timestamp = latestMsg.timestamp,
+                    type = NotificationType.MESSAGE,
+                    targetSubPageName = if (viewerIsTeacher) "ILETISIM_MESAJLAR" else "COMMUNICATION",
+                    targetId = studentId,
+                    isRead = false
+                )
+                updatedNotifs = listOf(notif) + NotificationLifecycleHelper.removeMessageNotificationsForStudent(updatedNotifs, studentId)
+                notifsChanged = true
+
+                if (ctx != null) {
+                    ChatNotificationHelper.showIncomingMessageNotification(
+                        context = ctx,
+                        message = latestMsg,
+                        isRecipientTeacher = viewerIsTeacher,
+                        unreadCountForStudent = totalUnreadForStudent
+                    )
+                }
+            }
+
+            if (isAppInForeground) {
+                val newestOverall = newlyArrived.maxByOrNull { it.timestamp }
+                if (newestOverall != null) {
+                    bannerText = "💬 ${newestOverall.senderName}: ${newestOverall.text.take(65)}"
+                }
+            }
+        }
+
+        if (notifsChanged && ctx != null) {
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+        }
+
+        _uiState.value = _uiState.value.copy(
+            chatMessages = finalMessages,
+            notifications = updatedNotifs,
+            snackbarMessage = bannerText ?: _uiState.value.snackbarMessage
+        )
+    }
+
+    fun markChatMessagesAsRead(
+        studentId: String,
+        parentEmail: String = "",
+        viewerIsTeacher: Boolean = (_uiState.value.currentRole == UserRole.TEACHER)
+    ) {
+        val classId = resolveActiveClassId()
+        val newlyReadMessages = mutableListOf<ChatMessage>()
         val updatedMessages = _uiState.value.chatMessages.map { msg ->
             val matchesStudent = msg.studentId == studentId
-            val matchesParent = parentEmail.isBlank() || msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
-            if (matchesStudent && matchesParent && !msg.isFromTeacher && msg.status != MessageStatus.READ) {
-                msg.copy(status = MessageStatus.READ)
+            val matchesDirection = if (viewerIsTeacher) !msg.isFromTeacher else msg.isFromTeacher
+            val matchesParent = if (!viewerIsTeacher || parentEmail.isBlank()) {
+                true
+            } else {
+                msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
+            }
+            if (matchesStudent && matchesDirection && matchesParent && msg.status != MessageStatus.READ) {
+                val readMsg = msg.copy(status = MessageStatus.READ)
+                newlyReadMessages.add(readMsg)
+                processedNotifMessageIds.add(msg.id)
+                readMsg
             } else msg
         }
-        _uiState.value = _uiState.value.copy(chatMessages = updatedMessages)
-        appContext?.let {
-            CommunicationPersistenceHelper.saveChatMessages(it, classId, updatedMessages)
-            CommunicationPersistenceHelper.markChatMessagesReadInFirestore(it, classId, updatedMessages)
+
+        val currentNotifs = _uiState.value.notifications
+        val updatedNotifs = NotificationLifecycleHelper.removeMessageNotificationsForStudent(currentNotifs, studentId)
+        val notifsChanged = updatedNotifs.size != currentNotifs.size
+
+        if (newlyReadMessages.isNotEmpty() || notifsChanged) {
+            _uiState.value = _uiState.value.copy(
+                chatMessages = updatedMessages,
+                notifications = updatedNotifs
+            )
+            appContext?.let { ctx ->
+                if (newlyReadMessages.isNotEmpty()) {
+                    CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedMessages)
+                    CommunicationPersistenceHelper.markChatMessagesReadInFirestore(ctx, classId, newlyReadMessages)
+                    CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+                }
+                if (notifsChanged) {
+                    CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+                }
+                ChatNotificationHelper.cancelMessageNotification(ctx, studentId)
+            }
+        } else {
+            appContext?.let { ctx ->
+                ChatNotificationHelper.cancelMessageNotification(ctx, studentId)
+            }
         }
     }
 
     fun markNotificationAsRead(notificationId: String) {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
+        val removed = _uiState.value.notifications.firstOrNull { it.id == notificationId }
         val updatedNotifs = _uiState.value.notifications.filterNot { it.id == notificationId }
         _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
-        appContext?.let { CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs) }
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs)
+            if (removed?.type == NotificationType.MESSAGE && !removed.targetId.isNullOrBlank()) {
+                ChatNotificationHelper.cancelMessageNotification(ctx, removed.targetId)
+            } else if (removed != null && NotificationLifecycleHelper.isUpdateNotification(removed)) {
+                AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+            }
+        }
     }
 
     fun markAllNotificationsAsRead() {
-        val classId = _uiState.value.activeClassRoom?.id ?: "default"
+        val classId = resolveActiveClassId()
+        val current = _uiState.value.notifications
+        val messageStudentIds = current
+            .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+            .mapNotNull { it.targetId }
+            .distinct()
         _uiState.value = _uiState.value.copy(notifications = emptyList())
-        appContext?.let { CommunicationPersistenceHelper.saveNotifications(it, classId, emptyList()) }
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, emptyList())
+            ChatNotificationHelper.cancelAllMessageNotifications(ctx, messageStudentIds)
+            AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+        }
     }
 
     fun setNotificationCenterOpen(isOpen: Boolean) {
@@ -868,6 +1182,52 @@ class BirizViewModel(
 
     fun setActiveChatStudent(studentId: String?) {
         _uiState.value = _uiState.value.copy(activeChatStudentId = studentId)
+        if (!studentId.isNullOrBlank() &&
+            isAppInForeground &&
+            _uiState.value.currentRole == UserRole.TEACHER &&
+            _uiState.value.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR
+        ) {
+            markChatMessagesAsRead(studentId, viewerIsTeacher = true)
+        }
+    }
+
+    fun setParentCommunicationScreenState(isCommTabActive: Boolean, isChatSubTabActive: Boolean) {
+        isParentCommunicationTabActive = isCommTabActive
+        isParentChatSubTabActive = isChatSubTabActive
+        val state = _uiState.value
+        val activeStudentId = state.activeParentStudentId
+        if (isCommTabActive && isChatSubTabActive && isAppInForeground && state.currentRole == UserRole.PARENT && !activeStudentId.isNullOrBlank()) {
+            markChatMessagesAsRead(activeStudentId, viewerIsTeacher = false)
+        }
+    }
+
+    fun openChatFromNotification(studentId: String, isTeacherTarget: Boolean? = null) {
+        val state = _uiState.value
+        val openAsTeacher = isTeacherTarget ?: (state.currentRole == UserRole.TEACHER)
+        if (openAsTeacher && state.currentRole == UserRole.TEACHER) {
+            _uiState.value = state.copy(
+                currentScreen = ScreenState.TEACHER_DASHBOARD,
+                currentSubPage = DashboardSubPage.ILETISIM_MESAJLAR,
+                activeChatStudentId = studentId
+            )
+            markChatMessagesAsRead(studentId, viewerIsTeacher = true)
+        } else if (state.currentRole == UserRole.PARENT) {
+            val resolvedStudentId = if (studentId in state.linkedParentStudentIds) studentId else state.activeParentStudentId
+            _uiState.value = state.copy(
+                currentScreen = ScreenState.PARENT_PORTAL,
+                activeParentStudentId = resolvedStudentId,
+                requestedParentTabName = "COMMUNICATION"
+            )
+            if (!resolvedStudentId.isNullOrBlank()) {
+                markChatMessagesAsRead(resolvedStudentId, viewerIsTeacher = false)
+            }
+        }
+    }
+
+    fun consumeRequestedParentTab() {
+        if (_uiState.value.requestedParentTabName != null) {
+            _uiState.value = _uiState.value.copy(requestedParentTabName = null)
+        }
     }
 
     fun launchTestSignIn(onComplete: () -> Unit = {}) {
@@ -1279,10 +1639,15 @@ class BirizViewModel(
         if (_uiState.value.activeClassRoom?.id != targetClass.id) {
             _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
         }
-        repository.observeStudents(targetClass.id)
-        loadScheduleFromStorage(targetClass.id)
-        loadSeatingPlanFromStorage(targetClass.id)
-        loadCommunicationFromStorage(targetClass.id)
+        if (loadedNotifiedClassId != targetClass.id || communicationMessagesListener == null) {
+            repository.observeStudents(targetClass.id)
+            loadScheduleFromStorage(targetClass.id)
+            loadSeatingPlanFromStorage(targetClass.id)
+            loadCommunicationFromStorage(targetClass.id)
+        }
+        if (isParentCommunicationTabActive && isParentChatSubTabActive && isAppInForeground) {
+            markChatMessagesAsRead(studentId, viewerIsTeacher = false)
+        }
         saveParentSessionState()
     }
 
@@ -1512,7 +1877,15 @@ class BirizViewModel(
             loadGroupMakerFromStorage(activeClassId)
         }
         if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.ILETISIM_DUYURULAR || subPage == DashboardSubPage.ILETISIM_MESAJLAR) {
-            loadCommunicationFromStorage(activeClassId)
+            if (loadedNotifiedClassId != activeClassId || communicationMessagesListener == null) {
+                loadCommunicationFromStorage(activeClassId)
+            }
+        }
+
+        val nextActiveChatStudentId = if (subPage == DashboardSubPage.ILETISIM_MESAJLAR) {
+            _uiState.value.activeChatStudentId
+        } else {
+            null
         }
 
         if (subPage == DashboardSubPage.ANA_SAYFA ||
@@ -1520,7 +1893,10 @@ class BirizViewModel(
             subPage == DashboardSubPage.PROFIL_AYARLARI ||
             subPage.category == "ÖĞRETMEN ODASI"
         ) {
-            _uiState.value = _uiState.value.copy(currentSubPage = subPage)
+            _uiState.value = _uiState.value.copy(
+                currentSubPage = subPage,
+                activeChatStudentId = nextActiveChatStudentId
+            )
             return
         }
 
@@ -1540,7 +1916,10 @@ class BirizViewModel(
             ensureGroupMakerInitialized()
         }
 
-        _uiState.value = _uiState.value.copy(currentSubPage = subPage)
+        _uiState.value = _uiState.value.copy(
+            currentSubPage = subPage,
+            activeChatStudentId = nextActiveChatStudentId
+        )
 
         // Akıllı Tahta Canlı Yansıtma Senkronizasyonu
         triggerSmartBoardSync(subPage = subPage)

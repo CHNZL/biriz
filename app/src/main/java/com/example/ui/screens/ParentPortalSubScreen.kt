@@ -16,19 +16,26 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
@@ -36,6 +43,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.Home
@@ -49,10 +57,13 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
@@ -60,6 +71,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,9 +91,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,6 +109,7 @@ import com.example.data.model.ChatMessage
 import com.example.data.model.ClassRoom
 import com.example.data.model.DeskPosition
 import com.example.data.model.DoorPosition
+import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
@@ -128,6 +144,7 @@ import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
+import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.ParentPrivacyHelper
 import com.example.util.ScheduleHelper
@@ -186,15 +203,45 @@ fun ParentPortalSubScreen(
     onLogout: () -> Unit = {},
     onVotePoll: (String, String) -> Unit,
     onSendChatMessage: (String, String) -> Unit,
-    onMarkAnnouncementRead: (String) -> Unit = {}
+    onMarkAnnouncementRead: (String) -> Unit = {},
+    requestedTab: ParentPortalTab? = null,
+    onRequestedTabConsumed: () -> Unit = {},
+    onCommunicationTabStateChanged: (isCommTabActive: Boolean, isChatSubTabActive: Boolean) -> Unit = { _, _ -> },
+    onMarkChatAsRead: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
+    var isCommChatSubTabActive by remember { mutableStateOf(true) }
     var showLinkCodeDialog by remember { mutableStateOf(false) }
     var showProfileMenuDialog by remember { mutableStateOf(false) }
     var studentToUnlink by remember { mutableStateOf<Student?>(null) }
     var inviteCodeInput by remember { mutableStateOf("") }
     var chatInputText by remember { mutableStateOf("") }
+
+    // Dışarıdan (ör. bildirime dokunularak) belirli bir sekmeye geçiş istendiyse uygula
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            activeTab = requestedTab
+            if (requestedTab == ParentPortalTab.COMMUNICATION) {
+                isCommChatSubTabActive = true
+            }
+            onRequestedTabConsumed()
+        }
+    }
+
+    // Aktif iletişim/sohbet durumu ViewModel'e canlı aktarılır (sohbet açıkken bildirim üretilmemesi için)
+    LaunchedEffect(activeTab, isCommChatSubTabActive) {
+        onCommunicationTabStateChanged(
+            activeTab == ParentPortalTab.COMMUNICATION,
+            isCommChatSubTabActive
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onCommunicationTabStateChanged(false, false)
+        }
+    }
 
     // Velinin bağlı olduğu çocuk kimlikleri kümesi (Gizlilik ve filtreleme için)
     val linkedStudentIds = remember(linkedStudents) { linkedStudents.map { it.id }.toSet() }
@@ -675,15 +722,29 @@ fun ParentPortalSubScreen(
                         }
 
                         ParentPortalTab.COMMUNICATION -> {
+                            val studentChatMessages = remember(chatMessages, activeStudent, currentUser.email) {
+                                chatMessages.filter { msg ->
+                                    msg.studentId == activeStudent.id && (
+                                        activeStudent.allLinkedParents.size <= 1 ||
+                                            msg.parentEmail.isBlank() ||
+                                            currentUser.email.isBlank() ||
+                                            currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
+                                            msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
+                                    )
+                                }
+                            }
                             ParentCommunicationDetailView(
                                 student = activeStudent,
                                 classRoom = classRoom,
                                 announcements = parentAnnouncements,
-                                chatMessages = chatMessages.filter { it.studentId == activeStudent.id },
+                                chatMessages = studentChatMessages,
                                 currentUser = currentUser,
                                 isDarkTheme = isDarkTheme,
+                                isChatSubTabActive = isCommChatSubTabActive,
+                                onSelectChatSubTab = { isChat -> isCommChatSubTabActive = isChat },
                                 onVotePoll = onVotePoll,
                                 onMarkAnnouncementRead = onMarkAnnouncementRead,
+                                onMarkChatAsRead = { onMarkChatAsRead(activeStudent.id) },
                                 onSendMessage = { text ->
                                     if (text.isNotBlank()) {
                                         onSendChatMessage(activeStudent.id, text)
@@ -696,68 +757,108 @@ fun ParentPortalSubScreen(
             }
 
             // =========================================================================
-            // 3. ALT NAVİGASYON ÇUBUĞU (BOTTOM NAVIGATION) - VELİ ROLÜNE ÖZEL YÜKSEK GÖRÜNÜRLÜKLÜ RENKLİ TASARIM
+            // 3. ALT NAVİGASYON ÇUBUĞU (Klavye açıkken sohbet alanını daraltmamak için gizlenir)
             // =========================================================================
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(22.dp),
-                color = Color.Transparent,
-                shadowElevation = 14.dp,
-                border = BorderStroke(1.5.dp, BirizTurquoise.copy(alpha = 0.75f))
-            ) {
-                Box(
+            val isImeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            val activeStudentUnreadChatCount = remember(chatMessages, activeStudent, currentUser.email) {
+                if (activeStudent == null) 0
+                else chatMessages.count { msg ->
+                    msg.studentId == activeStudent.id &&
+                        msg.isFromTeacher &&
+                        msg.status != MessageStatus.READ && (
+                            activeStudent.allLinkedParents.size <= 1 ||
+                                msg.parentEmail.isBlank() ||
+                                currentUser.email.isBlank() ||
+                                currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
+                                msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
+                        )
+                }
+            }
+            if (!isImeVisible) {
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            if (isDarkTheme) {
-                                Brush.horizontalGradient(
-                                    listOf(Color(0xFF0B192C), Color(0xFF133354), Color(0xFF0B192C))
-                                )
-                            } else {
-                                Brush.horizontalGradient(
-                                    listOf(BirizNavyPrimary, Color(0xFF17466E), BirizNavyPrimary)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.Transparent,
+                    shadowElevation = 14.dp,
+                    border = BorderStroke(1.5.dp, BirizTurquoise.copy(alpha = 0.75f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isDarkTheme) {
+                                    Brush.horizontalGradient(
+                                        listOf(Color(0xFF0B192C), Color(0xFF133354), Color(0xFF0B192C))
+                                    )
+                                } else {
+                                    Brush.horizontalGradient(
+                                        listOf(BirizNavyPrimary, Color(0xFF17466E), BirizNavyPrimary)
+                                    )
+                                }
+                            )
+                    ) {
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            modifier = Modifier.height(74.dp)
+                        ) {
+                            ParentPortalTab.entries.filter { it.showInBottomBar }.forEach { tab ->
+                                val isSelected = activeTab == tab
+                                NavigationBarItem(
+                                    selected = isSelected,
+                                    onClick = { activeTab = tab },
+                                    icon = {
+                                        if (tab == ParentPortalTab.COMMUNICATION && activeStudentUnreadChatCount > 0) {
+                                            BadgedBox(
+                                                badge = {
+                                                    Badge(
+                                                        containerColor = BirizAmber,
+                                                        contentColor = Color.White
+                                                    ) {
+                                                        Text(
+                                                            text = if (activeStudentUnreadChatCount > 9) "9+" else "$activeStudentUnreadChatCount",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black
+                                                        )
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = tab.iconVector,
+                                                    contentDescription = tab.title,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        } else {
+                                            Icon(
+                                                imageVector = tab.iconVector,
+                                                contentDescription = tab.title,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            text = tab.title,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    },
+                                    alwaysShowLabel = true,
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = BirizNavyDark,
+                                        selectedTextColor = Color(0xFF5EEAD4),
+                                        unselectedIconColor = Color.White.copy(alpha = 0.88f),
+                                        unselectedTextColor = Color.White.copy(alpha = 0.92f),
+                                        indicatorColor = BirizTurquoise
+                                    )
                                 )
                             }
-                        )
-                ) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        modifier = Modifier.height(74.dp)
-                    ) {
-                        ParentPortalTab.entries.filter { it.showInBottomBar }.forEach { tab ->
-                            val isSelected = activeTab == tab
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { activeTab = tab },
-                                icon = {
-                                    Icon(
-                                        imageVector = tab.iconVector,
-                                        contentDescription = tab.title,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = tab.title,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                },
-                                alwaysShowLabel = true,
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = BirizNavyDark,
-                                    selectedTextColor = Color(0xFF5EEAD4),
-                                    unselectedIconColor = Color.White.copy(alpha = 0.88f),
-                                    unselectedTextColor = Color.White.copy(alpha = 0.92f),
-                                    indicatorColor = BirizTurquoise
-                                )
-                            )
                         }
                     }
                 }
@@ -871,6 +972,14 @@ fun ParentPortalSubScreen(
                 if (notif.type == NotificationType.APP_UPDATE) {
                     onOpenUpdateDialog()
                 } else {
+                    if (notif.type == NotificationType.MESSAGE && !notif.targetId.isNullOrBlank()) {
+                        if (linkedStudents.any { it.id == notif.targetId }) {
+                            onSelectActiveStudent(notif.targetId)
+                        }
+                        isCommChatSubTabActive = true
+                    } else if (notif.type == NotificationType.ANNOUNCEMENT) {
+                        isCommChatSubTabActive = false
+                    }
                     activeTab = ParentPortalTab.COMMUNICATION
                 }
             },
@@ -2854,7 +2963,7 @@ private fun ParentTournamentDetailView(
 }
 
 // =========================================================================
-// DETAY 5: DUYURU & ANKET & BİREBİR MESAJLAŞMA
+// DETAY 5: DUYURU & ANKET & BİREBİR ANLIK MESAJLAŞMA
 // =========================================================================
 @Composable
 private fun ParentCommunicationDetailView(
@@ -2864,67 +2973,101 @@ private fun ParentCommunicationDetailView(
     chatMessages: List<ChatMessage>,
     currentUser: AuthenticatedUser,
     isDarkTheme: Boolean,
+    isChatSubTabActive: Boolean = true,
+    onSelectChatSubTab: (Boolean) -> Unit = {},
     onVotePoll: (String, String) -> Unit,
     onMarkAnnouncementRead: (String) -> Unit = {},
+    onMarkChatAsRead: () -> Unit = {},
     onSendMessage: (String) -> Unit
 ) {
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     var chatText by remember { mutableStateOf("") }
+    val chatListState = rememberLazyListState()
 
-    // Duyuruları görüntülendiğinde okundu olarak işaretle
+    val unreadFromTeacherCount = remember(chatMessages) {
+        chatMessages.count { it.isFromTeacher && it.status != MessageStatus.READ }
+    }
+
     val parentDisplayName = currentUser.fullName.ifBlank { "Veli" }
-    LaunchedEffect(announcements) {
-        announcements.forEach { ann ->
-            if (!ann.readReceipts.containsKey(parentDisplayName)) {
-                onMarkAnnouncementRead(ann.id)
+
+    // Duyurular sekmesindeyken duyuruları okundu işaretle
+    LaunchedEffect(announcements, isChatSubTabActive) {
+        if (!isChatSubTabActive) {
+            announcements.forEach { ann ->
+                if (!ann.readReceipts.containsKey(parentDisplayName)) {
+                    onMarkAnnouncementRead(ann.id)
+                }
             }
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // --- 0. ÖĞRETMEN İLETİŞİM KARTI ---
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (isDarkTheme) Color(0xFF0F2038) else Color(0xFFEFF6FF),
-                border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else Color(0xFFBFDBFE)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+    // Sohbet sekmesi açıkken gelen öğretmen mesajlarını anında okundu işaretle ve en alta kaydır
+    LaunchedEffect(student.id, chatMessages.size, isChatSubTabActive) {
+        if (isChatSubTabActive) {
+            onMarkChatAsRead()
+            if (chatMessages.isNotEmpty()) {
+                chatListState.animateScrollToItem(chatMessages.size)
+            }
+        }
+    }
+
+    val quickReplies = listOf(
+        "Bilgilendirme için teşekkür ederim 🙏",
+        "Tamamdır öğretmenim, ilgileneceğiz 👍",
+        "Ödevini kontrol ettik 📚"
+    )
+
+    val sendCurrentParentMessage = {
+        val trimmed = chatText.trim()
+        if (trimmed.isNotEmpty()) {
+            onSendMessage(trimmed)
+            chatText = ""
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // --- 0. ÖĞRETMEN İLETİŞİM ÖZETİ & SEKME SEÇİCİ ---
+        Surface(
+            color = if (isDarkTheme) Color(0xFF0C1829) else Color.White,
+            shadowElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
                         shape = CircleShape,
                         color = BirizNavyPrimary,
-                        modifier = Modifier.size(46.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("👨‍🏫", fontSize = 24.sp)
+                            Text("👨‍🏫", fontSize = 20.sp)
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = classRoom?.teacherName ?: "Sınıf Öğretmeni",
-                            fontSize = 16.sp,
+                            text = classRoom?.teacherName?.ifBlank { "Sınıf Öğretmeni" } ?: "Sınıf Öğretmeni",
+                            fontSize = 14.5.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                            color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${classRoom?.schoolName ?: "Okul"} • ${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} Şubesi",
-                            fontSize = 12.sp,
-                            color = secondaryText
+                            text = "${classRoom?.gradeLevel ?: 4}/${classRoom?.section ?: "D"} • ${student.studentNumber} ${student.fullName}",
+                            fontSize = 11.sp,
+                            color = secondaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF10B981).copy(alpha = 0.15f)
+                        color = Color(0xFF10B981).copy(alpha = 0.14f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -2937,198 +3080,392 @@ private fun ParentCommunicationDetailView(
                                     .background(Color(0xFF10B981))
                             )
                             Spacer(modifier = Modifier.width(5.dp))
-                            Text("İletişime Açık", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                            Text(
+                                text = "Anlık Hat",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
                         }
                     }
                 }
-            }
-        }
 
-        // --- 1. DUYURULAR & ANKETLER ---
-        item {
-            Text(text = "📢 Sınıf Duyuruları & Veli Anketleri", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-        }
+                Spacer(modifier = Modifier.height(10.dp))
 
-        if (announcements.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth()
+                // İletişim Alt Sekmeleri: Birebir Sohbet | Duyurular & Anketler
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor.",
-                        fontSize = 13.sp,
-                        color = secondaryText,
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(announcements) { ann ->
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Surface(
+                        onClick = { onSelectChatSubTab(true) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isChatSubTabActive) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 42.dp)
+                            .testTag("parent_tab_chat")
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
-                            val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ann.createdAt))
-                            Text(text = dateStr, fontSize = 12.sp, color = secondaryText)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = ann.content, fontSize = 13.5.sp, color = secondaryText, lineHeight = 19.sp)
-
-                        // Veli Anketi Varsa
-                        val poll = ann.poll
-                        if (poll != null && poll.options.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = primaryText)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            poll.options.forEach { opt ->
-                                val isVotedByMe = opt.voterParentNames.contains(parentDisplayName)
-                                Surface(
-                                    onClick = { onVotePoll(ann.id, opt.id) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isVotedByMe) BirizTurquoise.copy(alpha = 0.25f) else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
-                                    border = BorderStroke(
-                                        if (isVotedByMe) 1.5.dp else 1.dp,
-                                        if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
-                                    ),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (isVotedByMe) {
-                                                Text("✓ ", color = BirizTurquoise, fontWeight = FontWeight.Black)
-                                            }
-                                            Text(text = opt.text, fontSize = 13.5.sp, fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.Medium, color = primaryText)
-                                        }
-                                        Text(text = "${opt.voteCount} Oy", fontSize = 12.sp, color = secondaryText, fontWeight = FontWeight.Bold)
-                                    }
+                            Text(
+                                text = "💬 Birebir Sohbet",
+                                fontSize = 12.5.sp,
+                                fontWeight = if (isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = if (isChatSubTabActive) BirizNavyDark else primaryText
+                            )
+                            if (unreadFromTeacherCount > 0) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(shape = CircleShape, color = BirizAmber) {
+                                    Text(
+                                        text = "$unreadFromTeacherCount",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
                                 }
                             }
+                        }
+                    }
+
+                    Surface(
+                        onClick = { onSelectChatSubTab(false) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) Color(0x251E293B) else Color(0xFFF1F5F9),
+                        border = BorderStroke(
+                            1.dp,
+                            if (!isChatSubTabActive) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 42.dp)
+                            .testTag("parent_tab_announcements")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📢 Duyurular (${announcements.size})",
+                                fontSize = 12.5.sp,
+                                fontWeight = if (!isChatSubTabActive) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = if (!isChatSubTabActive) Color.White else primaryText
+                            )
                         }
                     }
                 }
             }
         }
 
-        // --- 2. BİREBİR ÖĞRETMEN SOHBETİ ---
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "💬 Sınıf Öğretmeni Birebir Özel Mesajlaşma", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
-            Text(text = "Bu sohbet yalnızca sizin ve sınıf öğretmeninizin arasındadır.", fontSize = 10.5.sp, color = secondaryText)
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                modifier = Modifier.fillMaxWidth()
+        if (isChatSubTabActive) {
+            // --- 1. WHATSAPP STİLİ BİREBİR SOHBET PANELİ ---
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(if (isDarkTheme) Color(0xFF091427) else Color(0xFFEFEAE2))
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    // Mesajlar Akışı
+                LazyColumn(
+                    state = chatListState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    contentPadding = PaddingValues(vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isDarkTheme) Color(0x401E293B) else Color(0x90FFFBEB)
+                            ) {
+                                Text(
+                                    text = "🔒 Bu sohbet yalnızca sizin (${currentUser.email.ifBlank { "Doğrulanmış Veli" }}) ve sınıf öğretmeniniz arasındadır.",
+                                    fontSize = 10.sp,
+                                    color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
                     if (chatMessages.isEmpty()) {
-                        Text(
-                            text = "Henüz mesaj bulunmuyor. Öğretmeninize buradan kolayca mesaj iletebilirsiniz.",
-                            fontSize = 11.5.sp,
-                            color = secondaryText,
-                            modifier = Modifier.padding(vertical = 20.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    } else {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            chatMessages.takeLast(15).forEach { msg ->
-                                val isMe = !msg.isFromTeacher
-                                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 36.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isDarkTheme) Color(0x401E293B) else Color.White.copy(alpha = 0.92f),
+                                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(
-                                            topStart = 12.dp,
-                                            topEnd = 12.dp,
-                                            bottomStart = if (isMe) 12.dp else 2.dp,
-                                            bottomEnd = if (isMe) 2.dp else 12.dp
-                                        ),
-                                        color = if (isMe) BirizTurquoise else if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFE2E8F0),
-                                        modifier = Modifier.fillMaxWidth(0.82f)
-                                    ) {
-                                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = if (msg.isFromTeacher) classRoom?.teacherName ?: "Öğretmen" else "Siz",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isMe) BirizNavyDark else secondaryText
-                                                )
-                                                Text(
-                                                    text = timeStr,
-                                                    fontSize = 9.5.sp,
-                                                    color = if (isMe) BirizNavyDark.copy(alpha = 0.7f) else secondaryText
+                                    Text(
+                                        text = "💬 Öğretmeniniz ile henüz mesajlaşmanız yok.\nAşağıdan mesaj yazarak anlık sohbeti başlatabilirsiniz.",
+                                        fontSize = 12.5.sp,
+                                        color = secondaryText,
+                                        textAlign = TextAlign.Center,
+                                        lineHeight = 18.sp,
+                                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(chatMessages, key = { it.id }) { msg ->
+                            val isMe = !msg.isFromTeacher
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(
+                                        topStart = 14.dp,
+                                        topEnd = 14.dp,
+                                        bottomStart = if (isMe) 14.dp else 2.dp,
+                                        bottomEnd = if (isMe) 2.dp else 14.dp
+                                    ),
+                                    color = if (isMe) {
+                                        if (isDarkTheme) Color(0xFF005C4B) else Color(0xFFD9FDD3)
+                                    } else {
+                                        if (isDarkTheme) Color(0xFF202C33) else Color.White
+                                    },
+                                    shadowElevation = 1.dp,
+                                    modifier = Modifier.widthIn(max = 290.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)) {
+                                        if (!isMe) {
+                                            Text(
+                                                text = msg.senderName.ifBlank { classRoom?.teacherName ?: "Sınıf Öğretmeni" },
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0284C7)
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                        }
+                                        Text(
+                                            text = msg.text,
+                                            fontSize = 13.sp,
+                                            color = if (isDarkTheme) Color.White else Color(0xFF111B21),
+                                            lineHeight = 18.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Row(
+                                            modifier = Modifier.align(Alignment.End),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = CommunicationPersistenceHelper.formatTime(msg.timestamp),
+                                                fontSize = 9.5.sp,
+                                                color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
+                                            )
+                                            if (isMe) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Icon(
+                                                    imageVector = if (msg.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
+                                                    contentDescription = when (msg.status) {
+                                                        MessageStatus.READ -> "Okundu"
+                                                        MessageStatus.DELIVERED -> "İletildi"
+                                                        MessageStatus.SENT -> "Gönderildi"
+                                                    },
+                                                    tint = when (msg.status) {
+                                                        MessageStatus.READ -> Color(0xFF53BDEB)
+                                                        MessageStatus.DELIVERED -> Color.Gray
+                                                        MessageStatus.SENT -> Color.LightGray
+                                                    },
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                             }
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = msg.text,
-                                                fontSize = 13.sp,
-                                                color = if (isMe) BirizNavyDark else primaryText
-                                            )
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                // Hızlı Yanıt Şablonları
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    quickReplies.forEach { reply ->
+                        Surface(
+                            onClick = { onSendMessage(reply) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDarkTheme) Color(0x401E293B) else Color.White,
+                            border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                        ) {
+                            Text(
+                                text = reply,
+                                fontSize = 11.sp,
+                                color = primaryText,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
 
-                    // Mesaj Yazma Alanı
+                // Mesaj Yazma ve Gönderme Alanı (Tam yükseklikli, klavye gönderimi destekli)
+                Surface(
+                    color = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedTextField(
                             value = chatText,
                             onValueChange = { chatText = it },
-                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 12.sp) },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
+                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 13.sp) },
+                            textStyle = TextStyle(
+                                fontSize = 13.5.sp,
+                                lineHeight = 19.sp,
+                                color = if (isDarkTheme) Color.White else Color(0xFF111B21)
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 52.dp)
+                                .testTag("input_parent_chat_message"),
+                            maxLines = 4,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { sendCurrentParentMessage() }),
+                            shape = RoundedCornerShape(22.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BirizTurquoise,
+                                unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                            )
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Button(
-                            onClick = {
-                                if (chatText.isNotBlank()) {
-                                    onSendMessage(chatText.trim())
-                                    chatText = ""
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise),
-                            modifier = Modifier.height(50.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val canSend = chatText.isNotBlank()
+                        FloatingActionButton(
+                            onClick = { if (canSend) sendCurrentParentMessage() },
+                            shape = CircleShape,
+                            containerColor = if (canSend) Color(0xFF00A884) else Color(0xFF94A3B8),
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("btn_parent_send_chat")
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = "Gönder", tint = BirizNavyDark, modifier = Modifier.size(16.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Gönder",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // --- 2. SINIF DUYURULARI & VELİ ANKETLERİ ---
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (announcements.isEmpty()) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Henüz yayınlanmış bir sınıf duyurusu bulunmuyor.",
+                                fontSize = 13.sp,
+                                color = secondaryText,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(announcements) { ann ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = ann.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryText)
+                                    val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(ann.createdAt))
+                                    Text(text = dateStr, fontSize = 12.sp, color = secondaryText)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(text = ann.content, fontSize = 13.5.sp, color = secondaryText, lineHeight = 19.sp)
+
+                                val poll = ann.poll
+                                if (poll != null && poll.options.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "🗳️ ${poll.question.ifBlank { "Veli Anketi" }} - Tercihinizi Seçin:",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryText
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    poll.options.forEach { opt ->
+                                        val isVotedByMe = opt.voterParentNames.contains(parentDisplayName)
+                                        Surface(
+                                            onClick = { onVotePoll(ann.id, opt.id) },
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = if (isVotedByMe) BirizTurquoise.copy(alpha = 0.25f) else if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                                            border = BorderStroke(
+                                                if (isVotedByMe) 1.5.dp else 1.dp,
+                                                if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (isVotedByMe) {
+                                                        Text("✓ ", color = BirizTurquoise, fontWeight = FontWeight.Black)
+                                                    }
+                                                    Text(
+                                                        text = opt.text,
+                                                        fontSize = 13.5.sp,
+                                                        fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.Medium,
+                                                        color = primaryText
+                                                    )
+                                                }
+                                                Text(text = "${opt.voteCount} Oy", fontSize = 12.sp, color = secondaryText, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

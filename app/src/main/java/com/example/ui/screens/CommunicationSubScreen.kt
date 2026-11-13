@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +35,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -83,6 +87,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -100,6 +105,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -148,7 +154,8 @@ fun CommunicationSubScreen(
     onVotePollOption: (String, String, String) -> Unit,
     onSendMessage: (String, String, Boolean, String, String) -> Unit,
     onSimulateParentReply: (String, String) -> Unit,
-    onMarkChatAsRead: (String, String) -> Unit
+    onMarkChatAsRead: (String, String) -> Unit,
+    onActiveChatStudentChange: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -163,10 +170,31 @@ fun CommunicationSubScreen(
     }
 
     // Aktif Sohbet Edilen Öğrenci ve Veli Google Hesabı (null ise sohbet listesi gösterilir)
-    val initialStudent = students.find { it.id == initialActiveStudentId }
-    val initialParent = initialStudent?.allLinkedParents?.firstOrNull()
-    var selectedChatTarget by remember(initialActiveStudentId) {
-        mutableStateOf(if (initialStudent != null && initialParent != null) Pair(initialStudent, initialParent) else null)
+    var selectedChatTarget by remember {
+        val initStudent = students.find { it.id == initialActiveStudentId }
+        val initParent = initStudent?.allLinkedParents?.firstOrNull()
+        mutableStateOf(if (initStudent != null && initParent != null) Pair(initStudent, initParent) else null)
+    }
+
+    LaunchedEffect(initialActiveStudentId, students) {
+        if (initialActiveStudentId == null) {
+            if (selectedChatTarget != null) {
+                selectedChatTarget = null
+            }
+        } else if (selectedChatTarget?.first?.id != initialActiveStudentId) {
+            val s = students.find { it.id == initialActiveStudentId }
+            val p = s?.allLinkedParents?.firstOrNull()
+            if (s != null && p != null) {
+                selectedChatTarget = Pair(s, p)
+                onMarkChatAsRead(s.id, p.email)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onActiveChatStudentChange(null)
+        }
     }
 
     // Modal Durumları
@@ -178,6 +206,7 @@ fun CommunicationSubScreen(
     // Geri tuşu: Sohbet açıksa listeye döner
     BackHandler(enabled = selectedChatTarget != null) {
         selectedChatTarget = null
+        onActiveChatStudentChange(null)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -211,6 +240,7 @@ fun CommunicationSubScreen(
             // --- 2. İÇERİK: DUYURULAR VEYA MESAJLAR ---
             if (selectedChatTarget != null) {
                 val (chatStudent, chatParent) = selectedChatTarget!!
+                val parentsCount = chatStudent.allLinkedParents.size
                 // Veli ile Bireysel Sohbet Ekranı (WhatsApp Stili)
                 OneOnOneChatView(
                     student = chatStudent,
@@ -218,7 +248,7 @@ fun CommunicationSubScreen(
                     teacherName = classRoom.teacherName,
                     messages = chatMessages.filter {
                         it.studentId == chatStudent.id &&
-                                (it.parentEmail.isBlank() || chatParent.email.isBlank() || it.parentEmail.trim().equals(chatParent.email.trim(), ignoreCase = true))
+                            (parentsCount <= 1 || it.parentEmail.isBlank() || chatParent.email.isBlank() || it.parentEmail.trim().equals(chatParent.email.trim(), ignoreCase = true))
                     },
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,
@@ -226,7 +256,13 @@ fun CommunicationSubScreen(
                         fontOffset = next
                         CommunicationPersistenceHelper.saveFontOffset(context, next)
                     },
-                    onBack = { selectedChatTarget = null },
+                    onBack = {
+                        selectedChatTarget = null
+                        onActiveChatStudentChange(null)
+                    },
+                    onMarkAsRead = {
+                        onMarkChatAsRead(chatStudent.id, chatParent.email)
+                    },
                     onSendMessage = { text ->
                         onSendMessage(chatStudent.id, text, true, chatParent.email, chatParent.name)
                     },
@@ -267,6 +303,7 @@ fun CommunicationSubScreen(
                     fontOffset = fontOffset,
                     onSelectParentChat = { student, parentAccount ->
                         selectedChatTarget = Pair(student, parentAccount)
+                        onActiveChatStudentChange(student.id)
                         onMarkChatAsRead(student.id, parentAccount.email)
                     }
                 )
@@ -2266,7 +2303,7 @@ private fun ActiveStudentChatCard(
                 ) {
                     parents.forEach { parentAccount ->
                         val parentMessages = studentMessages.filter {
-                            it.parentEmail.isBlank() || it.parentEmail.equals(parentAccount.email, ignoreCase = true)
+                            parents.size <= 1 || it.parentEmail.isBlank() || it.parentEmail.equals(parentAccount.email, ignoreCase = true)
                         }
                         val lastMessage = parentMessages.maxByOrNull { it.timestamp }
                         val parentUnread = parentMessages.count { !it.isFromTeacher && it.status != MessageStatus.READ }
@@ -2410,7 +2447,7 @@ private fun ParentAccountSubRowItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (lastMessage != null && lastMessage.isFromTeacher) {
                         Icon(
-                            imageVector = Icons.Default.DoneAll,
+                            imageVector = if (lastMessage.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
                             contentDescription = null,
                             tint = when (lastMessage.status) {
                                 MessageStatus.READ -> Color(0xFF38BDF8) // Mavi çift tik
@@ -2625,12 +2662,14 @@ private fun OneOnOneChatView(
     fontOffset: Int,
     onFontOffsetChange: (Int) -> Unit,
     onBack: () -> Unit,
+    onMarkAsRead: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSimulateParentReply: (String) -> Unit
 ) {
     var messageInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val isKiz = student.gender.equals("Kız", ignoreCase = true)
+    val isParentOnline = student.isParentCurrentlyActive()
 
     // Hazır Hızlı Yanıt Şablonları
     val quickTemplates = listOf(
@@ -2640,9 +2679,18 @@ private fun OneOnOneChatView(
         "Yarın teneffüste görüşelim 🤝"
     )
 
-    LaunchedEffect(messages.size) {
+    val sendCurrentMessage = {
+        val trimmed = messageInput.trim()
+        if (trimmed.isNotEmpty()) {
+            onSendMessage(trimmed)
+            messageInput = ""
+        }
+    }
+
+    LaunchedEffect(student.id, messages.size) {
+        onMarkAsRead()
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(messages.size)
         }
     }
 
@@ -2650,6 +2698,8 @@ private fun OneOnOneChatView(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isDarkTheme) Color(0xFF091427) else Color(0xFFEFEAE2))
+            .imePadding()
+            .navigationBarsPadding()
     ) {
         // WhatsApp Tarzı Üst Başlık Barı (Doğrulanmış Veli Google Hesabı ile)
         Surface(
@@ -2694,7 +2744,9 @@ private fun OneOnOneChatView(
                             text = "${parentAccount.name} (${parentAccount.relationship})",
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
@@ -2705,10 +2757,14 @@ private fun OneOnOneChatView(
                         )
                     }
                     Text(
-                        text = "${parentAccount.email} • ${student.studentNumber} ${student.fullName} Velisi",
+                        text = if (isParentOnline) {
+                            "● Çevrimiçi • ${student.studentNumber} ${student.fullName}"
+                        } else {
+                            "${parentAccount.email} • ${student.studentNumber} ${student.fullName}"
+                        },
                         fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color.White.copy(alpha = 0.85f),
+                        fontFamily = if (isParentOnline) FontFamily.SansSerif else FontFamily.Monospace,
+                        color = if (isParentOnline) Color(0xFF6EE7B7) else Color.White.copy(alpha = 0.85f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2777,7 +2833,7 @@ private fun OneOnOneChatView(
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
                         Text(
-                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında kayıt altındadır.",
+                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında anlık olarak şifrelenip senkronize edilir.",
                             fontSize = 10.sp,
                             color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -2787,12 +2843,38 @@ private fun OneOnOneChatView(
                 }
             }
 
-            items(messages, key = { it.id }) { msg ->
-                ChatMessageBubble(
-                    message = msg,
-                    isDarkTheme = isDarkTheme,
-                    fontOffset = fontOffset
-                )
+            if (messages.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 36.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isDarkTheme) Color(0x401E293B) else Color.White.copy(alpha = 0.9f),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                        ) {
+                            Text(
+                                text = "💬 Henüz mesaj yok.\nAşağıdan mesaj yazarak veli ile anlık sohbeti başlatabilirsiniz.",
+                                fontSize = 12.sp,
+                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(messages, key = { it.id }) { msg ->
+                    ChatMessageBubble(
+                        message = msg,
+                        isDarkTheme = isDarkTheme,
+                        fontOffset = fontOffset
+                    )
+                }
             }
         }
 
@@ -2821,12 +2903,11 @@ private fun OneOnOneChatView(
             }
         }
 
-        // Mesaj Giriş Barı (WhatsApp Stili)
+        // Mesaj Giriş Barı (WhatsApp Stili - Dock Bar gizlendiği için tam erişilebilir)
         Surface(
             color = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 60.dp) // Dock bar üstünde rahat kalır
+            shadowElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier
@@ -2845,9 +2926,12 @@ private fun OneOnOneChatView(
                     ),
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 52.dp)
                         .testTag("input_chat_message"),
                     maxLines = 4,
-                    shape = RoundedCornerShape(20.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendCurrentMessage() }),
+                    shape = RoundedCornerShape(22.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = BirizTurquoise,
                         unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
@@ -2856,24 +2940,20 @@ private fun OneOnOneChatView(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
+                val canSend = messageInput.isNotBlank()
                 FloatingActionButton(
-                    onClick = {
-                        if (messageInput.isNotBlank()) {
-                            onSendMessage(messageInput.trim())
-                            messageInput = ""
-                        }
-                    },
+                    onClick = { if (canSend) sendCurrentMessage() },
                     shape = CircleShape,
-                    containerColor = Color(0xFF00A884), // WhatsApp Yeşili
+                    containerColor = if (canSend) Color(0xFF00A884) else Color(0xFF94A3B8),
                     contentColor = Color.White,
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(48.dp)
                         .testTag("btn_send_chat_message")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Gönder",
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -2956,14 +3036,18 @@ private fun ChatMessageBubble(
                     if (isMe) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
-                            imageVector = Icons.Default.DoneAll,
-                            contentDescription = "Okundu",
+                            imageVector = if (message.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
+                            contentDescription = when (message.status) {
+                                MessageStatus.READ -> "Okundu"
+                                MessageStatus.DELIVERED -> "İletildi"
+                                MessageStatus.SENT -> "Gönderildi"
+                            },
                             tint = when (message.status) {
                                 MessageStatus.READ -> Color(0xFF53BDEB) // WhatsApp Mavi Çift Tik
                                 MessageStatus.DELIVERED -> Color.Gray
                                 MessageStatus.SENT -> Color.LightGray
                             },
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

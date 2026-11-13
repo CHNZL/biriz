@@ -734,7 +734,8 @@ fun TeacherDashboardScreen(
                             onVotePollOption = onVotePollOption,
                             onSendMessage = onSendChatMessage,
                             onSimulateParentReply = onSimulateParentReply,
-                            onMarkChatAsRead = onMarkChatAsRead
+                            onMarkChatAsRead = onMarkChatAsRead,
+                            onActiveChatStudentChange = onSetActiveChatStudent
                         )
                     }
 
@@ -809,24 +810,28 @@ fun TeacherDashboardScreen(
                     }
                 }
 
-                // Havada Süzülen Gezinti Çubuğu (Floating Navigation Dock)
-                FloatingDockBar(
-                    items = dockItems,
-                    selectedId = selectedDockId,
-                    onItemSelected = { dockId ->
-                        when (dockId) {
-                            "SINIF" -> onSelectSubPage(DashboardSubPage.ANA_SAYFA)
-                            "DERS" -> onSelectSubPage(DashboardSubPage.GRUP_OLUSTURMA)
-                            "ILETISIM" -> onSelectSubPage(DashboardSubPage.ILETISIM_DUYURULAR)
-                            "KITAPLIK" -> onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE)
-                            "TURNUVA" -> onSelectSubPage(DashboardSubPage.TURNUVA_DEVAM_EDENLER)
-                            "OGRETMEN_ODASI" -> onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE)
-                            "PROFIL" -> onSelectSubPage(DashboardSubPage.PROFIL_AYARLARI)
-                        }
-                    },
-                    isDark = isDarkTheme,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+                // Havada Süzülen Gezinti Çubuğu (Birebir veli sohbeti açıkken gizlenir ki mesaj giriş alanı kapanmasın)
+                val isInsideTeacherChat = currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
+                    !activeChatStudentId.isNullOrBlank()
+                if (!isInsideTeacherChat) {
+                    FloatingDockBar(
+                        items = dockItems,
+                        selectedId = selectedDockId,
+                        onItemSelected = { dockId ->
+                            when (dockId) {
+                                "SINIF" -> onSelectSubPage(DashboardSubPage.ANA_SAYFA)
+                                "DERS" -> onSelectSubPage(DashboardSubPage.GRUP_OLUSTURMA)
+                                "ILETISIM" -> onSelectSubPage(DashboardSubPage.ILETISIM_DUYURULAR)
+                                "KITAPLIK" -> onSelectSubPage(DashboardSubPage.KITAPLIK_LISTE)
+                                "TURNUVA" -> onSelectSubPage(DashboardSubPage.TURNUVA_DEVAM_EDENLER)
+                                "OGRETMEN_ODASI" -> onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE)
+                                "PROFIL" -> onSelectSubPage(DashboardSubPage.PROFIL_AYARLARI)
+                            }
+                        },
+                        isDark = isDarkTheme,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                }
             }
         }
 
@@ -846,12 +851,12 @@ fun TeacherDashboardScreen(
                         val targetPage = try {
                             DashboardSubPage.valueOf(notif.targetSubPageName)
                         } catch (_: Exception) {
-                            DashboardSubPage.ILETISIM_DUYURULAR
+                            if (notif.type == NotificationType.MESSAGE) DashboardSubPage.ILETISIM_MESAJLAR else DashboardSubPage.ILETISIM_DUYURULAR
                         }
+                        onSelectSubPage(targetPage)
                         if (notif.targetId != null && targetPage == DashboardSubPage.ILETISIM_MESAJLAR) {
                             onSetActiveChatStudent(notif.targetId)
                         }
-                        onSelectSubPage(targetPage)
                     }
                 },
                 onMarkAllAsRead = onMarkAllNotificationsAsRead

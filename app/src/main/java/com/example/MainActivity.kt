@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -65,6 +66,7 @@ import com.example.data.repository.ClassRegistryRepository
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.screens.GoogleSignInScreen
 import com.example.ui.screens.ParentPortalSubScreen
+import com.example.ui.screens.ParentPortalTab
 import com.example.ui.screens.RoleSelectionScreen
 import com.example.ui.screens.SetupSuccessScreen
 import com.example.ui.screens.TeacherDashboardScreen
@@ -75,6 +77,7 @@ import com.example.ui.viewmodel.BirizViewModel
 import com.example.ui.viewmodel.BirizViewModelFactory
 import com.example.ui.viewmodel.ScreenState
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.ChatNotificationHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -90,14 +93,15 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
 
-        // Android 8.0+ bildirim kanalını açılışta garantiye al
+        // Android 8.0+ bildirim kanallarını açılışta garantiye al
         AppUpdateNotificationHelper.createNotificationChannel(applicationContext)
+        ChatNotificationHelper.createNotificationChannel(applicationContext)
 
         // Cihaz hafızasında eski APK kalıntılarının birikmesini önlemek için temizle
         com.example.util.AppUpdateManager.cleanOldApkFiles(applicationContext)
 
-        // Bildirim çubuğundan tıklandıysa güncelleme ekranını doğrudan aç
-        handleUpdateIntent(intent)
+        // Bildirim çubuğundan tıklandıysa güncelleme veya sohbet ekranını doğrudan aç
+        handleNotificationIntents(intent)
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -136,13 +140,23 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleUpdateIntent(intent)
+        handleNotificationIntents(intent)
     }
 
-    private fun handleUpdateIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
+    private fun handleNotificationIntents(intent: Intent?) {
+        if (intent == null) return
+        if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false)) {
             viewModel.openGlobalUpdateDialog()
             intent.removeExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG)
+        }
+        val chatStudentId = intent.getStringExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_STUDENT_ID)
+        if (!chatStudentId.isNullOrBlank()) {
+            val isTeacherTarget = if (intent.hasExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_IS_TEACHER)) {
+                intent.getBooleanExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_IS_TEACHER, false)
+            } else null
+            viewModel.openChatFromNotification(chatStudentId, isTeacherTarget)
+            intent.removeExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_STUDENT_ID)
+            intent.removeExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_IS_TEACHER)
         }
     }
 }
@@ -223,6 +237,7 @@ fun BirizApp(viewModel: BirizViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
             when (uiState.currentScreen) {
                 ScreenState.GOOGLE_SIGN_IN -> {
@@ -467,7 +482,17 @@ fun BirizApp(viewModel: BirizViewModel) {
                         onLogout = { viewModel.signOut(context) },
                         onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, uiState.currentUser.fullName.ifBlank { "Veli" }) },
                         onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) },
-                        onMarkAnnouncementRead = { aId -> viewModel.markAnnouncementReadByParent(aId, uiState.currentUser.fullName) }
+                        onMarkAnnouncementRead = { aId -> viewModel.markAnnouncementReadByParent(aId, uiState.currentUser.fullName) },
+                        requestedTab = uiState.requestedParentTabName?.let { tabName ->
+                            try { ParentPortalTab.valueOf(tabName) } catch (_: Exception) { null }
+                        },
+                        onRequestedTabConsumed = { viewModel.consumeRequestedParentTab() },
+                        onCommunicationTabStateChanged = { isComm, isChat ->
+                            viewModel.setParentCommunicationScreenState(isComm, isChat)
+                        },
+                        onMarkChatAsRead = { sId ->
+                            viewModel.markChatMessagesAsRead(sId, viewerIsTeacher = false)
+                        }
                     )
                 }
             }

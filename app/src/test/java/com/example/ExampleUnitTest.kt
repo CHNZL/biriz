@@ -1354,5 +1354,278 @@ class ExampleUnitTest {
     val initialUiState = com.example.ui.viewmodel.BirizUiState()
     assertEquals(com.example.ui.viewmodel.DashboardSubPage.ANA_SAYFA, initialUiState.currentSubPage)
   }
+
+  @Test
+  fun testSampleChatMessageFilteringDoesNotDropRealMessages() {
+    val sampleMsg1 = com.example.data.model.ChatMessage(
+      id = "msg_1",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Ali",
+      studentNumber = "1",
+      parentName = "Ali Velisi",
+      parentEmail = "p@test.com",
+      isFromTeacher = true,
+      senderName = "Öğretmen",
+      text = "Örnek mesaj",
+      timestamp = 1700000000000L
+    )
+    val realTimestampMsg = sampleMsg1.copy(id = "msg_1794500000000", text = "Gerçek mesaj")
+    val uuidChatMsg = sampleMsg1.copy(id = "chat_3f9b2c1a-4d5e-4f6a-9b1c-1234567890ab", text = "UUID mesaj")
+
+    assertTrue(com.example.util.CommunicationPersistenceHelper.isSampleChatMessage(sampleMsg1))
+    assertFalse(com.example.util.CommunicationPersistenceHelper.isSampleChatMessage(realTimestampMsg))
+    assertFalse(com.example.util.CommunicationPersistenceHelper.isSampleChatMessage(uuidChatMsg))
+  }
+
+  @Test
+  fun testStaleUpdateNotificationAutoPruningByVersionAndCheckState() {
+    val oldNotif = com.example.data.model.BirizNotification(
+      id = "app_update_1084",
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      title = "Yeni Güncelleme Hazır (v1.0.84)",
+      message = "Güncelleme açıklaması",
+      timestamp = 100L,
+      isRead = false,
+      targetId = "1084",
+      targetSubPageName = "APP_UPDATE"
+    )
+    val sameVersionNotif = oldNotif.copy(
+      id = "app_update_1085",
+      title = "Yeni Güncelleme Hazır (v1.0.85)",
+      targetId = "1085"
+    )
+    val newerVersionNotif = oldNotif.copy(
+      id = "app_update_1086",
+      title = "Yeni Güncelleme Hazır (v1.0.86)",
+      targetId = "1086"
+    )
+    val normalMessageNotif = com.example.data.model.BirizNotification(
+      id = "msg_notif_std_1",
+      type = com.example.data.model.NotificationType.MESSAGE,
+      title = "Yeni Veli Mesajı",
+      message = "Merhaba hocam",
+      timestamp = 200L,
+      isRead = false,
+      targetId = "std_1",
+      targetSubPageName = "ILETISIM_MESAJLAR"
+    )
+
+    val allNotifs = listOf(oldNotif, sameVersionNotif, newerVersionNotif, normalMessageNotif)
+
+    // Installed v1.0.85 (code 1085) with available remote v1.0.86 -> keeps only 1086 + normal message
+    val remoteNewerAvailable = com.example.util.UpdateInfo(
+      isUpdateAvailable = true,
+      currentVersionName = "1.0.85",
+      currentVersionCode = 1085,
+      latestVersionName = "1.0.86",
+      latestVersionCode = 1086,
+      downloadUrl = "https://example.com/app.apk",
+      releaseNotes = "Yeni sürüm"
+    )
+    val prunedWhileNewerAvailable = com.example.util.NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+      notifications = allNotifs,
+      currentVersionCode = 1085,
+      currentVersionName = "1.0.85",
+      latestCheckInfo = remoteNewerAvailable
+    )
+    assertEquals(2, prunedWhileNewerAvailable.size)
+    assertTrue(prunedWhileNewerAvailable.any { it.id == "app_update_1086" })
+    assertTrue(prunedWhileNewerAvailable.any { it.id == "msg_notif_std_1" })
+
+    // When update check confirms app is already up-to-date -> removes ALL APP_UPDATE notifications
+    val alreadyUpToDate = com.example.util.UpdateInfo(
+      isUpdateAvailable = false,
+      currentVersionName = "1.0.85",
+      currentVersionCode = 1085,
+      latestVersionName = "1.0.85",
+      latestVersionCode = 1085,
+      downloadUrl = "",
+      releaseNotes = ""
+    )
+    val prunedWhenUpToDate = com.example.util.NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+      notifications = allNotifs,
+      currentVersionCode = 1085,
+      currentVersionName = "1.0.85",
+      latestCheckInfo = alreadyUpToDate
+    )
+    assertEquals(1, prunedWhenUpToDate.size)
+    assertEquals("msg_notif_std_1", prunedWhenUpToDate.first().id)
+  }
+
+  @Test
+  fun testChatScreenActiveSuppressionAndNotificationRemoval() {
+    // Teacher actively viewing std_1 chat in foreground -> suppress notification
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+        studentId = "std_1",
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        isAppInForeground = true,
+        isTeacherChatPageOpen = true,
+        activeTeacherChatStudentId = "std_1",
+        isParentCommTabActive = false,
+        isParentChatSubTabActive = false,
+        activeParentStudentId = null,
+        isNotificationCenterOpen = false
+      )
+    )
+
+    // Teacher viewing std_2 while message arrives for std_1 -> do NOT suppress
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+        studentId = "std_1",
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        isAppInForeground = true,
+        isTeacherChatPageOpen = true,
+        activeTeacherChatStudentId = "std_2",
+        isParentCommTabActive = false,
+        isParentChatSubTabActive = false,
+        activeParentStudentId = null,
+        isNotificationCenterOpen = false
+      )
+    )
+
+    // Parent actively viewing Chat sub-tab for std_1 in foreground -> suppress notification
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+        studentId = "std_1",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        isAppInForeground = true,
+        isTeacherChatPageOpen = false,
+        activeTeacherChatStudentId = null,
+        isParentCommTabActive = true,
+        isParentChatSubTabActive = true,
+        activeParentStudentId = "std_1",
+        isNotificationCenterOpen = false
+      )
+    )
+
+    // Parent on Announcements sub-tab -> do NOT suppress chat notification
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+        studentId = "std_1",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        isAppInForeground = true,
+        isTeacherChatPageOpen = false,
+        activeTeacherChatStudentId = null,
+        isParentCommTabActive = true,
+        isParentChatSubTabActive = false,
+        activeParentStudentId = "std_1",
+        isNotificationCenterOpen = false
+      )
+    )
+
+    // Notification center open or app in background -> do NOT suppress
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
+        studentId = "std_1",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        isAppInForeground = false,
+        isTeacherChatPageOpen = false,
+        activeTeacherChatStudentId = null,
+        isParentCommTabActive = true,
+        isParentChatSubTabActive = true,
+        activeParentStudentId = "std_1",
+        isNotificationCenterOpen = false
+      )
+    )
+
+    val notifs = listOf(
+      com.example.data.model.BirizNotification(
+        id = "msg_notif_std_1",
+        type = com.example.data.model.NotificationType.MESSAGE,
+        title = "Mesaj",
+        message = "Merhaba",
+        timestamp = 1L,
+        targetSubPageName = "ILETISIM_MESAJLAR",
+        targetId = "std_1"
+      ),
+      com.example.data.model.BirizNotification(
+        id = "msg_notif_std_2",
+        type = com.example.data.model.NotificationType.MESSAGE,
+        title = "Mesaj 2",
+        message = "Selam",
+        timestamp = 2L,
+        targetSubPageName = "ILETISIM_MESAJLAR",
+        targetId = "std_2"
+      )
+    )
+    val remaining = com.example.util.NotificationLifecycleHelper.removeMessageNotificationsForStudent(notifs, "std_1")
+    assertEquals(1, remaining.size)
+    assertEquals("msg_notif_std_2", remaining.first().id)
+  }
+
+  @Test
+  fun testIncomingMessageViewerMatching() {
+    val teacherMsg = com.example.data.model.ChatMessage(
+      id = "chat_1",
+      classId = "c1",
+      studentId = "std_1",
+      studentName = "Ali",
+      studentNumber = "1",
+      parentName = "Ali Velisi",
+      parentEmail = "veli@example.com",
+      isFromTeacher = true,
+      senderName = "Cihan Öğretmen",
+      text = "Merhaba",
+      timestamp = 100L
+    )
+    val parentMsg = teacherMsg.copy(id = "chat_2", isFromTeacher = false, senderName = "Ali Velisi")
+
+    // Teacher sees parent messages as incoming, never teacher messages
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = teacherMsg,
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        linkedParentStudentIds = emptyList(),
+        currentUserEmail = "ogretmen@example.com"
+      )
+    )
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = parentMsg,
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        linkedParentStudentIds = emptyList(),
+        currentUserEmail = "ogretmen@example.com"
+      )
+    )
+
+    // Linked parent sees matching student teacher messages, not own parent messages or other students
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = teacherMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("std_1"),
+        currentUserEmail = "veli@example.com"
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = parentMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("std_1"),
+        currentUserEmail = "veli@example.com"
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = teacherMsg.copy(studentId = "std_other"),
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("std_1"),
+        currentUserEmail = "veli@example.com"
+      )
+    )
+  }
 }
+
 
