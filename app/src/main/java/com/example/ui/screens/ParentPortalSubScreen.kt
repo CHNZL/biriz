@@ -270,6 +270,9 @@ fun ParentPortalSubScreen(
                 tourneysListener?.remove()
             }
         } else {
+            classBooks = emptyList()
+            rawReadingRecords = emptyList()
+            classTournaments = emptyList()
             onDispose {}
         }
     }
@@ -814,8 +817,7 @@ fun ParentPortalSubScreen(
         )
     }
 
-    if (studentToUnlink != null) {
-        val s = studentToUnlink!!
+    studentToUnlink?.let { s ->
         AlertDialog(
             onDismissRequest = { studentToUnlink = null },
             title = {
@@ -1131,9 +1133,9 @@ private fun ParentDashboardHomeView(
                 val (highlightText, descText) = when {
                     currentlyReadingBook != null -> {
                         val activeAssign = currentlyReadingBook.activeAssignments.firstOrNull { it.studentId == student.id }
-                        val days = if (activeAssign != null) {
-                            ((System.currentTimeMillis() - activeAssign.assignmentDate) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
-                        } else 1
+                        val rawAssignMs = activeAssign?.assignmentDate ?: currentlyReadingBook.assignmentDate ?: System.currentTimeMillis()
+                        val validAssignMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
+                        val days = ((System.currentTimeMillis() - validAssignMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
                         "📖 ${currentlyReadingBook.name}" to "Şu An Okuyor (${days}. gün) • ${currentlyReadingBook.pageCount} Sayfa"
                     }
                     lastCompleted != null -> {
@@ -1640,10 +1642,11 @@ private fun ParentReadingDetailView(
                 }
             }
         } else {
-            items(activeReadingBooks, key = { it.id }) { book ->
+            items(activeReadingBooks.distinctBy { it.id }, key = { "active_${it.id}" }) { book ->
                 val myAssignment = book.activeAssignments.firstOrNull { it.studentId == student.id }
-                val assignDateMs = myAssignment?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
-                val daysAgo = ((System.currentTimeMillis() - assignDateMs) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
+                val rawAssignMs = myAssignment?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
+                val assignDateMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
+                val daysAgo = ((System.currentTimeMillis() - assignDateMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
                 val targetStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
 
                 Surface(
@@ -1760,7 +1763,7 @@ private fun ParentReadingDetailView(
                 }
             }
         } else {
-            items(records, key = { it.id }) { rec ->
+            items(records.distinctBy { it.id }, key = { "record_${it.id}" }) { rec ->
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
@@ -1775,8 +1778,10 @@ private fun ParentReadingDetailView(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = primaryText)
                             Spacer(modifier = Modifier.height(2.dp))
-                            val readingDays = maxOf(1, ((rec.endDate - rec.startDate) / (1000 * 60 * 60 * 24)).toInt())
-                            val endStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(rec.endDate))
+                            val safeEnd = if (rec.endDate > 0L) rec.endDate else System.currentTimeMillis()
+                            val safeStart = if (rec.startDate in 1L..safeEnd) rec.startDate else safeEnd
+                            val readingDays = ((safeEnd - safeStart) / (1000L * 60L * 60L * 24L)).coerceIn(1L, 3650L).toInt()
+                            val endStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(safeEnd))
                             Text(text = "${rec.pageCount} Sayfa • $readingDays günde okundu • Bitiş: $endStr", fontSize = 11.5.sp, color = secondaryText)
                         }
                         Surface(
@@ -1837,7 +1842,7 @@ private fun ParentReadingDetailView(
                 }
             }
         } else {
-            items(classBooks.sortedBy { it.registrationNo }, key = { it.id }) { b ->
+            items(classBooks.distinctBy { it.id }.sortedBy { it.registrationNo }, key = { "inventory_${it.id}" }) { b ->
                 val isMyChildReading = b.activeAssignments.any { it.studentId == student.id } || b.currentStudentId == student.id
                 val isAnotherChildReading = !isMyChildReading && b.activeAssignments.isNotEmpty()
                 val isCompletedByMyChild = records.any { it.bookId == b.id || it.bookName.trim().equals(b.name.trim(), ignoreCase = true) }

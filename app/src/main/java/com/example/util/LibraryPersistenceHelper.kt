@@ -30,6 +30,51 @@ object LibraryPersistenceHelper {
     private const val KEY_RECORDS_PREFIX = "lib_records_"
     private const val KEY_USER_ADDED_IDS_PREFIX = "lib_user_book_ids_"
     private val syncScope = CoroutineScope(Dispatchers.IO)
+    private val prefsLock = Any()
+
+    private fun safeOptString(obj: JSONObject, key: String, fallback: String = ""): String {
+        if (!obj.has(key) || obj.isNull(key)) return fallback
+        val raw = obj.optString(key, fallback)
+        return if (raw.equals("null", ignoreCase = true)) fallback else raw
+    }
+
+    private fun safeDocString(doc: com.google.firebase.firestore.DocumentSnapshot, field: String, fallback: String = ""): String {
+        return try {
+            val v = doc.get(field)
+            when (v) {
+                is String -> v
+                is Number, is Boolean -> v.toString()
+                else -> fallback
+            }
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private fun safeDocLong(doc: com.google.firebase.firestore.DocumentSnapshot, field: String, fallback: Long = 0L): Long {
+        return try {
+            when (val v = doc.get(field)) {
+                is Number -> v.toLong()
+                is String -> v.trim().toLongOrNull() ?: fallback
+                else -> fallback
+            }
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private fun safeDocBoolean(doc: com.google.firebase.firestore.DocumentSnapshot, field: String, fallback: Boolean = false): Boolean {
+        return try {
+            when (val v = doc.get(field)) {
+                is Boolean -> v
+                is String -> v.equals("true", ignoreCase = true)
+                is Number -> v.toInt() != 0
+                else -> fallback
+            }
+        } catch (_: Exception) {
+            fallback
+        }
+    }
 
     /**
      * Önceki sürümlerde otomatik üretilmiş sanal/örnek kitap adları (Büyük harf Türkçe normalize)
@@ -75,15 +120,23 @@ object LibraryPersistenceHelper {
     }
 
     private fun getUserAddedBookIds(context: Context, classId: String): Set<String> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", emptySet()) ?: emptySet()
+        synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val stored = prefs.getStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", null)
+            return if (stored != null) HashSet(stored) else emptySet()
+        }
     }
 
     private fun markBookAsUserAdded(context: Context, classId: String, bookId: String) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val current = getUserAddedBookIds(context, classId).toMutableSet()
-        current.add(bookId)
-        prefs.edit().putStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", current).apply()
+        if (bookId.isBlank()) return
+        synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val stored = prefs.getStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", null)
+            val current = if (stored != null) HashSet(stored) else HashSet()
+            if (current.add(bookId)) {
+                prefs.edit().putStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", current).apply()
+            }
+        }
     }
 
     /**
@@ -189,8 +242,10 @@ object LibraryPersistenceHelper {
      * Kitapları Yerel Hafızadan Yükle (Sanal/örnek ve mükerrer kitapları otomatik temizler)
      */
     fun loadBooks(context: Context, classId: String): List<Book> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("$KEY_BOOKS_PREFIX$classId", null)
+        val jsonStr = synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.getString("$KEY_BOOKS_PREFIX$classId", null)
+        }
         if (jsonStr.isNullOrBlank()) {
             return emptyList()
         }
@@ -200,16 +255,27 @@ object LibraryPersistenceHelper {
         return try {
             val array = JSONArray(jsonStr)
             val rawList = mutableListOf<Pair<Book, Boolean>>()
+            var hadCorruptItems = false
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val userCreated = obj.optBoolean("userCreated", false)
-                val book = deserializeBook(obj, defaultRegNo = i + 1)
-                rawList.add(book to userCreated)
+                val obj = array.optJSONObject(i)
+                if (obj == null) {
+                    hadCorruptItems = true
+                    continue
+                }
+                try {
+                    val userCreated = obj.optBoolean("userCreated", false)
+                    val book = deserializeBook(obj, defaultRegNo = i + 1)
+                    rawList.add(book to userCreated)
+                } catch (e: Exception) {
+                    hadCorruptItems = true
+                    Log.w(TAG, "Skipping corrupt cached book at index $i", e)
+                }
             }
 
             val purgedBookIds = mutableSetOf<String>()
             val validList = mutableListOf<Book>()
             val seenNames = mutableSetOf<String>()
+            val seenIds = mutableSetOf<String>()
 
             // Aktif ödüncü olan veya en son güncellenen gerçek kitaplara öncelik ver
             val sortedCandidates = rawList.sortedWith(
@@ -224,7 +290,7 @@ object LibraryPersistenceHelper {
                     continue
                 }
                 val normName = TurkishTextHelper.toTurkishUpperCase(book.name.trim())
-                if (!seenNames.add(normName)) {
+                if (!seenIds.add(book.id) || !seenNames.add(normName)) {
                     purgedBookIds.add(book.id)
                     continue
                 }
@@ -232,35 +298,46 @@ object LibraryPersistenceHelper {
             }
 
             val finalSorted = validList.sortedBy { it.registrationNo }
-            if (purgedBookIds.isNotEmpty() || finalSorted.size != rawList.size) {
+            if (hadCorruptItems || purgedBookIds.isNotEmpty() || finalSorted.size != rawList.size) {
                 saveBooksToLocalPrefsOnly(context, classId, finalSorted)
                 if (classId.isNotBlank() && classId != "default" && purgedBookIds.isNotEmpty()) {
                     deleteBookDocsFromFirestore(context, classId, purgedBookIds)
                 }
             }
             finalSorted
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Corrupted local books cache for $classId, resetting cache cleanly", e)
+            synchronized(prefsLock) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("$KEY_BOOKS_PREFIX$classId")
+                    .apply()
+            }
             emptyList()
         }
     }
 
     private fun saveBooksToLocalPrefsOnly(context: Context, classId: String, books: List<Book>) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val knownUserIds = getUserAddedBookIds(context, classId)
         val array = JSONArray()
-        books.forEach { book ->
+        books.distinctBy { it.id }.forEach { book ->
             array.put(serializeBook(book, userCreated = knownUserIds.contains(book.id)))
         }
-        prefs.edit().putString("$KEY_BOOKS_PREFIX$classId", array.toString()).apply()
+        synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putString("$KEY_BOOKS_PREFIX$classId", array.toString()).apply()
+        }
     }
 
     private fun saveRecordsToLocalPrefsOnly(context: Context, classId: String, records: List<ReadingRecord>) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val array = JSONArray()
-        records.forEach { r ->
+        records.distinctBy { it.id }.forEach { r ->
             array.put(serializeReadingRecord(r))
         }
-        prefs.edit().putString("$KEY_RECORDS_PREFIX$classId", array.toString()).apply()
+        synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putString("$KEY_RECORDS_PREFIX$classId", array.toString()).apply()
+        }
     }
 
     /**
@@ -280,17 +357,29 @@ object LibraryPersistenceHelper {
      * Tamamlanan Okuma Geçmişi Kayıtlarını Yükle
      */
     fun loadReadingRecords(context: Context, classId: String): List<ReadingRecord> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("$KEY_RECORDS_PREFIX$classId", null) ?: return emptyList()
+        val jsonStr = synchronized(prefsLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.getString("$KEY_RECORDS_PREFIX$classId", null)
+        } ?: return emptyList()
 
         return try {
             val knownUserIds = getUserAddedBookIds(context, classId)
             val array = JSONArray(jsonStr)
             val list = mutableListOf<ReadingRecord>()
             val removedIds = mutableSetOf<String>()
+            var hadCorruptItems = false
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val rec = deserializeReadingRecord(obj)
+                val obj = array.optJSONObject(i)
+                if (obj == null) {
+                    hadCorruptItems = true
+                    continue
+                }
+                val rec = try {
+                    deserializeReadingRecord(obj)
+                } catch (_: Exception) {
+                    hadCorruptItems = true
+                    continue
+                }
                 val upperBookName = TurkishTextHelper.toTurkishUpperCase(rec.bookName.trim())
                 val isLegacySample = upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && rec.bookId !in knownUserIds
                 if (rec.id.isBlank() || rec.bookName.isBlank() || rec.studentId.isBlank() || isLegacySample) {
@@ -300,14 +389,21 @@ object LibraryPersistenceHelper {
                 list.add(rec)
             }
             val deduped = list.distinctBy { it.id }.sortedByDescending { it.endDate }
-            if (removedIds.isNotEmpty() || deduped.size != list.size) {
+            if (hadCorruptItems || removedIds.isNotEmpty() || deduped.size != list.size) {
                 saveRecordsToLocalPrefsOnly(context, classId, deduped)
                 if (classId.isNotBlank() && classId != "default" && removedIds.isNotEmpty()) {
                     deleteRecordDocsFromFirestore(context, classId, removedIds)
                 }
             }
             deduped
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Corrupted local reading records cache for $classId, resetting cache cleanly", e)
+            synchronized(prefsLock) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("$KEY_RECORDS_PREFIX$classId")
+                    .apply()
+            }
             emptyList()
         }
     }
@@ -1141,29 +1237,34 @@ object LibraryPersistenceHelper {
         }
     }
 
-    private fun deserializeBook(obj: JSONObject, defaultRegNo: Int = 1): Book {
+    private fun deserializeBook(obj: JSONObject, defaultRegNo: Int = 1, fallbackId: String? = null): Book {
+        val nowMs = System.currentTimeMillis()
         val assignmentsList = mutableListOf<ActiveAssignment>()
         val assignArray = obj.optJSONArray("activeAssignments")
         if (assignArray != null) {
             for (j in 0 until assignArray.length()) {
-                val aObj = assignArray.getJSONObject(j)
-                val sId = aObj.optString("studentId", "").trim()
-                val sName = aObj.optString("studentName", "").trim()
+                val aObj = assignArray.optJSONObject(j) ?: continue
+                val sId = safeOptString(aObj, "studentId", "").trim()
+                val sName = safeOptString(aObj, "studentName", "").trim()
+                val rawDate = aObj.optLong("assignmentDate", nowMs)
                 if (sId.isNotEmpty() && sName.isNotEmpty()) {
                     assignmentsList.add(
                         ActiveAssignment(
                             studentId = sId,
                             studentName = sName,
-                            assignmentDate = aObj.optLong("assignmentDate", System.currentTimeMillis())
+                            assignmentDate = if (rawDate > 0L) rawDate else nowMs
                         )
                     )
                 }
             }
         }
         // Eğer eski kayıtlarda activeAssignments boş ama currentStudentId dolu ise dönüştür
-        val legacyStudentId = obj.optString("currentStudentId", "").trim()
-        val legacyStudentName = obj.optString("currentStudentName", "").trim()
-        val legacyAssignDate = if (obj.has("assignmentDate")) obj.optLong("assignmentDate", System.currentTimeMillis()) else System.currentTimeMillis()
+        val legacyStudentId = safeOptString(obj, "currentStudentId", "").trim()
+        val legacyStudentName = safeOptString(obj, "currentStudentName", "").trim()
+        val rawLegacyDate = if (obj.has("assignmentDate") && !obj.isNull("assignmentDate")) {
+            obj.optLong("assignmentDate", nowMs)
+        } else nowMs
+        val legacyAssignDate = if (rawLegacyDate > 0L) rawLegacyDate else nowMs
         if (assignmentsList.isEmpty() && legacyStudentId.isNotEmpty() && legacyStudentName.isNotEmpty()) {
             assignmentsList.add(
                 ActiveAssignment(
@@ -1174,20 +1275,23 @@ object LibraryPersistenceHelper {
             )
         }
 
+        val resolvedId = safeOptString(obj, "id", "").trim()
+            .ifBlank { fallbackId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString() }
+
         return normalizeBookState(
             Book(
-                id = obj.optString("id", UUID.randomUUID().toString()),
+                id = resolvedId,
                 registrationNo = obj.optInt("registrationNo", defaultRegNo),
-                name = obj.optString("name", "Kitap"),
-                author = obj.optString("author", ""),
+                name = safeOptString(obj, "name", "Kitap"),
+                author = safeOptString(obj, "author", ""),
                 pageCount = obj.optInt("pageCount", 0),
                 status = if (assignmentsList.isNotEmpty()) "Okunuyor" else "Rafta",
                 activeAssignments = assignmentsList,
                 currentStudentId = assignmentsList.firstOrNull()?.studentId,
                 currentStudentName = assignmentsList.firstOrNull()?.studentName,
                 assignmentDate = assignmentsList.firstOrNull()?.assignmentDate,
-                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
-                updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                createdAt = obj.optLong("createdAt", nowMs),
+                updatedAt = obj.optLong("updatedAt", nowMs)
             )
         )
     }
@@ -1210,19 +1314,22 @@ object LibraryPersistenceHelper {
     }
 
     private fun deserializeReadingRecord(obj: JSONObject, fallbackId: String? = null): ReadingRecord {
+        val nowMs = System.currentTimeMillis()
+        val resolvedId = safeOptString(obj, "id", "").trim()
+            .ifBlank { fallbackId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString() }
         return ReadingRecord(
-            id = obj.optString("id", fallbackId ?: UUID.randomUUID().toString()),
-            bookId = obj.optString("bookId", ""),
-            bookName = obj.optString("bookName", ""),
+            id = resolvedId,
+            bookId = safeOptString(obj, "bookId", ""),
+            bookName = safeOptString(obj, "bookName", ""),
             pageCount = obj.optInt("pageCount", 0),
-            studentId = obj.optString("studentId", ""),
-            studentName = obj.optString("studentName", ""),
-            studentNumber = obj.optString("studentNumber", ""),
-            startDate = obj.optLong("startDate", System.currentTimeMillis()),
-            endDate = obj.optLong("endDate", System.currentTimeMillis()),
+            studentId = safeOptString(obj, "studentId", ""),
+            studentName = safeOptString(obj, "studentName", ""),
+            studentNumber = safeOptString(obj, "studentNumber", ""),
+            startDate = obj.optLong("startDate", nowMs),
+            endDate = obj.optLong("endDate", nowMs),
             earnedStars = obj.optInt("earnedStars", 1),
-            teacherUid = obj.optString("teacherUid", ""),
-            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+            teacherUid = safeOptString(obj, "teacherUid", ""),
+            createdAt = obj.optLong("createdAt", nowMs)
         )
     }
 
@@ -1393,48 +1500,50 @@ object LibraryPersistenceHelper {
                         val invalidDocIds = mutableSetOf<String>()
 
                         for (doc in snapshot.documents) {
-                            val docExplicitlyAdded = doc.getBoolean("explicitlyAddedByTeacher") == true
-                            val jsonStr = doc.getString("json")
-                            if (!jsonStr.isNullOrBlank()) {
-                                try {
+                            try {
+                                val docExplicitlyAdded = safeDocBoolean(doc, "explicitlyAddedByTeacher", false)
+                                val jsonStr = safeDocString(doc, "json", "")
+                                if (jsonStr.isNotBlank()) {
                                     val obj = JSONObject(jsonStr)
-                                    val book = deserializeBook(obj)
+                                    val book = deserializeBook(obj, fallbackId = doc.id)
                                     val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
                                     rawDocs.add(book to isUserCreated)
-                                } catch (_: Exception) {
-                                    invalidDocIds.add(doc.id)
-                                }
-                            } else {
-                                val regNo = (doc.getLong("registrationNo") ?: 1L).toInt()
-                                val name = doc.getString("name") ?: "Kitap"
-                                val author = doc.getString("author") ?: ""
-                                val pageCount = (doc.getLong("pageCount") ?: 0L).toInt()
-                                val status = doc.getString("status") ?: "Rafta"
-                                val sId = doc.getString("currentStudentId")?.takeIf { it.isNotEmpty() }
-                                val sName = doc.getString("currentStudentName")?.takeIf { it.isNotEmpty() }
-                                val assignments = if (sId != null && sName != null) {
-                                    listOf(ActiveAssignment(sId, sName, System.currentTimeMillis()))
-                                } else emptyList()
-                                val book = normalizeBookState(
-                                    Book(
-                                        id = doc.id,
-                                        registrationNo = regNo,
-                                        name = name,
-                                        author = author,
-                                        pageCount = pageCount,
-                                        status = status,
-                                        activeAssignments = assignments,
-                                        currentStudentId = sId,
-                                        currentStudentName = sName
+                                } else {
+                                    val regNo = safeDocLong(doc, "registrationNo", 1L).toInt()
+                                    val name = safeDocString(doc, "name", "Kitap")
+                                    val author = safeDocString(doc, "author", "")
+                                    val pageCount = safeDocLong(doc, "pageCount", 0L).toInt()
+                                    val status = safeDocString(doc, "status", "Rafta")
+                                    val sId = safeDocString(doc, "currentStudentId", "").trim().takeIf { it.isNotEmpty() }
+                                    val sName = safeDocString(doc, "currentStudentName", "").trim().takeIf { it.isNotEmpty() }
+                                    val assignments = if (sId != null && sName != null) {
+                                        listOf(ActiveAssignment(sId, sName, System.currentTimeMillis()))
+                                    } else emptyList()
+                                    val book = normalizeBookState(
+                                        Book(
+                                            id = doc.id,
+                                            registrationNo = regNo,
+                                            name = name,
+                                            author = author,
+                                            pageCount = pageCount,
+                                            status = status,
+                                            activeAssignments = assignments,
+                                            currentStudentId = sId,
+                                            currentStudentName = sName
+                                        )
                                     )
-                                )
-                                val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
-                                rawDocs.add(book to isUserCreated)
+                                    val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
+                                    rawDocs.add(book to isUserCreated)
+                                }
+                            } catch (docErr: Exception) {
+                                Log.w(TAG, "Skipping malformed Firestore book doc ${doc.id}", docErr)
+                                invalidDocIds.add(doc.id)
                             }
                         }
 
                         val cleanList = mutableListOf<Book>()
                         val seenNames = mutableSetOf<String>()
+                        val seenIds = mutableSetOf<String>()
 
                         val sortedCandidates = rawDocs.sortedWith(
                             compareByDescending<Pair<Book, Boolean>> { it.second || knownUserIds.contains(it.first.id) }
@@ -1448,7 +1557,7 @@ object LibraryPersistenceHelper {
                                 continue
                             }
                             val normName = TurkishTextHelper.toTurkishUpperCase(book.name.trim())
-                            if (!seenNames.add(normName)) {
+                            if (!seenIds.add(book.id) || !seenNames.add(normName)) {
                                 invalidDocIds.add(book.id)
                                 continue
                             }
@@ -1462,10 +1571,10 @@ object LibraryPersistenceHelper {
                             deleteBookDocsFromFirestore(context, classId, invalidDocIds)
                         }
 
-                        cleanList.sortBy { it.registrationNo }
+                        val dedupedSorted = cleanList.distinctBy { it.id }.sortedBy { it.registrationNo }
                         // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (eski silinmiş kitapları geri yükleme!)
-                        saveBooksToLocalPrefsOnly(context, classId, cleanList)
-                        onUpdate(cleanList)
+                        saveBooksToLocalPrefsOnly(context, classId, dedupedSorted)
+                        onUpdate(dedupedSorted)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in observeFirestoreBooks", e)
                     }
@@ -1493,39 +1602,44 @@ object LibraryPersistenceHelper {
                         val invalidRecordIds = mutableSetOf<String>()
 
                         for (doc in snapshot.documents) {
-                            val jsonStr = doc.getString("json")
-                            val record = if (!jsonStr.isNullOrBlank()) {
-                                try {
+                            val record = try {
+                                val jsonStr = safeDocString(doc, "json", "")
+                                if (jsonStr.isNotBlank()) {
                                     val obj = JSONObject(jsonStr)
-                                    deserializeReadingRecord(obj, fallbackId = doc.id).copy(
-                                        studentNumber = doc.getString("studentNumber") ?: obj.optString("studentNumber", ""),
-                                        teacherUid = doc.getString("teacherUid") ?: obj.optString("teacherUid", "")
+                                    val docStudentNum = safeDocString(doc, "studentNumber", "")
+                                    val docTeacherUid = safeDocString(doc, "teacherUid", "")
+                                    deserializeReadingRecord(obj, fallbackId = doc.id).let { base ->
+                                        base.copy(
+                                            studentNumber = docStudentNum.ifBlank { base.studentNumber },
+                                            teacherUid = docTeacherUid.ifBlank { base.teacherUid }
+                                        )
+                                    }
+                                } else {
+                                    val bId = safeDocString(doc, "bookId", "")
+                                    val bName = safeDocString(doc, "bookName", "")
+                                    val page = safeDocLong(doc, "pageCount", 0L).toInt()
+                                    val sId = safeDocString(doc, "studentId", "")
+                                    val sName = safeDocString(doc, "studentName", "")
+                                    val sNumber = safeDocString(doc, "studentNumber", "")
+                                    val sDate = safeDocLong(doc, "startDate", System.currentTimeMillis())
+                                    val eDate = safeDocLong(doc, "endDate", System.currentTimeMillis())
+                                    val stars = safeDocLong(doc, "earnedStars", 1L).toInt()
+                                    ReadingRecord(
+                                        id = doc.id,
+                                        bookId = bId,
+                                        bookName = bName,
+                                        pageCount = page,
+                                        studentId = sId,
+                                        studentName = sName,
+                                        studentNumber = sNumber,
+                                        startDate = sDate,
+                                        endDate = eDate,
+                                        earnedStars = stars
                                     )
-                                } catch (_: Exception) {
-                                    null
                                 }
-                            } else {
-                                val bId = doc.getString("bookId") ?: ""
-                                val bName = doc.getString("bookName") ?: ""
-                                val page = (doc.getLong("pageCount") ?: 0L).toInt()
-                                val sId = doc.getString("studentId") ?: ""
-                                val sName = doc.getString("studentName") ?: ""
-                                val sNumber = doc.getString("studentNumber") ?: ""
-                                val sDate = doc.getLong("startDate") ?: System.currentTimeMillis()
-                                val eDate = doc.getLong("endDate") ?: System.currentTimeMillis()
-                                val stars = (doc.getLong("earnedStars") ?: 1L).toInt()
-                                ReadingRecord(
-                                    id = doc.id,
-                                    bookId = bId,
-                                    bookName = bName,
-                                    pageCount = page,
-                                    studentId = sId,
-                                    studentName = sName,
-                                    studentNumber = sNumber,
-                                    startDate = sDate,
-                                    endDate = eDate,
-                                    earnedStars = stars
-                                )
+                            } catch (docErr: Exception) {
+                                Log.w(TAG, "Skipping malformed Firestore reading record ${doc.id}", docErr)
+                                null
                             }
 
                             if (record == null || record.bookName.isBlank() || record.studentId.isBlank()) {

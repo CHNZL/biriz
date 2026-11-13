@@ -434,8 +434,9 @@ fun LibrarySubScreen(
 
         // 2. Kitap Ödünç Verme Diyaloğu
         if (showBorrowDialog && bookToBorrow != null) {
+            val targetBook = bookToBorrow!!
             BorrowBookDialog(
-                book = bookToBorrow!!,
+                book = targetBook,
                 students = students,
                 isDarkTheme = isDarkTheme,
                 onDismiss = {
@@ -443,16 +444,19 @@ fun LibrarySubScreen(
                     bookToBorrow = null
                 },
                 onConfirm = { selectedStudents, dateStr ->
-                    selectedStudents.forEach { student ->
-                        LibraryPersistenceHelper.borrowBook(
-                            context = context,
-                            classRoomId = classRoom.id,
-                            bookId = bookToBorrow!!.id,
-                            studentId = student.id,
-                            studentName = student.fullName,
-                            date = dateStr
-                        )
-                    }
+                    val assignDateMs = if (dateStr.isNotBlank()) {
+                        try {
+                            SimpleDateFormat("dd.MM.yyyy", Locale("tr")).parse(dateStr)?.time ?: System.currentTimeMillis()
+                        } catch (_: Exception) { System.currentTimeMillis() }
+                    } else System.currentTimeMillis()
+
+                    LibraryPersistenceHelper.borrowBook(
+                        context = context,
+                        classId = classRoom.id,
+                        bookId = targetBook.id,
+                        students = selectedStudents,
+                        assignmentDate = assignDateMs
+                    )
                     refreshData()
                     showBorrowDialog = false
                     bookToBorrow = null

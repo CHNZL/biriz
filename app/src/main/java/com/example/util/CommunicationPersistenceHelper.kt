@@ -45,8 +45,12 @@ object CommunicationPersistenceHelper {
         }
     }
 
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale("tr", "TR"))
-    private val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))
+    private val timeFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat = SimpleDateFormat("HH:mm", Locale("tr", "TR"))
+    }
+    private val dateFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))
+    }
 
     fun loadFontOffset(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -58,8 +62,8 @@ object CommunicationPersistenceHelper {
         prefs.edit().putInt(KEY_FONT_OFFSET, offset).apply()
     }
 
-    fun formatTime(timestamp: Long): String = timeFormat.format(Date(timestamp))
-    fun formatDateTime(timestamp: Long): String = dateFormat.format(Date(timestamp))
+    fun formatTime(timestamp: Long): String = (timeFormat.get() ?: SimpleDateFormat("HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
+    fun formatDateTime(timestamp: Long): String = (dateFormat.get() ?: SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
 
     /**
      * Sınıfa ait duyuruları yükler; sadece gerçek duyuruları getirir, sahte/örnek veri tohumlamaz.
