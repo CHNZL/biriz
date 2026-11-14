@@ -21,21 +21,25 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 object CommunicationPersistenceHelper {
 
     private const val TAG = "CommunicationPersistence"
     private const val PREFS_NAME = "biriz_communication_storage"
     private const val KEY_ANNOUNCEMENTS_PREFIX = "announcements_"
+    private const val KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX = "deleted_announcements_"
     private const val KEY_CHAT_MESSAGES_PREFIX = "chat_messages_"
     private const val KEY_NOTIFICATIONS_PREFIX = "notifications_"
     private const val KEY_FONT_OFFSET = "key_communication_font_offset"
     private val syncScope = CoroutineScope(Dispatchers.IO)
+    private val deletedAnnouncementIdsByClass = ConcurrentHashMap<String, MutableSet<String>>()
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
@@ -65,13 +69,68 @@ object CommunicationPersistenceHelper {
     fun formatTime(timestamp: Long): String = (timeFormat.get() ?: SimpleDateFormat("HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
     fun formatDateTime(timestamp: Long): String = (dateFormat.get() ?: SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
 
+    private fun getDeletedIdsForClass(context: Context, classId: String): Set<String> {
+        val key = classId.ifBlank { "default" }
+        val existing = deletedAnnouncementIdsByClass[key]
+        if (existing != null) {
+            return synchronized(existing) { existing.toSet() }
+        }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getStringSet(KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX + key, emptySet()) ?: emptySet()
+        val set = java.util.Collections.synchronizedSet(raw.toMutableSet())
+        deletedAnnouncementIdsByClass[key] = set
+        return synchronized(set) { set.toSet() }
+    }
+
+    fun markAnnouncementDeleted(context: Context, classId: String, announcementId: String) {
+        if (announcementId.isBlank()) return
+        val key = classId.ifBlank { "default" }
+        val set = deletedAnnouncementIdsByClass.getOrPut(key) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val raw = prefs.getStringSet(KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX + key, emptySet()) ?: emptySet()
+            java.util.Collections.synchronizedSet(raw.toMutableSet())
+        }
+        val snapshotCopy = synchronized(set) {
+            set.add(announcementId)
+            // Bellek/prefs şişmesini önlemek için son 200 silinen ID'yi tut
+            if (set.size > 200) {
+                val trimmed = set.toList().takeLast(200)
+                set.clear()
+                set.addAll(trimmed)
+            }
+            set.toSet()
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX + key, snapshotCopy)
+            .apply()
+    }
+
+    fun unmarkAnnouncementDeleted(context: Context, classId: String, announcementId: String) {
+        if (announcementId.isBlank()) return
+        val key = classId.ifBlank { "default" }
+        val set = deletedAnnouncementIdsByClass[key] ?: return
+        val changed = synchronized(set) { set.remove(announcementId) }
+        if (changed) {
+            val snapshotCopy = synchronized(set) { set.toSet() }
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX + key, snapshotCopy)
+                .apply()
+        }
+    }
+
     /**
-     * Sınıfa ait duyuruları yükler; sadece gerçek duyuruları getirir, sahte/örnek veri tohumlamaz.
+     * Sınıfa ait duyuruları yükler; sadece gerçek duyuruları getirir, sahte/örnek veya silinmiş verileri getirmez.
      */
     fun loadAnnouncements(context: Context, classId: String, students: List<Student>): List<Announcement> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val rawJson = (if (classId.isNotBlank()) prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + classId, null) else null)
-            ?: prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + "default", null)
+        val rawJson = if (classId.isNotBlank() && classId != "default") {
+            prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + classId, null)
+        } else {
+            prefs.getString(KEY_ANNOUNCEMENTS_PREFIX + "default", null)
+        }
+        val deletedIds = getDeletedIdsForClass(context, classId)
 
         if (!rawJson.isNullOrBlank()) {
             try {
@@ -80,8 +139,8 @@ object CommunicationPersistenceHelper {
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
                     val ann = parseAnnouncementJson(obj)
-                    // Örnek / sahte tohum duyuruları filtrele
-                    if (ann.id != "ann_1" && ann.id != "ann_2") {
+                    // Örnek / sahte tohum duyuruları ve silinen duyuruları filtrele
+                    if (ann.id != "ann_1" && ann.id != "ann_2" && ann.id !in deletedIds) {
                         list.add(ann)
                     }
                 }
@@ -103,12 +162,12 @@ object CommunicationPersistenceHelper {
             jsonArray.put(serializeAnnouncementJson(announcement))
         }
         val jsonStr = jsonArray.toString()
-        val editor = prefs.edit()
-        if (classId.isNotBlank()) {
-            editor.putString(KEY_ANNOUNCEMENTS_PREFIX + classId, jsonStr)
+        val storageKey = if (classId.isNotBlank() && classId != "default") {
+            KEY_ANNOUNCEMENTS_PREFIX + classId
+        } else {
+            KEY_ANNOUNCEMENTS_PREFIX + "default"
         }
-        editor.putString(KEY_ANNOUNCEMENTS_PREFIX + "default", jsonStr)
-        editor.apply()
+        prefs.edit().putString(storageKey, jsonStr).apply()
     }
 
     /**
@@ -126,6 +185,7 @@ object CommunicationPersistenceHelper {
      */
     fun uploadAnnouncementToFirestore(context: Context, classId: String, announcement: Announcement) {
         if (classId.isBlank() || classId == "default") return
+        if (announcement.id in getDeletedIdsForClass(context, classId)) return
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
@@ -141,6 +201,7 @@ object CommunicationPersistenceHelper {
                 db.collection("classrooms").document(classId)
                     .collection("announcements").document(announcement.id)
                     .set(data, SetOptions.merge())
+                    .await()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to upload announcement to Firestore", e)
             }
@@ -148,7 +209,7 @@ object CommunicationPersistenceHelper {
     }
 
     /**
-     * Anket oyunu Firestore üzerinde atomik işlemle (mevcut oyları ezmeden ve tek oy kilidini koruyarak) kaydeder.
+     * Anket oyunu Firestore üzerinde atomik işlemle (mevcut oyları ezmeden, silinen duyuruyu diriltmeden ve tek oy kilidini koruyarak) kaydeder.
      */
     fun recordPollVoteInFirestore(
         context: Context,
@@ -157,6 +218,7 @@ object CommunicationPersistenceHelper {
         optionId: String,
         voterLabel: String,
         voterAliases: Set<String>,
+        voterAccountKeys: Set<String> = emptySet(),
         fallbackAnnouncement: Announcement
     ) {
         if (classId.isBlank() || classId == "default") return
@@ -167,20 +229,22 @@ object CommunicationPersistenceHelper {
             try {
                 db.runTransaction { tx ->
                     val snap = tx.get(docRef)
-                    val baseAnn = snap.getString("json")?.takeIf { it.isNotBlank() }?.let { raw ->
-                        try {
-                            parseAnnouncementJson(JSONObject(raw))
-                        } catch (_: Exception) {
-                            fallbackAnnouncement
-                        }
-                    } ?: fallbackAnnouncement
+                    // Öğretmen duyuruyu sildiyse kesinlikle yeniden oluşturma
+                    if (!snap.exists()) return@runTransaction null
+                    val raw = snap.getString("json") ?: return@runTransaction null
+                    val baseAnn = try {
+                        parseAnnouncementJson(JSONObject(raw))
+                    } catch (_: Exception) {
+                        return@runTransaction null
+                    }
 
                     val currentPoll = baseAnn.poll ?: return@runTransaction null
                     val updatedPoll = AnnouncementIdentityHelper.applySingleVote(
                         poll = currentPoll,
                         optionId = optionId,
                         voterLabel = voterLabel,
-                        voterAliases = voterAliases
+                        voterAliases = voterAliases,
+                        voterAccountKeys = voterAccountKeys
                     ) ?: return@runTransaction null
 
                     val mergedAnn = baseAnn.copy(classId = classId, poll = updatedPoll)
@@ -194,16 +258,15 @@ object CommunicationPersistenceHelper {
                     )
                     tx.set(docRef, data, SetOptions.merge())
                     null
-                }
+                }.await()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed transactionally recording poll vote", e)
-                uploadAnnouncementToFirestore(context, classId, fallbackAnnouncement)
             }
         }
     }
 
     /**
-     * Duyuru okundu bilgisini Firestore üzerinde atomik işlemle (diğer velilerin okuma kayıtlarını ezmeden) kaydeder.
+     * Duyuru okundu bilgisini Firestore üzerinde atomik işlemle (diğer velilerin okuma kayıtlarını ezmeden ve silinen duyuruyu diriltmeden) kaydeder.
      */
     fun recordAnnouncementReadInFirestore(
         context: Context,
@@ -221,13 +284,14 @@ object CommunicationPersistenceHelper {
             try {
                 db.runTransaction { tx ->
                     val snap = tx.get(docRef)
-                    val baseAnn = snap.getString("json")?.takeIf { it.isNotBlank() }?.let { raw ->
-                        try {
-                            parseAnnouncementJson(JSONObject(raw))
-                        } catch (_: Exception) {
-                            fallbackAnnouncement
-                        }
-                    } ?: fallbackAnnouncement
+                    // Öğretmen duyuruyu sildiyse yeniden oluşturma
+                    if (!snap.exists()) return@runTransaction null
+                    val raw = snap.getString("json") ?: return@runTransaction null
+                    val baseAnn = try {
+                        parseAnnouncementJson(JSONObject(raw))
+                    } catch (_: Exception) {
+                        return@runTransaction null
+                    }
 
                     if (baseAnn.readReceipts.containsKey(readerLabel)) return@runTransaction null
                     val mergedReceipts = baseAnn.readReceipts + (readerLabel to readTimestamp)
@@ -242,18 +306,18 @@ object CommunicationPersistenceHelper {
                     )
                     tx.set(docRef, data, SetOptions.merge())
                     null
-                }
+                }.await()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed transactionally recording read receipt", e)
-                uploadAnnouncementToFirestore(context, classId, fallbackAnnouncement)
             }
         }
     }
 
     /**
-     * Duyuruyu Firestore'dan siler.
+     * Duyuruyu Firestore'dan kalıcı olarak siler ve yerel önbellekte silindi olarak işaretler.
      */
     fun deleteAnnouncementFromFirestore(context: Context, classId: String, announcementId: String) {
+        markAnnouncementDeleted(context, classId, announcementId)
         if (classId.isBlank() || classId == "default") return
         val db = getFirestore(context) ?: return
         syncScope.launch {
@@ -261,6 +325,7 @@ object CommunicationPersistenceHelper {
                 db.collection("classrooms").document(classId)
                     .collection("announcements").document(announcementId)
                     .delete()
+                    .await()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to delete announcement from Firestore", e)
             }
@@ -269,7 +334,7 @@ object CommunicationPersistenceHelper {
 
     /**
      * Firestore üzerinden sınıfa ait duyuruları gerçek zamanlı dinler.
-     * Öğretmen duyuru veya anket yayınladığında veli portalında ve diğer cihazlarda ANINDA görünür.
+     * Bulut (Firestore) tek doğruluk kaynağıdır; boş veya silinmiş duyuruları yerel önbellekten asla geri yüklemez.
      */
     fun observeFirestoreAnnouncements(
         context: Context,
@@ -284,38 +349,29 @@ object CommunicationPersistenceHelper {
                 .addSnapshotListener { snapshot, error ->
                     if (error != null || snapshot == null) return@addSnapshotListener
                     try {
+                        val deletedIds = getDeletedIdsForClass(context, classId)
+                        val isServerConfirmed = !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()
                         val list = mutableListOf<Announcement>()
                         for (doc in snapshot.documents) {
                             val jsonStr = doc.getString("json")
                             if (!jsonStr.isNullOrBlank()) {
                                 try {
                                     val ann = parseAnnouncementJson(JSONObject(jsonStr))
-                                    if (ann.id != "ann_1" && ann.id != "ann_2") {
-                                        list.add(ann)
+                                    if (ann.id == "ann_1" || ann.id == "ann_2") continue
+                                    if (ann.id in deletedIds) {
+                                        // Öğretmenin sildiği duyuru eşzamanlı yazma nedeniyle sunucuda kaldıysa tekrar sil
+                                        if (isServerConfirmed) {
+                                            doc.reference.delete()
+                                        }
+                                        continue
                                     }
+                                    list.add(ann)
                                 } catch (_: Exception) {}
                             }
                         }
-                        if (list.isEmpty()) {
-                            val localList = loadAnnouncements(context, classId, emptyList())
-                            if (localList.isNotEmpty()) {
-                                localList.forEach { uploadAnnouncementToFirestore(context, classId, it) }
-                                onUpdate(localList)
-                                return@addSnapshotListener
-                            }
-                        }
                         list.sortByDescending { it.createdAt }
-                        if (list.isNotEmpty()) {
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            val jsonArray = JSONArray()
-                            for (item in list) {
-                                jsonArray.put(serializeAnnouncementJson(item))
-                            }
-                            val str = jsonArray.toString()
-                            prefs.edit()
-                                .putString(KEY_ANNOUNCEMENTS_PREFIX + classId, str)
-                                .putString(KEY_ANNOUNCEMENTS_PREFIX + "default", str)
-                                .apply()
+                        if (!snapshot.metadata.isFromCache || list.isNotEmpty()) {
+                            saveAnnouncementsLocalOnly(context, classId, list)
                         }
                         onUpdate(list)
                     } catch (e: Exception) {
@@ -958,6 +1014,9 @@ object CommunicationPersistenceHelper {
                 val votersArr = JSONArray()
                 opt.voterParentNames.forEach { votersArr.put(it) }
                 optObj.put("voterParentNames", votersArr)
+                val voterIdsArr = JSONArray()
+                opt.voterIds.forEach { voterIdsArr.put(it) }
+                optObj.put("voterIds", voterIdsArr)
                 optionsArr.put(optObj)
             }
             pollObj.put("options", optionsArr)
@@ -1017,11 +1076,19 @@ object CommunicationPersistenceHelper {
                             voters.add(vArr.getString(j))
                         }
                     }
+                    val voterIds = mutableListOf<String>()
+                    val vIdsArr = o.optJSONArray("voterIds")
+                    if (vIdsArr != null) {
+                        for (j in 0 until vIdsArr.length()) {
+                            voterIds.add(vIdsArr.getString(j))
+                        }
+                    }
                     optList.add(
                         PollOption(
                             id = o.getString("id"),
                             text = o.getString("text"),
-                            voterParentNames = voters
+                            voterParentNames = voters,
+                            voterIds = voterIds
                         )
                     )
                 }

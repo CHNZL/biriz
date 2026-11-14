@@ -14,7 +14,8 @@ enum class AnnouncementTargetType(val displayName: String) {
 data class PollOption(
     val id: String,
     val text: String,
-    val voterParentNames: List<String> = emptyList()
+    val voterParentNames: List<String> = emptyList(),
+    val voterIds: List<String> = emptyList()
 ) {
     val voteCount: Int get() = voterParentNames.size
 }

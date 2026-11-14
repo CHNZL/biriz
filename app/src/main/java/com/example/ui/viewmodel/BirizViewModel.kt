@@ -247,6 +247,14 @@ class BirizViewModel(
     private var seenActivityEventKeys: Set<String> = emptySet()
     private var activityBaselineTimestampMs: Long = 0L
     private var loadedActivityStateKey: String? = null
+    private data class PendingPollVote(
+        val announcementId: String,
+        val optionId: String,
+        val voterLabel: String,
+        val voterAliases: Set<String>,
+        val voterAccountKeys: Set<String>
+    )
+    private val pendingPollVotes = mutableMapOf<String, PendingPollVote>()
     @Volatile
     private var isAppInForeground: Boolean = true
     @Volatile
@@ -988,6 +996,7 @@ class BirizViewModel(
             hasCloudTournaments = false
             loadedCloudMatchTournamentIds.clear()
             latestMatchesByTournament.clear()
+            pendingPollVotes.clear()
             previousActivitySnapshot = null
             clearActivityListeners()
         }
@@ -1012,9 +1021,37 @@ class BirizViewModel(
             // Firestore üzerinden anlık canlı duyuru ve anket senkronizasyonu
             communicationAnnouncementsListener?.remove()
             communicationAnnouncementsListener = CommunicationPersistenceHelper.observeFirestoreAnnouncements(ctx, classId) { cloudAnnouncements ->
-                latestAnnouncements = cloudAnnouncements
+                val cloudIds = cloudAnnouncements.map { it.id }.toSet()
+                pendingPollVotes.keys.retainAll(cloudIds)
+                val reconciled = cloudAnnouncements.map { ann ->
+                    val pending = pendingPollVotes[ann.id]
+                    val poll = ann.poll
+                    if (pending != null && poll != null) {
+                        val alreadyInCloud = AnnouncementIdentityHelper.hasVotedInPoll(
+                            poll = poll,
+                            voterAliases = pending.voterAliases + pending.voterLabel,
+                            voterAccountKeys = pending.voterAccountKeys
+                        )
+                        if (alreadyInCloud) {
+                            pendingPollVotes.remove(ann.id)
+                            ann
+                        } else {
+                            val mergedPoll = AnnouncementIdentityHelper.applySingleVote(
+                                poll = poll,
+                                optionId = pending.optionId,
+                                voterLabel = pending.voterLabel,
+                                voterAliases = pending.voterAliases,
+                                voterAccountKeys = pending.voterAccountKeys
+                            )
+                            if (mergedPoll != null) ann.copy(poll = mergedPoll) else ann
+                        }
+                    } else {
+                        ann
+                    }
+                }
+                latestAnnouncements = reconciled
                 hasCloudAnnouncements = true
-                _uiState.value = _uiState.value.copy(announcements = cloudAnnouncements)
+                _uiState.value = _uiState.value.copy(announcements = reconciled)
                 evaluateActivityNotifications(classId)
             }
         }
@@ -1066,8 +1103,10 @@ class BirizViewModel(
     }
 
     fun saveAnnouncement(announcement: Announcement) {
+        if (_uiState.value.currentRole != UserRole.TEACHER) return
         val classId = resolveActiveClassId()
-        val updatedList = listOf(announcement.copy(classId = classId)) + _uiState.value.announcements.filter { it.id != announcement.id }
+        val savedAnnouncement = announcement.copy(classId = classId)
+        val updatedList = listOf(savedAnnouncement) + _uiState.value.announcements.filter { it.id != savedAnnouncement.id }
         val newNotif = BirizNotification(
             id = "notif_${System.currentTimeMillis()}",
             title = "Yeni Sınıf Duyurusu 📢",
@@ -1079,13 +1118,16 @@ class BirizViewModel(
             isRead = false
         )
         val updatedNotifs = listOf(newNotif) + _uiState.value.notifications
+        latestAnnouncements = updatedList
         _uiState.value = _uiState.value.copy(
             announcements = updatedList,
             notifications = updatedNotifs,
             snackbarMessage = "Duyuru başarıyla yayınlandı 📢"
         )
         appContext?.let {
-            CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
+            CommunicationPersistenceHelper.unmarkAnnouncementDeleted(it, classId, savedAnnouncement.id)
+            CommunicationPersistenceHelper.saveAnnouncementsLocalOnly(it, classId, updatedList)
+            CommunicationPersistenceHelper.uploadAnnouncementToFirestore(it, classId, savedAnnouncement)
             CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs, currentViewerKey())
         }
     }
@@ -1138,6 +1180,7 @@ class BirizViewModel(
         targetStudentIds: List<String>,
         targetStudentNames: List<String>
     ) {
+        if (_uiState.value.currentRole != UserRole.TEACHER) return
         val classId = resolveActiveClassId()
         val currentStudents = repository.students.value
         val deliveredParents = AnnouncementIdentityHelper.formatExpectedRecipientsForAnnouncement(
@@ -1146,6 +1189,7 @@ class BirizViewModel(
             allStudents = currentStudents
         )
 
+        var editedAnnouncement: Announcement? = null
         val updatedList = _uiState.value.announcements.map { ann ->
             if (ann.id == id) {
                 ann.copy(
@@ -1159,7 +1203,7 @@ class BirizViewModel(
                     isEdited = true,
                     deliveredToParentNames = deliveredParents,
                     readReceipts = emptyMap() // OKUMA VE GÖRÜLDÜ BİLGİSİ YENİ DUYURU GİBİ SIFIRLANDI!
-                )
+                ).also { editedAnnouncement = it }
             } else ann
         }
 
@@ -1174,61 +1218,75 @@ class BirizViewModel(
             isRead = false
         )
         val updatedNotifs = listOf(newNotif) + _uiState.value.notifications
+        latestAnnouncements = updatedList
 
         _uiState.value = _uiState.value.copy(
             announcements = updatedList,
             notifications = updatedNotifs,
             snackbarMessage = "Duyuru güncellendi. Veli okuma durumu sıfırlandı."
         )
-        appContext?.let {
-            CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
-            CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs, currentViewerKey())
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveAnnouncementsLocalOnly(ctx, classId, updatedList)
+            editedAnnouncement?.let { edited ->
+                CommunicationPersistenceHelper.unmarkAnnouncementDeleted(ctx, classId, edited.id)
+                CommunicationPersistenceHelper.uploadAnnouncementToFirestore(ctx, classId, edited)
+            }
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
         }
     }
 
     fun deleteAnnouncement(id: String) {
+        if (_uiState.value.currentRole != UserRole.TEACHER) return
         val classId = resolveActiveClassId()
+        pendingPollVotes.remove(id)
         val updatedList = _uiState.value.announcements.filter { it.id != id }
+        latestAnnouncements = updatedList
         _uiState.value = _uiState.value.copy(
             announcements = updatedList,
-            snackbarMessage = "Duyuru silindi."
+            snackbarMessage = "Duyuru kalıcı olarak silindi."
         )
-        appContext?.let {
-            CommunicationPersistenceHelper.saveAnnouncements(it, classId, updatedList)
-            CommunicationPersistenceHelper.deleteAnnouncementFromFirestore(it, classId, id)
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.markAnnouncementDeleted(ctx, classId, id)
+            CommunicationPersistenceHelper.saveAnnouncementsLocalOnly(ctx, classId, updatedList)
+            CommunicationPersistenceHelper.deleteAnnouncementFromFirestore(ctx, classId, id)
         }
     }
 
     fun votePollOption(announcementId: String, optionId: String, voterName: String) {
         val state = _uiState.value
+        if (state.currentRole != UserRole.PARENT) {
+            _uiState.value = state.copy(
+                snackbarMessage = "Anket oylamaları yalnızca veli hesapları tarafından yapılabilir."
+            )
+            return
+        }
         val classId = resolveActiveClassId()
         val rawVoter = voterName.ifBlank { state.currentUser.fullName }.ifBlank { "Veli" }
         val allStudents = repository.students.value
-        val isParentVoter = state.currentRole == UserRole.PARENT
-        val linkedStudents = if (isParentVoter) {
-            allStudents.filter { it.id in state.linkedParentStudentIds }
-        } else emptyList()
-        val activeStudent = if (isParentVoter) {
-            allStudents.firstOrNull { it.id == state.activeParentStudentId } ?: linkedStudents.firstOrNull()
-        } else null
+        val linkedStudents = allStudents.filter { it.id in state.linkedParentStudentIds }
+        val activeStudent = allStudents.firstOrNull { it.id == state.activeParentStudentId } ?: linkedStudents.firstOrNull()
 
-        val resolvedVoterLabel = if (isParentVoter) {
-            AnnouncementIdentityHelper.formatParentActionLabel(
-                activeStudent = activeStudent,
-                linkedStudents = linkedStudents,
-                rawParentName = rawVoter
+        val resolvedVoterLabel = AnnouncementIdentityHelper.formatParentActionLabel(
+            activeStudent = activeStudent,
+            linkedStudents = linkedStudents,
+            rawParentName = rawVoter
+        )
+        val voterAliases = AnnouncementIdentityHelper.voterAliasesForParent(
+            activeStudent = activeStudent,
+            linkedStudents = linkedStudents,
+            rawParentName = rawVoter
+        )
+        val firebaseUid = try { Firebase.auth.currentUser?.uid ?: "" } catch (_: Throwable) { "" }
+        val voterAccountKeys = AnnouncementIdentityHelper.buildVoterAccountKeys(
+            userId = firebaseUid,
+            userEmail = state.currentUser.email
+        )
+
+        if (pendingPollVotes.containsKey(announcementId)) {
+            _uiState.value = state.copy(
+                snackbarMessage = "🔒 Bu ankete zaten oy kullandınız. Verilen oy değiştirilemez."
             )
-        } else {
-            rawVoter
-        }
-        val voterAliases = if (isParentVoter) {
-            AnnouncementIdentityHelper.voterAliasesForParent(
-                activeStudent = activeStudent,
-                linkedStudents = linkedStudents,
-                rawParentName = rawVoter
-            )
-        } else {
-            setOf(rawVoter)
+            return
         }
 
         val targetAnn = state.announcements.firstOrNull { it.id == announcementId } ?: return
@@ -1237,7 +1295,8 @@ class BirizViewModel(
             poll = currentPoll,
             optionId = optionId,
             voterLabel = resolvedVoterLabel,
-            voterAliases = voterAliases
+            voterAliases = voterAliases,
+            voterAccountKeys = voterAccountKeys
         )
         if (updatedPoll == null) {
             _uiState.value = state.copy(
@@ -1246,6 +1305,14 @@ class BirizViewModel(
             return
         }
 
+        pendingPollVotes[announcementId] = PendingPollVote(
+            announcementId = announcementId,
+            optionId = optionId,
+            voterLabel = resolvedVoterLabel,
+            voterAliases = voterAliases,
+            voterAccountKeys = voterAccountKeys
+        )
+
         var updatedAnnouncement: Announcement? = null
         val updatedList = state.announcements.map { ann ->
             if (ann.id == announcementId) {
@@ -1253,6 +1320,7 @@ class BirizViewModel(
             } else ann
         }
         val savedAnn = updatedAnnouncement ?: return
+        latestAnnouncements = updatedList
         _uiState.value = state.copy(
             announcements = updatedList,
             snackbarMessage = "✅ Anket oyunuz kaydedildi (değiştirilemez)."
@@ -1266,6 +1334,7 @@ class BirizViewModel(
                 optionId = optionId,
                 voterLabel = resolvedVoterLabel,
                 voterAliases = voterAliases,
+                voterAccountKeys = voterAccountKeys,
                 fallbackAnnouncement = savedAnn
             )
         }

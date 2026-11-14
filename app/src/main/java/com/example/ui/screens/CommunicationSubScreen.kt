@@ -1273,9 +1273,6 @@ private fun PollCardComponent(
     onVote: (String) -> Unit
 ) {
     var expandedOptionId by remember { mutableStateOf<String?>(null) }
-    val hasTeacherTestedVote = remember(poll) {
-        AnnouncementIdentityHelper.hasVotedInPoll(poll, setOf("Öğretmen (Test)"))
-    }
 
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -1293,7 +1290,7 @@ private fun PollCardComponent(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "📊 ANKET",
+                    text = "📊 ANKET (VELİ SONUÇLARI)",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color(0xFF10B981)
@@ -1311,7 +1308,7 @@ private fun PollCardComponent(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Seçenekler
+            // Seçenekler (Öğretmen görünümünde yalnızca sonuç özeti — veli oylarını kirletmez)
             poll.options.forEach { option ->
                 val percent = if (poll.totalVotes > 0) {
                     (option.voteCount * 100) / poll.totalVotes
@@ -1325,8 +1322,6 @@ private fun PollCardComponent(
                         .padding(vertical = 4.dp)
                 ) {
                     Surface(
-                        onClick = { if (!hasTeacherTestedVote) onVote(option.id) },
-                        enabled = !hasTeacherTestedVote,
                         shape = RoundedCornerShape(8.dp),
                         color = if (isDarkTheme) Color(0x301E293B) else Color.White,
                         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
@@ -2184,15 +2179,18 @@ private fun CreateOrEditAnnouncementDialog(
                             } else emptyList()
 
                             val poll = if (isPollEnabled && pollQuestion.isNotBlank()) {
+                                val cleanOptionTexts = pollOptions.filter { it.isNotBlank() }
                                 AnnouncementPoll(
                                     id = announcementToEdit?.poll?.id ?: UUID.randomUUID().toString(),
                                     question = pollQuestion,
-                                    options = pollOptions.filter { it.isNotBlank() }.map { optText ->
+                                    options = cleanOptionTexts.mapIndexed { idx, optText ->
                                         val existingOpt = announcementToEdit?.poll?.options?.find { it.text == optText }
+                                            ?: announcementToEdit?.poll?.options?.getOrNull(idx)
                                         PollOption(
                                             id = existingOpt?.id ?: UUID.randomUUID().toString(),
                                             text = optText,
-                                            voterParentNames = existingOpt?.voterParentNames ?: emptyList()
+                                            voterParentNames = existingOpt?.voterParentNames ?: emptyList(),
+                                            voterIds = existingOpt?.voterIds ?: emptyList()
                                         )
                                     }
                                 )

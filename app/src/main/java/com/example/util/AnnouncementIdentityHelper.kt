@@ -139,19 +139,51 @@ object AnnouncementIdentityHelper {
         return aliases
     }
 
-    fun isOptionVotedByParent(option: PollOption, voterAliases: Set<String>): Boolean {
-        val normalizedAliases = voterAliases.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
-        return option.voterParentNames.any { existing ->
-            existing.trim().lowercase() in normalizedAliases
+    fun buildVoterAccountKeys(userId: String = "", userEmail: String = ""): Set<String> {
+        val keys = mutableSetOf<String>()
+        val cleanUid = userId.trim()
+        if (cleanUid.isNotEmpty()) {
+            keys.add("uid:$cleanUid")
         }
+        val cleanEmail = userEmail.trim().lowercase()
+        if (cleanEmail.isNotEmpty() && cleanEmail != "veli@biriz.app") {
+            keys.add("email:$cleanEmail")
+        }
+        return keys
     }
 
-    fun findVotedOption(poll: AnnouncementPoll, voterAliases: Set<String>): PollOption? {
-        return poll.options.firstOrNull { isOptionVotedByParent(it, voterAliases) }
+    fun isOptionVotedByParent(
+        option: PollOption,
+        voterAliases: Set<String>,
+        voterAccountKeys: Set<String> = emptySet()
+    ): Boolean {
+        val normalizedAliases = voterAliases.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+        if (option.voterParentNames.any { it.trim().lowercase() in normalizedAliases }) {
+            return true
+        }
+        if (voterAccountKeys.isNotEmpty() && option.voterIds.isNotEmpty()) {
+            val normalizedKeys = voterAccountKeys.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+            if (option.voterIds.any { it.trim().lowercase() in normalizedKeys }) {
+                return true
+            }
+        }
+        return false
     }
 
-    fun hasVotedInPoll(poll: AnnouncementPoll, voterAliases: Set<String>): Boolean {
-        return findVotedOption(poll, voterAliases) != null
+    fun findVotedOption(
+        poll: AnnouncementPoll,
+        voterAliases: Set<String>,
+        voterAccountKeys: Set<String> = emptySet()
+    ): PollOption? {
+        return poll.options.firstOrNull { isOptionVotedByParent(it, voterAliases, voterAccountKeys) }
+    }
+
+    fun hasVotedInPoll(
+        poll: AnnouncementPoll,
+        voterAliases: Set<String>,
+        voterAccountKeys: Set<String> = emptySet()
+    ): Boolean {
+        return findVotedOption(poll, voterAliases, voterAccountKeys) != null
     }
 
     /**
@@ -161,18 +193,23 @@ object AnnouncementIdentityHelper {
         poll: AnnouncementPoll,
         optionId: String,
         voterLabel: String,
-        voterAliases: Set<String>
+        voterAliases: Set<String>,
+        voterAccountKeys: Set<String> = emptySet()
     ): AnnouncementPoll? {
         val allAliases = voterAliases + voterLabel
-        if (hasVotedInPoll(poll, allAliases)) {
+        if (hasVotedInPoll(poll, allAliases, voterAccountKeys)) {
             return null
         }
         val targetExists = poll.options.any { it.id == optionId }
         if (!targetExists) return null
 
+        val cleanKeys = voterAccountKeys.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val updatedOptions = poll.options.map { opt ->
             if (opt.id == optionId) {
-                opt.copy(voterParentNames = opt.voterParentNames + voterLabel)
+                opt.copy(
+                    voterParentNames = opt.voterParentNames + voterLabel,
+                    voterIds = (opt.voterIds + cleanKeys).distinct()
+                )
             } else {
                 opt
             }

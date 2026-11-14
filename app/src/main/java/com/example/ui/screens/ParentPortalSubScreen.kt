@@ -681,7 +681,11 @@ fun ParentPortalSubScreen(
                                 lastAnnouncement = parentAnnouncements.firstOrNull(),
                                 lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
                                 isDarkTheme = isDarkTheme,
-                                onNavigate = { activeTab = it }
+                                onNavigate = { activeTab = it },
+                                onNavigateToCommunication = { openChat ->
+                                    isCommChatSubTabActive = openChat
+                                    activeTab = ParentPortalTab.COMMUNICATION
+                                }
                             )
                         }
 
@@ -1109,7 +1113,8 @@ private fun ParentDashboardHomeView(
     lastAnnouncement: Announcement?,
     lastChatMessage: ChatMessage?,
     isDarkTheme: Boolean,
-    onNavigate: (ParentPortalTab) -> Unit
+    onNavigate: (ParentPortalTab) -> Unit,
+    onNavigateToCommunication: (Boolean) -> Unit = { onNavigate(ParentPortalTab.COMMUNICATION) }
 ) {
     val canvasBackground = if (isDarkTheme) Color(0xFF070E1B) else Color(0xFFEAF0F6)
     val currentlyReadingBook = remember(classBooks, student.id) {
@@ -1335,7 +1340,7 @@ private fun ParentDashboardHomeView(
                     badgeText = if (lastAnnouncement?.poll?.options?.isNotEmpty() == true) "Anket Var 🗳️" else "Duyurular →",
                     accentColor = Color(0xFFDB2777),
                     isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+                    onClick = { onNavigateToCommunication(false) }
                 )
 
                 BentoSummaryCard(
@@ -1348,7 +1353,7 @@ private fun ParentDashboardHomeView(
                     badgeText = "Mesaj Yaz →",
                     accentColor = Color(0xFF059669),
                     isDarkTheme = isDarkTheme,
-                    onClick = { onNavigate(ParentPortalTab.COMMUNICATION) }
+                    onClick = { onNavigateToCommunication(true) }
                 )
             }
         }
@@ -3967,12 +3972,18 @@ private fun ParentCommunicationDetailView(
             }
         } else {
             // --- 2. SINIF DUYURULARI & VELİ ANKETLERİ (Kompakt Satır Listesi + Detay Görünümü) ---
+            val voterAccountKeys = remember(currentUser.email) {
+                AnnouncementIdentityHelper.buildVoterAccountKeys(
+                    userEmail = currentUser.email
+                )
+            }
             if (selectedAnnouncement != null) {
                 ParentAnnouncementDetailView(
                     announcement = selectedAnnouncement,
                     student = student,
                     linkedStudents = linkedStudents,
                     parentDisplayName = parentDisplayName,
+                    voterAccountKeys = voterAccountKeys,
                     isDarkTheme = isDarkTheme,
                     onBack = { selectedAnnouncementId = null },
                     onVotePoll = { optionId -> onVotePoll(selectedAnnouncement.id, optionId) }
@@ -3983,6 +3994,7 @@ private fun ParentCommunicationDetailView(
                     student = student,
                     linkedStudents = linkedStudents,
                     parentDisplayName = parentDisplayName,
+                    voterAccountKeys = voterAccountKeys,
                     isDarkTheme = isDarkTheme,
                     onAnnouncementClick = { ann -> selectedAnnouncementId = ann.id }
                 )
@@ -3997,6 +4009,7 @@ private fun ParentAnnouncementsListView(
     student: Student,
     linkedStudents: List<Student>,
     parentDisplayName: String,
+    voterAccountKeys: Set<String> = emptySet(),
     isDarkTheme: Boolean,
     onAnnouncementClick: (Announcement) -> Unit
 ) {
@@ -4149,7 +4162,9 @@ private fun ParentAnnouncementsListView(
         } else {
             items(filteredList, key = { it.id }) { ann ->
                 val isRead = AnnouncementIdentityHelper.findStudentReadTimestamp(student, ann.readReceipts) != null
-                val hasVoted = ann.poll?.let { AnnouncementIdentityHelper.hasVotedInPoll(it, voterAliases) } ?: false
+                val hasVoted = ann.poll?.let {
+                    AnnouncementIdentityHelper.hasVotedInPoll(it, voterAliases, voterAccountKeys)
+                } ?: false
                 ParentAnnouncementSummaryRowCard(
                     announcement = ann,
                     isRead = isRead,
@@ -4366,6 +4381,7 @@ private fun ParentAnnouncementDetailView(
     student: Student,
     linkedStudents: List<Student>,
     parentDisplayName: String,
+    voterAccountKeys: Set<String> = emptySet(),
     isDarkTheme: Boolean,
     onBack: () -> Unit,
     onVotePoll: (String) -> Unit
@@ -4555,7 +4571,9 @@ private fun ParentAnnouncementDetailView(
                                 rawParentName = parentDisplayName
                             )
                         }
-                        val hasVotedInPoll = AnnouncementIdentityHelper.hasVotedInPoll(poll, voterAliases)
+                        val hasVotedInPoll = AnnouncementIdentityHelper.hasVotedInPoll(poll, voterAliases, voterAccountKeys)
+                        var voteSubmittedLocally by remember(announcement.id, poll.id) { mutableStateOf(false) }
+                        val isPollLocked = hasVotedInPoll || voteSubmittedLocally
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -4592,17 +4610,17 @@ private fun ParentAnnouncementDetailView(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (hasVotedInPoll) {
+                                        color = if (isPollLocked) {
                                             Color(0xFF10B981).copy(alpha = 0.16f)
                                         } else {
                                             BirizTurquoise.copy(alpha = 0.14f)
                                         }
                                     ) {
                                         Text(
-                                            text = if (hasVotedInPoll) "🔒 Oyunuz Kaydedildi" else "Tek Oy Hakkı",
+                                            text = if (isPollLocked) "🔒 Oyunuz Kaydedildi" else "Tek Oy Hakkı",
                                             fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (hasVotedInPoll) Color(0xFF059669) else BirizTurquoise,
+                                            color = if (isPollLocked) Color(0xFF059669) else BirizTurquoise,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
@@ -4617,7 +4635,7 @@ private fun ParentAnnouncementDetailView(
                                     color = primaryText
                                 )
 
-                                if (!hasVotedInPoll) {
+                                if (!isPollLocked) {
                                     Text(
                                         text = "Tercihinizi seçin (oy verdikten sonra cevap değiştirilemez):",
                                         fontSize = 11.5.sp,
@@ -4629,32 +4647,21 @@ private fun ParentAnnouncementDetailView(
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 poll.options.forEach { opt ->
-                                    val isVotedByMe = AnnouncementIdentityHelper.isOptionVotedByParent(opt, voterAliases)
+                                    val isVotedByMe = AnnouncementIdentityHelper.isOptionVotedByParent(opt, voterAliases, voterAccountKeys)
                                     val percent = if (poll.totalVotes > 0) {
                                         (opt.voteCount * 100) / poll.totalVotes
                                     } else 0
-
-                                    Surface(
-                                        onClick = {
-                                            if (!hasVotedInPoll) {
-                                                onVotePoll(opt.id)
-                                            }
-                                        },
-                                        enabled = !hasVotedInPoll,
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = when {
-                                            isVotedByMe -> if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1)
-                                            hasVotedInPoll -> if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
-                                            else -> if (isDarkTheme) Color(0x301E293B) else Color.White
-                                        },
-                                        border = BorderStroke(
-                                            if (isVotedByMe) 1.5.dp else 1.dp,
-                                            if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp)
-                                    ) {
+                                    val optionShape = RoundedCornerShape(10.dp)
+                                    val optionColor = when {
+                                        isVotedByMe -> if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1)
+                                        isPollLocked -> if (isDarkTheme) Color(0x18334E68) else Color(0xFFF8FAFC)
+                                        else -> if (isDarkTheme) Color(0x301E293B) else Color.White
+                                    }
+                                    val optionBorder = BorderStroke(
+                                        if (isVotedByMe) 1.5.dp else 1.dp,
+                                        if (isVotedByMe) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                    )
+                                    val optionContent: @Composable () -> Unit = {
                                         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
@@ -4672,7 +4679,7 @@ private fun ParentAnnouncementDetailView(
                                                         text = opt.text,
                                                         fontSize = 13.sp,
                                                         fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.SemiBold,
-                                                        color = if (hasVotedInPoll && !isVotedByMe) secondaryText else primaryText
+                                                        color = if (isPollLocked && !isVotedByMe) secondaryText else primaryText
                                                     )
                                                 }
                                                 Spacer(modifier = Modifier.width(8.dp))
@@ -4697,12 +4704,42 @@ private fun ParentAnnouncementDetailView(
                                             )
                                         }
                                     }
+
+                                    if (isPollLocked) {
+                                        Surface(
+                                            shape = optionShape,
+                                            color = optionColor,
+                                            border = optionBorder,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                        ) {
+                                            optionContent()
+                                        }
+                                    } else {
+                                        Surface(
+                                            onClick = {
+                                                if (!isPollLocked) {
+                                                    voteSubmittedLocally = true
+                                                    onVotePoll(opt.id)
+                                                }
+                                            },
+                                            shape = optionShape,
+                                            color = optionColor,
+                                            border = optionBorder,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                        ) {
+                                            optionContent()
+                                        }
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(6.dp))
 
                                 Text(
-                                    text = if (hasVotedInPoll) {
+                                    text = if (isPollLocked) {
                                         "🔒 Ankete oy kullandınız (Toplam ${poll.totalVotes} oy). Verilen oy değiştirilemez."
                                     } else {
                                         "Toplam ${poll.totalVotes} oy kullanıldı."

@@ -2188,6 +2188,43 @@ class ExampleUnitTest {
     // 0-star classmates also included and anonymized
     assertTrue(ranked.drop(3).all { it.displayName == "Öğrenci" && it.starCount == 0 })
   }
+
+  @Test
+  fun testPollVoteLockedByAccountKeysAcrossNameChange() {
+    val helper = com.example.util.AnnouncementIdentityHelper
+    val accountKeys = helper.buildVoterAccountKeys(userId = "uid_parent_1", userEmail = "Parent1@Example.com")
+    val poll = com.example.data.model.AnnouncementPoll(
+      id = "poll_acc",
+      question = "Müze gezisi saati?",
+      options = listOf(
+        com.example.data.model.PollOption(id = "opt_a", text = "Sabah"),
+        com.example.data.model.PollOption(id = "opt_b", text = "Öğleden sonra")
+      )
+    )
+
+    val afterVote = helper.applySingleVote(
+      poll = poll,
+      optionId = "opt_a",
+      voterLabel = "12 ALİ Velisi (Eski İsim)",
+      voterAliases = setOf("Eski İsim"),
+      voterAccountKeys = accountKeys
+    )
+    assertNotNull(afterVote)
+    assertEquals(1, afterVote!!.totalVotes)
+    assertTrue(afterVote.options.first().voterIds.contains("uid:uid_parent_1"))
+    assertTrue(afterVote.options.first().voterIds.contains("email:parent1@example.com"))
+
+    // Even if parent changes display name or student aliases don't match, same uid/email MUST be blocked
+    assertTrue(helper.hasVotedInPoll(afterVote, setOf("Tamamen Farklı İsim"), accountKeys))
+    val attemptReVote = helper.applySingleVote(
+      poll = afterVote,
+      optionId = "opt_b",
+      voterLabel = "99 VELİ Velisi (Tamamen Farklı İsim)",
+      voterAliases = setOf("Tamamen Farklı İsim"),
+      voterAccountKeys = accountKeys
+    )
+    assertNull("Changing or re-voting with same account keys must be rejected", attemptReVote)
+  }
 }
 
 
