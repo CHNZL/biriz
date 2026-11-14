@@ -240,18 +240,18 @@ fun TeacherHomeSubScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(canvasBackground)
-            .padding(horizontal = 14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 10.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // --- 1. HERO ÖĞRETMEN & SINIF ÖZET KARTI ---
         item {
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = Color.Transparent,
-                shadowElevation = if (isDarkTheme) 0.dp else 8.dp,
+                shadowElevation = if (isDarkTheme) 0.dp else 6.dp,
                 border = BorderStroke(
-                    1.5.dp,
+                    1.2.dp,
                     if (isDarkTheme) BirizTurquoise.copy(alpha = 0.5f) else Color(0x45FFFFFF)
                 ),
                 modifier = Modifier
@@ -270,7 +270,7 @@ fun TeacherHomeSubScreen(
                                 }
                             )
                         )
-                        .padding(16.dp)
+                        .padding(horizontal = 13.dp, vertical = 11.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         // Üst Satır: Şube Rozeti & Canlı Aktif Veli Rozeti
@@ -319,7 +319,7 @@ fun TeacherHomeSubScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(7.dp))
 
                         val locationHeader = listOf(classRoom.cityName, classRoom.districtName)
                             .filter { it.isNotBlank() }
@@ -327,37 +327,37 @@ fun TeacherHomeSubScreen(
                         if (locationHeader.isNotBlank()) {
                             Text(
                                 text = locationHeader,
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(1.dp))
                         }
 
                         Text(
                             text = classRoom.schoolName,
-                            fontSize = 17.sp,
+                            fontSize = 16.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(1.dp))
                         Text(
                             text = "Sınıf Öğretmeni: ${classRoom.teacherName}",
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White.copy(alpha = 0.84f)
                         )
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(7.dp))
 
                         // 3'lü Canlı İstatistik Kutusu (2 satırlı kompakt görünüm)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             TeacherHeroStatPill(
                                 title = "Öğrenci",
@@ -391,21 +391,21 @@ fun TeacherHomeSubScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(7.dp))
 
                         // Hızlı Eylem Butonları: Sınıf Listesi & Yeni Öğrenci Ekle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
                                 onClick = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(11.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = BirizTurquoise,
                                     contentColor = BirizNavyDark
                                 ),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("teacher_home_btn_class_list")
@@ -425,13 +425,13 @@ fun TeacherHomeSubScreen(
 
                             OutlinedButton(
                                 onClick = onOpenAddStudentDialog,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(11.dp),
                                 border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.55f)),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = Color.White.copy(alpha = 0.12f),
                                     contentColor = Color.White
                                 ),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("teacher_home_btn_add_student")
@@ -473,61 +473,60 @@ fun TeacherHomeSubScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = scheduleAccent.copy(alpha = if (isDarkTheme) 0.25f else 0.14f),
                             border = BorderStroke(1.dp, scheduleAccent.copy(alpha = 0.45f)),
-                            modifier = Modifier.size(42.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(text = "📅", fontSize = 20.sp)
+                                Text(text = "📅", fontSize = 18.sp)
                             }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
                                 text = "Günün Ders Programı",
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "$todayTitle • İlk Ders ${scheduleConfig.firstLessonStartTime} (${scheduleConfig.dailyLessonCount} Ders)",
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(9.dp),
                         color = scheduleAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f)
                     ) {
                         Text(
                             text = "Program →",
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDarkTheme) Color(0xFF7DD3FC) else scheduleAccent,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (todayLessons.isEmpty()) {
                     Text(
                         text = "Bugün için henüz ders tanımlanmamış. Dokunarak ders programını düzenleyin.",
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
                     )
                 } else {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         todayLessons.forEach { lesson ->
                             val (bgHex, _) = ScheduleHelper.getColorsForTheme(lesson.colorTheme)
@@ -537,32 +536,32 @@ fun TeacherHomeSubScreen(
                                 BirizNavyPrimary
                             }
                             Surface(
-                                shape = RoundedCornerShape(9.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = pillColor.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
                                 border = BorderStroke(1.dp, pillColor.copy(alpha = 0.55f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Surface(
                                         shape = CircleShape,
                                         color = pillColor,
-                                        modifier = Modifier.size(17.dp)
+                                        modifier = Modifier.size(16.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
                                                 text = "${lesson.lessonIndex}",
-                                                fontSize = 10.sp,
+                                                fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = Color.White
                                             )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Text(
                                         text = lesson.subjectName,
-                                        fontSize = 11.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isDarkTheme) Color.White else BirizNavyPrimary
                                     )
@@ -578,7 +577,7 @@ fun TeacherHomeSubScreen(
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 TeacherSectionHeader(
                     title = "SINIF & DERS MODÜLLERİ",
@@ -588,7 +587,7 @@ fun TeacherHomeSubScreen(
                 // 1. Satır: Sınıf Listesi & Oturma Planı
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val classSubtitle = if (students.isEmpty()) {
                         "Henüz öğrenci yok"
@@ -624,7 +623,7 @@ fun TeacherHomeSubScreen(
                 // 2. Satır: Yıldızlar Sınıfı & Sınıf Kitaplığı
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TeacherModuleBentoTile(
                         emoji = "⭐",
@@ -655,7 +654,7 @@ fun TeacherHomeSubScreen(
                 // 3. Satır: Grup Oluşturma & Turnuvalar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TeacherModuleBentoTile(
                         emoji = "🎲",
@@ -692,7 +691,7 @@ fun TeacherHomeSubScreen(
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 TeacherSectionHeader(
                     title = "HIZLI DERS ARAÇLARI",
@@ -701,7 +700,7 @@ fun TeacherHomeSubScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val luckyAccent = Color(0xFF059669)
                     DistinctTeacherCard(
@@ -709,34 +708,33 @@ fun TeacherHomeSubScreen(
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.SANSLI_OGRENCI) },
                         testTag = "teacher_bento_lucky_student",
-                        contentPadding = PaddingValues(14.dp),
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 9.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = luckyAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
                                 border = BorderStroke(1.dp, luckyAccent.copy(alpha = 0.45f)),
-                                modifier = Modifier.size(42.dp)
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(text = "🎯", fontSize = 20.sp)
+                                    Text(text = "🎯", fontSize = 18.sp)
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Şanslı Öğrenci",
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Black,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Adil Kura Çek",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                                     maxLines = 1,
@@ -752,39 +750,38 @@ fun TeacherHomeSubScreen(
                         isDark = isDarkTheme,
                         onClick = { onSelectSubPage(DashboardSubPage.ZAMANLAYICI) },
                         testTag = "teacher_bento_timer",
-                        contentPadding = PaddingValues(14.dp),
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 9.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = timerAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
                                 border = BorderStroke(1.dp, timerAccent.copy(alpha = 0.45f)),
-                                modifier = Modifier.size(42.dp)
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Timer,
                                         contentDescription = null,
                                         tint = if (isDarkTheme) Color(0xFF93C5FD) else timerAccent,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Zamanlayıcı",
-                                    fontSize = 16.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Black,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Etkinlik Sayacı",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                                     maxLines = 1,
@@ -815,27 +812,26 @@ fun TeacherHomeSubScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = commAccent.copy(alpha = if (isDarkTheme) 0.26f else 0.14f),
                             border = BorderStroke(1.dp, commAccent.copy(alpha = 0.45f)),
-                            modifier = Modifier.size(42.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(text = "💬", fontSize = 20.sp)
+                                Text(text = "💬", fontSize = 18.sp)
                             }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
                                 text = "Veli İletişim & Duyurular",
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${announcements.size} Duyuru • $unreadParentMessagesCount Okunmamış Mesaj",
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                             )
@@ -843,17 +839,17 @@ fun TeacherHomeSubScreen(
                     }
 
                     if (unreadParentMessagesCount > 0) {
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(9.dp),
                             color = BirizAmber
                         ) {
                             Text(
                                 text = "$unreadParentMessagesCount Yeni",
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -861,16 +857,16 @@ fun TeacherHomeSubScreen(
 
                 val latestAnnouncement = announcements.firstOrNull()
                 if (latestAnnouncement != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(7.dp))
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = if (isDarkTheme) Color(0x450F172A) else Color.White.copy(alpha = 0.85f),
                         border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else commAccent.copy(alpha = 0.25f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectSubPage(DashboardSubPage.ILETISIM_DUYURULAR) }
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -878,7 +874,7 @@ fun TeacherHomeSubScreen(
                             ) {
                                 Text(
                                     text = "📢 ${latestAnnouncement.title}",
-                                    fontSize = 12.5.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary,
                                     maxLines = 1,
@@ -888,15 +884,14 @@ fun TeacherHomeSubScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "${latestAnnouncement.readReceipts.size} Okundu",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF10B981)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = latestAnnouncement.content,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -905,7 +900,7 @@ fun TeacherHomeSubScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -918,18 +913,18 @@ fun TeacherHomeSubScreen(
                             containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                             contentColor = if (isDarkTheme) BirizNavyDark else Color.White
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Campaign,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "Duyurular (${announcements.size})",
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -941,19 +936,19 @@ fun TeacherHomeSubScreen(
                             1.2.dp,
                             if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.ChatBubble,
                             contentDescription = null,
                             tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(14.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
                             text = "Veli Mesajları",
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
                         )
@@ -975,40 +970,39 @@ fun TeacherHomeSubScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = roomAccent.copy(alpha = if (isDarkTheme) 0.28f else 0.14f),
                         border = BorderStroke(1.dp, roomAccent.copy(alpha = 0.45f)),
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = "☕", fontSize = 20.sp)
+                            Text(text = "☕", fontSize = 18.sp)
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Öğretmen Odası & Evraklar",
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Tutanak, gezi planı ve hazır dilekçeler",
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     TeacherDocQuickChip("📋 Zümre Toplantısı", roomAccent, isDarkTheme) {
                         onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE)
@@ -1039,22 +1033,22 @@ private fun TeacherSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 2.dp),
+            .padding(start = 2.dp, top = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .width(4.dp)
-                .height(16.dp)
+                .width(3.5.dp)
+                .height(13.dp)
                 .clip(RoundedCornerShape(2.dp))
                 .background(if (isDark) BirizTurquoise else BirizNavyPrimary)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = title,
-            fontSize = 12.5.sp,
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 0.6.sp,
+            letterSpacing = 0.7.sp,
             color = if (isDark) BirizTurquoise else BirizNavyPrimary
         )
     }
@@ -1067,10 +1061,10 @@ private fun DistinctTeacherCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     testTag: String? = null,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(15.dp)
     val cardBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
@@ -1082,14 +1076,14 @@ private fun DistinctTeacherCard(
         Brush.linearGradient(
             listOf(
                 Color.White,
-                lerp(Color.White, accentColor, 0.09f)
+                lerp(Color.White, accentColor, 0.08f)
             )
         )
     }
     val borderColor = if (isDark) {
-        accentColor.copy(alpha = 0.52f)
+        accentColor.copy(alpha = 0.50f)
     } else {
-        accentColor.copy(alpha = 0.38f)
+        accentColor.copy(alpha = 0.34f)
     }
 
     val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
@@ -1101,8 +1095,8 @@ private fun DistinctTeacherCard(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         shape = shape,
         color = if (isDark) Color(0xFF132240) else Color.White,
-        shadowElevation = if (isDark) 0.dp else 4.dp,
-        border = BorderStroke(1.5.dp, borderColor)
+        shadowElevation = if (isDark) 0.dp else 3.dp,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Column(
             modifier = Modifier
@@ -1113,7 +1107,7 @@ private fun DistinctTeacherCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.5.dp)
+                    .height(3.dp)
                     .background(accentColor.copy(alpha = if (isDark) 0.88f else 0.82f))
             )
             Column(
@@ -1138,28 +1132,28 @@ private fun TeacherHeroStatPill(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(11.dp),
         color = Color.White.copy(alpha = 0.11f),
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.50f)),
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
         ) {
             Text(
                 text = title,
-                fontSize = 10.5.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White.copy(alpha = 0.82f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = buildAnnotatedString {
                     withStyle(
                         SpanStyle(
-                            fontSize = 14.sp,
+                            fontSize = 13.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = accentColor
                         )
@@ -1168,7 +1162,7 @@ private fun TeacherHeroStatPill(
                     }
                     withStyle(
                         SpanStyle(
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White.copy(alpha = 0.88f)
                         )
@@ -1195,7 +1189,7 @@ private fun TeacherModuleBentoTile(
     modifier: Modifier = Modifier,
     testTag: String? = null
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(15.dp)
     val tileBrush = if (isDark) {
         Brush.linearGradient(
             listOf(
@@ -1207,14 +1201,14 @@ private fun TeacherModuleBentoTile(
         Brush.linearGradient(
             listOf(
                 Color.White,
-                lerp(Color.White, accentColor, 0.11f)
+                lerp(Color.White, accentColor, 0.10f)
             )
         )
     }
     val borderColor = if (isDark) {
-        accentColor.copy(alpha = 0.54f)
+        accentColor.copy(alpha = 0.52f)
     } else {
-        accentColor.copy(alpha = 0.40f)
+        accentColor.copy(alpha = 0.36f)
     }
 
     val taggedModifier = if (testTag != null) modifier.testTag(testTag) else modifier
@@ -1225,8 +1219,8 @@ private fun TeacherModuleBentoTile(
             .clickable { onClick() },
         shape = shape,
         color = if (isDark) Color(0xFF132240) else Color.White,
-        shadowElevation = if (isDark) 0.dp else 4.dp,
-        border = BorderStroke(1.5.dp, borderColor)
+        shadowElevation = if (isDark) 0.dp else 3.dp,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Column(
             modifier = Modifier
@@ -1237,14 +1231,14 @@ private fun TeacherModuleBentoTile(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.5.dp)
+                    .height(3.dp)
                     .background(accentColor.copy(alpha = if (isDark) 0.90f else 0.85f))
             )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 13.dp, vertical = 9.dp)
+                    .padding(horizontal = 11.dp, vertical = 8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1252,48 +1246,48 @@ private fun TeacherModuleBentoTile(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(9.dp),
                         color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f),
                         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f)),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(text = emoji, fontSize = 16.sp)
+                            Text(text = emoji, fontSize = 15.sp)
                         }
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(7.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = accentColor.copy(alpha = if (isDark) 0.28f else 0.14f)
                     ) {
                         Text(
                             text = badgeText,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDark) Color.White else accentColor,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(7.dp))
+                Spacer(modifier = Modifier.height(5.dp))
 
                 // 1. Büyük ve dikkat çekici başlık
                 Text(
                     text = title,
-                    fontSize = 18.sp,
+                    fontSize = 16.5.sp,
                     fontWeight = FontWeight.Black,
                     color = if (isDark) Color.White else BirizNavyPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(1.dp))
 
                 // 2. Mevcut bilgi / özet (tek temiz satır)
                 Text(
                     text = subtitle,
-                    fontSize = 12.5.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (isDark) BirizDarkTextSecondary else Color(0xFF475569),
                     maxLines = 1,
@@ -1313,26 +1307,26 @@ private fun TeacherDocQuickChip(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(9.dp),
         color = if (isDark) Color(0x451E293B) else Color.White,
         border = BorderStroke(1.dp, if (isDark) accentColor.copy(alpha = 0.45f) else accentColor.copy(alpha = 0.30f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
-                fontSize = 12.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (isDark) Color.White else BirizNavyPrimary
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
                 tint = if (isDark) BirizTurquoise else accentColor,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(12.dp)
             )
         }
     }
