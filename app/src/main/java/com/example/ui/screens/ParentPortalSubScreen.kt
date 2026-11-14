@@ -168,8 +168,10 @@ import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.ParentPrivacyHelper
+import com.example.data.model.TournamentStatus
 import com.example.util.ScheduleHelper
 import com.example.util.TournamentEngine
+import com.example.util.TournamentOutcomeHelper
 import com.example.util.TournamentPersistenceHelper
 import com.example.util.TurkishTextHelper
 import java.text.SimpleDateFormat
@@ -346,12 +348,16 @@ fun ParentPortalSubScreen(
     }
 
     val activeTournament = remember(classTournaments) {
-        classTournaments.firstOrNull { it.status == com.example.data.model.TournamentStatus.DEVAM_EDIYOR }
+        classTournaments.firstOrNull { it.status == TournamentStatus.DEVAM_EDIYOR }
             ?: classTournaments.firstOrNull()
     }
+    var selectedTournamentId by remember { mutableStateOf<String?>(null) }
+    val selectedPortalTournament = remember(classTournaments, selectedTournamentId, activeTournament) {
+        selectedTournamentId?.let { id -> classTournaments.find { it.id == id } } ?: activeTournament
+    }
 
-    DisposableEffect(activeTournament?.id) {
-        val tid = activeTournament?.id
+    DisposableEffect(selectedPortalTournament?.id) {
+        val tid = selectedPortalTournament?.id
         if (!tid.isNullOrBlank()) {
             tournamentMatches = TournamentPersistenceHelper.loadMatches(context, tid)
             val matchesListener = TournamentPersistenceHelper.observeFirestoreMatches(context, tid) { updated ->
@@ -678,6 +684,8 @@ fun ParentPortalSubScreen(
                                 readingRecords = studentReadingRecords,
                                 classBooks = classBooks,
                                 activeTournament = activeTournament,
+                                activeTournamentMatches = if (selectedPortalTournament?.id == activeTournament?.id) tournamentMatches else emptyList(),
+                                allStudents = allStudents,
                                 lastAnnouncement = parentAnnouncements.firstOrNull(),
                                 lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
                                 isDarkTheme = isDarkTheme,
@@ -731,10 +739,13 @@ fun ParentPortalSubScreen(
                         ParentPortalTab.TOURNAMENT -> {
                             ParentTournamentDetailView(
                                 student = activeStudent,
-                                tournament = activeTournament,
+                                tournaments = classTournaments,
+                                selectedTournament = selectedPortalTournament,
                                 matches = tournamentMatches,
+                                allStudents = allStudents,
                                 linkedStudentIds = linkedStudentIds,
-                                isDarkTheme = isDarkTheme
+                                isDarkTheme = isDarkTheme,
+                                onSelectTournament = { selectedTournamentId = it.id }
                             )
                         }
 
@@ -1110,6 +1121,8 @@ private fun ParentDashboardHomeView(
     readingRecords: List<com.example.data.model.ReadingRecord>,
     classBooks: List<Book> = emptyList(),
     activeTournament: Tournament?,
+    activeTournamentMatches: List<TournamentMatch> = emptyList(),
+    allStudents: List<Student> = emptyList(),
     lastAnnouncement: Announcement?,
     lastChatMessage: ChatMessage?,
     isDarkTheme: Boolean,
@@ -1309,10 +1322,26 @@ private fun ParentDashboardHomeView(
                         onClick = { onNavigate(ParentPortalTab.READING) }
                     )
 
+                    val tournamentSubtitle = remember(activeTournament, activeTournamentMatches, allStudents, student.id) {
+                        if (activeTournament == null) {
+                            "Aktif turnuva bulunmuyor"
+                        } else if (activeTournamentMatches.isNotEmpty() || activeTournament.status == TournamentStatus.TAMAMLANDI) {
+                            val outcome = TournamentOutcomeHelper.evaluateChildTournamentOutcome(
+                                tournament = activeTournament,
+                                matches = activeTournamentMatches,
+                                students = allStudents,
+                                childId = student.id
+                            )
+                            "${activeTournament.name} • ${outcome.medalEmoji} ${outcome.badgeText}"
+                        } else {
+                            "${activeTournament.name} • Devam Ediyor"
+                        }
+                    }
+
                     BentoCompactCard(
                         icon = "🏆",
                         title = "Turnuvalar",
-                        subtitle = activeTournament?.name ?: "Aktif turnuva bulunmuyor",
+                        subtitle = tournamentSubtitle,
                         modifier = Modifier.weight(1f),
                         accentColor = Color(0xFFE11D48),
                         isDarkTheme = isDarkTheme,
@@ -3030,141 +3059,8 @@ private fun ParentTeacherDeskBadge(isDarkTheme: Boolean) {
 }
 
 // =========================================================================
-// DETAY 4: TURNUVALAR (KVKK RAKİP MASKELEME İLE)
+// DETAY 4: TURNUVALAR (ParentTournamentSection.kt içinde tanımlıdır)
 // =========================================================================
-@Composable
-private fun ParentTournamentDetailView(
-    student: Student,
-    tournament: Tournament?,
-    matches: List<TournamentMatch>,
-    linkedStudentIds: Set<String>,
-    isDarkTheme: Boolean
-) {
-    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
-    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-
-    if (tournament == null) {
-        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text("Sınıfta şu an aktif turnuva bulunmuyor.", fontSize = 13.sp, color = secondaryText)
-        }
-        return
-    }
-
-    // Çocuğun yer aldığı maçlar
-    val childMatches = remember(matches, student) {
-        matches.filter { it.player1Id == student.id || it.player2Id == student.id }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Turnuva Başlık Kartı
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = BirizGold.copy(alpha = 0.15f),
-                border = BorderStroke(1.dp, BirizGold),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(text = "🏆 Sınıf Turnuvası", fontSize = 11.sp, color = BirizGold, fontWeight = FontWeight.Bold)
-                        Text(text = tournament.name, fontSize = 18.sp, fontWeight = FontWeight.Black, color = primaryText)
-                        Text(
-                            text = "Format: ${tournament.type.displayName} • ${matches.size} Planlı Maç",
-                            fontSize = 11.sp,
-                            color = secondaryText
-                        )
-                    }
-                    Text(text = "🥇", fontSize = 36.sp)
-                }
-            }
-        }
-
-        item {
-            Text(text = "⚔️ Çocuğunuzun Maçları & Karşılaşmaları", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
-            Text(text = "Turnuva fikstüründeki karşılaşmalar ve anlık skorlar", fontSize = 11.sp, color = secondaryText)
-        }
-
-        if (childMatches.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "Çocuğunuzun bu turnuvada henüz planlanmış maçı bulunmuyor.",
-                        fontSize = 12.sp,
-                        color = secondaryText,
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(childMatches) { m ->
-                val maskedM = ParentPrivacyHelper.maskTournamentMatch(m, linkedStudentIds)
-                val isCompleted = m.status == "completed"
-                val isWon = m.winnerId == student.id
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(text = "Tur ${m.round} • ${m.matchCode}", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = secondaryText)
-                            if (isCompleted) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = if (isWon) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
-                                ) {
-                                    Text(
-                                        text = if (isWon) "Kazandı ✓" else "Tamamlandı",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isWon) Color(0xFF065F46) else Color(0xFF991B1B),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            } else {
-                                Text(text = "Oynanacak", fontSize = 10.sp, color = secondaryText)
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${maskedM.player1Name} vs ${maskedM.player2Name}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = primaryText
-                            )
-                            if (m.score1 != null && m.score2 != null) {
-                                Text(text = "${m.score1} - ${m.score2}", fontWeight = FontWeight.Black, fontSize = 14.sp, color = BirizAmber)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 // =========================================================================
 // DETAY 5: DUYURU & ANKET & BİREBİR ANLIK MESAJLAŞMA

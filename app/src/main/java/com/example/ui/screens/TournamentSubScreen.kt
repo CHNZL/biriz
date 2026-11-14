@@ -124,6 +124,7 @@ import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.DashboardSubPage
 import com.example.util.ExcelPdfHelper
 import com.example.util.TournamentEngine
+import com.example.util.TournamentOutcomeHelper
 import com.example.util.TournamentPersistenceHelper
 
 private val BirizGold = Color(0xFFF59E0B)
@@ -445,9 +446,14 @@ fun TournamentSubScreen(
     // DİYALOG: ŞAMPİYONLUK PODYUMU & KUTLAMA
     // -------------------------------------------------------------
     if (showPodiumDialog && selectedTournament != null) {
-        val standings = remember(selectedTournamentMatches, selectedTournament) {
+        val standings = remember(selectedTournamentMatches, selectedTournament, students) {
+            val resolvedPairs = TournamentOutcomeHelper.resolveParticipantPairs(
+                participantIds = selectedTournament!!.participants,
+                matches = selectedTournamentMatches,
+                students = students
+            )
             TournamentEngine.calculateStandings(
-                participants = selectedTournament!!.participants.map { Pair(it, it) },
+                participants = resolvedPairs,
                 matches = selectedTournamentMatches,
                 pointsWin = selectedTournament!!.pointsWin,
                 pointsDraw = selectedTournament!!.pointsDraw,
@@ -777,7 +783,7 @@ private fun TournamentDetailScreen(
                         // PDF Rapor Butonu
                         OutlinedButton(
                             onClick = {
-                                val uri = ExcelPdfHelper.exportTournamentPdf(context, tournament, matches, standings)
+                                val uri = ExcelPdfHelper.exportTournamentPdf(context, tournament, matches, standings, students)
                                 ExcelPdfHelper.shareFile(context, uri, "application/pdf", "${tournament.name} Resmi Fikstür ve Puan Tablosu")
                             },
                             modifier = Modifier.height(32.dp),
@@ -941,6 +947,8 @@ private fun TournamentDetailScreen(
                                 TournamentMatchCard(
                                     tournament = tournament,
                                     match = match,
+                                    allMatches = matches,
+                                    students = students,
                                     isLocked = isLocked,
                                     isDarkTheme = isDarkTheme,
                                     onClick = { onMatchClick(match) }
@@ -1029,6 +1037,8 @@ private fun TournamentDetailScreen(
 private fun TournamentMatchCard(
     tournament: Tournament,
     match: TournamentMatch,
+    allMatches: List<TournamentMatch> = emptyList(),
+    students: List<Student> = emptyList(),
     isLocked: Boolean = false,
     isDarkTheme: Boolean,
     onClick: () -> Unit
@@ -1037,6 +1047,8 @@ private fun TournamentMatchCard(
     val isTieBreaker = match.isTieBreaker
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+    val p1Display = TournamentOutcomeHelper.formatMatchSlotLabel(match, true, allMatches, students)
+    val p2Display = TournamentOutcomeHelper.formatMatchSlotLabel(match, false, allMatches, students)
 
     Card(
         modifier = Modifier
@@ -1173,7 +1185,7 @@ private fun TournamentMatchCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = match.player1Name,
+                        text = p1Display,
                         fontWeight = if (match.winnerId == match.player1Id) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                         color = if (match.winnerId == match.player1Id) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else primaryText,
@@ -1216,7 +1228,7 @@ private fun TournamentMatchCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = match.player2Name,
+                        text = p2Display,
                         fontWeight = if (match.winnerId == match.player2Id) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                         color = if (match.winnerId == match.player2Id) (if (isDarkTheme) BirizTurquoise else BirizNavyPrimary) else primaryText,
@@ -1652,7 +1664,13 @@ private fun EliminationMatchCard(
 
             // 1. Oyuncu Kutusu
             EliminationParticipantRow(
-                playerName = match.player1Name.ifBlank { if (match.player1Id.startsWith("WINNER_OF")) "Önceki Tur Galibi" else "1. Oyuncu" },
+                playerName = TournamentOutcomeHelper.formatMatchSlotLabel(
+                    match = match,
+                    isPlayer1 = true,
+                    allMatches = listOf(match),
+                    students = emptyList(),
+                    compact = false
+                ),
                 score = match.score1,
                 isCompleted = isCompleted,
                 isWinner = isWinner1,
@@ -1665,7 +1683,13 @@ private fun EliminationMatchCard(
 
             // 2. Oyuncu Kutusu
             EliminationParticipantRow(
-                playerName = if (match.player2Id == "BYE") "BAY (Eşleşme Yok)" else match.player2Name.ifBlank { if (match.player2Id.startsWith("WINNER_OF")) "Önceki Tur Galibi" else "2. Oyuncu" },
+                playerName = TournamentOutcomeHelper.formatMatchSlotLabel(
+                    match = match,
+                    isPlayer1 = false,
+                    allMatches = listOf(match),
+                    students = emptyList(),
+                    compact = false
+                ),
                 score = match.score2,
                 isCompleted = isCompleted,
                 isWinner = isWinner2,

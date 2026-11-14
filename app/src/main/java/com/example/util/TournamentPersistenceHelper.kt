@@ -118,8 +118,9 @@ object TournamentPersistenceHelper {
                 if (t.status == TournamentStatus.TAMAMLANDI) {
                     val mList = loadMatches(context, t.id)
                     if (mList.isNotEmpty()) {
+                        val resolvedPairs = TournamentOutcomeHelper.resolveParticipantPairs(t.participants, mList)
                         val standings = TournamentEngine.calculateStandings(
-                            participants = t.participants.map { Pair(it, it) },
+                            participants = resolvedPairs,
                             matches = mList,
                             pointsWin = t.pointsWin,
                             pointsDraw = t.pointsDraw,
@@ -350,8 +351,9 @@ object TournamentPersistenceHelper {
         var updatedTournament = tournament.copy(updatedAt = System.currentTimeMillis())
 
         if (allFinished && tournament.status != TournamentStatus.TAMAMLANDI) {
+            val resolvedPairs = TournamentOutcomeHelper.resolveParticipantPairs(tournament.participants, refreshedMatches)
             val standings = TournamentEngine.calculateStandings(
-                participants = tournament.participants.map { Pair(it, it) },
+                participants = resolvedPairs,
                 matches = refreshedMatches,
                 pointsWin = tournament.pointsWin,
                 pointsDraw = tournament.pointsDraw,

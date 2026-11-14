@@ -2254,6 +2254,222 @@ class ExampleUnitTest {
     assertTrue(com.example.util.NotificationLifecycleHelper.compareVersionNames("1.01.00", "1.0.99") > 0)
     assertTrue(com.example.util.NotificationLifecycleHelper.compareVersionNames("1.01.01", "1.01.00") > 0)
   }
+
+  @Test
+  fun testTournamentPdfSlotFormattingAndUuidResolution() {
+    val helper = com.example.util.TournamentOutcomeHelper
+    val students = listOf(
+      com.example.data.model.Student(id = "u1", studentNumber = "1", fullName = "Ahmet Yılmaz", gender = "Erkek"),
+      com.example.data.model.Student(id = "u2", studentNumber = "2", fullName = "Ayşe Demir", gender = "Kız"),
+      com.example.data.model.Student(id = "u3", studentNumber = "3", fullName = "Mehmet Kaya", gender = "Erkek"),
+      com.example.data.model.Student(id = "u4", studentNumber = "4", fullName = "Zeynep Ak", gender = "Kız")
+    )
+    val t = com.example.data.model.Tournament(
+      id = "t_ko_slots",
+      classRoomId = "c1",
+      name = "Satranç",
+      type = com.example.data.model.TournamentType.ELEME,
+      participants = listOf("u1", "u2", "u3", "u4")
+    )
+
+    // Verify UUID -> fullName resolution (prevents UUID showing in league/group podiums)
+    val pairs = helper.resolveParticipantPairs(t.participants, emptyList(), students)
+    assertEquals("Ahmet Yılmaz", pairs.first { it.first == "u1" }.second)
+    assertEquals("Zeynep Ak", pairs.first { it.first == "u4" }.second)
+
+    val koMatches = com.example.util.TournamentEngine.generateKnockoutFixture(
+      tournamentId = t.id,
+      participants = pairs,
+      isDoubleMatch = true
+    )
+
+    val finalMatch = koMatches.first { !it.isThirdPlaceMatch && it.round == 2 && !it.matchCode.endsWith("-R") }
+    val thirdMatch = koMatches.first { it.isThirdPlaceMatch && !it.matchCode.endsWith("-R") }
+
+    // Unplayed round 2 should show "... Maçının Kazananı" and "... Maçının Kaybedeni"
+    assertEquals("R1-M1 Maçının Kazananı", helper.formatMatchSlotLabel(finalMatch, true, koMatches, students))
+    assertEquals("R1-M2 Maçının Kazananı", helper.formatMatchSlotLabel(finalMatch, false, koMatches, students))
+    assertEquals("R1-M1 Maçının Kaybedeni", helper.formatMatchSlotLabel(thirdMatch, true, koMatches, students))
+    assertEquals("R1-M2 Maçının Kaybedeni", helper.formatMatchSlotLabel(thirdMatch, false, koMatches, students))
+
+    // Bracket node columns should combine leg 1 + -R leg and retain source connector codes
+    val cols = helper.buildBracketColumns(t, koMatches, students)
+    assertEquals(2, cols.size)
+    assertEquals(2, cols[1]!!.size)
+    val finalNode = cols[2]!!.first { !it.isThirdPlaceMatch }
+    assertEquals("R1-M1", finalNode.p1SourceBaseCode)
+    assertEquals("R1-M2", finalNode.p2SourceBaseCode)
+    assertEquals(2, finalNode.legs.size)
+  }
+
+  @Test
+  fun testTournamentProjectedPlayoffAndGroupReports() {
+    val helper = com.example.util.TournamentOutcomeHelper
+    val students = (1..8).map {
+      com.example.data.model.Student(id = "s$it", studentNumber = "$it", fullName = "Öğrenci $it", gender = "Kız")
+    }
+    val tournament = com.example.data.model.Tournament(
+      id = "t_ge",
+      classRoomId = "c1",
+      name = "Grup + Eleme Futbol",
+      type = com.example.data.model.TournamentType.GRUP_ELEME,
+      participants = students.map { it.id },
+      groupCount = 2,
+      advancingPerGroup = 2,
+      winnerSelectionMethod = com.example.data.model.WinnerSelectionMethod.SCORE
+    )
+    val pairs = helper.resolveParticipantPairs(tournament.participants, emptyList(), students)
+    val groupMatches = com.example.util.TournamentEngine.generateGroupFixtures(
+      tournamentId = tournament.id,
+      participants = pairs,
+      groupCount = 2,
+      groupNaming = "letters",
+      isDoubleMatch = false
+    ).mapIndexed { index, m ->
+      if (index == 0) m.copy(status = "completed", score1 = 3, score2 = 1, winnerId = m.player1Id) else m
+    }
+
+    val reports = helper.buildGroupReports(tournament, groupMatches, students)
+    assertEquals(2, reports.size)
+    assertEquals(1, reports.sumOf { it.completedCount })
+    assertTrue(reports[0].lastCompletedMatchText.contains("3-1"))
+
+    // Even when Play-Off hasn't been generated yet, projected Play-Off tree produces full Day-1 bracket
+    val projected = helper.buildProjectedPlayoffMatches(tournament, reports, emptyList())
+    assertTrue(projected.isNotEmpty())
+    val projectedCols = helper.buildBracketColumns(tournament, projected, students)
+    assertEquals(2, projectedCols.size) // Semi-Final (KO-R1-M1, KO-R1-M2) + Final & 3rd Place (R2)
+    val semi1 = projectedCols[1]!!.first()
+    assertTrue(semi1.player1Label.contains("1.si"))
+    assertTrue(semi1.player2Label.contains("2.si"))
+    val finalNode = projectedCols[2]!!.first { !it.isThirdPlaceMatch }
+    assertEquals("KO-R1-M1 Maçının Kazananı", finalNode.player1Label)
+    assertEquals("KO-R1-M2 Maçının Kazananı", finalNode.player2Label)
+  }
+
+  @Test
+  fun testParentChildTournamentOutcomesAllTypes() {
+    val helper = com.example.util.TournamentOutcomeHelper
+    val students = (1..4).map {
+      com.example.data.model.Student(id = "c$it", studentNumber = "$it", fullName = "Çocuk $it", gender = "Erkek")
+    }
+    val stars = com.example.data.model.TournamentStarRewards(
+      enabled = true,
+      firstPlaceStars = 15,
+      secondPlaceStars = 10,
+      thirdPlaceStars = 5,
+      participationStars = 2
+    )
+
+    // 1. Completed League Tournament
+    val leagueTournament = com.example.data.model.Tournament(
+      id = "t_lig",
+      classRoomId = "cl1",
+      name = "Sınıf Ligi",
+      type = com.example.data.model.TournamentType.LIG,
+      status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+      participants = listOf("c1", "c2", "c3"),
+      winnerSelectionMethod = com.example.data.model.WinnerSelectionMethod.SCORE,
+      starRewards = stars
+    )
+    val ligMatches = listOf(
+      com.example.data.model.TournamentMatch(
+        id = "lm1", tournamentId = "t_lig", round = 1, matchCode = "L1-M1",
+        player1Id = "c1", player1Name = "Çocuk 1", player2Id = "c2", player2Name = "Çocuk 2",
+        score1 = 2, score2 = 0, winnerId = "c1", status = "completed", stage = "league"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "lm2", tournamentId = "t_lig", round = 2, matchCode = "L2-M1",
+        player1Id = "c1", player1Name = "Çocuk 1", player2Id = "c3", player2Name = "Çocuk 3",
+        score1 = 3, score2 = 1, winnerId = "c1", status = "completed", stage = "league"
+      )
+    )
+    val c1LeagueOutcome = helper.evaluateChildTournamentOutcome(leagueTournament, ligMatches, students, "c1")
+    assertTrue(c1LeagueOutcome.isParticipant)
+    assertEquals(1, c1LeagueOutcome.overallRank)
+    assertEquals(15, c1LeagueOutcome.earnedStars)
+    assertTrue(c1LeagueOutcome.headline.contains("Şampiyonu"))
+
+    val c4NonParticipant = helper.evaluateChildTournamentOutcome(leagueTournament, ligMatches, students, "c4")
+    assertFalse(c4NonParticipant.isParticipant)
+
+    // 2. Completed Elimination Tournament (Champion, Runner-Up, 3rd, 4th)
+    val koTournament = com.example.data.model.Tournament(
+      id = "t_eleme",
+      classRoomId = "cl1",
+      name = "Bilgi Eleme",
+      type = com.example.data.model.TournamentType.ELEME,
+      status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+      participants = listOf("c1", "c2", "c3", "c4"),
+      winnerId = "c1",
+      runnerUpId = "c2",
+      thirdPlaceId = "c3",
+      starRewards = stars
+    )
+    val koMatches = listOf(
+      com.example.data.model.TournamentMatch(
+        id = "km1", tournamentId = "t_eleme", round = 1, matchCode = "R1-M1",
+        player1Id = "c1", player2Id = "c3", winnerId = "c1", status = "completed", stage = "knockout"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "km2", tournamentId = "t_eleme", round = 1, matchCode = "R1-M2",
+        player1Id = "c2", player2Id = "c4", winnerId = "c2", status = "completed", stage = "knockout"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "km3", tournamentId = "t_eleme", round = 2, matchCode = "R2-M-3RD",
+        player1Id = "c3", player2Id = "c4", winnerId = "c3", isThirdPlaceMatch = true, status = "completed", stage = "knockout"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "km4", tournamentId = "t_eleme", round = 2, matchCode = "R2-M1",
+        player1Id = "c1", player2Id = "c2", winnerId = "c1", status = "completed", stage = "knockout"
+      )
+    )
+    assertEquals(15, helper.evaluateChildTournamentOutcome(koTournament, koMatches, students, "c1").earnedStars)
+    assertEquals(10, helper.evaluateChildTournamentOutcome(koTournament, koMatches, students, "c2").earnedStars)
+    assertEquals(5, helper.evaluateChildTournamentOutcome(koTournament, koMatches, students, "c3").earnedStars)
+    val c4FourthOutcome = helper.evaluateChildTournamentOutcome(koTournament, koMatches, students, "c4")
+    assertEquals(4, c4FourthOutcome.overallRank)
+    assertEquals(2, c4FourthOutcome.earnedStars)
+    assertTrue(c4FourthOutcome.headline.contains("4."))
+
+    // 3. Group + Elimination: eliminated in group stage
+    val geTournament = com.example.data.model.Tournament(
+      id = "t_ge_end",
+      classRoomId = "cl1",
+      name = "Grup+Eleme",
+      type = com.example.data.model.TournamentType.GRUP_ELEME,
+      status = com.example.data.model.TournamentStatus.TAMAMLANDI,
+      participants = listOf("c1", "c2", "c3", "c4"),
+      advancingPerGroup = 1,
+      starRewards = stars
+    )
+    val geMatches = listOf(
+      com.example.data.model.TournamentMatch(
+        id = "gm1", tournamentId = "t_ge_end", round = 1, matchCode = "G1-M1",
+        player1Id = "c1", player2Id = "c2", score1 = 3, score2 = 0, winnerId = "c1",
+        groupId = "A", groupName = "A Grubu", status = "completed", stage = "group"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "gm2", tournamentId = "t_ge_end", round = 1, matchCode = "G2-M1",
+        player1Id = "c3", player2Id = "c4", score1 = 2, score2 = 1, winnerId = "c3",
+        groupId = "B", groupName = "B Grubu", status = "completed", stage = "group"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "gko1", tournamentId = "t_ge_end", round = 1, matchCode = "KO-R1-M1",
+        player1Id = "c1", player2Id = "c3", score1 = 2, score2 = 1, winnerId = "c1",
+        status = "completed", stage = "knockout"
+      )
+    )
+    val c2ElimOutcome = helper.evaluateChildTournamentOutcome(geTournament, geMatches, students, "c2")
+    assertEquals("Grup Aşaması", c2ElimOutcome.stageReached)
+    assertTrue(c2ElimOutcome.headline.contains("Grup Aşamasında Elendi"))
+    assertEquals(2, c2ElimOutcome.earnedStars)
+
+    val c1ChampionOutcome = helper.evaluateChildTournamentOutcome(geTournament, geMatches, students, "c1")
+    assertEquals(1, c1ChampionOutcome.overallRank)
+    assertEquals(15, c1ChampionOutcome.earnedStars)
+    assertTrue(c1ChampionOutcome.headline.contains("A Grubu"))
+  }
 }
 
 
