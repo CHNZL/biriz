@@ -429,6 +429,10 @@ fun BirizApp(viewModel: BirizViewModel) {
                             },
                             onToggleChatReaction = { msgId, emoji -> viewModel.toggleChatMessageReaction(msgId, emoji) },
                             onDeliverScheduledMessageNow = { msgId -> viewModel.deliverScheduledMessageNow(msgId) },
+                            onUpdateScheduledMessage = { msgId, text, scheduledFor ->
+                                viewModel.updateScheduledMessage(msgId, text, scheduledFor)
+                            },
+                            onCancelScheduledMessage = { msgId -> viewModel.cancelScheduledMessage(msgId) },
                             onSimulateParentReply = { sId, text -> viewModel.simulateParentReply(sId, text) },
                             onMarkChatAsRead = { sId, email -> viewModel.markChatMessagesAsRead(sId, email) },
                             onDeleteChatMessagesForMe = { viewModel.deleteChatMessagesForMe(it) },

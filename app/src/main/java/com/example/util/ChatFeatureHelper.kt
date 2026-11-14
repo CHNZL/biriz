@@ -5,6 +5,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 data class SchedulePresetOption(
     val id: String,
@@ -17,7 +18,8 @@ data class SchedulePresetOption(
 /**
  * WhatsApp stili mesajlaşma özellikleri için saf iş mantığı yardımcısı:
  * - Hızlı emoji tepkileri (reactions) & katılımcı anahtarı
- * - Sessiz saatler algılama ve zamanlanmış iletim zamanı hesaplama
+ * - Sessiz saatler algılama ve tarih/saat bazlı zamanlanmış iletim hesaplama
+ * - Planlı mesajları en yakından en uzağa sıralama
  * - Detaylı iletildi/okundu zaman damgası biçimlendirme
  */
 object ChatFeatureHelper {
@@ -59,6 +61,91 @@ object ChatFeatureHelper {
             cal.add(Calendar.DAY_OF_YEAR, 1)
         }
         return cal.timeInMillis
+    }
+
+    /**
+     * Material 3 DatePicker'ın UTC gece yarısı tarih damgası ile yerel saat/dakikayı
+     * saat dilimi kayması olmadan birleştirir.
+     */
+    fun combineUtcDateWithLocalTime(
+        utcDateMillis: Long,
+        hour: Int,
+        minute: Int
+    ): Long {
+        val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = utcDateMillis
+        }
+        val localCal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, utcCal.get(Calendar.YEAR))
+            set(Calendar.MONTH, utcCal.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, utcCal.get(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+            set(Calendar.MINUTE, minute.coerceIn(0, 59))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return localCal.timeInMillis
+    }
+
+    /**
+     * Yerel zaman damgasının takvim gününü Material 3 DatePicker ile uyumlu UTC gece yarısına çevirir.
+     */
+    fun localDateToUtcMidnight(localMillis: Long): Long {
+        val localCal = Calendar.getInstance().apply { timeInMillis = localMillis }
+        val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(
+                localCal.get(Calendar.YEAR),
+                localCal.get(Calendar.MONTH),
+                localCal.get(Calendar.DAY_OF_MONTH),
+                0,
+                0,
+                0
+            )
+            set(Calendar.MILLISECOND, 0)
+        }
+        return utcCal.timeInMillis
+    }
+
+    /**
+     * Verilen zaman damgasının Bugün (0), Yarın (1) veya Özel Tarih (2) olup olmadığını belirler.
+     */
+    fun detectDayOption(
+        targetMillis: Long,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int {
+        val calNow = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val calTarget = Calendar.getInstance().apply { timeInMillis = targetMillis }
+        if (calNow.get(Calendar.YEAR) == calTarget.get(Calendar.YEAR) &&
+            calNow.get(Calendar.DAY_OF_YEAR) == calTarget.get(Calendar.DAY_OF_YEAR)
+        ) {
+            return 0
+        }
+        val calTomorrow = (calNow.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
+        if (calTomorrow.get(Calendar.YEAR) == calTarget.get(Calendar.YEAR) &&
+            calTomorrow.get(Calendar.DAY_OF_YEAR) == calTarget.get(Calendar.DAY_OF_YEAR)
+        ) {
+            return 1
+        }
+        return 2
+    }
+
+    fun formatShortDateChip(utcDateMillis: Long): String {
+        val localMidnight = combineUtcDateWithLocalTime(utcDateMillis, 12, 0)
+        val trLocale = Locale("tr", "TR")
+        return SimpleDateFormat("d MMM", trLocale).format(Date(localMidnight))
+    }
+
+    /**
+     * Bekleyen zamanlanmış mesajları teslim zamanına göre en yakından en uzağa sıralar.
+     */
+    fun sortScheduledMessagesChronologically(
+        messages: List<ChatMessage>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<ChatMessage> {
+        return messages
+            .filter { !it.isDeletedForEveryone && it.isPendingScheduled(nowMillis) }
+            .sortedWith(compareBy<ChatMessage> { it.scheduledFor ?: Long.MAX_VALUE }.thenBy { it.timestamp })
     }
 
     fun buildSchedulePresets(nowMillis: Long = System.currentTimeMillis()): List<SchedulePresetOption> {
@@ -112,8 +199,8 @@ object ChatFeatureHelper {
         val trLocale = Locale("tr", "TR")
         val timeText = SimpleDateFormat("HH:mm", trLocale).format(Date(scheduledFor))
 
-        val sameDay = calNow.get(Calendar.YEAR) == calTarget.get(Calendar.YEAR) &&
-            calNow.get(Calendar.DAY_OF_YEAR) == calTarget.get(Calendar.DAY_OF_YEAR)
+        val sameYear = calNow.get(Calendar.YEAR) == calTarget.get(Calendar.YEAR)
+        val sameDay = sameYear && calNow.get(Calendar.DAY_OF_YEAR) == calTarget.get(Calendar.DAY_OF_YEAR)
         if (sameDay) return "Bugün $timeText"
 
         val calTomorrow = (calNow.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
@@ -121,7 +208,8 @@ object ChatFeatureHelper {
             calTomorrow.get(Calendar.DAY_OF_YEAR) == calTarget.get(Calendar.DAY_OF_YEAR)
         if (isTomorrow) return "Yarın $timeText"
 
-        val dateText = SimpleDateFormat("d MMM", trLocale).format(Date(scheduledFor))
+        val pattern = if (sameYear) "d MMM" else "d MMM yyyy"
+        val dateText = SimpleDateFormat(pattern, trLocale).format(Date(scheduledFor))
         return "$dateText $timeText"
     }
 

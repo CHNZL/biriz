@@ -178,88 +178,111 @@ fun GroupMakerSubScreen(
                 border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
-                    // 1. SATIR: Akıllı Dağıt, Yerleşen Kutusu, Kalan Kutusu ve Paylaş Kutusu (Simge ile)
+                    // 1. SATIR: Akıllı Dağıt, Canlı Kura, Yerleşen Kutusu, Kalan Kutusu ve Paylaş Kutusu (Simge ile)
                     val topBarHeight = 38.dp
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. Akıllı Dağıt Butonu (1. Satır Başı)
-                        Button(
-                            onClick = onOpenWizard,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                contentColor = if (isDarkTheme) BirizNavyDark else Color.White
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        Row(
                             modifier = Modifier
-                                .height(topBarHeight)
-                                .testTag("open_group_wizard_button")
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Akıllı Dağıt", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-
-                        // 2. Yerleşen Kişi Kutusu
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
-                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x600D9488) else BirizTurquoise),
-                            modifier = Modifier.height(topBarHeight)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp)
+                            // 1. Akıllı Dağıt Butonu (1. Satır Başı)
+                            Button(
+                                onClick = onOpenWizard,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                    contentColor = if (isDarkTheme) BirizNavyDark else Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .height(topBarHeight)
+                                    .testTag("open_group_wizard_button")
                             ) {
-                                Text(
-                                    text = "👥 $assignedCount Yerleşti",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) Color(0xFF5EEAD4) else Color(0xFF0F766E),
-                                    maxLines = 1
-                                )
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Akıllı Dağıt", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+
+                            // 2. Animasyonlu Canlı Kura Çek (Akıllı Dağıt'ın hemen yanında)
+                            Button(
+                                onClick = { showLiveDrawDialog = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDarkTheme) Color(0xFF7C3AED) else Color(0xFF6366F1),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .height(topBarHeight)
+                                    .testTag("btn_live_group_draw")
+                            ) {
+                                Text("🎡 Canlı Kura", fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                            }
+
+                            // 3. Yerleşen Kişi Kutusu
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0x350D9488) else Color(0xFFCCFBF1),
+                                border = BorderStroke(1.dp, if (isDarkTheme) Color(0x600D9488) else BirizTurquoise),
+                                modifier = Modifier.height(topBarHeight)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "👥 $assignedCount Yerleşti",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkTheme) Color(0xFF5EEAD4) else Color(0xFF0F766E),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // 4. Kalan Kişi Kutusu
+                            Surface(
+                                onClick = { if (unassignedCount > 0) showUnassignedDrawer = true },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (unassignedCount > 0) {
+                                    if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                                } else {
+                                    if (isDarkTheme) Color(0x2064748B) else Color(0xFFF1F5F9)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (unassignedCount > 0) BirizAmber else (if (isDarkTheme) Color(0x4064748B) else Color(0xFFCBD5E1))
+                                ),
+                                modifier = Modifier.height(topBarHeight)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "📦 $unassignedCount Kalan",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (unassignedCount > 0) {
+                                            if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
+                                        } else {
+                                            if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                        },
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
 
-                        // 3. Kalan Kişi Kutusu
-                        Surface(
-                            onClick = { if (unassignedCount > 0) showUnassignedDrawer = true },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (unassignedCount > 0) {
-                                if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
-                            } else {
-                                if (isDarkTheme) Color(0x2064748B) else Color(0xFFF1F5F9)
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                if (unassignedCount > 0) BirizAmber else (if (isDarkTheme) Color(0x4064748B) else Color(0xFFCBD5E1))
-                            ),
-                            modifier = Modifier.height(topBarHeight)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            ) {
-                                Text(
-                                    text = "📦 $unassignedCount Kalan",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (unassignedCount > 0) {
-                                        if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
-                                    } else {
-                                        if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-                                    },
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.width(6.dp))
 
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // 4. Paylaş Kutusu (Simge ile, "Paylaş" yazısı yok)
+                        // 5. Paylaş Kutusu (Simge ile, "Paylaş" yazısı yok)
                         Box {
                             Surface(
                                 onClick = { isExportMenuOpen = true },
@@ -333,7 +356,7 @@ fun GroupMakerSubScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 2. SATIR: Animasyonlu Canlı Kura, Yeniden Karıştır, Rastgele Sözcü, Kalanları Dağıt ve Grup Ekle
+                    // 2. SATIR: Yeniden Karıştır, Rastgele Lider, Kalanları Dağıt ve Grup Ekle
                     val row2Height = 36.dp
                     Row(
                         modifier = Modifier
@@ -342,23 +365,7 @@ fun GroupMakerSubScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. Animasyonlu Canlı Kura Çek
-                        Button(
-                            onClick = { showLiveDrawDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDarkTheme) Color(0xFF7C3AED) else Color(0xFF6366F1),
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            modifier = Modifier
-                                .height(row2Height)
-                                .testTag("btn_live_group_draw")
-                        ) {
-                            Text("🎡 Canlı Kura", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                        }
-
-                        // 2. Yeniden Karıştır
+                        // 1. Yeniden Karıştır
                         OutlinedButton(
                             onClick = onReshuffle,
                             shape = RoundedCornerShape(10.dp),
@@ -371,7 +378,7 @@ fun GroupMakerSubScreen(
                             Text("🎲 Yeniden Karıştır", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
-                        // 2. Rastgele Sözcü
+                        // 2. Rastgele Lider
                         OutlinedButton(
                             onClick = onPickRandomLeadersForAll,
                             shape = RoundedCornerShape(10.dp),
@@ -379,7 +386,7 @@ fun GroupMakerSubScreen(
                             contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
                             modifier = Modifier.height(row2Height)
                         ) {
-                            Text("👑 Rastgele Sözcü", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text("👑 Rastgele Lider", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
                         // 3. Kalanları Dağıt
@@ -877,7 +884,7 @@ private fun GroupCard(
                                             border = BorderStroke(1.dp, BirizAmber)
                                         ) {
                                             Text(
-                                                text = "Sözcü",
+                                                text = "Lider",
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309),
@@ -892,7 +899,7 @@ private fun GroupCard(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    // Taç Butonu (Sözcü / Lider Seçimi)
+                                    // Taç Butonu (Lider Seçimi)
                                     Surface(
                                         onClick = { onToggleLeaderClick(student.id) },
                                         shape = CircleShape,
@@ -1014,7 +1021,7 @@ private fun StudentTouchModal(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = if (isLeader) "👑 Grup Sözcülüğü Unvanını Kaldır" else "👑 Bu Öğrenciyi Grup Sözcüsü / Lideri Yap",
+                                text = if (isLeader) "👑 Grup Liderliği Unvanını Kaldır" else "👑 Bu Öğrenciyi Grup Lideri Yap",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )

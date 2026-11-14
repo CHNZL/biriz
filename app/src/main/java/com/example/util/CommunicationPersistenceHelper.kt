@@ -589,6 +589,27 @@ object CommunicationPersistenceHelper {
     }
 
     /**
+     * Henüz alıcıya ulaşmamış zamanlanmış mesaj iptal edildiğinde/silindiğinde Firestore belgesini temizler.
+     */
+    fun deleteChatMessageFromFirestore(
+        context: Context,
+        classId: String,
+        messageId: String
+    ) {
+        if (classId.isBlank() || classId == "default" || messageId.isBlank()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                db.collection("classrooms").document(classId)
+                    .collection("messages").document(messageId)
+                    .delete()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete scheduled chat message from Firestore", e)
+            }
+        }
+    }
+
+    /**
      * Firestore üzerinden sınıfa ait sohbet mesajlarını gerçek zamanlı dinler.
      * Veli öğretmenine, öğretmen veliye mesaj yazdığı anda ekranda anlık belirir.
      */

@@ -199,6 +199,8 @@ fun CommunicationSubScreen(
     onSendMessage: (String, String, Boolean, String, String, ChatMessage?, Long?) -> Unit,
     onToggleChatReaction: (String, String) -> Unit = { _, _ -> },
     onDeliverScheduledMessageNow: (String) -> Unit = {},
+    onUpdateScheduledMessage: (String, String, Long) -> Unit = { _, _, _ -> },
+    onCancelScheduledMessage: (String) -> Unit = {},
     onSimulateParentReply: (String, String) -> Unit,
     onMarkChatAsRead: (String, String) -> Unit,
     onActiveChatStudentChange: (String?) -> Unit = {},
@@ -310,6 +312,11 @@ fun CommunicationSubScreen(
             if (selectedChatTarget != null) {
                 val (chatStudent, chatParent) = selectedChatTarget!!
                 val parentsCount = chatStudent.allLinkedParents.size
+                val allScheduledMessages = remember(chatMessages) {
+                    ChatFeatureHelper.sortScheduledMessagesChronologically(
+                        chatMessages.filter { it.isFromTeacher }
+                    )
+                }
                 // Veli ile Bireysel Sohbet Ekranı (WhatsApp Stili)
                 OneOnOneChatView(
                     student = chatStudent,
@@ -319,6 +326,7 @@ fun CommunicationSubScreen(
                         it.studentId == chatStudent.id &&
                             (parentsCount <= 1 || it.parentEmail.isBlank() || chatParent.email.isBlank() || it.parentEmail.trim().equals(chatParent.email.trim(), ignoreCase = true))
                     },
+                    allScheduledMessages = allScheduledMessages,
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,
                     onFontOffsetChange = { next ->
@@ -337,6 +345,8 @@ fun CommunicationSubScreen(
                     },
                     onToggleReaction = onToggleChatReaction,
                     onDeliverScheduledNow = onDeliverScheduledMessageNow,
+                    onUpdateScheduledMessage = onUpdateScheduledMessage,
+                    onCancelScheduledMessage = onCancelScheduledMessage,
                     onSimulateParentReply = { text ->
                         onSimulateParentReply(chatStudent.id, text)
                     },
@@ -3324,6 +3334,7 @@ private fun OneOnOneChatView(
     parentAccount: LinkedParentAccount,
     teacherName: String,
     messages: List<ChatMessage>,
+    allScheduledMessages: List<ChatMessage> = emptyList(),
     isDarkTheme: Boolean,
     fontOffset: Int,
     onFontOffsetChange: (Int) -> Unit,
@@ -3332,6 +3343,8 @@ private fun OneOnOneChatView(
     onSendMessage: (text: String, replyTo: ChatMessage?, scheduledFor: Long?) -> Unit,
     onToggleReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
     onDeliverScheduledNow: (messageId: String) -> Unit = {},
+    onUpdateScheduledMessage: (messageId: String, newText: String, newScheduledFor: Long) -> Unit = { _, _, _ -> },
+    onCancelScheduledMessage: (messageId: String) -> Unit = {},
     onSimulateParentReply: (String) -> Unit,
     onDeleteMessagesForMe: (Set<String>) -> Unit = {},
     onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
@@ -3886,6 +3899,7 @@ private fun OneOnOneChatView(
             onSend = { sendCurrentMessage(null) },
             resetKey = "${student.id}_${parentAccount.email}",
             enableScheduledSend = true,
+            scheduledMessageCount = allScheduledMessages.size,
             onOpenScheduleOptions = { showScheduleDialog = true },
             topBannerContent = if (isQuietHoursNow && !isQuietBannerDismissed) {
                 {
@@ -3960,13 +3974,49 @@ private fun OneOnOneChatView(
         )
     }
 
-    if (showScheduleDialog && messageInput.text.isNotBlank()) {
+    if (showScheduleDialog) {
         ScheduleDeliveryDialog(
-            messagePreview = messageInput.text.trim(),
+            initialMessageText = messageInput.text.trim(),
+            scheduledMessages = allScheduledMessages,
+            activeStudentId = student.id,
             isDarkTheme = isDarkTheme,
             onDismiss = { showScheduleDialog = false },
-            onSendNow = { sendCurrentMessage(null) },
-            onScheduleAt = { targetMillis -> sendCurrentMessage(targetMillis) }
+            onSendNow = { textToSend ->
+                val clean = textToSend.trim()
+                if (clean.isNotEmpty()) {
+                    val useReply = if (messageInput.text.trim() == clean || messageInput.text.isBlank()) replyingToMessage else null
+                    onSendMessage(clean, useReply, null)
+                    if (messageInput.text.trim() == clean || messageInput.text.isBlank()) {
+                        messageInput = TextFieldValue("")
+                        replyingToMessage = null
+                    }
+                    showScheduleDialog = false
+                }
+            },
+            onScheduleAt = { textToSchedule, targetMillis ->
+                val clean = textToSchedule.trim()
+                if (clean.isNotEmpty()) {
+                    val useReply = if (messageInput.text.trim() == clean || messageInput.text.isBlank()) replyingToMessage else null
+                    onSendMessage(clean, useReply, targetMillis)
+                    if (messageInput.text.trim() == clean || messageInput.text.isBlank()) {
+                        messageInput = TextFieldValue("")
+                        replyingToMessage = null
+                    }
+                    showScheduleDialog = false
+                }
+            },
+            onUpdateScheduledMessage = { messageId, newText, newScheduledFor ->
+                onUpdateScheduledMessage(messageId, newText, newScheduledFor)
+                Toast.makeText(context, "Planlı mesaj güncellendi", Toast.LENGTH_SHORT).show()
+            },
+            onDeleteScheduledMessage = { messageId ->
+                onCancelScheduledMessage(messageId)
+                Toast.makeText(context, "Planlı mesaj silindi", Toast.LENGTH_SHORT).show()
+            },
+            onDeliverScheduledNow = { messageId ->
+                onDeliverScheduledNow(messageId)
+                Toast.makeText(context, "Mesaj şimdi iletildi", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 

@@ -2927,4 +2927,89 @@ class ExampleUnitTest {
       )
     )
   }
+
+  @Test
+  fun testCustomDateSchedulingAndChronologicalSort() {
+    val helper = com.example.util.ChatFeatureHelper
+
+    val nowCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 14, 15, 0, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val now = nowCal.timeInMillis
+
+    // 1. Convert future date (25 Nov 2026) to UTC midnight and combine with 14:45 local time
+    val customDayCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 25, 0, 0, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val utcMidnight = helper.localDateToUtcMidnight(customDayCal.timeInMillis)
+    val combined = helper.combineUtcDateWithLocalTime(utcMidnight, 14, 45)
+    val combinedCal = java.util.Calendar.getInstance().apply { timeInMillis = combined }
+
+    assertEquals(2026, combinedCal.get(java.util.Calendar.YEAR))
+    assertEquals(java.util.Calendar.NOVEMBER, combinedCal.get(java.util.Calendar.MONTH))
+    assertEquals(25, combinedCal.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(14, combinedCal.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(45, combinedCal.get(java.util.Calendar.MINUTE))
+
+    // 2. Day option detection: Bugün (0), Yarın (1), Özel Tarih (2)
+    assertEquals(0, helper.detectDayOption(now + 3_600_000L, now))
+    assertEquals(1, helper.detectDayOption(now + 24 * 3_600_000L, now))
+    assertEquals(2, helper.detectDayOption(combined, now))
+
+    // 3. Label includes year when crossing year boundary
+    val nextYearCal = java.util.Calendar.getInstance().apply {
+      set(2027, java.util.Calendar.JANUARY, 5, 9, 15, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val nextYearLabel = helper.formatScheduledLabel(nextYearCal.timeInMillis, now)
+    assertTrue("Next year label must include 2027: $nextYearLabel", nextYearLabel.contains("2027"))
+    assertTrue(nextYearLabel.endsWith("09:15"))
+
+    // 4. Chronological sort: soonest to furthest, ignoring deleted and already-due messages
+    val baseMsg = com.example.data.model.ChatMessage(
+      id = "base",
+      classId = "c1",
+      studentId = "s1",
+      studentNumber = "101",
+      studentName = "Semih",
+      parentName = "Veli",
+      isFromTeacher = true,
+      senderName = "Cihan Öğretmen",
+      text = "Baz"
+    )
+    val msgFurthest = baseMsg.copy(
+      id = "m_furthest",
+      text = "En uzak mesaj",
+      scheduledFor = now + 72 * 3_600_000L
+    )
+    val msgSoonest = baseMsg.copy(
+      id = "m_soonest",
+      text = "En yakın mesaj",
+      scheduledFor = now + 2 * 3_600_000L
+    )
+    val msgMiddle = baseMsg.copy(
+      id = "m_middle",
+      text = "Orta mesaj",
+      scheduledFor = now + 18 * 3_600_000L
+    )
+    val msgAlreadySent = baseMsg.copy(
+      id = "m_past",
+      text = "İletilmiş",
+      scheduledFor = now - 60_000L
+    )
+    val msgDeleted = baseMsg.copy(
+      id = "m_del",
+      text = "Silinmiş",
+      scheduledFor = now + 3_600_000L,
+      isDeletedForEveryone = true
+    )
+
+    val sorted = helper.sortScheduledMessagesChronologically(
+      messages = listOf(msgFurthest, msgAlreadySent, msgDeleted, msgMiddle, msgSoonest),
+      nowMillis = now
+    )
+    assertEquals(listOf("m_soonest", "m_middle", "m_furthest"), sorted.map { it.id })
+  }
 }

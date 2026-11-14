@@ -192,7 +192,7 @@ object GroupMakerHelper {
     }
 
     /**
-     * Tüm gruplardan tek tıkla rastgele birer sözcü / lider seçer.
+     * Tüm gruplardan tek tıkla rastgele birer lider seçer.
      */
     fun pickRandomLeadersForAll(groups: List<GroupTeam>): List<GroupTeam> {
         return groups.map { group ->
@@ -352,12 +352,12 @@ object GroupMakerHelper {
             val members = group.studentIds.mapNotNull { sid -> allStudents.firstOrNull { it.id == sid } }
             val leader = allStudents.firstOrNull { it.id == group.leaderStudentId }
 
-            val leaderSuffix = if (leader != null) " [👑 Sözcü: ${leader.studentNumber} - ${leader.fullName}]" else ""
+            val leaderSuffix = if (leader != null) " [👑 Lider: ${leader.studentNumber} - ${leader.fullName}]" else ""
             sb.append("📌 ${group.name.uppercase(Locale("tr", "TR"))} (${members.size} Öğrenci)$leaderSuffix\n")
 
             members.forEachIndexed { mIdx, student ->
                 val isLeader = student.id == group.leaderStudentId
-                val leaderBadge = if (isLeader) " 👑 (Grup Sözcüsü)" else ""
+                val leaderBadge = if (isLeader) " 👑 (Grup Lideri)" else ""
                 sb.append("  ${mIdx + 1}. No: ${student.studentNumber} - ${student.fullName}$leaderBadge\n")
             }
             sb.append("\n")

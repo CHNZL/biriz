@@ -1787,7 +1787,7 @@ object ExcelPdfHelper {
             val members = group.studentIds.mapNotNull { sid -> allStudents.firstOrNull { it.id == sid } }
             members.forEach { student ->
                 val isLeader = student.id == group.leaderStudentId
-                val role = if (isLeader) "Grup Sözcüsü / Lideri (👑)" else "Grup Üyesi"
+                val role = if (isLeader) "Grup Lideri (👑)" else "Grup Üyesi"
                 rows.add(
                     listOf(
                         group.name,
@@ -1948,7 +1948,7 @@ object ExcelPdfHelper {
                 paint.typeface = if (isLeader) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
 
                 val prefix = "${mIdx + 1}. "
-                val leaderTag = if (isLeader) " 👑 (Sözcü)" else ""
+                val leaderTag = if (isLeader) " 👑 (Lider)" else ""
                 val lineText = "$prefix${student.studentNumber} ${student.fullName}$leaderTag"
                 canvas.drawText(lineText, cardLeft + 8f, currentStudentY, paint)
                 currentStudentY += 13f

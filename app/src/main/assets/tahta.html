@@ -1559,7 +1559,7 @@
               <div class="group-members" id="group-members-${gIdx}">
                 ${g.members.map((m) => `
                   <div class="group-member-item">
-                    ${g.leaderStudentId && g.leaderStudentId === m.id ? '<span title="Grup Lideri / Sözcü">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
+                    ${g.leaderStudentId && g.leaderStudentId === m.id ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
                     <span>${m.fullName}</span>
                   </div>
                 `).join('')}

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,6 +99,7 @@ fun WhatsAppChatComposer(
     onSend: () -> Unit,
     resetKey: Any? = Unit,
     enableScheduledSend: Boolean = false,
+    scheduledMessageCount: Int = 0,
     onOpenScheduleOptions: (() -> Unit)? = null,
     topBannerContent: (@Composable () -> Unit)? = null,
     replyPreviewContent: (@Composable () -> Unit)? = null
@@ -245,7 +247,7 @@ fun WhatsAppChatComposer(
                                 .testTag(inputTestTag)
                         )
 
-                        if (enableScheduledSend && value.text.isNotBlank() && onOpenScheduleOptions != null) {
+                        if (enableScheduledSend && onOpenScheduleOptions != null) {
                             IconButton(
                                 onClick = {
                                     keyboardController?.hide()
@@ -257,12 +259,44 @@ fun WhatsAppChatComposer(
                                     .padding(bottom = 1.dp)
                                     .testTag("btn_schedule_send")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Schedule,
-                                    contentDescription = "Zamanlanmış iletim seçenekleri",
-                                    tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0284C7),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = if (scheduledMessageCount > 0) {
+                                            "Zamanlanmış iletim ve $scheduledMessageCount planlı mesaj"
+                                        } else {
+                                            "Zamanlanmış iletim seçenekleri"
+                                        },
+                                        tint = if (value.text.isNotBlank() || scheduledMessageCount > 0) {
+                                            if (isDarkTheme) BirizTurquoise else Color(0xFF0284C7)
+                                        } else if (isDarkTheme) {
+                                            Color(0xFF94A3B8)
+                                        } else {
+                                            Color(0xFF54656F)
+                                        },
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    if (scheduledMessageCount > 0) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = Color(0xFF00A884),
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 6.dp, y = (-4).dp)
+                                                .size(16.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = if (scheduledMessageCount > 9) "9+" else "$scheduledMessageCount",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.White,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

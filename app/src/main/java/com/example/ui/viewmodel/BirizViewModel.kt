@@ -1534,6 +1534,75 @@ class BirizViewModel(
         }
     }
 
+    fun updateScheduledMessage(
+        messageId: String,
+        newText: String,
+        newScheduledFor: Long
+    ) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+        val cleanText = newText.trim()
+        val now = System.currentTimeMillis()
+        if (cleanText.isEmpty() || newScheduledFor <= now + 5_000L) return
+
+        val classId = resolveActiveClassId()
+        var updatedMsg: ChatMessage? = null
+        val updatedRaw = rawChatMessages.map { msg ->
+            if (msg.id == messageId && msg.isFromTeacher && msg.isPendingScheduled(now)) {
+                msg.copy(
+                    text = cleanText,
+                    scheduledFor = newScheduledFor,
+                    timestamp = newScheduledFor,
+                    status = MessageStatus.SENT,
+                    deliveredAt = null
+                ).also { updatedMsg = it }
+            } else msg
+        }.sortedBy { it.timestamp }
+        val edited = updatedMsg ?: return
+
+        rawChatMessages = updatedRaw
+        _uiState.value = state.copy(
+            chatMessages = filterMessagesForCurrentViewer(updatedRaw, state),
+            snackbarMessage = "⏰ Planlı mesaj güncellendi: ${ChatFeatureHelper.formatScheduledLabel(newScheduledFor, now)}"
+        )
+        scheduleNextDueEvaluation()
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
+            if (classId != "default") {
+                CommunicationPersistenceHelper.uploadChatMessageToFirestore(ctx, classId, edited)
+            }
+        }
+    }
+
+    fun cancelScheduledMessage(messageId: String) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+        val target = rawChatMessages.firstOrNull {
+            it.id == messageId && it.isFromTeacher && it.isPendingScheduled()
+        } ?: return
+
+        val classId = resolveActiveClassId()
+        val updatedRaw = rawChatMessages.filterNot { it.id == target.id }
+        knownMessageIds.remove(target.id)
+        processedNotifMessageIds.remove(target.id)
+        rawChatMessages = updatedRaw
+
+        _uiState.value = state.copy(
+            chatMessages = filterMessagesForCurrentViewer(updatedRaw, state),
+            snackbarMessage = "🗑️ Planlanmış mesaj silindi"
+        )
+        scheduleNextDueEvaluation()
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
+            CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            if (classId != "default") {
+                CommunicationPersistenceHelper.deleteChatMessageFromFirestore(ctx, classId, target.id)
+            }
+        }
+    }
+
     private fun scheduleNextDueEvaluation() {
         scheduledMessagesDueJob?.cancel()
         val now = System.currentTimeMillis()
@@ -3444,7 +3513,7 @@ class BirizViewModel(
         val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
             groupMakerState = newState,
-            snackbarMessage = "Tüm gruplar için rastgele birer sözcü/lider seçildi 👑"
+            snackbarMessage = "Tüm gruplar için rastgele birer lider seçildi 👑"
         )
         persistGroupMakerState(newState)
     }
@@ -3477,7 +3546,7 @@ class BirizViewModel(
         val newState = current.copy(groups = updated)
         _uiState.value = _uiState.value.copy(
             groupMakerState = newState,
-            snackbarMessage = if (isNowLeader) "${student?.fullName ?: "Öğrenci"} grup sözcüsü yapıldı 👑"
+            snackbarMessage = if (isNowLeader) "${student?.fullName ?: "Öğrenci"} grup lideri yapıldı 👑"
             else "${student?.fullName ?: "Öğrenci"} liderlik unvanı kaldırıldı."
         )
         persistGroupMakerState(newState)
