@@ -21,7 +21,15 @@ android {
     val runNumber = (project.findProperty("GITHUB_RUN_NUMBER") as? String)?.toIntOrNull()
       ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
     versionCode = 1000 + runNumber
-    versionName = "1.0.$runNumber"
+    versionName = if (runNumber < 100) {
+      "1.0.$runNumber"
+    } else {
+      val minor = runNumber / 100
+      val patch = runNumber % 100
+      val minorPadded = minor.toString().padStart(2, '0')
+      val patchPadded = patch.toString().padStart(2, '0')
+      "1.$minorPadded.$patchPadded"
+    }
 
     val repo = (project.findProperty("GITHUB_REPOSITORY") as? String)
       ?: System.getenv("GITHUB_REPOSITORY") ?: ""

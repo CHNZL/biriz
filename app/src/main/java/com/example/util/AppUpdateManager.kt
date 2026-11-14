@@ -342,14 +342,20 @@ object AppUpdateManager {
         }
     }
 
-    private fun extractVersionCode(versionName: String): Int {
+    internal fun extractVersionCode(versionName: String): Int {
         val clean = versionName.trim().removePrefix("v").removePrefix("V")
-        val parts = clean.split(".")
-        val lastPart = parts.lastOrNull()?.filter { it.isDigit() }?.toIntOrNull() ?: 1
-        return 1000 + lastPart
+        val parts = clean.split(".").mapNotNull { part ->
+            part.filter { it.isDigit() }.toIntOrNull()
+        }
+        return when {
+            parts.size >= 3 -> parts[0] * 1000 + parts[1] * 100 + parts[2]
+            parts.size == 2 -> parts[0] * 1000 + parts[1] * 100
+            parts.size == 1 -> 1000 + parts[0]
+            else -> 1001
+        }
     }
 
-    private fun isRemoteNewer(
+    internal fun isRemoteNewer(
         remoteName: String,
         remoteCode: Int,
         currentName: String,

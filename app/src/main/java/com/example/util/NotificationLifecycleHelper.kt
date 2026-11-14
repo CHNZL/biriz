@@ -25,8 +25,15 @@ object NotificationLifecycleHelper {
             notif.id.removePrefix("app_update_").trim().toIntOrNull()?.let { return it }
         }
         val versionName = extractUpdateNotificationVersionName(notif) ?: return null
-        val patch = versionName.split(".").lastOrNull()?.toIntOrNull() ?: return null
-        return 1000 + patch
+        val parts = versionName.split(".").mapNotNull { part ->
+            part.filter { it.isDigit() }.toIntOrNull()
+        }
+        return when {
+            parts.size >= 3 -> parts[0] * 1000 + parts[1] * 100 + parts[2]
+            parts.size == 2 -> parts[0] * 1000 + parts[1] * 100
+            parts.size == 1 -> 1000 + parts[0]
+            else -> null
+        }
     }
 
     fun extractUpdateNotificationVersionName(notif: BirizNotification): String? {

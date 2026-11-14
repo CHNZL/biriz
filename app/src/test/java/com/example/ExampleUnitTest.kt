@@ -2225,6 +2225,35 @@ class ExampleUnitTest {
     )
     assertNull("Changing or re-voting with same account keys must be rejected", attemptReVote)
   }
+
+  @Test
+  fun testRolloverVersionNaming101FormatAndComparison() {
+    val manager = com.example.util.AppUpdateManager
+    assertEquals(1099, manager.extractVersionCode("1.0.99"))
+    assertEquals(1100, manager.extractVersionCode("1.0.100"))
+    assertEquals(1100, manager.extractVersionCode("1.01.00"))
+    assertEquals(1101, manager.extractVersionCode("1.01.01"))
+    assertEquals(1205, manager.extractVersionCode("1.02.05"))
+
+    assertTrue(manager.isRemoteNewer("1.01.00", 1100, "1.0.99", 1099))
+    assertTrue(manager.isRemoteNewer("1.01.01", 1101, "1.0.100", 1100))
+    assertTrue(manager.isRemoteNewer("1.01.01", 1101, "1.01.00", 1100))
+    assertFalse(manager.isRemoteNewer("1.01.00", 1100, "1.01.01", 1101))
+
+    val notif101 = com.example.data.model.BirizNotification(
+      id = "app_update_v101",
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      title = "Yeni Güncelleme Hazır (v1.01.00)",
+      message = "BİRİZ v1.01.00 yayında",
+      timestamp = 100L,
+      isRead = false,
+      targetId = null,
+      targetSubPageName = "APP_UPDATE"
+    )
+    assertEquals(1100, com.example.util.NotificationLifecycleHelper.extractUpdateNotificationVersionCode(notif101))
+    assertTrue(com.example.util.NotificationLifecycleHelper.compareVersionNames("1.01.00", "1.0.99") > 0)
+    assertTrue(com.example.util.NotificationLifecycleHelper.compareVersionNames("1.01.01", "1.01.00") > 0)
+  }
 }
 
 
