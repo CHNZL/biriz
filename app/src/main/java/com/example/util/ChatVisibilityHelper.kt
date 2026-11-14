@@ -75,7 +75,8 @@ object ChatVisibilityHelper {
         viewerIsTeacher: Boolean,
         viewerIsParent: Boolean,
         currentParentEmail: String,
-        clearTimestamps: Map<String, Long>
+        clearTimestamps: Map<String, Long>,
+        nowMillis: Long = System.currentTimeMillis()
     ): Boolean {
         return when {
             viewerIsTeacher -> {
@@ -88,6 +89,9 @@ object ChatVisibilityHelper {
                 msg.timestamp > clearTs
             }
             viewerIsParent -> {
+                if (msg.isPendingScheduled(nowMillis)) {
+                    return false
+                }
                 val parentKey = normalizeParentKey(currentParentEmail, msg.studentId)
                 val fallbackDefaultKey = "parent_${msg.studentId}"
                 if (parentKey in msg.hiddenForParentEmails || fallbackDefaultKey in msg.hiddenForParentEmails) {
@@ -105,7 +109,8 @@ object ChatVisibilityHelper {
         viewerIsTeacher: Boolean,
         viewerIsParent: Boolean,
         currentParentEmail: String,
-        clearTimestamps: Map<String, Long>
+        clearTimestamps: Map<String, Long>,
+        nowMillis: Long = System.currentTimeMillis()
     ): List<ChatMessage> {
         return messages.filter { msg ->
             isMessageVisibleToViewer(
@@ -113,7 +118,8 @@ object ChatVisibilityHelper {
                 viewerIsTeacher = viewerIsTeacher,
                 viewerIsParent = viewerIsParent,
                 currentParentEmail = currentParentEmail,
-                clearTimestamps = clearTimestamps
+                clearTimestamps = clearTimestamps,
+                nowMillis = nowMillis
             )
         }
     }

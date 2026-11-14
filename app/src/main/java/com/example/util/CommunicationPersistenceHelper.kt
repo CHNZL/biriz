@@ -474,13 +474,26 @@ object CommunicationPersistenceHelper {
         }
         syncScope.launch {
             try {
-                val deliveredMessage = if (message.status == MessageStatus.SENT) {
-                    message.copy(classId = classId, status = MessageStatus.DELIVERED)
-                } else {
-                    message.copy(classId = classId)
+                val now = System.currentTimeMillis()
+                val isPendingScheduled = message.isPendingScheduled(now)
+                val deliveredMessage = when {
+                    isPendingScheduled -> message.copy(
+                        classId = classId,
+                        status = MessageStatus.SENT,
+                        deliveredAt = null
+                    )
+                    message.status == MessageStatus.SENT -> message.copy(
+                        classId = classId,
+                        status = MessageStatus.DELIVERED,
+                        deliveredAt = message.deliveredAt ?: now
+                    )
+                    else -> message.copy(
+                        classId = classId,
+                        deliveredAt = message.deliveredAt ?: message.timestamp
+                    )
                 }
                 val json = serializeChatMessageJson(deliveredMessage).toString()
-                val data = mapOf(
+                val data = hashMapOf<String, Any?>(
                     "id" to deliveredMessage.id,
                     "classId" to classId,
                     "studentId" to deliveredMessage.studentId,
@@ -488,6 +501,9 @@ object CommunicationPersistenceHelper {
                     "isFromTeacher" to deliveredMessage.isFromTeacher,
                     "timestamp" to deliveredMessage.timestamp,
                     "status" to deliveredMessage.status.name,
+                    "deliveredAt" to deliveredMessage.deliveredAt,
+                    "readAt" to deliveredMessage.readAt,
+                    "scheduledFor" to deliveredMessage.scheduledFor,
                     "json" to json,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -513,9 +529,15 @@ object CommunicationPersistenceHelper {
         val db = getFirestore(context) ?: return
         syncScope.launch {
             try {
+                val now = System.currentTimeMillis()
                 readMessages.forEach { msg ->
-                    val readMsg = msg.copy(classId = classId, status = MessageStatus.READ)
-                    val data = mapOf(
+                    val readMsg = msg.copy(
+                        classId = classId,
+                        status = MessageStatus.READ,
+                        deliveredAt = msg.deliveredAt ?: msg.timestamp,
+                        readAt = msg.readAt ?: now
+                    )
+                    val data = hashMapOf<String, Any?>(
                         "id" to readMsg.id,
                         "classId" to classId,
                         "studentId" to readMsg.studentId,
@@ -523,6 +545,8 @@ object CommunicationPersistenceHelper {
                         "isFromTeacher" to readMsg.isFromTeacher,
                         "timestamp" to readMsg.timestamp,
                         "status" to MessageStatus.READ.name,
+                        "deliveredAt" to readMsg.deliveredAt,
+                        "readAt" to readMsg.readAt,
                         "json" to serializeChatMessageJson(readMsg).toString(),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
@@ -532,6 +556,34 @@ object CommunicationPersistenceHelper {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to mark chat messages read in Firestore", e)
+            }
+        }
+    }
+
+    /**
+     * Tek dokunuşla emoji tepkisini Firestore'daki ilgili katılımcı anahtarına atomik olarak yazar.
+     * Kaldırılan tepki "" olarak yazılır, böylece diğer katılımcıların tepkileri ezilmez.
+     */
+    fun updateChatMessageReactionInFirestore(
+        context: Context,
+        classId: String,
+        messageId: String,
+        participantKey: String,
+        emojiOrEmpty: String
+    ) {
+        if (classId.isBlank() || classId == "default" || messageId.isBlank()) return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            try {
+                val patch = mapOf<String, Any>(
+                    "reactions" to mapOf(participantKey to emojiOrEmpty),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                db.collection("classrooms").document(classId)
+                    .collection("messages").document(messageId)
+                    .set(patch, SetOptions.merge())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update chat reaction in Firestore", e)
             }
         }
     }
@@ -569,6 +621,29 @@ object CommunicationPersistenceHelper {
                                     val hiddenForParentsOverride = (doc.get("hiddenForParents") as? List<*>)
                                         ?.mapNotNull { it?.toString() }
                                     val deletedForEveryoneOverride = doc.getBoolean("isDeletedForEveryone")
+                                    val deliveredAtOverride = if (doc.contains("deliveredAt")) {
+                                        doc.getLong("deliveredAt")?.takeIf { it > 0L }
+                                    } else {
+                                        msg.deliveredAt
+                                    }
+                                    val readAtOverride = if (doc.contains("readAt")) {
+                                        doc.getLong("readAt")?.takeIf { it > 0L }
+                                    } else {
+                                        msg.readAt
+                                    }
+                                    val scheduledForOverride = if (doc.contains("scheduledFor")) {
+                                        doc.getLong("scheduledFor")?.takeIf { it > 0L }
+                                    } else {
+                                        msg.scheduledFor
+                                    }
+                                    val timestampOverride = doc.getLong("timestamp")?.takeIf { it > 0L } ?: msg.timestamp
+                                    val reactionsOverride = (doc.get("reactions") as? Map<*, *>)?.let { rawMap ->
+                                        rawMap.entries.mapNotNull { (k, v) ->
+                                            val keyStr = k?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                            val valStr = v?.toString()?.trim().orEmpty()
+                                            if (valStr.isNotBlank()) keyStr to valStr else null
+                                        }.toMap()
+                                    } ?: msg.reactions
 
                                     val mergedHiddenParents = if (hiddenForParentsOverride != null) {
                                         (msg.hiddenForParentEmails + hiddenForParentsOverride).distinct()
@@ -577,11 +652,16 @@ object CommunicationPersistenceHelper {
                                     }
                                     val resolvedDeleted = deletedForEveryoneOverride ?: msg.isDeletedForEveryone
                                     val resolved = msg.copy(
+                                        timestamp = timestampOverride,
                                         status = statusOverride ?: msg.status,
                                         text = if (resolvedDeleted) "" else msg.text,
                                         hiddenForTeacher = hiddenForTeacherOverride ?: msg.hiddenForTeacher,
                                         hiddenForParentEmails = mergedHiddenParents,
-                                        isDeletedForEveryone = resolvedDeleted
+                                        isDeletedForEveryone = resolvedDeleted,
+                                        reactions = reactionsOverride,
+                                        deliveredAt = deliveredAtOverride,
+                                        readAt = readAtOverride,
+                                        scheduledFor = scheduledForOverride
                                     )
                                     if (!isSampleChatMessage(resolved)) {
                                         list.add(resolved)
@@ -1117,7 +1197,7 @@ object CommunicationPersistenceHelper {
         )
     }
 
-    private fun serializeChatMessageJson(msg: ChatMessage): JSONObject {
+    internal fun serializeChatMessageJson(msg: ChatMessage): JSONObject {
         return JSONObject().apply {
             put("id", msg.id)
             put("classId", msg.classId)
@@ -1136,10 +1216,20 @@ object CommunicationPersistenceHelper {
             msg.hiddenForParentEmails.forEach { hiddenArr.put(it) }
             put("hiddenForParentEmails", hiddenArr)
             put("isDeletedForEveryone", msg.isDeletedForEveryone)
+            if (!msg.replyToMessageId.isNullOrBlank()) put("replyToMessageId", msg.replyToMessageId)
+            if (!msg.replyToSenderName.isNullOrBlank()) put("replyToSenderName", msg.replyToSenderName)
+            if (!msg.replyToText.isNullOrBlank()) put("replyToText", msg.replyToText)
+            if (msg.replyToIsFromTeacher != null) put("replyToIsFromTeacher", msg.replyToIsFromTeacher)
+            val reactionsObj = JSONObject()
+            msg.activeReactions().forEach { (k, v) -> reactionsObj.put(k, v) }
+            put("reactions", reactionsObj)
+            if (msg.deliveredAt != null) put("deliveredAt", msg.deliveredAt)
+            if (msg.readAt != null) put("readAt", msg.readAt)
+            if (msg.scheduledFor != null) put("scheduledFor", msg.scheduledFor)
         }
     }
 
-    private fun parseChatMessageJson(obj: JSONObject): ChatMessage {
+    internal fun parseChatMessageJson(obj: JSONObject): ChatMessage {
         val hiddenParents = mutableListOf<String>()
         val hiddenArr = obj.optJSONArray("hiddenForParentEmails")
         if (hiddenArr != null) {
@@ -1148,7 +1238,29 @@ object CommunicationPersistenceHelper {
                 if (value.isNotBlank()) hiddenParents.add(value)
             }
         }
+        val reactionsMap = mutableMapOf<String, String>()
+        val reactionsObj = obj.optJSONObject("reactions")
+        if (reactionsObj != null) {
+            val keys = reactionsObj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val v = reactionsObj.optString(k, "").trim()
+                if (k.isNotBlank() && v.isNotBlank()) {
+                    reactionsMap[k] = v
+                }
+            }
+        }
         val deletedForAll = obj.optBoolean("isDeletedForEveryone", false)
+        val replyId = obj.optString("replyToMessageId", "").takeIf { it.isNotBlank() }
+        val replySender = obj.optString("replyToSenderName", "").takeIf { it.isNotBlank() }
+        val replyText = obj.optString("replyToText", "").takeIf { it.isNotBlank() }
+        val replyIsTeacher = if (obj.has("replyToIsFromTeacher") && !obj.isNull("replyToIsFromTeacher")) {
+            obj.optBoolean("replyToIsFromTeacher")
+        } else null
+        val deliveredAt = obj.optLong("deliveredAt", 0L).takeIf { it > 0L }
+        val readAt = obj.optLong("readAt", 0L).takeIf { it > 0L }
+        val scheduledFor = obj.optLong("scheduledFor", 0L).takeIf { it > 0L }
+
         return ChatMessage(
             id = obj.getString("id"),
             classId = obj.getString("classId"),
@@ -1164,7 +1276,15 @@ object CommunicationPersistenceHelper {
             status = MessageStatus.valueOf(obj.optString("status", "READ")),
             hiddenForTeacher = obj.optBoolean("hiddenForTeacher", false),
             hiddenForParentEmails = hiddenParents,
-            isDeletedForEveryone = deletedForAll
+            isDeletedForEveryone = deletedForAll,
+            replyToMessageId = replyId,
+            replyToSenderName = replySender,
+            replyToText = replyText,
+            replyToIsFromTeacher = replyIsTeacher,
+            reactions = reactionsMap,
+            deliveredAt = deliveredAt,
+            readAt = readAt,
+            scheduledFor = scheduledFor
         )
     }
 }

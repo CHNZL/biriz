@@ -43,6 +43,7 @@ import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.BuildConfig
 import com.example.util.ActivityNotificationHelper
 import com.example.util.AnnouncementIdentityHelper
+import com.example.util.ChatFeatureHelper
 import com.example.util.ChatNotificationHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
@@ -263,6 +264,7 @@ class BirizViewModel(
     private var isParentCommunicationTabActive: Boolean = false
     @Volatile
     private var isParentChatSubTabActive: Boolean = true
+    private var scheduledMessagesDueJob: kotlinx.coroutines.Job? = null
 
     private fun currentViewerKey(state: BirizUiState = _uiState.value): String {
         return when (state.currentRole) {
@@ -292,6 +294,8 @@ class BirizViewModel(
         tournamentsNotificationListener = null
         tournamentMatchListeners.values.forEach { it.remove() }
         tournamentMatchListeners.clear()
+        scheduledMessagesDueJob?.cancel()
+        scheduledMessagesDueJob = null
     }
 
     private fun seedLocalActivitySnapshotsIfNeeded(
@@ -634,6 +638,7 @@ class BirizViewModel(
 
     fun onAppForegrounded() {
         isAppInForeground = true
+        evaluateDueScheduledMessages()
         val state = _uiState.value
         if (state.currentRole == UserRole.PARENT) {
             updateParentPresence(isOnline = true)
@@ -998,6 +1003,7 @@ class BirizViewModel(
             chatMessages = filterMessagesForCurrentViewer(rawChatMessages, _uiState.value, chatClearTimestamps),
             notifications = prunedNotifications
         )
+        evaluateDueScheduledMessages()
         _uiState.value.availableUpdateInfo?.let { syncUpdateNotification(it) }
 
         val classChanged = observedNotificationClassId != classId
@@ -1359,7 +1365,9 @@ class BirizViewModel(
         text: String,
         isFromTeacher: Boolean = true,
         parentEmail: String = "",
-        parentName: String = ""
+        parentName: String = "",
+        replyTo: ChatMessage? = null,
+        scheduledFor: Long? = null
     ) {
         val cleanText = text.trim()
         if (cleanText.isEmpty()) return
@@ -1391,11 +1399,19 @@ class BirizViewModel(
             ?: _uiState.value.currentUser.fullName.takeIf { it.isNotBlank() && isFromTeacher }
             ?: "Sınıf Öğretmeni"
 
+        val now = System.currentTimeMillis()
+        val effectiveScheduledFor = if (isFromTeacher && scheduledFor != null && scheduledFor > now + 5_000L) {
+            scheduledFor
+        } else {
+            null
+        }
+
         val clearWatermark = if (isFromTeacher) {
             ChatVisibilityHelper.resolvedTeacherClearTimestamp(studentId, resolvedEmail, chatClearTimestamps)
         } else {
             chatClearTimestamps[studentId] ?: 0L
         }
+        val validReply = replyTo?.takeIf { !it.isDeletedForEveryone && it.text.isNotBlank() }
         val newMsg = ChatMessage(
             id = "chat_${UUID.randomUUID()}",
             classId = classId,
@@ -1407,8 +1423,13 @@ class BirizViewModel(
             isFromTeacher = isFromTeacher,
             senderName = if (isFromTeacher) resolvedTeacherName else resolvedParentName,
             text = cleanText,
-            timestamp = maxOf(System.currentTimeMillis(), clearWatermark + 1L),
-            status = MessageStatus.SENT
+            timestamp = effectiveScheduledFor ?: maxOf(now, clearWatermark + 1L),
+            status = MessageStatus.SENT,
+            replyToMessageId = validReply?.id,
+            replyToSenderName = validReply?.senderName,
+            replyToText = validReply?.text,
+            replyToIsFromTeacher = validReply?.isFromTeacher,
+            scheduledFor = effectiveScheduledFor
         )
 
         knownMessageIds.add(newMsg.id)
@@ -1416,7 +1437,15 @@ class BirizViewModel(
 
         rawChatMessages = (rawChatMessages + newMsg).sortedBy { it.timestamp }
         val visibleMessages = filterMessagesForCurrentViewer(rawChatMessages)
-        _uiState.value = _uiState.value.copy(chatMessages = visibleMessages)
+        _uiState.value = _uiState.value.copy(
+            chatMessages = visibleMessages,
+            snackbarMessage = if (effectiveScheduledFor != null) {
+                "⏰ Mesaj ${ChatFeatureHelper.formatScheduledLabel(effectiveScheduledFor, now)} için zamanlandı"
+            } else {
+                _uiState.value.snackbarMessage
+            }
+        )
+        scheduleNextDueEvaluation()
 
         appContext?.let { ctx ->
             CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, rawChatMessages)
@@ -1428,6 +1457,137 @@ class BirizViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun toggleChatMessageReaction(messageId: String, emoji: String) {
+        if (messageId.isBlank() || emoji.isBlank()) return
+        val state = _uiState.value
+        val classId = resolveActiveClassId()
+        val viewerIsTeacher = state.currentRole == UserRole.TEACHER
+        var targetMsg: ChatMessage? = null
+        var updatedValueForCloud = ""
+        var participantKeyUsed = ""
+
+        val updatedRaw = rawChatMessages.map { msg ->
+            if (msg.id == messageId && !msg.isDeletedForEveryone) {
+                val pKey = ChatFeatureHelper.reactionParticipantKey(
+                    viewerIsTeacher = viewerIsTeacher,
+                    userEmail = state.currentUser.email,
+                    studentId = msg.studentId
+                )
+                val (newReactions, cloudVal) = ChatFeatureHelper.toggleReaction(msg.reactions, pKey, emoji)
+                participantKeyUsed = pKey
+                updatedValueForCloud = cloudVal
+                msg.copy(reactions = newReactions).also { targetMsg = it }
+            } else msg
+        }
+        if (targetMsg == null) return
+
+        rawChatMessages = updatedRaw
+        _uiState.value = state.copy(chatMessages = filterMessagesForCurrentViewer(updatedRaw, state))
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
+            if (classId != "default" && participantKeyUsed.isNotBlank()) {
+                CommunicationPersistenceHelper.updateChatMessageReactionInFirestore(
+                    context = ctx,
+                    classId = classId,
+                    messageId = messageId,
+                    participantKey = participantKeyUsed,
+                    emojiOrEmpty = updatedValueForCloud
+                )
+            }
+        }
+    }
+
+    fun deliverScheduledMessageNow(messageId: String) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+        val classId = resolveActiveClassId()
+        val now = System.currentTimeMillis()
+        var updatedMsg: ChatMessage? = null
+        val updatedRaw = rawChatMessages.map { msg ->
+            if (msg.id == messageId && msg.isFromTeacher && msg.scheduledFor != null) {
+                msg.copy(
+                    scheduledFor = null,
+                    timestamp = now,
+                    status = MessageStatus.DELIVERED,
+                    deliveredAt = now
+                ).also { updatedMsg = it }
+            } else msg
+        }.sortedBy { it.timestamp }
+        val delivered = updatedMsg ?: return
+
+        rawChatMessages = updatedRaw
+        _uiState.value = state.copy(
+            chatMessages = filterMessagesForCurrentViewer(updatedRaw, state),
+            snackbarMessage = "Mesaj hemen iletildi ✅"
+        )
+        scheduleNextDueEvaluation()
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
+            if (classId != "default") {
+                CommunicationPersistenceHelper.uploadChatMessageToFirestore(ctx, classId, delivered)
+            }
+        }
+    }
+
+    private fun scheduleNextDueEvaluation() {
+        scheduledMessagesDueJob?.cancel()
+        val now = System.currentTimeMillis()
+        val nextScheduledAt = rawChatMessages
+            .mapNotNull { it.scheduledFor?.takeIf { ts -> ts > now && !it.isDeletedForEveryone } }
+            .minOrNull() ?: return
+
+        val waitMs = (nextScheduledAt - now + 250L).coerceAtLeast(250L)
+        scheduledMessagesDueJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(waitMs)
+            evaluateDueScheduledMessages()
+        }
+    }
+
+    private fun evaluateDueScheduledMessages() {
+        val classId = resolveActiveClassId()
+        val state = _uiState.value
+        val now = System.currentTimeMillis()
+        val ctx = appContext
+
+        val dueTeacherMessages = if (state.currentRole == UserRole.TEACHER) {
+            rawChatMessages.filter {
+                it.isFromTeacher &&
+                    !it.isDeletedForEveryone &&
+                    it.scheduledFor != null &&
+                    it.scheduledFor <= now &&
+                    it.status == MessageStatus.SENT
+            }
+        } else {
+            emptyList()
+        }
+
+        if (dueTeacherMessages.isNotEmpty()) {
+            val promotedById = dueTeacherMessages.associate { msg ->
+                msg.id to msg.copy(
+                    status = MessageStatus.DELIVERED,
+                    deliveredAt = msg.deliveredAt ?: msg.scheduledFor ?: now
+                )
+            }
+            rawChatMessages = rawChatMessages.map { promotedById[it.id] ?: it }
+            if (ctx != null) {
+                CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, rawChatMessages)
+                if (classId != "default") {
+                    promotedById.values.forEach { promoted ->
+                        CommunicationPersistenceHelper.uploadChatMessageToFirestore(ctx, classId, promoted)
+                    }
+                }
+            }
+        }
+
+        if (rawChatMessages.any { it.scheduledFor != null }) {
+            handleIncomingChatMessagesSnapshot(classId, rawChatMessages)
+        } else {
+            scheduleNextDueEvaluation()
         }
     }
 
@@ -1524,9 +1684,21 @@ class BirizViewModel(
         // Açık sohbet ekranına gelen mesajları anında OKUNDU say ve bildirim üretme
         if (openChatUnread.isNotEmpty()) {
             val openIds = openChatUnread.map { it.id }.toSet()
-            val newlyReadList = openChatUnread.map { it.copy(status = MessageStatus.READ) }
+            val newlyReadList = openChatUnread.map {
+                it.copy(
+                    status = MessageStatus.READ,
+                    deliveredAt = it.deliveredAt ?: it.timestamp,
+                    readAt = it.readAt ?: now
+                )
+            }
             updatedRaw = mergedMessages.map { msg ->
-                if (msg.id in openIds) msg.copy(status = MessageStatus.READ) else msg
+                if (msg.id in openIds) {
+                    msg.copy(
+                        status = MessageStatus.READ,
+                        deliveredAt = msg.deliveredAt ?: msg.timestamp,
+                        readAt = msg.readAt ?: now
+                    )
+                } else msg
             }
             rawChatMessages = updatedRaw
             processedNotifMessageIds.addAll(openIds)
@@ -1628,6 +1800,7 @@ class BirizViewModel(
             notifications = updatedNotifs,
             snackbarMessage = bannerText ?: _uiState.value.snackbarMessage
         )
+        scheduleNextDueEvaluation()
     }
 
     fun markChatMessagesAsRead(
@@ -1636,6 +1809,7 @@ class BirizViewModel(
         viewerIsTeacher: Boolean = (_uiState.value.currentRole == UserRole.TEACHER)
     ) {
         val classId = resolveActiveClassId()
+        val now = System.currentTimeMillis()
         val newlyReadMessages = mutableListOf<ChatMessage>()
         val updatedRaw = rawChatMessages.map { msg ->
             val matchesStudent = msg.studentId == studentId
@@ -1645,8 +1819,17 @@ class BirizViewModel(
             } else {
                 msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
             }
-            if (matchesStudent && matchesDirection && matchesParent && msg.status != MessageStatus.READ) {
-                val readMsg = msg.copy(status = MessageStatus.READ)
+            if (matchesStudent &&
+                matchesDirection &&
+                matchesParent &&
+                !msg.isPendingScheduled(now) &&
+                msg.status != MessageStatus.READ
+            ) {
+                val readMsg = msg.copy(
+                    status = MessageStatus.READ,
+                    deliveredAt = msg.deliveredAt ?: msg.timestamp,
+                    readAt = msg.readAt ?: now
+                )
                 newlyReadMessages.add(readMsg)
                 processedNotifMessageIds.add(msg.id)
                 readMsg

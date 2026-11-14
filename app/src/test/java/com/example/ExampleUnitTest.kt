@@ -2616,8 +2616,315 @@ class ExampleUnitTest {
     assertEquals(-1L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange(null))
     assertEquals(-1L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange(""))
   }
+
+  @Test
+  fun testParentLibraryTabsSearchAndKvkkStatusFiltering() {
+    val helper = com.example.util.ParentLibraryHelper
+    val studentId = "student_semih"
+    val otherStudentId = "student_other"
+
+    val books = listOf(
+      com.example.data.model.Book(
+        id = "b1",
+        registrationNo = 12,
+        name = "İnci Çiftliği",
+        author = "Ahmet Yılmaz",
+        pageCount = 120,
+        status = "Okunuyor",
+        activeAssignments = listOf(com.example.data.model.ActiveAssignment(studentId, "Semih", 2000L))
+      ),
+      com.example.data.model.Book(
+        id = "b2",
+        registrationNo = 5,
+        name = "Küçük Prens",
+        author = "Antoine de Saint-Exupery",
+        pageCount = 96,
+        status = "Rafta"
+      ),
+      com.example.data.model.Book(
+        id = "b3",
+        registrationNo = 19,
+        name = "Şeker Portakalı",
+        author = "Jose Mauro",
+        pageCount = 184,
+        status = "Okunuyor",
+        activeAssignments = listOf(com.example.data.model.ActiveAssignment(otherStudentId, "Diğer", 3000L))
+      ),
+      com.example.data.model.Book(
+        id = "b4",
+        registrationNo = 3,
+        name = "Işık Bahçesi",
+        author = "Zeynep Demir",
+        pageCount = 64,
+        status = "Rafta"
+      )
+    )
+
+    val records = listOf(
+      com.example.data.model.ReadingRecord(
+        id = "r1",
+        bookId = "b2",
+        bookName = "Küçük Prens",
+        pageCount = 96,
+        studentId = studentId,
+        studentName = "Semih",
+        startDate = 1000L,
+        endDate = 5000L,
+        earnedStars = 3
+      ),
+      com.example.data.model.ReadingRecord(
+        id = "r2",
+        bookId = "b_old",
+        bookName = "Şermin ve Çiçekler",
+        pageCount = 210,
+        studentId = studentId,
+        studentName = "Semih",
+        startDate = 2000L,
+        endDate = 8000L,
+        earnedStars = 5
+      )
+    )
+
+    // 1. Okuyor sekmesi
+    val activeBooks = helper.resolveActiveReadingBooks(books, studentId)
+    assertEquals(listOf("b1"), activeBooks.map { it.id })
+
+    // 2. Okuma geçmişi Türkçe arama & sıralama
+    val historyByTurkishQuery = helper.filterAndSortHistory(records, "şerm", com.example.util.ParentHistorySortOrder.NEWEST)
+    assertEquals(listOf("r2"), historyByTurkishQuery.map { it.id })
+
+    val historyByPages = helper.filterAndSortHistory(records, "", com.example.util.ParentHistorySortOrder.MOST_PAGES)
+    assertEquals(listOf("r2", "r1"), historyByPages.map { it.id })
+
+    // 3. Sınıf kitaplığı KVKK durumları & sayıları
+    assertEquals(com.example.util.ParentBookStatus.MY_CHILD_READING, helper.resolveBookStatus(books[0], studentId, records))
+    assertEquals(com.example.util.ParentBookStatus.COMPLETED_BY_CHILD, helper.resolveBookStatus(books[1], studentId, records))
+    assertEquals(com.example.util.ParentBookStatus.BORROWED_BY_OTHER, helper.resolveBookStatus(books[2], studentId, records))
+    assertEquals(com.example.util.ParentBookStatus.ON_SHELF, helper.resolveBookStatus(books[3], studentId, records))
+
+    val counts = helper.computeInventoryCounts(books, studentId, records)
+    assertEquals(4, counts.all)
+    assertEquals(2, counts.onShelf)
+    assertEquals(1, counts.completedByChild)
+    assertEquals(2, counts.borrowed)
+
+    // 4. Demirbaş no (#12) ve Türkçe karakter ('ışık') araması + durum filtresi
+    val byRegNo = helper.filterInventoryBooks(books, studentId, records, "#12", com.example.util.ParentInventoryFilter.BORROWED)
+    assertEquals(listOf("b1"), byRegNo.map { it.id })
+
+    val byTurkishI = helper.filterInventoryBooks(books, studentId, records, "ışık", com.example.util.ParentInventoryFilter.ON_SHELF)
+    assertEquals(listOf("b4"), byTurkishI.map { it.id })
+  }
+
+  @Test
+  fun testChatEmojiHelperInsertionBackspaceAndCategories() {
+    val helper = com.example.util.ChatEmojiHelper
+
+    // 1. Sona emoji ekleme
+    val (endText, endCursor) = helper.insertEmojiAtSelection("Merhaba", 7, 7, "😊")
+    assertEquals("Merhaba😊", endText)
+    assertEquals(7 + "😊".length, endCursor)
+
+    // 2. Cümlenin ortasındaki imleç konumuna emoji ekleme
+    val (midText, midCursor) = helper.insertEmojiAtSelection("Merhaba velim", 7, 7, " 👋")
+    assertEquals("Merhaba 👋 velim", midText)
+    assertEquals(7 + " 👋".length, midCursor)
+
+    // 3. Seçili metni emoji ile değiştirme
+    val (repText, repCursor) = helper.insertEmojiAtSelection("Harika [x] oldu", 7, 10, "⭐")
+    assertEquals("Harika ⭐ oldu", repText)
+    assertEquals(7 + "⭐".length, repCursor)
+
+    // 4. Bileşik emoji (surrogate / variation selector) tek hamlede silinir
+    val sampleWithEmoji = "Tebrikler 🎉"
+    val (afterEmojiBackspace, afterCursor) = helper.deleteGraphemeBeforeCursor(
+      sampleWithEmoji,
+      sampleWithEmoji.length,
+      sampleWithEmoji.length
+    )
+    assertEquals("Tebrikler ", afterEmojiBackspace)
+    assertEquals("Tebrikler ".length, afterCursor)
+
+    // 5. Kalp + variation selector silme
+    val heartSample = "Teşekkürler ❤️"
+    val (afterHeartDelete, _) = helper.deleteGraphemeBeforeCursor(
+      heartSample,
+      heartSample.length,
+      heartSample.length
+    )
+    assertEquals("Teşekkürler ", afterHeartDelete)
+
+    // 6. Boş metinde veya baştaki imleçte güvenli kalır
+    val (emptyResult, emptyCursor) = helper.deleteGraphemeBeforeCursor("", 0, 0)
+    assertEquals("", emptyResult)
+    assertEquals(0, emptyCursor)
+
+    // 7. Tüm kategoriler dolu ve benzersiz
+    assertTrue(helper.defaultRecentEmojis.isNotEmpty())
+    helper.categoryEmojis.values.forEach { list ->
+      assertTrue(list.isNotEmpty())
+      assertEquals(list.size, list.distinct().size)
+    }
+  }
+
+  @Test
+  fun testChatFeatureHelperQuietHoursAndScheduling() {
+    val helper = com.example.util.ChatFeatureHelper
+
+    val calEvening = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 14, 21, 15, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    assertTrue(helper.isQuietHours(calEvening.timeInMillis))
+
+    // Evening 21:15 -> next 08:30 must be tomorrow 08:30
+    val nextFromEvening = helper.nextTargetSlotMillis(8, 30, calEvening.timeInMillis)
+    val calTargetEvening = java.util.Calendar.getInstance().apply { timeInMillis = nextFromEvening }
+    assertEquals(15, calTargetEvening.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(8, calTargetEvening.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(30, calTargetEvening.get(java.util.Calendar.MINUTE))
+    assertEquals("Yarın 08:30", helper.formatScheduledLabel(nextFromEvening, calEvening.timeInMillis))
+
+    // Early morning 07:00 -> quiet hours, next 08:30 is today 08:30
+    val calEarly = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 14, 7, 0, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    assertTrue(helper.isQuietHours(calEarly.timeInMillis))
+    val nextFromEarly = helper.nextTargetSlotMillis(8, 30, calEarly.timeInMillis)
+    val calTargetEarly = java.util.Calendar.getInstance().apply { timeInMillis = nextFromEarly }
+    assertEquals(14, calTargetEarly.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(8, calTargetEarly.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(30, calTargetEarly.get(java.util.Calendar.MINUTE))
+    assertEquals("Bugün 08:30", helper.formatScheduledLabel(nextFromEarly, calEarly.timeInMillis))
+
+    // Daytime 14:00 -> not quiet hours
+    val calDay = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 14, 14, 0, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    assertFalse(helper.isQuietHours(calDay.timeInMillis))
+
+    // Presets check
+    val presets = helper.buildSchedulePresets(calEvening.timeInMillis)
+    assertEquals(3, presets.size)
+    assertEquals("morning_0830", presets[0].id)
+    assertTrue(presets[0].isRecommended)
+    assertTrue(presets[0].title.contains("08:30"))
+  }
+
+  @Test
+  fun testChatFeatureHelperReactionsAndParticipantKeys() {
+    val helper = com.example.util.ChatFeatureHelper
+
+    assertEquals("teacher", helper.reactionParticipantKey(viewerIsTeacher = true, userEmail = "t@biriz.app", studentId = "s1"))
+    assertEquals("parent_veli_bir@gmail_com", helper.reactionParticipantKey(viewerIsTeacher = false, userEmail = "Veli.Bir@Gmail.com ", studentId = "s1"))
+    assertEquals("parent_s1", helper.reactionParticipantKey(viewerIsTeacher = false, userEmail = "veli@biriz.app", studentId = "s1"))
+
+    // 1. Add reaction
+    val (afterAdd, writtenAdd) = helper.toggleReaction(emptyMap(), "teacher", "👍")
+    assertEquals("👍", writtenAdd)
+    assertEquals(mapOf("teacher" to "👍"), afterAdd)
+
+    // 2. Switch emoji
+    val (afterSwitch, writtenSwitch) = helper.toggleReaction(afterAdd, "teacher", "❤️")
+    assertEquals("❤️", writtenSwitch)
+    assertEquals(mapOf("teacher" to "❤️"), afterSwitch)
+
+    // 3. Second participant reacts with ❤️, check summary aggregation
+    val (withParent, _) = helper.toggleReaction(afterSwitch, "parent_veli_bir_gmail_com", "❤️")
+    val (withSecondParent, _) = helper.toggleReaction(withParent, "parent_veli_iki_gmail_com", "👀")
+    val summary = helper.summarizeReactions(withSecondParent)
+    assertEquals(listOf("❤️" to 2, "👀" to 1), summary)
+
+    // 4. Toggle off existing emoji -> removed from active map & returns "" tombstone
+    val (afterRemove, writtenRemove) = helper.toggleReaction(withSecondParent, "teacher", "❤️")
+    assertEquals("", writtenRemove)
+    assertFalse(afterRemove.containsKey("teacher"))
+    assertEquals(2, afterRemove.size)
+  }
+
+  @Test
+  fun testScheduledMessageVisibilityAndNotificationGating() {
+    val now = 1_760_000_000_000L
+    val futureSchedule = now + 3_600_000L
+    val pastSchedule = now - 60_000L
+
+    val pendingMsg = com.example.data.model.ChatMessage(
+      id = "m_sched_pending",
+      classId = "c1",
+      studentId = "s1",
+      studentNumber = "101",
+      studentName = "Semih",
+      parentName = "Veli",
+      parentEmail = "veli@example.com",
+      isFromTeacher = true,
+      senderName = "Cihan Öğretmen",
+      text = "Yarın ödevleri unutmayalım",
+      timestamp = now,
+      status = com.example.data.model.MessageStatus.SENT,
+      scheduledFor = futureSchedule
+    )
+
+    val dueMsg = pendingMsg.copy(id = "m_sched_due", scheduledFor = pastSchedule)
+
+    assertTrue(pendingMsg.isPendingScheduled(now))
+    assertFalse(dueMsg.isPendingScheduled(now))
+
+    // Teacher sees both pending and due scheduled messages
+    assertTrue(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = pendingMsg,
+        viewerIsTeacher = true,
+        viewerIsParent = false,
+        currentParentEmail = "",
+        clearTimestamps = emptyMap(),
+        nowMillis = now
+      )
+    )
+
+    // Parent does NOT see pending scheduled message, DOES see due scheduled message
+    assertFalse(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = pendingMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        currentParentEmail = "veli@example.com",
+        clearTimestamps = emptyMap(),
+        nowMillis = now
+      )
+    )
+    assertTrue(
+      com.example.util.ChatVisibilityHelper.isMessageVisibleToViewer(
+        msg = dueMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        currentParentEmail = "veli@example.com",
+        clearTimestamps = emptyMap(),
+        nowMillis = now
+      )
+    )
+
+    // Pending scheduled message never generates incoming notification for parent
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = pendingMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s1"),
+        currentUserEmail = "veli@example.com",
+        nowMillis = now
+      )
+    )
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = dueMsg,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s1"),
+        currentUserEmail = "veli@example.com",
+        nowMillis = now
+      )
+    )
+  }
 }
-
-
-
-

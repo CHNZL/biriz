@@ -99,6 +99,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,6 +116,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -143,9 +145,15 @@ import com.example.data.model.UserRole
 import com.example.data.model.WindowPosition
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.ui.components.BentoCard
+import com.example.ui.components.MessageInfoDialog
+import com.example.ui.components.MessageLongPressActionDialog
 import com.example.ui.components.NotificationCenterDialog
+import com.example.ui.components.ReactionDetailsDialog
+import com.example.ui.components.ReplyComposerBanner
 import com.example.ui.components.UserAvatarCircle
 import com.example.ui.components.UserProfileMenuDialog
+import com.example.ui.components.WhatsAppChatBubble
+import com.example.ui.components.WhatsAppChatComposer
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -154,7 +162,6 @@ import com.example.ui.theme.BirizDarkSurfaceGlass
 import com.example.ui.theme.BirizDarkTextMuted
 import com.example.ui.theme.BirizDarkTextPrimary
 import com.example.ui.theme.BirizDarkTextSecondary
-import com.example.ui.theme.BirizGold
 import com.example.ui.theme.BirizNavyDark
 import com.example.ui.theme.BirizNavyLight
 import com.example.ui.theme.BirizNavyPrimary
@@ -164,6 +171,7 @@ import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
 import com.example.util.AnnouncementIdentityHelper
+import com.example.util.ChatFeatureHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
@@ -174,6 +182,8 @@ import com.example.util.TournamentEngine
 import com.example.util.TournamentOutcomeHelper
 import com.example.util.TournamentPersistenceHelper
 import com.example.util.TurkishTextHelper
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -225,7 +235,8 @@ fun ParentPortalSubScreen(
     onOpenUpdateDialog: () -> Unit = {},
     onLogout: () -> Unit = {},
     onVotePoll: (String, String) -> Unit,
-    onSendChatMessage: (String, String) -> Unit,
+    onSendChatMessage: (String, String, ChatMessage?) -> Unit,
+    onToggleChatReaction: (String, String) -> Unit = { _, _ -> },
     onMarkAnnouncementRead: (String) -> Unit = {},
     requestedTab: ParentPortalTab? = null,
     onRequestedTabConsumed: () -> Unit = {},
@@ -752,13 +763,14 @@ fun ParentPortalSubScreen(
                         ParentPortalTab.COMMUNICATION -> {
                             val studentChatMessages = remember(chatMessages, activeStudent, currentUser.email) {
                                 chatMessages.filter { msg ->
-                                    msg.studentId == activeStudent.id && (
-                                        activeStudent.allLinkedParents.size <= 1 ||
-                                            msg.parentEmail.isBlank() ||
-                                            currentUser.email.isBlank() ||
-                                            currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
-                                            msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
-                                    )
+                                    !msg.isPendingScheduled() &&
+                                        msg.studentId == activeStudent.id && (
+                                            activeStudent.allLinkedParents.size <= 1 ||
+                                                msg.parentEmail.isBlank() ||
+                                                currentUser.email.isBlank() ||
+                                                currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
+                                                msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
+                                        )
                                 }
                             }
                             ParentCommunicationDetailView(
@@ -774,11 +786,12 @@ fun ParentPortalSubScreen(
                                 onVotePoll = onVotePoll,
                                 onMarkAnnouncementRead = onMarkAnnouncementRead,
                                 onMarkChatAsRead = { onMarkChatAsRead(activeStudent.id) },
-                                onSendMessage = { text ->
+                                onSendMessage = { text, replyTo ->
                                     if (text.isNotBlank()) {
-                                        onSendChatMessage(activeStudent.id, text)
+                                        onSendChatMessage(activeStudent.id, text, replyTo)
                                     }
                                 },
+                                onToggleReaction = onToggleChatReaction,
                                 onDeleteMessagesForMe = onDeleteChatMessagesForMe,
                                 onDeleteMessagesForEveryone = onDeleteChatMessagesForEveryone,
                                 onClearChatHistoryForMe = { onClearChatHistoryForMe(activeStudent.id) }
@@ -795,7 +808,9 @@ fun ParentPortalSubScreen(
             val activeStudentUnreadChatCount = remember(chatMessages, activeStudent, currentUser.email) {
                 if (activeStudent == null) 0
                 else chatMessages.count { msg ->
-                    msg.studentId == activeStudent.id &&
+                    !msg.isPendingScheduled() &&
+                        !msg.isDeletedForEveryone &&
+                        msg.studentId == activeStudent.id &&
                         msg.isFromTeacher &&
                         msg.status != MessageStatus.READ && (
                             activeStudent.allLinkedParents.size <= 1 ||
@@ -1999,409 +2014,8 @@ private fun ParentStarsDetailView(
     }
 }
 
-// =========================================================================
-// DETAY 2: KİTAPLIK & OKUMA KARNESİ
-// =========================================================================
-@Composable
-private fun ParentReadingDetailView(
-    student: Student,
-    records: List<com.example.data.model.ReadingRecord>,
-    classBooks: List<Book>,
-    isDarkTheme: Boolean
-) {
-    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
-    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+// Veli Kitaplık ekranı modüler olarak ParentLibrarySection.kt içinde tanımlanır.
 
-    val activeReadingBooks = remember(classBooks, student.id) {
-        classBooks.filter { book ->
-            book.activeAssignments.any { it.studentId == student.id } || book.currentStudentId == student.id
-        }
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // İstatistik Kartı
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, Color(0xFF8B5CF6)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("📚 Okuma Karnesi", fontSize = 12.sp, color = Color(0xFF8B5CF6), fontWeight = FontWeight.Bold)
-                        Text("${records.size} Kitap Tamamlandı", fontSize = 22.sp, fontWeight = FontWeight.Black, color = primaryText)
-                        Text(
-                            "Toplam ${records.sumOf { it.pageCount }} sayfa okundu • +${records.sumOf { it.earnedStars }} ⭐ kazanıldı",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryText
-                        )
-                        if (activeReadingBooks.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "📖 Şu an ${activeReadingBooks.size} kitap ödünçte okunuyor",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFD97706)
-                            )
-                        }
-                    }
-                    Text("📖", fontSize = 36.sp)
-                }
-            }
-        }
-
-        // --- 1. ŞU AN OKUDUĞU KİTAPLAR (ÖDÜNÇ ALINAN) ---
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "📖 Şu An Okuduğu Kitaplar",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.5.sp,
-                    color = primaryText
-                )
-                if (activeReadingBooks.isNotEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFEF3C7),
-                        border = BorderStroke(1.dp, Color(0xFFFCD34D))
-                    ) {
-                        Text(
-                            text = "${activeReadingBooks.size} Kitap Ödünçte",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF92400E),
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        if (activeReadingBooks.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("📗", fontSize = 22.sp)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Şu an ödünç alınmış aktif bir kitap bulunmuyor.",
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = primaryText
-                            )
-                            Text(
-                                text = "Öğretmeniniz sınıftan kitap verdiğinde veriliş tarihi ve detayları burada anlık görünecektir.",
-                                fontSize = 11.sp,
-                                color = secondaryText
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            items(activeReadingBooks.distinctBy { it.id }, key = { "active_${it.id}" }) { book ->
-                val myAssignment = book.activeAssignments.firstOrNull { it.studentId == student.id }
-                val rawAssignMs = myAssignment?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
-                val assignDateMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
-                val daysAgo = ((System.currentTimeMillis() - assignDateMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
-                val targetStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) Color(0x3578350F) else Color(0xFFFEF3C7),
-                    border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(13.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFFD97706)
-                                ) {
-                                    Text(
-                                        text = "#${book.registrationNo}",
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = TurkishTextHelper.toTurkishTitleCase(book.name),
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 14.sp,
-                                    color = primaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFD97706)
-                            ) {
-                                Text(
-                                    text = "$daysAgo. Gününde",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                                )
-                            }
-                        }
-
-                        if (book.author.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Yazar: ${book.author}",
-                                fontSize = 11.5.sp,
-                                color = secondaryText
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "📄 ${book.pageCount} Sayfa • Veriliş: ${SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(assignDateMs))}",
-                                fontSize = 11.5.sp,
-                                color = Color(0xFF92400E),
-                                fontWeight = FontWeight.Medium
-                            )
-
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = BirizGold.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, BirizGold)
-                            ) {
-                                Text(
-                                    text = "İade edilince +$targetStars ⭐",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFB45309),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- 2. TAMAMLANAN KİTAPLAR & OKUMA GEÇMİŞİ ---
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(text = "📕 Tamamlanan Kitaplar & Okuma Geçmişi", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = primaryText)
-        }
-
-        if (records.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Henüz tamamlanmış kitap okuma kaydı bulunmuyor.",
-                        fontSize = 12.sp,
-                        color = secondaryText,
-                        modifier = Modifier.padding(14.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(records.distinctBy { it.id }, key = { "record_${it.id}" }) { rec ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = rec.bookName, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = primaryText)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            val safeEnd = if (rec.endDate > 0L) rec.endDate else System.currentTimeMillis()
-                            val safeStart = if (rec.startDate in 1L..safeEnd) rec.startDate else safeEnd
-                            val readingDays = ((safeEnd - safeStart) / (1000L * 60L * 60L * 24L)).coerceIn(1L, 3650L).toInt()
-                            val endStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(safeEnd))
-                            Text(text = "${rec.pageCount} Sayfa • $readingDays günde okundu • Bitiş: $endStr", fontSize = 11.5.sp, color = secondaryText)
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = BirizAmber.copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.5f))
-                        ) {
-                            Text(
-                                text = "+${rec.earnedStars} ⭐",
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Black,
-                                color = BirizAmber,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- 3. SINIF KİTAPLIĞI ENVANTERİ (KVKK ANONİM GÖSTERİM) ---
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "📚 Sınıf Kitaplığı Mevcut Envanteri",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = primaryText
-                )
-                Text(
-                    text = "${classBooks.size} Eser",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                )
-            }
-        }
-
-        if (classBooks.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Sınıf kütüphanesine henüz kitap eklenmedi.",
-                        fontSize = 12.sp,
-                        color = secondaryText,
-                        modifier = Modifier.padding(14.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(classBooks.distinctBy { it.id }.sortedBy { it.registrationNo }, key = { "inventory_${it.id}" }) { b ->
-                val isMyChildReading = b.activeAssignments.any { it.studentId == student.id } || b.currentStudentId == student.id
-                val isAnotherChildReading = !isMyChildReading && b.activeAssignments.isNotEmpty()
-                val isCompletedByMyChild = records.any { it.bookId == b.id || it.bookName.trim().equals(b.name.trim(), ignoreCase = true) }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isMyChildReading) {
-                        if (isDarkTheme) Color(0x30D97706) else Color(0xFFFEF3C7)
-                    } else if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(
-                        if (isMyChildReading) 1.2.dp else 1.dp,
-                        if (isMyChildReading) Color(0xFFF59E0B) else (if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
-                            ) {
-                                Text(
-                                    text = "#${b.registrationNo}",
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = TurkishTextHelper.toTurkishTitleCase(b.name),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = primaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${b.pageCount} Sayfa" + if (b.author.isNotBlank()) " • ${b.author}" else "",
-                                    fontSize = 11.sp,
-                                    color = secondaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        // Durum etiketi (KVKK kurallarına uygun: Başka bir öğrencinin adı ASLA veliye gösterilmez)
-                        val (statusText, statusColor, statusBg) = when {
-                            isMyChildReading -> Triple("Çocuğunuzda 📖", Color(0xFF92400E), Color(0xFFFDE68A))
-                            isCompletedByMyChild -> Triple("Okundu ✓", Color(0xFF047857), Color(0xFFD1FAE5))
-                            isAnotherChildReading -> Triple("Ödünçte", Color(0xFFB45309), Color(0xFFFEF3C7))
-                            else -> Triple("Rafta", Color(0xFF065F46), Color(0xFFD1FAE5))
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = statusBg
-                        ) {
-                            Text(
-                                text = statusText,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = statusColor,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 // =========================================================================
 // DETAY 3A: SADECE HAFTALIK DERS PROGRAMI & ZİL SAATLERİ
@@ -3080,15 +2694,17 @@ private fun ParentCommunicationDetailView(
     onVotePoll: (String, String) -> Unit,
     onMarkAnnouncementRead: (String) -> Unit = {},
     onMarkChatAsRead: () -> Unit = {},
-    onSendMessage: (String) -> Unit,
+    onSendMessage: (String, ChatMessage?) -> Unit,
+    onToggleReaction: (String, String) -> Unit = { _, _ -> },
     onDeleteMessagesForMe: (Set<String>) -> Unit = {},
     onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
     onClearChatHistoryForMe: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-    var chatText by remember { mutableStateOf("") }
+    var chatText by remember { mutableStateOf(TextFieldValue("")) }
     val chatListState = rememberLazyListState()
 
     var isSearchOpen by remember { mutableStateOf(false) }
@@ -3099,6 +2715,20 @@ private fun ParentCommunicationDetailView(
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showDeleteChoiceDialog by remember { mutableStateOf(false) }
     var selectedAnnouncementId by remember { mutableStateOf<String?>(null) }
+
+    var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var actionMenuMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var infoDialogMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var reactionDetailsMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+
+    val currentReactionKey = remember(currentUser.email, student.id) {
+        ChatFeatureHelper.reactionParticipantKey(
+            viewerIsTeacher = false,
+            userEmail = currentUser.email,
+            studentId = student.id
+        )
+    }
 
     val selectedAnnouncement = remember(announcements, selectedAnnouncementId) {
         selectedAnnouncementId?.let { id -> announcements.firstOrNull { it.id == id } }
@@ -3121,6 +2751,19 @@ private fun ParentCommunicationDetailView(
         isSearchOpen = false
         searchQuery = ""
         selectedAnnouncementId = null
+        chatText = TextFieldValue("")
+        replyingToMessage = null
+        actionMenuMessage = null
+        infoDialogMessage = null
+        reactionDetailsMessage = null
+        highlightedMessageId = null
+    }
+
+    LaunchedEffect(highlightedMessageId) {
+        if (highlightedMessageId != null) {
+            delay(1600L)
+            highlightedMessageId = null
+        }
     }
 
     LaunchedEffect(isChatSubTabActive) {
@@ -3135,13 +2778,19 @@ private fun ParentCommunicationDetailView(
         }
     }
 
-    BackHandler(enabled = isChatSubTabActive && (isSelectionMode || isSearchOpen)) {
-        if (isSelectionMode) {
-            selectedMessageIds = emptySet()
-            isSelectionMode = false
-        } else if (isSearchOpen) {
-            isSearchOpen = false
-            searchQuery = ""
+    BackHandler(enabled = isChatSubTabActive && (isSelectionMode || isSearchOpen || replyingToMessage != null)) {
+        when {
+            isSelectionMode -> {
+                selectedMessageIds = emptySet()
+                isSelectionMode = false
+            }
+            isSearchOpen -> {
+                isSearchOpen = false
+                searchQuery = ""
+            }
+            replyingToMessage != null -> {
+                replyingToMessage = null
+            }
         }
     }
 
@@ -3181,17 +2830,12 @@ private fun ParentCommunicationDetailView(
         }
     }
 
-    val quickReplies = listOf(
-        "Bilgilendirme için teşekkür ederim 🙏",
-        "Tamamdır öğretmenim, ilgileneceğiz 👍",
-        "Ödevini kontrol ettik 📚"
-    )
-
     val sendCurrentParentMessage = {
-        val trimmed = chatText.trim()
+        val trimmed = chatText.text.trim()
         if (trimmed.isNotEmpty()) {
-            onSendMessage(trimmed)
-            chatText = ""
+            onSendMessage(trimmed, replyingToMessage)
+            chatText = TextFieldValue("")
+            replyingToMessage = null
         }
     }
 
@@ -3199,6 +2843,18 @@ private fun ParentCommunicationDetailView(
         val next = if (msgId in selectedMessageIds) selectedMessageIds - msgId else selectedMessageIds + msgId
         selectedMessageIds = next
         if (next.isEmpty()) isSelectionMode = false
+    }
+
+    val scrollToQuotedMessage: (String) -> Unit = { quotedId ->
+        val idx = displayedMessages.indexOfFirst { it.id == quotedId }
+        if (idx >= 0) {
+            highlightedMessageId = quotedId
+            coroutineScope.launch {
+                chatListState.animateScrollToItem(idx + 1)
+            }
+        } else {
+            Toast.makeText(context, "Alıntılanan mesaj bu görünümde bulunamadı", Toast.LENGTH_SHORT).show()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -3534,7 +3190,7 @@ private fun ParentCommunicationDetailView(
                                 color = if (isDarkTheme) Color(0x401E293B) else Color(0x90FFFBEB)
                             ) {
                                 Text(
-                                    text = "🔒 Bu sohbet yalnızca sizin (${currentUser.email.ifBlank { "Doğrulanmış Veli" }}) ve sınıf öğretmeniniz arasındadır. Uzun basarak mesaj silebilirsiniz.",
+                                    text = "🔒 Bu sohbet yalnızca sizin (${currentUser.email.ifBlank { "Doğrulanmış Veli" }}) ve sınıf öğretmeniniz arasındadır. Yanıtlamak için sağa kaydırın; tepki ve bilgi için basılı tutun.",
                                     fontSize = 10.sp,
                                     color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
                                     textAlign = TextAlign.Center,
@@ -3600,178 +3256,110 @@ private fun ParentCommunicationDetailView(
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
 
-                            val isMe = !msg.isFromTeacher
-                            val isSelected = msg.id in selectedMessageIds
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isSelected) BirizTurquoise.copy(alpha = 0.22f) else Color.Transparent)
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (isSelectionMode) {
-                                                toggleMessageSelection(msg.id)
-                                            }
-                                        },
-                                        onLongClick = {
-                                            isSelectionMode = true
-                                            selectedMessageIds = selectedMessageIds + msg.id
-                                        }
-                                    )
-                                    .padding(horizontal = 2.dp, vertical = 1.dp),
-                                horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(
-                                        topStart = 14.dp,
-                                        topEnd = 14.dp,
-                                        bottomStart = if (isMe) 14.dp else 2.dp,
-                                        bottomEnd = if (isMe) 2.dp else 14.dp
-                                    ),
-                                    color = if (isMe) {
-                                        if (isDarkTheme) Color(0xFF005C4B) else Color(0xFFD9FDD3)
-                                    } else {
-                                        if (isDarkTheme) Color(0xFF202C33) else Color.White
-                                    },
-                                    border = if (isSelected) BorderStroke(1.5.dp, BirizTurquoise) else null,
-                                    shadowElevation = 1.dp,
-                                    modifier = Modifier.widthIn(max = 290.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)) {
-                                        if (!isMe) {
-                                            Text(
-                                                text = msg.senderName.ifBlank { classRoom?.teacherName ?: "Sınıf Öğretmeni" },
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFF0284C7)
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                        }
-                                        Text(
-                                            text = if (msg.isDeletedForEveryone) "🚫 Bu mesaj silindi" else msg.text,
-                                            fontSize = 13.sp,
-                                            fontStyle = if (msg.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal,
-                                            color = if (msg.isDeletedForEveryone) {
-                                                if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-                                            } else {
-                                                if (isDarkTheme) Color.White else Color(0xFF111B21)
-                                            },
-                                            lineHeight = 18.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(3.dp))
-                                        Row(
-                                            modifier = Modifier.align(Alignment.End),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = CommunicationPersistenceHelper.formatTime(msg.timestamp),
-                                                fontSize = 9.5.sp,
-                                                color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
-                                            )
-                                            if (isMe && !msg.isDeletedForEveryone) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Icon(
-                                                    imageVector = if (msg.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
-                                                    contentDescription = when (msg.status) {
-                                                        MessageStatus.READ -> "Okundu"
-                                                        MessageStatus.DELIVERED -> "İletildi"
-                                                        MessageStatus.SENT -> "Gönderildi"
-                                                    },
-                                                    tint = when (msg.status) {
-                                                        MessageStatus.READ -> Color(0xFF53BDEB)
-                                                        MessageStatus.DELIVERED -> Color.Gray
-                                                        MessageStatus.SENT -> Color.LightGray
-                                                    },
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                        }
+                            WhatsAppChatBubble(
+                                message = msg,
+                                isMe = !msg.isFromTeacher,
+                                isDarkTheme = isDarkTheme,
+                                fontOffset = 0,
+                                isSelected = msg.id in selectedMessageIds,
+                                isHighlighted = highlightedMessageId == msg.id,
+                                isSelectionMode = isSelectionMode,
+                                showEmailInHeader = false,
+                                fallbackIncomingSenderName = classRoom?.teacherName?.ifBlank { "Sınıf Öğretmeni" } ?: "Sınıf Öğretmeni",
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        toggleMessageSelection(msg.id)
                                     }
+                                },
+                                onLongClick = {
+                                    if (isSelectionMode) {
+                                        toggleMessageSelection(msg.id)
+                                    } else {
+                                        actionMenuMessage = msg
+                                    }
+                                },
+                                onSwipeReply = {
+                                    replyingToMessage = msg
+                                },
+                                onQuotedMessageClick = scrollToQuotedMessage,
+                                onReactionBadgeClick = {
+                                    reactionDetailsMessage = msg
                                 }
-                            }
-                        }
-                    }
-                }
-
-                // Hızlı Yanıt Şablonları
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    quickReplies.forEach { reply ->
-                        Surface(
-                            onClick = { onSendMessage(reply) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (isDarkTheme) Color(0x401E293B) else Color.White,
-                            border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
-                        ) {
-                            Text(
-                                text = reply,
-                                fontSize = 11.sp,
-                                color = primaryText,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
                 }
 
-                // Mesaj Yazma ve Gönderme Alanı (Tam yükseklikli, klavye gönderimi destekli)
-                Surface(
-                    color = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = chatText,
-                            onValueChange = { chatText = it },
-                            placeholder = { Text("Öğretmene mesaj yazın...", fontSize = 13.sp) },
-                            textStyle = TextStyle(
-                                fontSize = 13.5.sp,
-                                lineHeight = 19.sp,
-                                color = if (isDarkTheme) Color.White else Color(0xFF111B21)
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 52.dp)
-                                .testTag("input_parent_chat_message"),
-                            maxLines = 4,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { sendCurrentParentMessage() }),
-                            shape = RoundedCornerShape(22.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = BirizTurquoise,
-                                unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                            )
+                // Mesaj Yazma ve Gönderme Alanı (WhatsApp Stili Alıntı & Emoji Çekmecesi ile)
+                WhatsAppChatComposer(
+                    value = chatText,
+                    onValueChange = { chatText = it },
+                    placeholder = "Öğretmene mesaj yazın...",
+                    isDarkTheme = isDarkTheme,
+                    inputTestTag = "input_parent_chat_message",
+                    sendTestTag = "btn_parent_send_chat",
+                    emojiToggleTestTag = "btn_parent_emoji_toggle",
+                    onSend = sendCurrentParentMessage,
+                    resetKey = "${student.id}_$isChatSubTabActive",
+                    enableScheduledSend = false,
+                    replyPreviewContent = {
+                        ReplyComposerBanner(
+                            replyingTo = replyingToMessage,
+                            isDarkTheme = isDarkTheme,
+                            onCancelReply = { replyingToMessage = null }
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val canSend = chatText.isNotBlank()
-                        FloatingActionButton(
-                            onClick = { if (canSend) sendCurrentParentMessage() },
-                            shape = CircleShape,
-                            containerColor = if (canSend) Color(0xFF00A884) else Color(0xFF94A3B8),
-                            contentColor = Color.White,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_parent_send_chat")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Gönder",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
                     }
-                }
+                )
+            }
+
+            actionMenuMessage?.let { targetMsg ->
+                val myReaction = targetMsg.activeReactions()[currentReactionKey]
+                MessageLongPressActionDialog(
+                    message = targetMsg,
+                    currentReactionEmoji = myReaction,
+                    viewerIsTeacher = false,
+                    isDarkTheme = isDarkTheme,
+                    onDismiss = { actionMenuMessage = null },
+                    onSelectReaction = { emoji -> onToggleReaction(targetMsg.id, emoji) },
+                    onReply = { replyingToMessage = targetMsg },
+                    onShowInfo = { infoDialogMessage = targetMsg },
+                    onCopyText = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("BİRİZ Mesaj", targetMsg.text))
+                        Toast.makeText(context, "Mesaj kopyalandı", Toast.LENGTH_SHORT).show()
+                    },
+                    onDeliverNow = {},
+                    onEnterSelectionMode = {
+                        isSelectionMode = true
+                        selectedMessageIds = setOf(targetMsg.id)
+                    },
+                    onDeleteSingle = {
+                        selectedMessageIds = setOf(targetMsg.id)
+                        showDeleteChoiceDialog = true
+                    }
+                )
+            }
+
+            infoDialogMessage?.let { infoMsg ->
+                val latestMsg = chatMessages.firstOrNull { it.id == infoMsg.id } ?: infoMsg
+                MessageInfoDialog(
+                    message = latestMsg,
+                    viewerIsMe = !latestMsg.isFromTeacher,
+                    isDarkTheme = isDarkTheme,
+                    onDismiss = { infoDialogMessage = null }
+                )
+            }
+
+            reactionDetailsMessage?.let { reactMsg ->
+                val latestMsg = chatMessages.firstOrNull { it.id == reactMsg.id } ?: reactMsg
+                ReactionDetailsDialog(
+                    message = latestMsg,
+                    currentParticipantKey = currentReactionKey,
+                    teacherDisplayName = classRoom?.teacherName?.ifBlank { "Sınıf Öğretmeni" } ?: "Sınıf Öğretmeni",
+                    isDarkTheme = isDarkTheme,
+                    onDismiss = { reactionDetailsMessage = null },
+                    onSelectEmoji = { emoji -> onToggleReaction(latestMsg.id, emoji) }
+                )
             }
 
             if (showDeleteChoiceDialog && selectedMessageIds.isNotEmpty()) {

@@ -126,8 +126,10 @@ object NotificationLifecycleHelper {
         viewerIsTeacher: Boolean,
         viewerIsParent: Boolean,
         linkedParentStudentIds: List<String>,
-        currentUserEmail: String
+        currentUserEmail: String,
+        nowMillis: Long = System.currentTimeMillis()
     ): Boolean {
+        if (msg.isPendingScheduled(nowMillis)) return false
         return when {
             viewerIsTeacher -> !msg.isFromTeacher
             viewerIsParent -> {

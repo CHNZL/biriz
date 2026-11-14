@@ -83,8 +83,22 @@ data class ChatMessage(
     val status: MessageStatus = MessageStatus.READ,
     val hiddenForTeacher: Boolean = false,
     val hiddenForParentEmails: List<String> = emptyList(),
-    val isDeletedForEveryone: Boolean = false
-)
+    val isDeletedForEveryone: Boolean = false,
+    val replyToMessageId: String? = null,
+    val replyToSenderName: String? = null,
+    val replyToText: String? = null,
+    val replyToIsFromTeacher: Boolean? = null,
+    val reactions: Map<String, String> = emptyMap(),
+    val deliveredAt: Long? = null,
+    val readAt: Long? = null,
+    val scheduledFor: Long? = null
+) {
+    fun isPendingScheduled(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        scheduledFor != null && nowMillis < scheduledFor && !isDeletedForEveryone
+
+    fun activeReactions(): Map<String, String> =
+        reactions.filterValues { it.isNotBlank() }
+}
 
 /**
  * Veli Sohbet Özeti (Mesajlar Sekmesi Listesi)

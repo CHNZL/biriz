@@ -264,4 +264,68 @@ class ExampleRobolectricTest {
         assertTrue(geWithKoSink.wroteBytes && geWithKoSink.closed)
         assertEquals((1..geWithKoSink.pages.size).toList(), geWithKoSink.pages.map { it.third })
     }
+
+    @Test
+    fun `test chat message serialization round trip and legacy backwards compatibility`() {
+        val fullMsg = com.example.data.model.ChatMessage(
+            id = "msg_full_1",
+            classId = "class_4d",
+            studentId = "std_1",
+            studentNumber = "45",
+            studentName = "Semih Ahmet",
+            parentName = "Cihan Veli",
+            parentEmail = "veli@example.com",
+            isFromTeacher = true,
+            senderName = "Cihan Öğretmen",
+            text = "Yarınki gezi için izin belgesi lütfen imzalansın.",
+            timestamp = 1_760_000_000_000L,
+            status = com.example.data.model.MessageStatus.READ,
+            replyToMessageId = "msg_prev",
+            replyToSenderName = "Cihan Veli",
+            replyToText = "Gezi saat kaçta başlıyor?",
+            replyToIsFromTeacher = false,
+            reactions = mapOf("teacher" to "👍", "parent_veli_example_com" to "❤️", "removed_key" to ""),
+            deliveredAt = 1_760_000_005_000L,
+            readAt = 1_760_000_020_000L,
+            scheduledFor = 1_760_030_000_000L
+        )
+
+        val serialized = com.example.util.CommunicationPersistenceHelper.serializeChatMessageJson(fullMsg)
+        val parsed = com.example.util.CommunicationPersistenceHelper.parseChatMessageJson(serialized)
+
+        assertEquals(fullMsg.id, parsed.id)
+        assertEquals(fullMsg.text, parsed.text)
+        assertEquals("msg_prev", parsed.replyToMessageId)
+        assertEquals("Cihan Veli", parsed.replyToSenderName)
+        assertEquals("Gezi saat kaçta başlıyor?", parsed.replyToText)
+        assertEquals(false, parsed.replyToIsFromTeacher)
+        assertEquals(mapOf("teacher" to "👍", "parent_veli_example_com" to "❤️"), parsed.reactions)
+        assertEquals(1_760_000_005_000L, parsed.deliveredAt)
+        assertEquals(1_760_000_020_000L, parsed.readAt)
+        assertEquals(1_760_030_000_000L, parsed.scheduledFor)
+
+        // Legacy JSON without new fields must still parse cleanly
+        val legacyJson = org.json.JSONObject().apply {
+            put("id", "msg_legacy")
+            put("classId", "class_4d")
+            put("studentId", "std_1")
+            put("studentNumber", "45")
+            put("studentName", "Semih Ahmet")
+            put("parentName", "Cihan Veli")
+            put("isFromTeacher", false)
+            put("senderName", "Cihan Veli")
+            put("text", "Teşekkürler hocam")
+            put("timestamp", 1_750_000_000_000L)
+            put("status", "DELIVERED")
+        }
+        val legacyParsed = com.example.util.CommunicationPersistenceHelper.parseChatMessageJson(legacyJson)
+        assertEquals("msg_legacy", legacyParsed.id)
+        assertEquals(com.example.data.model.MessageStatus.DELIVERED, legacyParsed.status)
+        assertEquals(null, legacyParsed.replyToMessageId)
+        assertTrue(legacyParsed.reactions.isEmpty())
+        assertEquals(null, legacyParsed.deliveredAt)
+        assertEquals(null, legacyParsed.readAt)
+        assertEquals(null, legacyParsed.scheduledFor)
+    }
 }
+

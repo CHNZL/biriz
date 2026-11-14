@@ -605,15 +605,11 @@ fun StarsClassroomSubScreen(
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 filteredStudents.forEachIndexed { index, student ->
                                     val studentStars = studentStarMap[student.id] ?: 0
-                                    val studentRecords = remember(starRecords) {
-                                        starRecords.filter { it.studentId == student.id }
-                                    }
 
                                     StudentStarRowItem(
                                         student = student,
                                         index = index,
                                         totalStars = studentStars,
-                                        records = studentRecords,
                                         isDarkTheme = isDarkTheme,
                                         onGiveStarClick = { studentForIndividualStar = student },
                                         onHistoryClick = { studentForHistory = student }
@@ -1333,7 +1329,6 @@ private fun StudentStarRowItem(
     student: Student,
     index: Int,
     totalStars: Int,
-    records: List<StarRewardRecord>,
     isDarkTheme: Boolean,
     onGiveStarClick: () -> Unit,
     onHistoryClick: () -> Unit
@@ -1351,7 +1346,7 @@ private fun StudentStarRowItem(
             .background(rowBg)
             .clickable(onClick = onHistoryClick)
             .testTag("star_student_row_${student.studentNumber}")
-            .padding(horizontal = 12.dp, vertical = 6.5.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1384,46 +1379,15 @@ private fun StudentStarRowItem(
 
                 Spacer(modifier = Modifier.width(9.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = student.fullName,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(1.dp))
-
-                    if (records.isNotEmpty()) {
-                        val recentCategories = records.take(2).map { it.categoryName }.distinct()
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            recentCategories.forEach { catName ->
-                                Surface(
-                                    shape = RoundedCornerShape(3.dp),
-                                    color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9)
-                                ) {
-                                    Text(
-                                        text = catName,
-                                        fontSize = 9.5.sp,
-                                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = "Henüz yıldız kazanmadı",
-                            fontSize = 10.sp,
-                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
-                        )
-                    }
-                }
+                Text(
+                    text = student.fullName,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -1534,50 +1498,16 @@ private fun StudentStarCardItem(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // İsim ve Yıldız Detayı
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = student.fullName,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                // Son Kazanılan Rozetler / Rozet Etiketleri
-                if (records.isNotEmpty()) {
-                    val recentCategories = records.take(2).map { it.categoryName }.distinct()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        recentCategories.forEach { catName ->
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (isDarkTheme) Color(0x2564748B) else Color(0xFFF1F5F9)
-                            ) {
-                                Text(
-                                    text = catName,
-                                    fontSize = 9.5.sp,
-                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    Text(
-                        text = "Henüz yıldız kazanmadı",
-                        fontSize = 10.sp,
-                        color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
-                    )
-                }
-            }
+            // İsim (Kategoriler detay dialogunda gösterilir)
+            Text(
+                text = student.fullName,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
 
             Spacer(modifier = Modifier.width(8.dp))
 

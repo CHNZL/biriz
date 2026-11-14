@@ -132,6 +132,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -140,7 +141,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.example.data.model.Announcement
 import com.example.data.model.AnnouncementPoll
 import com.example.data.model.AnnouncementTargetType
@@ -152,6 +155,15 @@ import com.example.data.model.ParentChatSummary
 import com.example.data.model.PollOption
 import com.example.data.model.Student
 import com.example.ui.components.BentoCard
+import com.example.ui.components.MessageInfoDialog
+import com.example.ui.components.MessageLongPressActionDialog
+import com.example.ui.components.QuietHoursHintBanner
+import com.example.ui.components.ReactionDetailsDialog
+import com.example.ui.components.ReplyComposerBanner
+import com.example.ui.components.ScheduleDeliveryDialog
+import com.example.ui.components.WhatsAppChatBubble
+import com.example.ui.components.WhatsAppChatComposer
+import com.example.util.ChatFeatureHelper
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -184,7 +196,9 @@ fun CommunicationSubScreen(
     onEditAnnouncement: (String, String, String, AnnouncementPoll?, AnnouncementTargetType, List<String>, List<String>) -> Unit,
     onDeleteAnnouncement: (String) -> Unit,
     onVotePollOption: (String, String, String) -> Unit,
-    onSendMessage: (String, String, Boolean, String, String) -> Unit,
+    onSendMessage: (String, String, Boolean, String, String, ChatMessage?, Long?) -> Unit,
+    onToggleChatReaction: (String, String) -> Unit = { _, _ -> },
+    onDeliverScheduledMessageNow: (String) -> Unit = {},
     onSimulateParentReply: (String, String) -> Unit,
     onMarkChatAsRead: (String, String) -> Unit,
     onActiveChatStudentChange: (String?) -> Unit = {},
@@ -318,9 +332,11 @@ fun CommunicationSubScreen(
                     onMarkAsRead = {
                         onMarkChatAsRead(chatStudent.id, chatParent.email)
                     },
-                    onSendMessage = { text ->
-                        onSendMessage(chatStudent.id, text, true, chatParent.email, chatParent.name)
+                    onSendMessage = { text, replyTo, scheduledFor ->
+                        onSendMessage(chatStudent.id, text, true, chatParent.email, chatParent.name, replyTo, scheduledFor)
                     },
+                    onToggleReaction = onToggleChatReaction,
+                    onDeliverScheduledNow = onDeliverScheduledMessageNow,
                     onSimulateParentReply = { text ->
                         onSimulateParentReply(chatStudent.id, text)
                     },
@@ -3133,6 +3149,8 @@ private fun ParentHoverInfoBubble(
             Text(
                 text = when {
                     unreadCount > 0 -> "🔔 $unreadCount okunmamış mesaj • Açmak için tıklayın"
+                    lastMessage != null && lastMessage.isPendingScheduled() ->
+                        "⏰ Zamanlandı (${ChatFeatureHelper.formatScheduledLabel(lastMessage.scheduledFor!!)}): ${lastMessage.text}"
                     lastMessage != null && !lastMessage.isDeletedForEveryone -> "💬 Son: ${lastMessage.text}"
                     else -> "💬 Mesajlaşmak için tıklayın"
                 },
@@ -3311,14 +3329,17 @@ private fun OneOnOneChatView(
     onFontOffsetChange: (Int) -> Unit,
     onBack: () -> Unit,
     onMarkAsRead: () -> Unit,
-    onSendMessage: (String) -> Unit,
+    onSendMessage: (text: String, replyTo: ChatMessage?, scheduledFor: Long?) -> Unit,
+    onToggleReaction: (messageId: String, emoji: String) -> Unit = { _, _ -> },
+    onDeliverScheduledNow: (messageId: String) -> Unit = {},
     onSimulateParentReply: (String) -> Unit,
     onDeleteMessagesForMe: (Set<String>) -> Unit = {},
     onDeleteMessagesForEveryone: (Set<String>) -> Unit = {},
     onClearChatHistoryForMe: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var messageInput by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    var messageInput by remember { mutableStateOf(TextFieldValue("")) }
     val listState = rememberLazyListState()
     val isKiz = student.gender.equals("Kız", ignoreCase = true)
     val isParentOnline = student.isParentCurrentlyActive()
@@ -3330,6 +3351,14 @@ private fun OneOnOneChatView(
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showDeleteChoiceDialog by remember { mutableStateOf(false) }
+
+    var replyingToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var actionMenuMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var infoDialogMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var reactionDetailsMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var showScheduleDialog by remember { mutableStateOf(false) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var isQuietBannerDismissed by remember { mutableStateOf(false) }
 
     val displayedMessages = remember(messages, isSearchOpen, searchQuery) {
         if (!isSearchOpen || searchQuery.isBlank()) {
@@ -3345,31 +3374,45 @@ private fun OneOnOneChatView(
         isSelectionMode = false
         isSearchOpen = false
         searchQuery = ""
+        messageInput = TextFieldValue("")
+        replyingToMessage = null
+        actionMenuMessage = null
+        infoDialogMessage = null
+        reactionDetailsMessage = null
+        showScheduleDialog = false
+        highlightedMessageId = null
     }
 
-    BackHandler(enabled = isSelectionMode || isSearchOpen) {
-        if (isSelectionMode) {
-            selectedMessageIds = emptySet()
-            isSelectionMode = false
-        } else if (isSearchOpen) {
-            isSearchOpen = false
-            searchQuery = ""
+    LaunchedEffect(highlightedMessageId) {
+        if (highlightedMessageId != null) {
+            delay(1600L)
+            highlightedMessageId = null
         }
     }
 
-    // Hazır Hızlı Yanıt Şablonları
-    val quickTemplates = listOf(
-        "Bilgi için teşekkür ederiz 👍",
-        "${student.fullName.split(" ").first()} derste çok aktifti ⭐",
-        "Ödev kontrolü tamamlandı 📚",
-        "Yarın teneffüste görüşelim 🤝"
-    )
+    BackHandler(enabled = isSelectionMode || isSearchOpen || replyingToMessage != null) {
+        when {
+            isSelectionMode -> {
+                selectedMessageIds = emptySet()
+                isSelectionMode = false
+            }
+            isSearchOpen -> {
+                isSearchOpen = false
+                searchQuery = ""
+            }
+            replyingToMessage != null -> {
+                replyingToMessage = null
+            }
+        }
+    }
 
-    val sendCurrentMessage = {
-        val trimmed = messageInput.trim()
+    val sendCurrentMessage: (Long?) -> Unit = { scheduledFor ->
+        val trimmed = messageInput.text.trim()
         if (trimmed.isNotEmpty()) {
-            onSendMessage(trimmed)
-            messageInput = ""
+            onSendMessage(trimmed, replyingToMessage, scheduledFor)
+            messageInput = TextFieldValue("")
+            replyingToMessage = null
+            showScheduleDialog = false
         }
     }
 
@@ -3377,6 +3420,18 @@ private fun OneOnOneChatView(
         val next = if (msgId in selectedMessageIds) selectedMessageIds - msgId else selectedMessageIds + msgId
         selectedMessageIds = next
         if (next.isEmpty()) isSelectionMode = false
+    }
+
+    val scrollToQuotedMessage: (String) -> Unit = { quotedId ->
+        val idx = displayedMessages.indexOfFirst { it.id == quotedId }
+        if (idx >= 0) {
+            highlightedMessageId = quotedId
+            coroutineScope.launch {
+                listState.animateScrollToItem(idx + 1)
+            }
+        } else {
+            Toast.makeText(context, "Alıntılanan mesaj bu görünümde bulunamadı", Toast.LENGTH_SHORT).show()
+        }
     }
 
     LaunchedEffect(student.id, messages.size, isSearchOpen) {
@@ -3717,7 +3772,7 @@ private fun OneOnOneChatView(
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
                         Text(
-                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında anlık olarak senkronize edilir. Uzun basarak mesaj silebilirsiniz.",
+                            text = "🔒 Bu görüşme yalnızca sınıf öğretmeni ve veli (${parentAccount.email}) arasında senkronize edilir. Yanıtlamak için sağa kaydırın; tepki ve bilgi için basılı tutun.",
                             fontSize = 10.sp,
                             color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF92400E),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -3783,105 +3838,136 @@ private fun OneOnOneChatView(
                         Spacer(modifier = Modifier.height(6.dp))
                     }
 
-                    ChatMessageBubble(
+                    WhatsAppChatBubble(
                         message = msg,
+                        isMe = msg.isFromTeacher,
                         isDarkTheme = isDarkTheme,
                         fontOffset = fontOffset,
                         isSelected = msg.id in selectedMessageIds,
+                        isHighlighted = highlightedMessageId == msg.id,
+                        isSelectionMode = isSelectionMode,
+                        showEmailInHeader = true,
+                        fallbackIncomingSenderName = parentAccount.name,
                         onClick = {
                             if (isSelectionMode) {
                                 toggleSelection(msg.id)
                             }
                         },
                         onLongClick = {
-                            isSelectionMode = true
-                            selectedMessageIds = selectedMessageIds + msg.id
+                            if (isSelectionMode) {
+                                toggleSelection(msg.id)
+                            } else {
+                                actionMenuMessage = msg
+                            }
+                        },
+                        onSwipeReply = {
+                            replyingToMessage = msg
+                        },
+                        onQuotedMessageClick = scrollToQuotedMessage,
+                        onReactionBadgeClick = {
+                            reactionDetailsMessage = msg
                         }
                     )
                 }
             }
         }
 
-        // Hızlı Şablonlar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            quickTemplates.forEach { template ->
-                Surface(
-                    onClick = { onSendMessage(template) },
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) Color(0x401E293B) else Color.White,
-                    border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
-                ) {
-                    Text(
-                        text = template,
-                        fontSize = 11.sp,
-                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        // Mesaj Giriş Barı (WhatsApp Stili Alıntı, Emoji Çekmecesi & Sessiz Saat Zamanlama ile)
+        val isQuietHoursNow = ChatFeatureHelper.isQuietHours()
+        WhatsAppChatComposer(
+            value = messageInput,
+            onValueChange = { messageInput = it },
+            placeholder = "Mesajınızı yazınız...",
+            isDarkTheme = isDarkTheme,
+            fontOffset = fontOffset,
+            inputTestTag = "input_chat_message",
+            sendTestTag = "btn_send_chat_message",
+            emojiToggleTestTag = "btn_teacher_emoji_toggle",
+            onSend = { sendCurrentMessage(null) },
+            resetKey = "${student.id}_${parentAccount.email}",
+            enableScheduledSend = true,
+            onOpenScheduleOptions = { showScheduleDialog = true },
+            topBannerContent = if (isQuietHoursNow && !isQuietBannerDismissed) {
+                {
+                    QuietHoursHintBanner(
+                        isDarkTheme = isDarkTheme,
+                        hasText = messageInput.text.isNotBlank(),
+                        onQuickScheduleMorning = {
+                            val nextMorning = ChatFeatureHelper.nextTargetSlotMillis(8, 30)
+                            sendCurrentMessage(nextMorning)
+                        },
+                        onDismiss = { isQuietBannerDismissed = true }
                     )
                 }
-            }
-        }
-
-        // Mesaj Giriş Barı (WhatsApp Stili - Dock Bar gizlendiği için tam erişilebilir)
-        Surface(
-            color = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
-            shadowElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = messageInput,
-                    onValueChange = { messageInput = it },
-                    placeholder = { Text("Mesajınızı yazınız...", fontSize = (12.5 + fontOffset).sp) },
-                    textStyle = TextStyle(
-                        fontSize = (13 + fontOffset).sp,
-                        lineHeight = (18 + fontOffset).sp,
-                        color = if (isDarkTheme) Color.White else Color(0xFF111B21)
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 52.dp)
-                        .testTag("input_chat_message"),
-                    maxLines = 4,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { sendCurrentMessage() }),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = BirizTurquoise,
-                        unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                    )
+            } else null,
+            replyPreviewContent = {
+                ReplyComposerBanner(
+                    replyingTo = replyingToMessage,
+                    isDarkTheme = isDarkTheme,
+                    onCancelReply = { replyingToMessage = null }
                 )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                val canSend = messageInput.isNotBlank()
-                FloatingActionButton(
-                    onClick = { if (canSend) sendCurrentMessage() },
-                    shape = CircleShape,
-                    containerColor = if (canSend) Color(0xFF00A884) else Color(0xFF94A3B8),
-                    contentColor = Color.White,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("btn_send_chat_message")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Gönder",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
-        }
+        )
+    }
+
+    actionMenuMessage?.let { targetMsg ->
+        val myReaction = targetMsg.activeReactions()["teacher"]
+        MessageLongPressActionDialog(
+            message = targetMsg,
+            currentReactionEmoji = myReaction,
+            viewerIsTeacher = true,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { actionMenuMessage = null },
+            onSelectReaction = { emoji -> onToggleReaction(targetMsg.id, emoji) },
+            onReply = { replyingToMessage = targetMsg },
+            onShowInfo = { infoDialogMessage = targetMsg },
+            onCopyText = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("BİRİZ Mesaj", targetMsg.text))
+                Toast.makeText(context, "Mesaj kopyalandı", Toast.LENGTH_SHORT).show()
+            },
+            onDeliverNow = { onDeliverScheduledNow(targetMsg.id) },
+            onEnterSelectionMode = {
+                isSelectionMode = true
+                selectedMessageIds = setOf(targetMsg.id)
+            },
+            onDeleteSingle = {
+                selectedMessageIds = setOf(targetMsg.id)
+                showDeleteChoiceDialog = true
+            }
+        )
+    }
+
+    infoDialogMessage?.let { infoMsg ->
+        val latestMsg = messages.firstOrNull { it.id == infoMsg.id } ?: infoMsg
+        MessageInfoDialog(
+            message = latestMsg,
+            viewerIsMe = latestMsg.isFromTeacher,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { infoDialogMessage = null }
+        )
+    }
+
+    reactionDetailsMessage?.let { reactMsg ->
+        val latestMsg = messages.firstOrNull { it.id == reactMsg.id } ?: reactMsg
+        ReactionDetailsDialog(
+            message = latestMsg,
+            currentParticipantKey = "teacher",
+            teacherDisplayName = teacherName.ifBlank { "Sınıf Öğretmeni" },
+            isDarkTheme = isDarkTheme,
+            onDismiss = { reactionDetailsMessage = null },
+            onSelectEmoji = { emoji -> onToggleReaction(latestMsg.id, emoji) }
+        )
+    }
+
+    if (showScheduleDialog && messageInput.text.isNotBlank()) {
+        ScheduleDeliveryDialog(
+            messagePreview = messageInput.text.trim(),
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showScheduleDialog = false },
+            onSendNow = { sendCurrentMessage(null) },
+            onScheduleAt = { targetMillis -> sendCurrentMessage(targetMillis) }
+        )
     }
 
     if (showDeleteChoiceDialog && selectedMessageIds.isNotEmpty()) {
@@ -3975,119 +4061,6 @@ private fun OneOnOneChatView(
                 TextButton(onClick = { showClearHistoryDialog = false }) { Text("Vazgeç") }
             }
         )
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ChatMessageBubble(
-    message: ChatMessage,
-    isDarkTheme: Boolean,
-    fontOffset: Int,
-    isSelected: Boolean = false,
-    onClick: () -> Unit = {},
-    onLongClick: () -> Unit = {}
-) {
-    val isMe = message.isFromTeacher
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) BirizTurquoise.copy(alpha = 0.22f) else Color.Transparent)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-            .padding(horizontal = 2.dp, vertical = 1.dp),
-        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
-    ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 14.dp,
-                topEnd = 14.dp,
-                bottomStart = if (isMe) 14.dp else 2.dp,
-                bottomEnd = if (isMe) 2.dp else 14.dp
-            ),
-            color = if (isMe) {
-                // Öğretmen mesajı (Yeşilimsi WhatsApp rengi)
-                if (isDarkTheme) Color(0xFF005C4B) else Color(0xFFD9FDD3)
-            } else {
-                // Veli mesajı (Koyu modda lacivert, açık modda beyaz)
-                if (isDarkTheme) Color(0xFF202C33) else Color.White
-            },
-            border = if (isSelected) BorderStroke(1.5.dp, BirizTurquoise) else null,
-            shadowElevation = 1.dp,
-            modifier = Modifier.widthIn(max = 280.dp + (fontOffset * 12).dp)
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-                if (!isMe) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = message.senderName,
-                            fontSize = (10.5 + (fontOffset / 2)).sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF25D366)
-                        )
-                        if (message.parentEmail.isNotBlank()) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "• ${message.parentEmail}",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                }
-
-                Text(
-                    text = if (message.isDeletedForEveryone) "🚫 Bu mesaj silindi" else message.text,
-                    fontSize = (12.5 + fontOffset).sp,
-                    fontStyle = if (message.isDeletedForEveryone) FontStyle.Italic else FontStyle.Normal,
-                    color = if (message.isDeletedForEveryone) {
-                        if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-                    } else {
-                        if (isDarkTheme) Color.White else Color(0xFF111B21)
-                    },
-                    lineHeight = (17 + fontOffset).sp
-                )
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                Row(
-                    modifier = Modifier.align(Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = CommunicationPersistenceHelper.formatTime(message.timestamp),
-                        fontSize = (9.5 + (fontOffset / 2)).sp,
-                        color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
-                    )
-
-                    if (isMe && !message.isDeletedForEveryone) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = if (message.status == MessageStatus.SENT) Icons.Default.Check else Icons.Default.DoneAll,
-                            contentDescription = when (message.status) {
-                                MessageStatus.READ -> "Okundu"
-                                MessageStatus.DELIVERED -> "İletildi"
-                                MessageStatus.SENT -> "Gönderildi"
-                            },
-                            tint = when (message.status) {
-                                MessageStatus.READ -> Color(0xFF53BDEB) // WhatsApp Mavi Çift Tik
-                                MessageStatus.DELIVERED -> Color.Gray
-                                MessageStatus.SENT -> Color.LightGray
-                            },
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 

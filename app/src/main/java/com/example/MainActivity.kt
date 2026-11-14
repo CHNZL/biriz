@@ -424,7 +424,11 @@ fun BirizApp(viewModel: BirizViewModel) {
                             },
                             onDeleteAnnouncement = { viewModel.deleteAnnouncement(it) },
                             onVotePollOption = { aId, oId, voter -> viewModel.votePollOption(aId, oId, voter) },
-                            onSendChatMessage = { sId, text, isTeacher, email, name -> viewModel.sendChatMessage(sId, text, isTeacher, email, name) },
+                            onSendChatMessage = { sId, text, isTeacher, email, name, replyTo, scheduledFor ->
+                                viewModel.sendChatMessage(sId, text, isTeacher, email, name, replyTo, scheduledFor)
+                            },
+                            onToggleChatReaction = { msgId, emoji -> viewModel.toggleChatMessageReaction(msgId, emoji) },
+                            onDeliverScheduledMessageNow = { msgId -> viewModel.deliverScheduledMessageNow(msgId) },
                             onSimulateParentReply = { sId, text -> viewModel.simulateParentReply(sId, text) },
                             onMarkChatAsRead = { sId, email -> viewModel.markChatMessagesAsRead(sId, email) },
                             onDeleteChatMessagesForMe = { viewModel.deleteChatMessagesForMe(it) },
@@ -524,7 +528,10 @@ fun BirizApp(viewModel: BirizViewModel) {
                         onOpenUpdateDialog = { viewModel.openGlobalUpdateDialog(forceCheck = true) },
                         onLogout = { viewModel.signOut(context) },
                         onVotePoll = { aId, oId -> viewModel.votePollOption(aId, oId, uiState.currentUser.fullName.ifBlank { "Veli" }) },
-                        onSendChatMessage = { sId, text -> viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName) },
+                        onSendChatMessage = { sId, text, replyTo ->
+                            viewModel.sendChatMessage(sId, text, false, uiState.currentUser.email, uiState.currentUser.fullName, replyTo = replyTo)
+                        },
+                        onToggleChatReaction = { msgId, emoji -> viewModel.toggleChatMessageReaction(msgId, emoji) },
                         onMarkAnnouncementRead = { aId -> viewModel.markAnnouncementReadByParent(aId, uiState.currentUser.fullName) },
                         requestedTab = uiState.requestedParentTabName?.let { tabName ->
                             try { ParentPortalTab.valueOf(tabName) } catch (_: Exception) { null }
