@@ -2562,6 +2562,52 @@ class ExampleUnitTest {
     com.example.util.AppUpdateDownloadController.markIdle()
     assertTrue(com.example.util.AppUpdateDownloadController.state.value is com.example.util.BackgroundUpdateState.Idle)
   }
+
+  @Test
+  fun testTournamentParticipantCountResolution() {
+    val helper = com.example.util.TournamentOutcomeHelper
+    val explicitTournament = com.example.data.model.Tournament(
+      id = "t_count_1",
+      classRoomId = "c1",
+      name = "Akıl ve Zeka Oyunları",
+      participants = listOf("s1", "s2", "s3", "BYE", "s2", "WINNER_OF_R1-M1", "extra:Misafir")
+    )
+    assertEquals(4, helper.resolveParticipantCount(explicitTournament, emptyList()))
+
+    val fallbackTournament = com.example.data.model.Tournament(
+      id = "t_count_2",
+      classRoomId = "c1",
+      name = "Satranç",
+      participants = emptyList()
+    )
+    val fallbackMatches = listOf(
+      com.example.data.model.TournamentMatch(
+        id = "m1",
+        tournamentId = "t_count_2",
+        round = 1,
+        matchCode = "R1-M1",
+        player1Id = "s1",
+        player2Id = "s2"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "m2",
+        tournamentId = "t_count_2",
+        round = 1,
+        matchCode = "R1-M2",
+        player1Id = "s3",
+        player2Id = "BYE"
+      ),
+      com.example.data.model.TournamentMatch(
+        id = "m3",
+        tournamentId = "t_count_2",
+        round = 2,
+        matchCode = "R2-M1",
+        player1Id = "WINNER_OF_R1-M1",
+        player2Id = "s3"
+      )
+    )
+    assertEquals(3, helper.resolveParticipantCount(fallbackTournament, fallbackMatches))
+  }
 }
 
 

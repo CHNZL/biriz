@@ -6,6 +6,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -64,6 +66,7 @@ import com.example.util.TournamentOutcomeHelper
  *   ve kazanılan yıldız ödülünü açıkça gösterir.
  * - Sınıf arkadaşlarının kişisel verilerini KVKK kurallarına uygun olarak "Öğrenci" şeklinde maskeler.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ParentTournamentDetailView(
     student: Student,
@@ -110,6 +113,10 @@ internal fun ParentTournamentDetailView(
 
     val resolvedPairs = remember(selectedTournament, matches, allStudents) {
         TournamentOutcomeHelper.resolveParticipantPairs(selectedTournament.participants, matches, allStudents)
+    }
+
+    val participantCount = remember(selectedTournament, matches) {
+        TournamentOutcomeHelper.resolveParticipantCount(selectedTournament, matches)
     }
 
     val maskedLeagueStandings = remember(selectedTournament, matches, resolvedPairs, linkedStudentIds) {
@@ -189,16 +196,21 @@ internal fun ParentTournamentDetailView(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Text(
                                 text = "${selectedTournament.type.icon} Sınıf Turnuvası",
                                 fontSize = 11.sp,
                                 color = if (isTournamentDone) Color(0xFFB45309) else BirizTurquoise,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.align(Alignment.CenterVertically)
                             )
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (isTournamentDone) Color(0xFFDCFCE7) else Color(0xFFFEF3C7)
+                                color = if (isTournamentDone) Color(0xFFDCFCE7) else Color(0xFFFEF3C7),
+                                modifier = Modifier.align(Alignment.CenterVertically)
                             ) {
                                 Text(
                                     text = if (isTournamentDone) "✓ Tamamlandı" else "Devam Ediyor",
@@ -207,6 +219,24 @@ internal fun ParentTournamentDetailView(
                                     color = if (isTournamentDone) Color(0xFF065F46) else Color(0xFF92400E),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
+                            }
+                            if (participantCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isDarkTheme) Color(0x35334E68) else Color(0xFFF1F5F9),
+                                    border = BorderStroke(0.8.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                                    modifier = Modifier.align(Alignment.CenterVertically)
+                                ) {
+                                    Text(
+                                        text = "👥 $participantCount Katılımcı",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryText,
+                                        modifier = Modifier
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .testTag("parent_tournament_participant_count")
+                                    )
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.height(3.dp))
@@ -295,37 +325,12 @@ internal fun ParentTournamentDetailView(
                                 advancingCutoff = cutoff,
                                 isDarkTheme = isDarkTheme
                             )
-                            if (selectedTournament.type == TournamentType.GRUP_ELEME && isTournamentDone && outcome.isParticipant) {
-                                ParentEliminationPodiumNoticeCard(
-                                    tournament = selectedTournament,
-                                    matches = matches,
-                                    allStudents = allStudents,
-                                    childId = student.id,
-                                    childName = student.fullName,
-                                    outcome = outcome,
-                                    isDarkTheme = isDarkTheme
-                                )
-                            }
                         }
                     }
                 }
             }
 
-            TournamentType.ELEME -> {
-                if (isTournamentDone && outcome.isParticipant) {
-                    item {
-                        ParentEliminationPodiumNoticeCard(
-                            tournament = selectedTournament,
-                            matches = matches,
-                            allStudents = allStudents,
-                            childId = student.id,
-                            childName = student.fullName,
-                            outcome = outcome,
-                            isDarkTheme = isDarkTheme
-                        )
-                    }
-                }
-            }
+            TournamentType.ELEME -> Unit
         }
 
         // 4. ÇOCUĞUN MAÇLARI VE KARŞILAŞMALARI
@@ -761,68 +766,6 @@ private fun ParentMaskedStandingsCard(
                     HorizontalDivider(color = if (isDarkTheme) Color(0x20334E68) else Color(0xFFF1F5F9))
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ParentEliminationPodiumNoticeCard(
-    tournament: Tournament,
-    matches: List<TournamentMatch>,
-    allStudents: List<Student>,
-    childId: String,
-    childName: String,
-    outcome: TournamentOutcomeHelper.ChildTournamentOutcome,
-    isDarkTheme: Boolean
-) {
-    val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
-    val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-    val podium = remember(tournament, matches, allStudents) {
-        val pairs = TournamentOutcomeHelper.resolveParticipantPairs(tournament.participants, matches, allStudents)
-        val st = TournamentEngine.calculateStandings(pairs, matches, tournament.pointsWin, tournament.pointsDraw, tournament.pointsLoss)
-        TournamentEngine.determinePodium(tournament, matches, st)
-    }
-    val wId = tournament.winnerId ?: podium.first?.first
-    val rId = tournament.runnerUpId ?: podium.second?.first
-    val tId = tournament.thirdPlaceId ?: podium.third?.first
-
-    fun maskedPodiumLabel(slotId: String?): String {
-        return when {
-            slotId.isNullOrBlank() -> "-"
-            slotId == childId -> "$childName (Çocuğunuz)"
-            else -> "Sınıf Öğrencisi"
-        }
-    }
-
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "🏆 Turnuva Derece Özeti (KVKK Uyumlu)",
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = primaryText
-            )
-            Text(
-                text = "Çocuğunuzun ulaştığı aşama: ${outcome.stageReached ?: outcome.badgeText}",
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutcomeStatChip("🥇 1.", maskedPodiumLabel(wId), isDarkTheme, Modifier.weight(1f))
-                OutcomeStatChip("🥈 2.", maskedPodiumLabel(rId), isDarkTheme, Modifier.weight(1f))
-                OutcomeStatChip("🥉 3.", maskedPodiumLabel(tId), isDarkTheme, Modifier.weight(1f))
-            }
-            Text(
-                text = "Diğer dereceler KVKK gereği gizlenmektedir.",
-                fontSize = 10.sp,
-                color = secondaryText
-            )
         }
     }
 }

@@ -105,6 +105,21 @@ object TournamentOutcomeHelper {
             .map { id -> Pair(id, resolveParticipantName(id, matches, students)) }
     }
 
+    fun resolveParticipantCount(
+        tournament: Tournament,
+        matches: List<TournamentMatch>
+    ): Int {
+        val explicit = tournament.participants
+            .filter { it.isNotBlank() && it != "BYE" && !isPlaceholderPlayerId(it) }
+            .distinct()
+        if (explicit.isNotEmpty()) return explicit.size
+
+        return matches.flatMap { listOf(it.player1Id, it.player2Id) }
+            .filter { it.isNotBlank() && it != "BYE" && !isPlaceholderPlayerId(it) }
+            .distinct()
+            .size
+    }
+
     private fun extractSourceMatchCode(source: String?, placeholderId: String): String? {
         if (!source.isNullOrBlank()) {
             when {
