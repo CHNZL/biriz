@@ -2608,6 +2608,14 @@ class ExampleUnitTest {
     )
     assertEquals(3, helper.resolveParticipantCount(fallbackTournament, fallbackMatches))
   }
+
+  @Test
+  fun testContentRangeHeaderParsingForResume() {
+    assertEquals(25481216L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange("bytes 1048576-25481215/25481216"))
+    assertEquals(-1L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange("bytes 0-100/*"))
+    assertEquals(-1L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange(null))
+    assertEquals(-1L, com.example.util.AppUpdateManager.parseTotalBytesFromContentRange(""))
+  }
 }
 
 

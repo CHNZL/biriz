@@ -131,6 +131,14 @@ class MainActivity : ComponentActivity() {
             applicationContext,
             viewModel.uiState.value.availableUpdateInfo
         )
+        val readyAfterResume = AppUpdateDownloadController.state.value as? BackgroundUpdateState.ReadyToInstall
+        if (readyAfterResume != null &&
+            AppUpdateDownloadController.lastAutoPromptedVersionCode != readyAfterResume.info.latestVersionCode
+        ) {
+            AppUpdateDownloadController.lastAutoPromptedVersionCode = readyAfterResume.info.latestVersionCode
+            AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
+            AppUpdateManager.installApk(this, readyAfterResume.apkFile)
+        }
     }
 
     override fun onPause() {

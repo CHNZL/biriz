@@ -128,4 +128,140 @@ class ExampleRobolectricTest {
         assertEquals(200, bitmap?.width)
         assertEquals(200, bitmap?.height)
     }
+
+    @Test
+    fun `test tournament pdf export succeeds for all four formats`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val students = (1..32).map {
+            com.example.data.model.Student(
+                id = "s$it",
+                studentNumber = "$it",
+                fullName = "Öğrenci $it",
+                gender = if (it % 2 == 0) "Kız" else "Erkek"
+            )
+        }
+        val pairs8 = students.take(8).map { Pair(it.id, it.fullName) }
+        val pairs32 = students.map { Pair(it.id, it.fullName) }
+
+        class RecordingCanvasPdfSink : com.example.util.TournamentPdfHelper.PdfPageSink {
+            val pages = mutableListOf<Triple<Int, Int, Int>>() // width, height, pageNumber
+            var activeCount = 0
+            var wroteBytes = false
+            var closed = false
+
+            override fun startPage(width: Int, height: Int, pageNumber: Int): android.graphics.Canvas {
+                assertEquals("Previous page must be finished before starting page $pageNumber", 0, activeCount)
+                activeCount++
+                pages.add(Triple(width, height, pageNumber))
+                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                return android.graphics.Canvas(bitmap)
+            }
+
+            override fun finishCurrentPage() {
+                assertEquals("Must have an active page to finish", 1, activeCount)
+                activeCount--
+            }
+
+            override fun writeTo(out: java.io.OutputStream) {
+                assertEquals("All pages must be finished before writing PDF", 0, activeCount)
+                out.write("%PDF-1.4\n".toByteArray())
+                wroteBytes = true
+            }
+
+            override fun close() {
+                closed = true
+            }
+        }
+
+        // 1. ELEME (8 players) — triggers bracket page + fixture table page (previously crashed on page 2!)
+        val koTournament = com.example.data.model.Tournament(
+            id = "t/eleme:test",
+            classRoomId = "c1",
+            name = "Akıl ve Zeka Oyunları Turnuvası",
+            type = com.example.data.model.TournamentType.ELEME,
+            status = com.example.data.model.TournamentStatus.DEVAM_EDIYOR,
+            participants = students.take(8).map { it.id }
+        )
+        val koMatches = com.example.util.TournamentEngine.generateKnockoutFixture(
+            tournamentId = koTournament.id,
+            participants = pairs8,
+            isDoubleMatch = false
+        )
+        val koSink = RecordingCanvasPdfSink()
+        val koFile = com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(context, koTournament, koMatches, emptyList(), students, koSink)
+        assertTrue(koFile.exists())
+        assertTrue(koSink.wroteBytes && koSink.closed)
+        assertEquals(0, koSink.activeCount)
+        assertTrue("ELEME PDF must have >= 2 sequential pages", koSink.pages.size >= 2)
+        assertEquals(listOf(1, 2), koSink.pages.take(2).map { it.third })
+
+        // 1b. Large ELEME (32 players -> 16 R1 matches -> overflow first round + main bracket + table)
+        val koLargeTournament = koTournament.copy(id = "t_eleme_32", participants = students.map { it.id })
+        val koLargeMatches = com.example.util.TournamentEngine.generateKnockoutFixture("t_eleme_32", pairs32, false)
+        val koLargeSink = RecordingCanvasPdfSink()
+        com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(context, koLargeTournament, koLargeMatches, emptyList(), students, koLargeSink)
+        assertTrue(koLargeSink.wroteBytes && koLargeSink.closed)
+        assertEquals((1..koLargeSink.pages.size).toList(), koLargeSink.pages.map { it.third })
+
+        // 2. LIG
+        val ligTournament = com.example.data.model.Tournament(
+            id = "t_lig",
+            classRoomId = "c1",
+            name = "Satranç Ligi",
+            type = com.example.data.model.TournamentType.LIG,
+            participants = students.take(4).map { it.id }
+        )
+        val ligMatches = com.example.util.TournamentEngine.generateRoundRobinFixture(
+            tournamentId = ligTournament.id,
+            participants = pairs8.take(4),
+            isDoubleMatch = false
+        )
+        val ligSink = RecordingCanvasPdfSink()
+        com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(context, ligTournament, ligMatches, emptyList(), students, ligSink)
+        assertTrue(ligSink.wroteBytes && ligSink.closed && ligSink.pages.isNotEmpty())
+
+        // 3. GRUP
+        val grpTournament = com.example.data.model.Tournament(
+            id = "t_grp",
+            classRoomId = "c1",
+            name = "Mangala Grupları",
+            type = com.example.data.model.TournamentType.GRUP,
+            participants = students.take(8).map { it.id },
+            groupCount = 2
+        )
+        val grpMatches = com.example.util.TournamentEngine.generateGroupFixtures(
+            tournamentId = grpTournament.id,
+            participants = pairs8,
+            groupCount = 2,
+            groupNaming = "letters",
+            isDoubleMatch = false
+        )
+        val grpSink = RecordingCanvasPdfSink()
+        com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(context, grpTournament, grpMatches, emptyList(), students, grpSink)
+        assertTrue(grpSink.wroteBytes && grpSink.closed && grpSink.pages.isNotEmpty())
+
+        // 4. GRUP_ELEME (Projected playoff AND active knockout)
+        val geTournament = grpTournament.copy(
+            id = "t_ge",
+            name = "Grup + Eleme Turnuvası",
+            type = com.example.data.model.TournamentType.GRUP_ELEME,
+            advancingPerGroup = 2
+        )
+        val geProjectedSink = RecordingCanvasPdfSink()
+        com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(context, geTournament, grpMatches, emptyList(), students, geProjectedSink)
+        assertTrue(geProjectedSink.wroteBytes && geProjectedSink.closed)
+        assertEquals((1..geProjectedSink.pages.size).toList(), geProjectedSink.pages.map { it.third })
+
+        val geWithKoSink = RecordingCanvasPdfSink()
+        com.example.util.TournamentPdfHelper.exportTournamentPdfToFile(
+            context,
+            geTournament,
+            grpMatches + koMatches.take(2).map { it.copy(stage = "knockout", tournamentId = geTournament.id) },
+            emptyList(),
+            students,
+            geWithKoSink
+        )
+        assertTrue(geWithKoSink.wroteBytes && geWithKoSink.closed)
+        assertEquals((1..geWithKoSink.pages.size).toList(), geWithKoSink.pages.map { it.third })
+    }
 }

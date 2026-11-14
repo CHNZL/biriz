@@ -53,29 +53,69 @@ object TournamentPdfHelper {
     private const val COLOR_BORDER = 0xFFCBD5E1.toInt()
     private const val COLOR_SILVER = 0xFF475569.toInt()
 
+    internal interface PdfPageSink {
+        fun startPage(width: Int, height: Int, pageNumber: Int): Canvas
+        fun finishCurrentPage()
+        fun writeTo(out: java.io.OutputStream)
+        fun close()
+    }
+
+    private class AndroidPdfPageSink : PdfPageSink {
+        private val pdfDocument = PdfDocument()
+        private var currentPage: PdfDocument.Page? = null
+
+        override fun startPage(width: Int, height: Int, pageNumber: Int): Canvas {
+            check(currentPage == null) { "Previous PDF page was not finished before starting page $pageNumber" }
+            val info = PdfDocument.PageInfo.Builder(width, height, pageNumber).create()
+            val page = pdfDocument.startPage(info)
+            currentPage = page
+            return page.canvas
+        }
+
+        override fun finishCurrentPage() {
+            currentPage?.let { pdfDocument.finishPage(it) }
+            currentPage = null
+        }
+
+        override fun writeTo(out: java.io.OutputStream) {
+            pdfDocument.writeTo(out)
+        }
+
+        override fun close() {
+            currentPage?.let {
+                runCatching { pdfDocument.finishPage(it) }
+                currentPage = null
+            }
+            pdfDocument.close()
+        }
+    }
+
     private class PdfCursor(
-        val pdf: PdfDocument,
+        val pdf: PdfPageSink,
         val tournament: Tournament,
         val dateStr: String,
         val width: Int = PORTRAIT_W,
-        val height: Int = PORTRAIT_H
+        val height: Int = PORTRAIT_H,
+        startingPageNumber: Int = 1,
+        val headerMatches: List<TournamentMatch> = emptyList()
     ) {
-        var pageNumber: Int = 0
-        lateinit var page: PdfDocument.Page
+        var pageNumber: Int = startingPageNumber - 1
+            private set
+        private var hasActivePage: Boolean = false
         lateinit var canvas: Canvas
         var y: Float = 36f
 
         fun startPage(continuationTitle: String? = null, context: Context? = null, drawFullHeader: Boolean = false) {
-            if (pageNumber > 0) {
+            if (hasActivePage) {
                 drawFooter(canvas, tournament.name, pageNumber, width, height)
-                pdf.finishPage(page)
+                pdf.finishCurrentPage()
+                hasActivePage = false
             }
             pageNumber++
-            val info = PdfDocument.PageInfo.Builder(width, height, pageNumber).create()
-            page = pdf.startPage(info)
-            canvas = page.canvas
+            canvas = pdf.startPage(width, height, pageNumber)
+            hasActivePage = true
             if (drawFullHeader && context != null) {
-                y = drawDocumentHeader(canvas, context, tournament, dateStr, width)
+                y = drawDocumentHeader(canvas, context, tournament, dateStr, width, matches = headerMatches)
             } else {
                 y = drawContinuationHeader(canvas, tournament, continuationTitle ?: tournament.name, width)
             }
@@ -88,10 +128,10 @@ object TournamentPdfHelper {
         }
 
         fun finishCurrentPage() {
-            if (pageNumber > 0) {
+            if (hasActivePage) {
                 drawFooter(canvas, tournament.name, pageNumber, width, height)
-                pdf.finishPage(page)
-                pageNumber = 0
+                pdf.finishCurrentPage()
+                hasActivePage = false
             }
         }
     }
@@ -103,143 +143,166 @@ object TournamentPdfHelper {
         standings: List<TournamentStanding>,
         students: List<Student> = emptyList()
     ): Uri {
-        val file = File(context.cacheDir, "turnuva_${tournament.id}_${System.currentTimeMillis()}.pdf")
-        val pdfDocument = PdfDocument()
-        val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date())
-
-        val resolvedParticipants = TournamentOutcomeHelper.resolveParticipantPairs(
-            participantIds = tournament.participants,
+        val sink = AndroidPdfPageSink()
+        val file = exportTournamentPdfToFile(
+            context = context,
+            tournament = tournament,
             matches = matches,
-            students = students
+            standings = standings,
+            students = students,
+            sink = sink
         )
-        val computedStandings = if (standings.any { it.playerName == it.playerId && !it.playerId.startsWith("extra:") } || standings.isEmpty()) {
-            TournamentEngine.calculateStandings(
-                participants = resolvedParticipants,
-                matches = matches,
-                pointsWin = tournament.pointsWin,
-                pointsDraw = tournament.pointsDraw,
-                pointsLoss = tournament.pointsLoss
-            )
-        } else {
-            standings
-        }
-        val podium = TournamentEngine.determinePodium(tournament, matches, computedStandings)
-        val resolvedTournament = resolveTournamentNames(tournament, podium, matches, students)
-
-        var nextPageNumber = 1
-        when (resolvedTournament.type) {
-            TournamentType.ELEME -> {
-                val koMatches = matches.filter { it.stage != "group" }
-                nextPageNumber = drawBracketPages(
-                    pdfDocument = pdfDocument,
-                    context = context,
-                    tournament = resolvedTournament,
-                    knockoutMatches = koMatches,
-                    allMatches = matches,
-                    students = students,
-                    dateStr = dateStr,
-                    startPageNum = nextPageNumber,
-                    subtitleNote = null
-                )
-                drawKnockoutFixtureTablePages(
-                    pdfDocument = pdfDocument,
-                    context = context,
-                    tournament = resolvedTournament,
-                    knockoutMatches = koMatches,
-                    allMatches = matches,
-                    students = students,
-                    dateStr = dateStr,
-                    startPageNum = nextPageNumber,
-                    includeFullHeader = koMatches.isEmpty()
-                )
-            }
-
-            TournamentType.LIG -> {
-                drawLeagueReportPages(
-                    pdfDocument = pdfDocument,
-                    context = context,
-                    tournament = resolvedTournament,
-                    matches = matches,
-                    standings = computedStandings,
-                    students = students,
-                    dateStr = dateStr
-                )
-            }
-
-            TournamentType.GRUP -> {
-                drawGroupReportPages(
-                    pdfDocument = pdfDocument,
-                    context = context,
-                    tournament = resolvedTournament,
-                    matches = matches,
-                    students = students,
-                    dateStr = dateStr,
-                    isGroupElim = false
-                )
-            }
-
-            TournamentType.GRUP_ELEME -> {
-                val groupReports = TournamentOutcomeHelper.buildGroupReports(resolvedTournament, matches, students)
-                nextPageNumber = drawGroupReportPages(
-                    pdfDocument = pdfDocument,
-                    context = context,
-                    tournament = resolvedTournament,
-                    matches = matches,
-                    students = students,
-                    dateStr = dateStr,
-                    isGroupElim = true
-                )
-
-                val existingKnockout = matches.filter { it.stage == "knockout" }
-                val isProjected = existingKnockout.isEmpty()
-                val bracketMatches = TournamentOutcomeHelper.buildProjectedPlayoffMatches(
-                    tournament = resolvedTournament,
-                    groupReports = groupReports,
-                    existingKnockouts = existingKnockout
-                )
-                if (bracketMatches.isNotEmpty()) {
-                    nextPageNumber = drawBracketPages(
-                        pdfDocument = pdfDocument,
-                        context = context,
-                        tournament = resolvedTournament,
-                        knockoutMatches = bracketMatches,
-                        allMatches = if (isProjected) matches + bracketMatches else matches,
-                        students = students,
-                        dateStr = dateStr,
-                        startPageNum = nextPageNumber,
-                        subtitleNote = if (isProjected) {
-                            "Planlanan Play-Off (Eleme) Aşaması Şeması — Grup maçları tamamlandığında kesin eşleşmeler oluşacaktır"
-                        } else {
-                            "Play-Off (Eleme) Aşaması Güncel Şeması"
-                        }
-                    )
-                }
-                if (existingKnockout.isNotEmpty()) {
-                    drawKnockoutFixtureTablePages(
-                        pdfDocument = pdfDocument,
-                        context = context,
-                        tournament = resolvedTournament,
-                        knockoutMatches = existingKnockout,
-                        allMatches = matches,
-                        students = students,
-                        dateStr = dateStr,
-                        startPageNum = nextPageNumber,
-                        includeFullHeader = false
-                    )
-                }
-            }
-        }
-
-        FileOutputStream(file).use { out ->
-            pdfDocument.writeTo(out)
-        }
-        pdfDocument.close()
-
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             file
         )
+    }
+
+    internal fun exportTournamentPdfToFile(
+        context: Context,
+        tournament: Tournament,
+        matches: List<TournamentMatch>,
+        standings: List<TournamentStanding>,
+        students: List<Student> = emptyList(),
+        sink: PdfPageSink
+    ): File {
+        val safeId = tournament.id.replace(Regex("[^A-Za-z0-9_-]"), "_").ifBlank { "report" }
+        val file = File(context.cacheDir, "turnuva_${safeId}_${System.currentTimeMillis()}.pdf")
+        val dateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date())
+
+        try {
+            val resolvedParticipants = TournamentOutcomeHelper.resolveParticipantPairs(
+                participantIds = tournament.participants,
+                matches = matches,
+                students = students
+            )
+            val computedStandings = if (standings.any { it.playerName == it.playerId && !it.playerId.startsWith("extra:") } || standings.isEmpty()) {
+                TournamentEngine.calculateStandings(
+                    participants = resolvedParticipants,
+                    matches = matches,
+                    pointsWin = tournament.pointsWin,
+                    pointsDraw = tournament.pointsDraw,
+                    pointsLoss = tournament.pointsLoss
+                )
+            } else {
+                standings
+            }
+            val podium = TournamentEngine.determinePodium(tournament, matches, computedStandings)
+            val resolvedTournament = resolveTournamentNames(tournament, podium, matches, students)
+
+            var nextPageNumber = 1
+            when (resolvedTournament.type) {
+                TournamentType.ELEME -> {
+                    val koMatches = matches.filter { it.stage != "group" }
+                    nextPageNumber = drawBracketPages(
+                        pdfDocument = sink,
+                        context = context,
+                        tournament = resolvedTournament,
+                        knockoutMatches = koMatches,
+                        allMatches = matches,
+                        students = students,
+                        dateStr = dateStr,
+                        startPageNum = nextPageNumber,
+                        subtitleNote = null
+                    )
+                    drawKnockoutFixtureTablePages(
+                        pdfDocument = sink,
+                        context = context,
+                        tournament = resolvedTournament,
+                        knockoutMatches = koMatches,
+                        allMatches = matches,
+                        students = students,
+                        dateStr = dateStr,
+                        startPageNum = nextPageNumber,
+                        includeFullHeader = koMatches.isEmpty()
+                    )
+                }
+
+                TournamentType.LIG -> {
+                    drawLeagueReportPages(
+                        pdfDocument = sink,
+                        context = context,
+                        tournament = resolvedTournament,
+                        matches = matches,
+                        standings = computedStandings,
+                        students = students,
+                        dateStr = dateStr
+                    )
+                }
+
+                TournamentType.GRUP -> {
+                    drawGroupReportPages(
+                        pdfDocument = sink,
+                        context = context,
+                        tournament = resolvedTournament,
+                        matches = matches,
+                        students = students,
+                        dateStr = dateStr,
+                        isGroupElim = false
+                    )
+                }
+
+                TournamentType.GRUP_ELEME -> {
+                    val groupReports = TournamentOutcomeHelper.buildGroupReports(resolvedTournament, matches, students)
+                    nextPageNumber = drawGroupReportPages(
+                        pdfDocument = sink,
+                        context = context,
+                        tournament = resolvedTournament,
+                        matches = matches,
+                        students = students,
+                        dateStr = dateStr,
+                        isGroupElim = true
+                    )
+
+                    val existingKnockout = matches.filter { it.stage == "knockout" }
+                    val isProjected = existingKnockout.isEmpty()
+                    val bracketMatches = TournamentOutcomeHelper.buildProjectedPlayoffMatches(
+                        tournament = resolvedTournament,
+                        groupReports = groupReports,
+                        existingKnockouts = existingKnockout
+                    )
+                    if (bracketMatches.isNotEmpty()) {
+                        nextPageNumber = drawBracketPages(
+                            pdfDocument = sink,
+                            context = context,
+                            tournament = resolvedTournament,
+                            knockoutMatches = bracketMatches,
+                            allMatches = if (isProjected) matches + bracketMatches else matches,
+                            students = students,
+                            dateStr = dateStr,
+                            startPageNum = nextPageNumber,
+                            subtitleNote = if (isProjected) {
+                                "Planlanan Play-Off (Eleme) Aşaması Şeması — Grup maçları tamamlandığında kesin eşleşmeler oluşacaktır"
+                            } else {
+                                "Play-Off (Eleme) Aşaması Güncel Şeması"
+                            }
+                        )
+                    }
+                    if (existingKnockout.isNotEmpty()) {
+                        drawKnockoutFixtureTablePages(
+                            pdfDocument = sink,
+                            context = context,
+                            tournament = resolvedTournament,
+                            knockoutMatches = existingKnockout,
+                            allMatches = matches,
+                            students = students,
+                            dateStr = dateStr,
+                            startPageNum = nextPageNumber,
+                            includeFullHeader = false
+                        )
+                    }
+                }
+            }
+
+            FileOutputStream(file).use { out ->
+                sink.writeTo(out)
+            }
+        } finally {
+            sink.close()
+        }
+
+        return file
     }
 
     private fun resolveTournamentNames(
@@ -275,7 +338,7 @@ object TournamentPdfHelper {
     // 1. GÖRSEL ELEME ŞEMASI (A4 LANDSCAPE BRACKET)
     // -----------------------------------------------------------------
     private fun drawBracketPages(
-        pdfDocument: PdfDocument,
+        pdfDocument: PdfPageSink,
         context: Context,
         tournament: Tournament,
         knockoutMatches: List<TournamentMatch>,
@@ -319,9 +382,7 @@ object TournamentPdfHelper {
             roundNumbers
         }
 
-        val pageInfo = PdfDocument.PageInfo.Builder(LANDSCAPE_W, LANDSCAPE_H, currentPageNum).create()
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas = page.canvas
+        val canvas = pdfDocument.startPage(LANDSCAPE_W, LANDSCAPE_H, currentPageNum)
 
         var y = drawDocumentHeader(
             canvas = canvas,
@@ -561,12 +622,12 @@ object TournamentPdfHelper {
         }
 
         drawFooter(canvas, tournament.name, currentPageNum, LANDSCAPE_W, LANDSCAPE_H)
-        pdfDocument.finishPage(page)
+        pdfDocument.finishCurrentPage()
         return currentPageNum + 1
     }
 
     private fun drawOverflowFirstRoundPage(
-        pdfDocument: PdfDocument,
+        pdfDocument: PdfPageSink,
         context: Context,
         tournament: Tournament,
         roundNum: Int,
@@ -578,57 +639,62 @@ object TournamentPdfHelper {
         totalMatches: Int,
         completedMatches: Int
     ): Int {
-        val pageInfo = PdfDocument.PageInfo.Builder(LANDSCAPE_W, LANDSCAPE_H, pageNum).create()
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas = page.canvas
-
-        var y = drawDocumentHeader(
-            canvas = canvas,
-            context = context,
-            tournament = tournament,
-            dateStr = dateStr,
-            pageWidth = LANDSCAPE_W,
-            matches = emptyList(),
-            overrideTotalMatches = totalMatches,
-            overrideCompletedMatches = completedMatches
-        )
-
         val rTitle = TournamentOutcomeHelper.getRoundDisplayName(roundNum, maxRound, true, hasPreElim)
-        val sectionP = Paint().apply {
-            color = COLOR_NAVY
-            textSize = 10.5f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            isAntiAlias = true
-        }
-        canvas.drawText("⚡ $rTitle Şeması — Kazananlar Sonraki Sayfadaki Ana Eleme Ağacına Yükselir", 28f, y + 10f, sectionP)
-        y += 20f
+        val chunks = nodes.chunked(16)
+        var currentPage = pageNum
 
-        val colCount = 2
-        val gapX = 24f
-        val marginX = 28f
-        val colWidth = (LANDSCAPE_W - marginX * 2f - gapX) / colCount
-        val rowsPerCol = (nodes.size + 1) / 2
-        val availableH = LANDSCAPE_H - 32f - y
-        val slotH = (availableH / rowsPerCol.coerceAtLeast(1)).coerceAtMost(56f)
-        val boxH = (slotH - 8f).coerceAtLeast(36f)
+        chunks.forEachIndexed { chunkIdx, chunkNodes ->
+            val canvas = pdfDocument.startPage(LANDSCAPE_W, LANDSCAPE_H, currentPage)
 
-        nodes.forEachIndexed { idx, node ->
-            val col = idx / rowsPerCol
-            val row = idx % rowsPerCol
-            val x = marginX + col * (colWidth + gapX)
-            val top = y + row * slotH
-            drawBracketMatchNode(
+            var y = drawDocumentHeader(
                 canvas = canvas,
-                node = node,
-                rect = RectF(x, top, x + colWidth, top + boxH),
-                headerH = 12f,
-                rowH = (boxH - 12f) / 2f
+                context = context,
+                tournament = tournament,
+                dateStr = dateStr,
+                pageWidth = LANDSCAPE_W,
+                matches = emptyList(),
+                overrideTotalMatches = totalMatches,
+                overrideCompletedMatches = completedMatches
             )
-        }
 
-        drawFooter(canvas, tournament.name, pageNum, LANDSCAPE_W, LANDSCAPE_H)
-        pdfDocument.finishPage(page)
-        return pageNum + 1
+            val sectionP = Paint().apply {
+                color = COLOR_NAVY
+                textSize = 10.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val partSuffix = if (chunks.size > 1) " (${chunkIdx + 1}/${chunks.size})" else ""
+            canvas.drawText("⚡ $rTitle Şeması$partSuffix — Kazananlar Sonraki Sayfadaki Ana Eleme Ağacına Yükselir", 28f, y + 10f, sectionP)
+            y += 20f
+
+            val colCount = 2
+            val gapX = 24f
+            val marginX = 28f
+            val colWidth = (LANDSCAPE_W - marginX * 2f - gapX) / colCount
+            val rowsPerCol = ((chunkNodes.size + 1) / 2).coerceAtLeast(1)
+            val availableH = (LANDSCAPE_H - 32f - y).coerceAtLeast(80f)
+            val slotH = (availableH / rowsPerCol).coerceAtMost(56f)
+            val boxH = (slotH - 8f).coerceIn(28f, 48f)
+
+            chunkNodes.forEachIndexed { idx, node ->
+                val col = idx / rowsPerCol
+                val row = idx % rowsPerCol
+                val x = marginX + col * (colWidth + gapX)
+                val top = y + row * slotH
+                drawBracketMatchNode(
+                    canvas = canvas,
+                    node = node,
+                    rect = RectF(x, top, x + colWidth, top + boxH),
+                    headerH = 11f,
+                    rowH = (boxH - 11f) / 2f
+                )
+            }
+
+            drawFooter(canvas, tournament.name, currentPage, LANDSCAPE_W, LANDSCAPE_H)
+            pdfDocument.finishCurrentPage()
+            currentPage++
+        }
+        return currentPage
     }
 
     private fun drawBracketMatchNode(
@@ -787,7 +853,7 @@ object TournamentPdfHelper {
     // 2. ELEME FİKSTÜR & SKOR DETAY SAYFALARI (A4 PORTRAIT)
     // -----------------------------------------------------------------
     private fun drawKnockoutFixtureTablePages(
-        pdfDocument: PdfDocument,
+        pdfDocument: PdfPageSink,
         context: Context,
         tournament: Tournament,
         knockoutMatches: List<TournamentMatch>,
@@ -797,8 +863,15 @@ object TournamentPdfHelper {
         startPageNum: Int,
         includeFullHeader: Boolean
     ): Int {
-        val cursor = PdfCursor(pdfDocument, tournament, dateStr, PORTRAIT_W, PORTRAIT_H)
-        cursor.pageNumber = startPageNum - 1
+        val cursor = PdfCursor(
+            pdf = pdfDocument,
+            tournament = tournament,
+            dateStr = dateStr,
+            width = PORTRAIT_W,
+            height = PORTRAIT_H,
+            startingPageNumber = startPageNum,
+            headerMatches = allMatches
+        )
         cursor.startPage(
             continuationTitle = "${tournament.name} - Eleme Fikstürü ve Maç Sonuçları",
             context = context,
@@ -852,7 +925,7 @@ object TournamentPdfHelper {
     // 3. LİG RAPORU (GÜNCEL PUAN DURUMU + TÜM HAFTALIK FİKSTÜR)
     // -----------------------------------------------------------------
     private fun drawLeagueReportPages(
-        pdfDocument: PdfDocument,
+        pdfDocument: PdfPageSink,
         context: Context,
         tournament: Tournament,
         matches: List<TournamentMatch>,
@@ -860,7 +933,15 @@ object TournamentPdfHelper {
         students: List<Student>,
         dateStr: String
     ) {
-        val cursor = PdfCursor(pdfDocument, tournament, dateStr, PORTRAIT_W, PORTRAIT_H)
+        val cursor = PdfCursor(
+            pdf = pdfDocument,
+            tournament = tournament,
+            dateStr = dateStr,
+            width = PORTRAIT_W,
+            height = PORTRAIT_H,
+            startingPageNumber = 1,
+            headerMatches = matches
+        )
         cursor.startPage(context = context, drawFullHeader = true)
 
         val sectionPaint = Paint().apply {
@@ -925,7 +1006,7 @@ object TournamentPdfHelper {
     // 4. GRUP VE GRUP+ELEME RAPORU (HER GRUBUN SON MAÇ İTİBARİ İLE PUAN DURUMU + FİKSTÜR)
     // -----------------------------------------------------------------
     private fun drawGroupReportPages(
-        pdfDocument: PdfDocument,
+        pdfDocument: PdfPageSink,
         context: Context,
         tournament: Tournament,
         matches: List<TournamentMatch>,
@@ -933,7 +1014,15 @@ object TournamentPdfHelper {
         dateStr: String,
         isGroupElim: Boolean
     ): Int {
-        val cursor = PdfCursor(pdfDocument, tournament, dateStr, PORTRAIT_W, PORTRAIT_H)
+        val cursor = PdfCursor(
+            pdf = pdfDocument,
+            tournament = tournament,
+            dateStr = dateStr,
+            width = PORTRAIT_W,
+            height = PORTRAIT_H,
+            startingPageNumber = 1,
+            headerMatches = matches
+        )
         cursor.startPage(context = context, drawFullHeader = true)
 
         val groupReports = TournamentOutcomeHelper.buildGroupReports(tournament, matches, students)
@@ -1078,6 +1167,7 @@ object TournamentPdfHelper {
         val totalM = overrideTotalMatches ?: matches.size
         val compM = overrideCompletedMatches ?: matches.count { it.status == "completed" }
 
+        val participantCount = TournamentOutcomeHelper.resolveParticipantCount(tournament, matches)
         val kpis = if (tournament.status == TournamentStatus.TAMAMLANDI && !tournament.winnerName.isNullOrBlank()) {
             listOf(
                 Triple("🥇 ŞAMPİYON", tournament.winnerName ?: "-", COLOR_GOLD_DARK),
@@ -1086,7 +1176,7 @@ object TournamentPdfHelper {
             )
         } else {
             listOf(
-                Triple("KATILIMCI", "${tournament.participants.size} Öğrenci", COLOR_NAVY),
+                Triple("KATILIMCI", "$participantCount Öğrenci", COLOR_NAVY),
                 Triple("TOPLAM FİKSTÜR", "$totalM Karşılaşma", COLOR_TURQUOISE),
                 Triple("GÜNCEL DURUM", "$compM / $totalM Tamamlandı", COLOR_GREEN_DARK)
             )
@@ -1397,12 +1487,17 @@ object TournamentPdfHelper {
     }
 
     private fun ellipsizeText(text: String, paint: Paint, maxWidth: Float): String {
-        if (maxWidth <= 0f) return ""
+        if (text.isEmpty() || maxWidth <= 0f) return ""
         if (paint.measureText(text) <= maxWidth) return text
         val ellipsis = ".."
         val ellipsisW = paint.measureText(ellipsis)
-        val count = paint.breakText(text, true, (maxWidth - ellipsisW).coerceAtLeast(1f), null)
-        return if (count > 0 && count < text.length) text.take(count) + ellipsis else text.take(1)
+        val rawCount = paint.breakText(text, true, (maxWidth - ellipsisW).coerceAtLeast(1f), null)
+        val safeCount = if (rawCount > 0 && rawCount <= text.length && Character.isHighSurrogate(text[rawCount - 1])) {
+            rawCount - 1
+        } else {
+            rawCount
+        }
+        return if (safeCount > 0 && safeCount < text.length) text.take(safeCount) + ellipsis else text.take(1)
     }
 
     private fun renderEmblemBitmap(context: Context, sizePx: Int): Bitmap? {

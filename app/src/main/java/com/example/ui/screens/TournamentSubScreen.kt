@@ -783,8 +783,16 @@ private fun TournamentDetailScreen(
                         // PDF Rapor Butonu
                         OutlinedButton(
                             onClick = {
-                                val uri = ExcelPdfHelper.exportTournamentPdf(context, tournament, matches, standings, students)
-                                ExcelPdfHelper.shareFile(context, uri, "application/pdf", "${tournament.name} Resmi Fikstür ve Puan Tablosu")
+                                try {
+                                    val uri = ExcelPdfHelper.exportTournamentPdf(context, tournament, matches, standings, students)
+                                    ExcelPdfHelper.shareFile(context, uri, "application/pdf", "${tournament.name} Resmi Fikstür ve Puan Tablosu")
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "PDF oluşturulamadı: ${e.localizedMessage ?: "Bilinmeyen hata"}",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             },
                             modifier = Modifier.height(32.dp),
                             shape = RoundedCornerShape(8.dp),

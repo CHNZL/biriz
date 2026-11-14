@@ -10,6 +10,7 @@ import androidx.core.content.FileProvider
 import com.example.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -482,6 +483,12 @@ object AppUpdateManager {
         onProgress = { progress, _, _ -> onProgress(progress) }
     )
 
+    internal fun parseTotalBytesFromContentRange(contentRangeHeader: String?): Long {
+        if (contentRangeHeader.isNullOrBlank()) return -1L
+        val slashPart = contentRangeHeader.substringAfterLast('/', "").trim()
+        return slashPart.toLongOrNull()?.takeIf { it > 0L } ?: -1L
+    }
+
     suspend fun downloadApk(
         context: Context,
         downloadUrl: String,
@@ -499,33 +506,60 @@ object AppUpdateManager {
                 return@withContext outputFile
             }
 
-            // Sadece eski/gereksiz APK dosyalarını temizle
+            // Sadece eski/gereksiz APK dosyalarını temizle (yarım kalan temp dosyasını devam edebilmek için koru)
             cleanOldApkFiles(context, keepFile = tempFile)
-            if (tempFile.exists()) {
-                tempFile.delete()
-            }
 
             var lastException: Exception? = null
-            for (attempt in 1..2) {
+            val maxAttempts = 4
+            val backoffDelaysMs = longArrayOf(1200L, 2500L, 4000L)
+
+            for (attempt in 1..maxAttempts) {
                 coroutineContext.ensureActive()
                 try {
-                    val request = Request.Builder()
+                    val existingBytes = if (tempFile.exists() && tempFile.isFile) tempFile.length() else 0L
+                    val requestBuilder = Request.Builder()
                         .url(downloadUrl)
                         .header("User-Agent", "Biriz-Android-App")
-                        .build()
+                    if (existingBytes > 0L) {
+                        requestBuilder.header("Range", "bytes=$existingBytes-")
+                    }
 
-                    apkHttpClient.newCall(request).execute().use { response ->
+                    apkHttpClient.newCall(requestBuilder.build()).execute().use { response ->
+                        // HTTP 416 (Range Not Satisfiable): Yarım dosya bozulmuş veya sunucu boyutunu aşmış -> sıfırla
+                        if (response.code == 416) {
+                            if (tempFile.exists()) tempFile.delete()
+                            throw IllegalStateException("Kısmi dosya aralığı geçersiz, baştan deneniyor (HTTP 416)")
+                        }
                         if (!response.isSuccessful) {
                             throw IllegalStateException("Sunucu yanıtı başarısız: HTTP ${response.code}")
                         }
                         val body = response.body ?: throw IllegalStateException("Boş indirme yanıtı")
-                        val totalBytes = body.contentLength()
-                        var totalRead = 0L
+
+                        val isPartialResume = response.code == 206 && existingBytes > 0L
+                        val appendMode = isPartialResume
+                        val startOffset = if (isPartialResume) existingBytes else 0L
+                        val bodyLen = body.contentLength()
+                        val totalBytes = if (isPartialResume) {
+                            val fromRange = parseTotalBytesFromContentRange(response.header("Content-Range"))
+                            when {
+                                fromRange > 0L -> fromRange
+                                bodyLen > 0L -> startOffset + bodyLen
+                                else -> -1L
+                            }
+                        } else {
+                            bodyLen
+                        }
+
+                        var totalRead = startOffset
                         var lastReportTime = 0L
                         var lastReportedPct = -1
 
+                        if (isPartialResume && totalBytes > 0L) {
+                            onProgress((totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f), totalRead, totalBytes)
+                        }
+
                         body.byteStream().use { input ->
-                            FileOutputStream(tempFile).use { output ->
+                            FileOutputStream(tempFile, appendMode).use { output ->
                                 val buffer = ByteArray(16 * 1024)
                                 var bytesRead: Int
                                 while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -570,12 +604,12 @@ object AppUpdateManager {
                     throw ce
                 } catch (e: Exception) {
                     lastException = e
-                    if (tempFile.exists()) tempFile.delete()
-                    if (attempt < 2) {
-                        Thread.sleep(900L)
+                    if (attempt < maxAttempts) {
+                        delay(backoffDelaysMs.getOrElse(attempt - 1) { 3000L })
                     }
                 }
             }
+            if (tempFile.exists()) tempFile.delete()
             lastException?.printStackTrace()
             return@withContext null
         } catch (ce: CancellationException) {

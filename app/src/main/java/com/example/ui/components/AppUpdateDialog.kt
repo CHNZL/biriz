@@ -331,7 +331,7 @@ fun AppUpdateDialog(
                                             color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
                                         )
                                         Text(
-                                            text = "Yapı #${info.latestVersionCode} • Arka planda kesintisiz indirilir",
+                                            text = "Yapı #${info.latestVersionCode} • Her durumda arka planda otomatik indirilir",
                                             fontSize = 11.5.sp,
                                             color = if (isDarkTheme) Color(0xFF6EE7B7).copy(alpha = 0.8f) else Color(0xFF059669)
                                         )
@@ -430,7 +430,7 @@ fun AppUpdateDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "Pencereyi kapatsanız veya ekranı kilitleseniz bile indirme arka planda kesintisiz devam eder. Bittiğinde bildirimle haber verilecektir.",
+                                    text = "İndirme her durumda arka planda otomatik devam eder. Arama gelse, ekran kilitlense, başka uygulamaya geçseniz veya pencereyi kapatsanız bile indirme kesilmez.",
                                     fontSize = 11.sp,
                                     color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF0369A1),
                                     textAlign = TextAlign.Center,
@@ -455,12 +455,12 @@ fun AppUpdateDialog(
                                 Button(
                                     onClick = onDismiss,
                                     modifier = Modifier
-                                        .weight(1.4f)
-                                        .testTag("continue_update_in_background_button"),
+                                        .weight(1.3f)
+                                        .testTag("close_update_dialog_button"),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary)
                                 ) {
-                                    Text("Arka Planda Devam Et", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Pencereyi Kapat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

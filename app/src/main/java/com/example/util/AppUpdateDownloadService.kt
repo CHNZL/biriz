@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -62,6 +63,7 @@ class AppUpdateDownloadService : Service() {
                 downloadJob?.cancel()
                 downloadJob = serviceScope.launch {
                     val wakeLock = acquirePartialWakeLock()
+                    val wifiLock = acquireWifiLock()
                     var lastNotifTime = 0L
                     var lastNotifPct = -1
 
@@ -145,6 +147,11 @@ class AppUpdateDownloadService : Service() {
                                 wakeLock.release()
                             } catch (_: Exception) {}
                         }
+                        if (wifiLock?.isHeld == true) {
+                            try {
+                                wifiLock.release()
+                            } catch (_: Exception) {}
+                        }
                         stopSelf(startId)
                     }
                 }
@@ -186,6 +193,24 @@ class AppUpdateDownloadService : Service() {
             pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Biriz:AppUpdateDownloadLock")?.apply {
                 setReferenceCounted(false)
                 acquire(10 * 60 * 1000L) // Güvenli 10 dakika üst sınırı
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireWifiLock(): WifiManager.WifiLock? {
+        return try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return null
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wm.createWifiLock(mode, "Biriz:AppUpdateWifiLock").apply {
+                setReferenceCounted(false)
+                acquire()
             }
         } catch (_: Exception) {
             null
