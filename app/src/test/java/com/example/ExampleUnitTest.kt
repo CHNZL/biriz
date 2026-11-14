@@ -2470,7 +2470,100 @@ class ExampleUnitTest {
     assertEquals(15, c1ChampionOutcome.earnedStars)
     assertTrue(c1ChampionOutcome.headline.contains("A Grubu"))
   }
+
+  @Test
+  fun testBackgroundUpdateApkCachePreservationAndVersionParsing() {
+    assertEquals(1105, com.example.util.AppUpdateManager.parseVersionCodeFromApkFileName("Biriz_v1105.apk"))
+    assertEquals(1105, com.example.util.AppUpdateManager.parseVersionCodeFromApkFileName("Biriz_v1105.apk.tmp"))
+    assertNull(com.example.util.AppUpdateManager.parseVersionCodeFromApkFileName("Biriz_latest.apk"))
+    assertNull(com.example.util.AppUpdateManager.parseVersionCodeFromApkFileName("notes.txt"))
+
+    val newerApk = java.io.File("/tmp/Biriz_v1105.apk")
+    val olderApk = java.io.File("/tmp/Biriz_v1100.apk")
+    val legacyApk = java.io.File("/tmp/Biriz_latest.apk")
+    val activeTmp = java.io.File("/tmp/Biriz_v1105.apk.tmp")
+
+    // Newer cached APK must be preserved across app restarts (current = 1100)
+    assertTrue(
+      com.example.util.AppUpdateManager.shouldPreserveApkFile(
+        file = newerApk,
+        currentVersionCode = 1100,
+        keepFile = null,
+        activeKeepPath = null,
+        isDownloading = false
+      )
+    )
+    // Already-installed or older cached APK must be cleaned
+    assertFalse(
+      com.example.util.AppUpdateManager.shouldPreserveApkFile(
+        file = olderApk,
+        currentVersionCode = 1100,
+        keepFile = null,
+        activeKeepPath = null,
+        isDownloading = false
+      )
+    )
+    assertFalse(
+      com.example.util.AppUpdateManager.shouldPreserveApkFile(
+        file = legacyApk,
+        currentVersionCode = 1100,
+        keepFile = null,
+        activeKeepPath = null,
+        isDownloading = false
+      )
+    )
+    // Active temp file is preserved while downloading, and cleaned up when idle
+    assertTrue(
+      com.example.util.AppUpdateManager.shouldPreserveApkFile(
+        file = activeTmp,
+        currentVersionCode = 1100,
+        keepFile = null,
+        activeKeepPath = null,
+        isDownloading = true
+      )
+    )
+    assertFalse(
+      com.example.util.AppUpdateManager.shouldPreserveApkFile(
+        file = activeTmp,
+        currentVersionCode = 1100,
+        keepFile = null,
+        activeKeepPath = null,
+        isDownloading = false
+      )
+    )
+  }
+
+  @Test
+  fun testBackgroundUpdateDownloadControllerAndChannels() {
+    assertEquals("biriz_update_download_progress", com.example.util.AppUpdateNotificationHelper.CHANNEL_DOWNLOAD_ID)
+    assertEquals(2027, com.example.util.AppUpdateNotificationHelper.DOWNLOAD_NOTIFICATION_ID)
+    assertEquals("extra_install_ready_apk", com.example.util.AppUpdateNotificationHelper.EXTRA_INSTALL_READY_APK)
+
+    assertEquals("0.0 MB", com.example.util.AppUpdateDownloadController.formatBytesMb(0L))
+    val onePointFiveMb = (1.5 * 1024 * 1024).toLong()
+    assertEquals("1,5 MB", com.example.util.AppUpdateDownloadController.formatBytesMb(onePointFiveMb))
+
+    val info = com.example.util.UpdateInfo(
+      isUpdateAvailable = true,
+      currentVersionName = "1.01.00",
+      currentVersionCode = 1100,
+      latestVersionName = "1.01.05",
+      latestVersionCode = 1105,
+      downloadUrl = "https://github.com/CHNZL/biriz/releases/download/v1.01.05/Biriz.apk",
+      releaseNotes = "Arka plan güncelleme desteği"
+    )
+    com.example.util.AppUpdateDownloadController.updateProgress(info, 0.5f, 5_000_000L, 10_000_000L)
+    assertTrue(com.example.util.AppUpdateDownloadController.isActivelyDownloading())
+
+    com.example.util.AppUpdateDownloadController.markFailed(info, "Ağ zaman aşımı")
+    assertFalse(com.example.util.AppUpdateDownloadController.isActivelyDownloading())
+    assertTrue(com.example.util.AppUpdateDownloadController.state.value is com.example.util.BackgroundUpdateState.Failed)
+
+    com.example.util.AppUpdateDownloadController.markIdle()
+    assertTrue(com.example.util.AppUpdateDownloadController.state.value is com.example.util.BackgroundUpdateState.Idle)
+  }
 }
+
 
 
 

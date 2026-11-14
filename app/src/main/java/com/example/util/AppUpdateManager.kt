@@ -8,13 +8,19 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.example.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 
 data class UpdateInfo(
     val isUpdateAvailable: Boolean,
@@ -377,12 +383,57 @@ object AppUpdateManager {
         return false
     }
 
+    private val apkHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(25, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    internal fun parseVersionCodeFromApkFileName(fileName: String): Int? {
+        val match = Regex("""^Biriz_v(\d+)\.apk(?:\.tmp)?$""", RegexOption.IGNORE_CASE).find(fileName)
+        return match?.groupValues?.getOrNull(1)?.toIntOrNull()
+    }
+
+    internal fun shouldPreserveApkFile(
+        file: File,
+        currentVersionCode: Int,
+        keepFile: File?,
+        activeKeepPath: String?,
+        isDownloading: Boolean
+    ): Boolean {
+        if (keepFile != null && file.absolutePath == keepFile.absolutePath) return true
+        if (!activeKeepPath.isNullOrBlank() && file.absolutePath == activeKeepPath) return true
+        if (isDownloading && file.name.endsWith(".apk.tmp", ignoreCase = true)) return true
+        val parsedVersion = parseVersionCodeFromApkFileName(file.name)
+        if (parsedVersion != null && parsedVersion > currentVersionCode && !file.name.endsWith(".tmp", ignoreCase = true)) {
+            return true
+        }
+        return false
+    }
+
+    fun getDownloadedApkForVersion(context: Context, versionCode: Int): File? {
+        if (versionCode <= BuildConfig.VERSION_CODE) return null
+        val candidate = File(context.cacheDir, "Biriz_v$versionCode.apk")
+        return if (candidate.exists() && candidate.isFile && candidate.length() > 50_000L) {
+            candidate
+        } else {
+            null
+        }
+    }
+
     /**
      * Cihaz hafızasında birikmemesi için eski indirilen APK artıklarını temizler.
-     * context.cacheDir ve harici indirme dizinindeki eski APK dosyalarını siler.
+     * Aktif indirme veya mevcut sürümden daha yeni indirilmiş hazır APK dosyalarını korur.
      */
     fun cleanOldApkFiles(context: Context, keepFile: File? = null) {
         try {
+            val activeKeepPath = AppUpdateDownloadController.getActiveKeepFilePath()
+            val isDownloading = AppUpdateDownloadController.isActivelyDownloading()
             val directories = listOfNotNull(
                 context.cacheDir,
                 context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS),
@@ -391,10 +442,20 @@ object AppUpdateManager {
             for (dir in directories) {
                 if (dir.exists() && dir.isDirectory) {
                     val files = dir.listFiles { file ->
-                        file.isFile && file.name.endsWith(".apk", ignoreCase = true)
+                        file.isFile && (
+                            file.name.endsWith(".apk", ignoreCase = true) ||
+                                file.name.endsWith(".apk.tmp", ignoreCase = true)
+                            )
                     }
                     files?.forEach { apk ->
-                        if (keepFile == null || apk.absolutePath != keepFile.absolutePath) {
+                        val preserve = shouldPreserveApkFile(
+                            file = apk,
+                            currentVersionCode = BuildConfig.VERSION_CODE,
+                            keepFile = keepFile,
+                            activeKeepPath = activeKeepPath,
+                            isDownloading = isDownloading
+                        )
+                        if (!preserve) {
                             try {
                                 apk.delete()
                             } catch (_: Exception) {}
@@ -408,69 +469,120 @@ object AppUpdateManager {
     }
 
     /**
-     * APK'yı arka planda indirir ve indirme ilerlemesini bildirir (0f..1f).
-     * İndirmeye başlamadan önce cihazdaki tüm eski APK artıklarını otomatik temizler.
+     * APK'yı arka planda da kesintisiz çalışacak şekilde OkHttp ile indirir ve ilerlemeyi bildirir.
      */
     suspend fun downloadApk(
         context: Context,
         downloadUrl: String,
         onProgress: (Float) -> Unit
+    ): File? = downloadApk(
+        context = context,
+        downloadUrl = downloadUrl,
+        targetVersionCode = 0,
+        onProgress = { progress, _, _ -> onProgress(progress) }
+    )
+
+    suspend fun downloadApk(
+        context: Context,
+        downloadUrl: String,
+        targetVersionCode: Int,
+        onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long) -> Unit
     ): File? = withContext(Dispatchers.IO) {
+        val targetName = if (targetVersionCode > 0) "Biriz_v$targetVersionCode.apk" else "Biriz_latest.apk"
+        val outputFile = File(context.cacheDir, targetName)
+        val tempFile = File(context.cacheDir, "$targetName.tmp")
+
         try {
-            // Önceki eski APK dosyalarını silerek hafızada yer aç
-            cleanOldApkFiles(context)
-
-            var currentUrl = downloadUrl
-            var connection: HttpURLConnection
-            var redirects = 0
-
-            // GitHub Releases AWS S3 yönlendirmelerini (302/301) takip et
-            while (true) {
-                connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                    setRequestProperty("User-Agent", "Biriz-Android-App")
-                }
-                val code = connection.responseCode
-                if (code in 300..399) {
-                    val location = connection.getHeaderField("Location")
-                    if (!location.isNullOrEmpty()) {
-                        currentUrl = location
-                        redirects++
-                        if (redirects > 8) throw IllegalStateException("Çok fazla yönlendirme!")
-                        continue
-                    }
-                }
-                break
+            // Eğer aynı sürüm daha önce eksiksiz indirilmişse tekrar indirme
+            if (targetVersionCode > BuildConfig.VERSION_CODE && outputFile.exists() && outputFile.length() > 50_000L) {
+                onProgress(1f, outputFile.length(), outputFile.length())
+                return@withContext outputFile
             }
 
-            val totalBytes = connection.contentLength.toLong()
-            val outputFile = File(context.cacheDir, "Biriz_latest.apk")
-            if (outputFile.exists()) {
-                outputFile.delete()
+            // Sadece eski/gereksiz APK dosyalarını temizle
+            cleanOldApkFiles(context, keepFile = tempFile)
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
 
-            connection.inputStream.use { input ->
-                FileOutputStream(outputFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalRead = 0L
+            var lastException: Exception? = null
+            for (attempt in 1..2) {
+                coroutineContext.ensureActive()
+                try {
+                    val request = Request.Builder()
+                        .url(downloadUrl)
+                        .header("User-Agent", "Biriz-Android-App")
+                        .build()
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
-                        if (totalBytes > 0) {
-                            val progress = (totalRead.toFloat() / totalBytes).coerceIn(0f, 1f)
-                            onProgress(progress)
+                    apkHttpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IllegalStateException("Sunucu yanıtı başarısız: HTTP ${response.code}")
+                        }
+                        val body = response.body ?: throw IllegalStateException("Boş indirme yanıtı")
+                        val totalBytes = body.contentLength()
+                        var totalRead = 0L
+                        var lastReportTime = 0L
+                        var lastReportedPct = -1
+
+                        body.byteStream().use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                val buffer = ByteArray(16 * 1024)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    coroutineContext.ensureActive()
+                                    output.write(buffer, 0, bytesRead)
+                                    totalRead += bytesRead
+
+                                    val rawProgress = if (totalBytes > 0L) {
+                                        (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                                    } else {
+                                        0f
+                                    }
+                                    val pct = (rawProgress * 100).toInt()
+                                    val now = System.currentTimeMillis()
+                                    if (pct != lastReportedPct || now - lastReportTime >= 200L) {
+                                        lastReportedPct = pct
+                                        lastReportTime = now
+                                        onProgress(rawProgress, totalRead, totalBytes)
+                                    }
+                                }
+                                output.flush()
+                            }
+                        }
+
+                        if (totalBytes > 0L && tempFile.length() < totalBytes) {
+                            throw IllegalStateException("İndirme eksik kaldı (${tempFile.length()} / $totalBytes)")
                         }
                     }
+
+                    if (outputFile.exists()) {
+                        outputFile.delete()
+                    }
+                    if (!tempFile.renameTo(outputFile)) {
+                        tempFile.copyTo(outputFile, overwrite = true)
+                        tempFile.delete()
+                    }
+                    onProgress(1f, outputFile.length(), outputFile.length())
+                    cleanOldApkFiles(context, keepFile = outputFile)
+                    return@withContext outputFile
+                } catch (ce: CancellationException) {
+                    if (tempFile.exists()) tempFile.delete()
+                    throw ce
+                } catch (e: Exception) {
+                    lastException = e
+                    if (tempFile.exists()) tempFile.delete()
+                    if (attempt < 2) {
+                        Thread.sleep(900L)
+                    }
                 }
             }
-
-            onProgress(1f)
-            return@withContext outputFile
+            lastException?.printStackTrace()
+            return@withContext null
+        } catch (ce: CancellationException) {
+            if (tempFile.exists()) tempFile.delete()
+            throw ce
         } catch (e: Exception) {
+            if (tempFile.exists()) tempFile.delete()
             e.printStackTrace()
             return@withContext null
         }

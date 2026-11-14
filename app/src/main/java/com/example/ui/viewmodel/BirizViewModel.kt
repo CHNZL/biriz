@@ -46,8 +46,10 @@ import com.example.util.AnnouncementIdentityHelper
 import com.example.util.ChatNotificationHelper
 import com.example.util.ChatVisibilityHelper
 import com.example.util.CommunicationPersistenceHelper
+import com.example.util.AppUpdateDownloadController
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.BackgroundUpdateState
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.SmartBoardHelper
@@ -766,7 +768,13 @@ class BirizViewModel(
                 )
                 pruneStaleUpdateNotifications(update)
                 syncUpdateNotification(update)
-                AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
+                AppUpdateDownloadController.restoreCachedUpdateIfReady(ctx, update)
+                val bg = AppUpdateDownloadController.state.value
+                val isDownloadingOrReady = (bg is BackgroundUpdateState.Downloading && bg.info.latestVersionCode == update.latestVersionCode) ||
+                    (bg is BackgroundUpdateState.ReadyToInstall && bg.info.latestVersionCode == update.latestVersionCode)
+                if (!isDownloadingOrReady) {
+                    AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
+                }
             } else {
                 if (update != null && !update.isUpdateAvailable) {
                     _uiState.value = _uiState.value.copy(availableUpdateInfo = null)
@@ -859,7 +867,13 @@ class BirizViewModel(
                     )
                     pruneStaleUpdateNotifications(update)
                     syncUpdateNotification(update)
-                    AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
+                    AppUpdateDownloadController.restoreCachedUpdateIfReady(ctx, update)
+                    val bg = AppUpdateDownloadController.state.value
+                    val isDownloadingOrReady = (bg is BackgroundUpdateState.Downloading && bg.info.latestVersionCode == update.latestVersionCode) ||
+                        (bg is BackgroundUpdateState.ReadyToInstall && bg.info.latestVersionCode == update.latestVersionCode)
+                    if (!isDownloadingOrReady) {
+                        AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
+                    }
                     onResult?.invoke(true)
                 } else {
                     if (update != null && !update.isUpdateAvailable) {

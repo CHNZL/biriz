@@ -73,14 +73,19 @@ import com.example.ui.screens.TeacherDashboardScreen
 import com.example.ui.screens.TeacherSetupWizardScreen
 import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTheme
+import androidx.compose.material3.LinearProgressIndicator
 import com.example.ui.viewmodel.BirizViewModel
 import com.example.ui.viewmodel.BirizViewModelFactory
 import com.example.ui.viewmodel.ScreenState
+import com.example.util.AppUpdateDownloadController
+import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.BackgroundUpdateState
 import com.example.util.ChatNotificationHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -113,13 +118,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        AppUpdateDownloadController.isAppInForeground = true
         viewModel.onAppForegrounded()
     }
 
     override fun onResume() {
         super.onResume()
+        AppUpdateDownloadController.isAppInForeground = true
         viewModel.onAppForegrounded()
         viewModel.triggerLiveUpdateCheck()
+        AppUpdateDownloadController.restoreCachedUpdateIfReady(
+            applicationContext,
+            viewModel.uiState.value.availableUpdateInfo
+        )
     }
 
     override fun onPause() {
@@ -128,6 +139,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        AppUpdateDownloadController.isAppInForeground = false
         viewModel.onAppBackgrounded()
         super.onStop()
     }
@@ -145,7 +157,22 @@ class MainActivity : ComponentActivity() {
 
     private fun handleNotificationIntents(intent: Intent?) {
         if (intent == null) return
-        if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false)) {
+        if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_READY_APK, false)) {
+            val pathFromIntent = intent.getStringExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_APK_PATH)
+            val readyFile = pathFromIntent?.let { File(it) }?.takeIf { it.exists() }
+                ?: (AppUpdateDownloadController.state.value as? BackgroundUpdateState.ReadyToInstall)?.apkFile?.takeIf { it.exists() }
+                ?: viewModel.uiState.value.availableUpdateInfo?.let {
+                    AppUpdateManager.getDownloadedApkForVersion(applicationContext, it.latestVersionCode)
+                }
+            if (readyFile != null && readyFile.exists()) {
+                AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
+                AppUpdateManager.installApk(this, readyFile)
+            } else {
+                viewModel.openGlobalUpdateDialog()
+            }
+            intent.removeExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_READY_APK)
+            intent.removeExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_APK_PATH)
+        } else if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false)) {
             viewModel.openGlobalUpdateDialog()
             intent.removeExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG)
         }
@@ -166,9 +193,14 @@ fun BirizApp(viewModel: BirizViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val matchingSchools by viewModel.matchingSchools.collectAsStateWithLifecycle()
     val branchStatuses by viewModel.branchStatuses.collectAsStateWithLifecycle()
+    val bgUpdateState by AppUpdateDownloadController.state.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    LaunchedEffect(uiState.availableUpdateInfo) {
+        AppUpdateDownloadController.restoreCachedUpdateIfReady(context, uiState.availableUpdateInfo)
+    }
 
     // Android 13+ (API 33) için Bildirim İzni İsteme (Güncelleme bildirimlerinin çubuğa düşmesi için)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -503,8 +535,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                 }
             }
 
-            // 🚀 Canlı Yayınlanan Güncelleme Bildirimi Banner'ı (Uygulama açıkken anında üstte görünür)
-            val showBanner = uiState.availableUpdateInfo?.isUpdateAvailable == true && !uiState.isUpdateBannerDismissed
+            // 🚀 Canlı Yayınlanan / Arka Planda İndirilen / Kuruluma Hazır Güncelleme Banner'ı
+            val isBgDownloading = bgUpdateState is BackgroundUpdateState.Downloading && !uiState.isGlobalUpdateDialogOpen
+            val isBgReady = bgUpdateState is BackgroundUpdateState.ReadyToInstall && !uiState.isGlobalUpdateDialogOpen
+            val showBanner = isBgDownloading || isBgReady ||
+                (uiState.availableUpdateInfo?.isUpdateAvailable == true && !uiState.isUpdateBannerDismissed)
+
             AnimatedVisibility(
                 visible = showBanner,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -513,79 +549,149 @@ fun BirizApp(viewModel: BirizViewModel) {
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                uiState.availableUpdateInfo?.let { updateInfo ->
+                val readyState = bgUpdateState as? BackgroundUpdateState.ReadyToInstall
+                val downloadingState = bgUpdateState as? BackgroundUpdateState.Downloading
+                val updateInfo = readyState?.info ?: downloadingState?.info ?: uiState.availableUpdateInfo
+
+                updateInfo?.let { info ->
+                    val borderAccent = if (readyState != null) com.example.ui.theme.BirizSuccess else com.example.ui.theme.BirizTurquoise
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = if (uiState.isDarkTheme) Color(0xFF0F2942) else Color(0xFF0F172A),
-                        border = BorderStroke(1.2.dp, com.example.ui.theme.BirizTurquoise),
+                        border = BorderStroke(1.2.dp, borderAccent),
                         shadowElevation = 10.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Row(
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = com.example.ui.theme.BirizTurquoise.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(32.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.SystemUpdate,
-                                            contentDescription = null,
-                                            tint = com.example.ui.theme.BirizTurquoise,
-                                            modifier = Modifier.size(18.dp)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = borderAccent.copy(alpha = 0.2f),
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.SystemUpdate,
+                                                contentDescription = null,
+                                                tint = borderAccent,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        val titleStr = when {
+                                            readyState != null -> "✅ BİRİZ v${info.latestVersionName} İndirildi!"
+                                            downloadingState != null -> "⬇️ v${info.latestVersionName} Arka Planda İndiriliyor (%${(downloadingState.progress * 100).toInt()})"
+                                            else -> "🚀 Yeni BİRİZ v${info.latestVersionName} Yayında!"
+                                        }
+                                        val subStr = when {
+                                            readyState != null -> "Tek dokunuşla hemen kurabilirsiniz"
+                                            downloadingState != null -> if (downloadingState.totalBytes > 0L) {
+                                                "${AppUpdateDownloadController.formatBytesMb(downloadingState.downloadedBytes)} / ${AppUpdateDownloadController.formatBytesMb(downloadingState.totalBytes)}"
+                                            } else {
+                                                "Uygulamayı kullanmaya devam edebilirsiniz"
+                                            }
+                                            else -> "Tek tıkla hemen güncelleyin"
+                                        }
+                                        Text(
+                                            text = titleStr,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = subStr,
+                                            fontSize = 10.5.sp,
+                                            color = Color(0xFF94A3B8)
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "🚀 Yeni BİRİZ v${updateInfo.latestVersionName} Yayında!",
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                    Text(
-                                        text = "Tek tıkla hemen güncelleyin",
-                                        fontSize = 10.5.sp,
-                                        color = Color(0xFF94A3B8)
-                                    )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    when {
+                                        readyState != null -> {
+                                            Button(
+                                                onClick = {
+                                                    AppUpdateNotificationHelper.cancelUpdateNotification(context)
+                                                    AppUpdateManager.installApk(context, readyState.apkFile)
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizSuccess),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Şimdi Kur", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        }
+
+                                        downloadingState != null -> {
+                                            Button(
+                                                onClick = { viewModel.openGlobalUpdateDialog() },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Durum", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        }
+
+                                        else -> {
+                                            Button(
+                                                onClick = {
+                                                    viewModel.openGlobalUpdateDialog(autoStartDownload = true)
+                                                },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Yükle", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+
+                                            IconButton(
+                                                onClick = { viewModel.dismissUpdateBanner() },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Kapat",
+                                                    tint = Color(0xFF94A3B8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        viewModel.openGlobalUpdateDialog(autoStartDownload = true)
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Yükle", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.dismissUpdateBanner() },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Kapat",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(16.dp)
+                            if (downloadingState != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (downloadingState.totalBytes > 0L) {
+                                    LinearProgressIndicator(
+                                        progress = { downloadingState.progress },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                                        color = com.example.ui.theme.BirizTurquoise,
+                                        trackColor = Color(0x30FFFFFF)
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                                        color = com.example.ui.theme.BirizTurquoise,
+                                        trackColor = Color(0x30FFFFFF)
                                     )
                                 }
                             }

@@ -1,9 +1,7 @@
 package com.example.ui.components
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,16 +12,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -32,14 +27,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,10 +47,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
-import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizDarkCardBorder
-import com.example.ui.theme.BirizDarkSurfaceGlass
 import com.example.ui.theme.BirizDarkTextMuted
 import com.example.ui.theme.BirizDarkTextPrimary
 import com.example.ui.theme.BirizError
@@ -65,8 +57,10 @@ import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizSuccess
 import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTurquoise
+import com.example.util.AppUpdateDownloadController
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.BackgroundUpdateState
 import com.example.util.UpdateInfo
 import kotlinx.coroutines.launch
 import java.io.File
@@ -75,10 +69,15 @@ sealed interface UpdateDialogState {
     object Idle : UpdateDialogState
     object Checking : UpdateDialogState
     data class Available(val info: UpdateInfo) : UpdateDialogState
-    data class Downloading(val info: UpdateInfo, val progress: Float) : UpdateDialogState
+    data class Downloading(
+        val info: UpdateInfo,
+        val progress: Float,
+        val downloadedBytes: Long = 0L,
+        val totalBytes: Long = -1L
+    ) : UpdateDialogState
     data class ReadyToInstall(val info: UpdateInfo, val apkFile: File) : UpdateDialogState
     data class UpToDate(val info: UpdateInfo) : UpdateDialogState
-    data class Error(val message: String) : UpdateDialogState
+    data class Error(val message: String, val retryInfo: UpdateInfo? = null) : UpdateDialogState
 }
 
 @Composable
@@ -91,18 +90,36 @@ fun AppUpdateDialog(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val bgState by AppUpdateDownloadController.state.collectAsStateWithLifecycle()
 
-    var state by remember {
+    var localState by remember {
+        val currentBg = AppUpdateDownloadController.state.value
         mutableStateOf<UpdateDialogState>(
-            if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
-                UpdateDialogState.Available(initialInfo)
-            } else {
-                UpdateDialogState.Checking
+            when (currentBg) {
+                is BackgroundUpdateState.Downloading -> UpdateDialogState.Downloading(
+                    currentBg.info,
+                    currentBg.progress,
+                    currentBg.downloadedBytes,
+                    currentBg.totalBytes
+                )
+                is BackgroundUpdateState.ReadyToInstall -> UpdateDialogState.ReadyToInstall(
+                    currentBg.info,
+                    currentBg.apkFile
+                )
+                is BackgroundUpdateState.Failed -> UpdateDialogState.Error(
+                    currentBg.message,
+                    currentBg.info
+                )
+                is BackgroundUpdateState.Idle -> if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
+                    UpdateDialogState.Available(initialInfo)
+                } else {
+                    UpdateDialogState.Checking
+                }
             }
         )
     }
 
-    fun startDownloadAndInstall(info: UpdateInfo) {
+    fun startBackgroundDownload(info: UpdateInfo) {
         if (!AppUpdateManager.canInstallPackages(context)) {
             Toast.makeText(
                 context,
@@ -112,60 +129,95 @@ fun AppUpdateDialog(
             AppUpdateManager.requestInstallPermission(context)
             return
         }
-
-        state = UpdateDialogState.Downloading(info, 0f)
-        coroutineScope.launch {
-            val apk = AppUpdateManager.downloadApk(context, info.downloadUrl) { progress ->
-                state = UpdateDialogState.Downloading(info, progress)
-            }
-            if (apk != null && apk.exists()) {
-                // İndirme bittiğinde kullanıcıya ikinci kez buton sormadan DOĞRUDAN kurulumu başlat
-                AppUpdateNotificationHelper.cancelUpdateNotification(context)
-                AppUpdateManager.installApk(context, apk)
-                onDismiss()
-            } else {
-                state = UpdateDialogState.Error(
-                    "APK dosyası indirilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin."
-                )
-            }
-        }
+        AppUpdateDownloadController.startDownload(context, info)
     }
 
     fun runCheck() {
-        state = UpdateDialogState.Checking
+        val currentBg = AppUpdateDownloadController.state.value
+        if (currentBg is BackgroundUpdateState.Downloading || currentBg is BackgroundUpdateState.ReadyToInstall) {
+            return
+        }
+        AppUpdateDownloadController.markIdle()
+        localState = UpdateDialogState.Checking
         coroutineScope.launch {
             val repoToUse = AppUpdateManager.getGitHubRepo(context)
             val result = AppUpdateManager.checkForUpdates(context, repoToUse)
             if (result == null) {
-                state = UpdateDialogState.Error(
+                localState = UpdateDialogState.Error(
                     "GitHub üzerinden güncellemeler denetlenirken bir sorun oluştu. İnternet bağlantınızı kontrol edip tekrar deneyin."
                 )
             } else if (result.isUpdateAvailable) {
-                state = UpdateDialogState.Available(result)
                 onUpdateDiscovered(result)
-                AppUpdateNotificationHelper.showUpdateNotification(context, result, forceResend = true)
-                if (autoStartDownload) {
-                    startDownloadAndInstall(result)
+                AppUpdateDownloadController.restoreCachedUpdateIfReady(context, result)
+                val updatedBg = AppUpdateDownloadController.state.value
+                if (updatedBg is BackgroundUpdateState.ReadyToInstall) {
+                    localState = UpdateDialogState.ReadyToInstall(updatedBg.info, updatedBg.apkFile)
+                    if (autoStartDownload) {
+                        AppUpdateNotificationHelper.cancelUpdateNotification(context)
+                        AppUpdateManager.installApk(context, updatedBg.apkFile)
+                        onDismiss()
+                    }
+                } else {
+                    localState = UpdateDialogState.Available(result)
+                    if (autoStartDownload) {
+                        startBackgroundDownload(result)
+                    } else {
+                        AppUpdateNotificationHelper.showUpdateNotification(context, result, forceResend = true)
+                    }
                 }
             } else {
-                state = UpdateDialogState.UpToDate(result)
+                localState = UpdateDialogState.UpToDate(result)
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
-            startDownloadAndInstall(initialInfo)
-        } else {
-            runCheck()
+        when (val currentBg = AppUpdateDownloadController.state.value) {
+            is BackgroundUpdateState.Downloading -> {
+                localState = UpdateDialogState.Downloading(
+                    currentBg.info,
+                    currentBg.progress,
+                    currentBg.downloadedBytes,
+                    currentBg.totalBytes
+                )
+            }
+            is BackgroundUpdateState.ReadyToInstall -> {
+                localState = UpdateDialogState.ReadyToInstall(currentBg.info, currentBg.apkFile)
+            }
+            else -> {
+                if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
+                    startBackgroundDownload(initialInfo)
+                } else {
+                    runCheck()
+                }
+            }
         }
+    }
+
+    // Arka plan indirme servisinden gelen ilerleme/tamamlanma/hata akışını canlı yansıt
+    val effectiveState: UpdateDialogState = when (val currentBg = bgState) {
+        is BackgroundUpdateState.Downloading -> UpdateDialogState.Downloading(
+            info = currentBg.info,
+            progress = currentBg.progress,
+            downloadedBytes = currentBg.downloadedBytes,
+            totalBytes = currentBg.totalBytes
+        )
+        is BackgroundUpdateState.ReadyToInstall -> UpdateDialogState.ReadyToInstall(
+            info = currentBg.info,
+            apkFile = currentBg.apkFile
+        )
+        is BackgroundUpdateState.Failed -> UpdateDialogState.Error(
+            message = currentBg.message,
+            retryInfo = currentBg.info
+        )
+        is BackgroundUpdateState.Idle -> localState
     }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = if (isDarkTheme) Color(0xFF0D1B2A) else Color.White,
-            border = androidx.compose.foundation.BorderStroke(
+            border = BorderStroke(
                 1.dp,
                 if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)
             ),
@@ -231,7 +283,7 @@ fun AppUpdateDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Durum İçeriği
-                when (val current = state) {
+                when (val current = effectiveState) {
                     is UpdateDialogState.Checking -> {
                         Column(
                             modifier = Modifier
@@ -259,7 +311,7 @@ fun AppUpdateDialog(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = if (isDarkTheme) Color(0x3010B981) else Color(0xFFECFDF5),
-                                border = androidx.compose.foundation.BorderStroke(
+                                border = BorderStroke(
                                     1.dp,
                                     if (isDarkTheme) Color(0xFF10B981) else Color(0xFFA7F3D0)
                                 ),
@@ -279,7 +331,7 @@ fun AppUpdateDialog(
                                             color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
                                         )
                                         Text(
-                                            text = "Yapı #${info.latestVersionCode} • Tek tıkla hemen kurabilirsiniz",
+                                            text = "Yapı #${info.latestVersionCode} • Arka planda kesintisiz indirilir",
                                             fontSize = 11.5.sp,
                                             color = if (isDarkTheme) Color(0xFF6EE7B7).copy(alpha = 0.8f) else Color(0xFF059669)
                                         )
@@ -302,7 +354,7 @@ fun AppUpdateDialog(
                                 }
 
                                 Button(
-                                    onClick = { startDownloadAndInstall(info) },
+                                    onClick = { startBackgroundDownload(info) },
                                     modifier = Modifier
                                         .weight(1.3f)
                                         .testTag("start_app_update_button"),
@@ -323,41 +375,94 @@ fun AppUpdateDialog(
 
                     is UpdateDialogState.Downloading -> {
                         val progress = current.progress
+                        val pct = (progress * 100).toInt().coerceIn(0, 100)
+                        val sizeInfo = when {
+                            current.totalBytes > 0L -> "${AppUpdateDownloadController.formatBytesMb(current.downloadedBytes)} / ${AppUpdateDownloadController.formatBytesMb(current.totalBytes)} (%$pct)"
+                            current.downloadedBytes > 0L -> "${AppUpdateDownloadController.formatBytesMb(current.downloadedBytes)} indirildi..."
+                            else -> "Bağlantı kuruluyor..."
+                        }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 16.dp),
+                                .padding(vertical = 10.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "BİRİZ Güncellemesi İndiriliyor...",
-                                fontSize = 13.5.sp,
+                                text = "BİRİZ v${current.info.latestVersionName} İndiriliyor",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "%${(progress * 100).toInt()} tamamlandı",
+                                text = sizeInfo,
                                 fontSize = 12.sp,
                                 color = BirizTurquoise,
                                 fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            if (current.totalBytes > 0L) {
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp),
+                                    color = BirizTurquoise,
+                                    trackColor = if (isDarkTheme) Color(0x30FFFFFF) else Color(0xFFE2E8F0)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp),
+                                    color = BirizTurquoise,
+                                    trackColor = if (isDarkTheme) Color(0x30FFFFFF) else Color(0xFFE2E8F0)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) Color(0x250EA5E9) else Color(0xFFF0F9FF),
+                                border = BorderStroke(
+                                    0.8.dp,
+                                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.5f) else Color(0xFFBAE6FD)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Pencereyi kapatsanız veya ekranı kilitleseniz bile indirme arka planda kesintisiz devam eder. Bittiğinde bildirimle haber verilecektir.",
+                                    fontSize = 11.sp,
+                                    color = if (isDarkTheme) BirizDarkTextMuted else Color(0xFF0369A1),
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 15.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(14.dp))
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp),
-                                color = BirizTurquoise,
-                                trackColor = if (isDarkTheme) Color(0x30FFFFFF) else Color(0xFFE2E8F0)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "İndirme tamamlandığında kurulum ekranı otomatik olarak açılacaktır.",
-                                fontSize = 11.sp,
-                                color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted,
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        AppUpdateDownloadController.cancelDownload(context)
+                                        localState = UpdateDialogState.Available(current.info)
+                                    },
+                                    modifier = Modifier.weight(0.9f)
+                                ) {
+                                    Text("İptal Et", fontSize = 12.sp, color = BirizError, fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .weight(1.4f)
+                                        .testTag("continue_update_in_background_button"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary)
+                                ) {
+                                    Text("Arka Planda Devam Et", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
 
@@ -476,7 +581,7 @@ fun AppUpdateDialog(
                                 .padding(vertical = 8.dp)
                         ) {
                             Text(
-                                text = "Kontrol Başarısız",
+                                text = "İndirme / Kontrol Başarısız",
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = BirizError
@@ -490,21 +595,28 @@ fun AppUpdateDialog(
                             )
                             Spacer(modifier = Modifier.height(14.dp))
                             Button(
-                                onClick = { runCheck() },
+                                onClick = {
+                                    val infoToRetry = current.retryInfo
+                                    if (infoToRetry != null) {
+                                        startBackgroundDownload(infoToRetry)
+                                    } else {
+                                        runCheck()
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = BirizTurquoise)
                             ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Tekrar Dene", fontSize = 11.5.sp)
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Tekrar Dene", fontSize = 11.5.sp)
                             }
                         }
+                    }
 
                     else -> {}
                 }

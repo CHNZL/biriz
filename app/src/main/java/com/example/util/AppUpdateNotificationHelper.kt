@@ -16,9 +16,13 @@ import com.example.R
 object AppUpdateNotificationHelper {
 
     const val CHANNEL_ID = "biriz_update_notifications"
+    const val CHANNEL_DOWNLOAD_ID = "biriz_update_download_progress"
     const val NOTIFICATION_ID = 2026
+    const val DOWNLOAD_NOTIFICATION_ID = 2027
 
     const val EXTRA_OPEN_UPDATE_DIALOG = "extra_open_update_dialog"
+    const val EXTRA_INSTALL_READY_APK = "extra_install_ready_apk"
+    const val EXTRA_INSTALL_APK_PATH = "extra_install_apk_path"
     const val EXTRA_UPDATE_VERSION = "extra_update_version"
     const val EXTRA_DOWNLOAD_URL = "extra_download_url"
     const val EXTRA_RELEASE_NOTES = "extra_release_notes"
@@ -27,10 +31,11 @@ object AppUpdateNotificationHelper {
     private const val KEY_LAST_NOTIFIED_VERSION = "last_notified_version_code"
 
     /**
-     * Android 8.0+ için bildirim kanalını oluşturur.
+     * Android 8.0+ için bildirim kanallarını oluşturur.
      */
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Uygulama Güncellemeleri",
@@ -41,9 +46,19 @@ object AppUpdateNotificationHelper {
                 enableVibration(true)
                 setShowBadge(true)
             }
-
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             notificationManager?.createNotificationChannel(channel)
+
+            val downloadChannel = NotificationChannel(
+                CHANNEL_DOWNLOAD_ID,
+                "Arka Plan Güncelleme İndirmesi",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Güncelleme dosyası arka planda indirilirken ilerleme durumunu gösterir"
+                setShowBadge(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
+            notificationManager?.createNotificationChannel(downloadChannel)
         }
     }
 
@@ -131,12 +146,175 @@ object AppUpdateNotificationHelper {
         }
     }
 
+    fun buildDownloadProgressNotification(
+        context: Context,
+        info: UpdateInfo,
+        progressPercent: Int,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ): android.app.Notification {
+        createNotificationChannel(context)
+
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_UPDATE_DIALOG, true)
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            context,
+            DOWNLOAD_NOTIFICATION_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val cancelIntent = Intent(context, AppUpdateDownloadService::class.java).apply {
+            action = AppUpdateDownloadService.ACTION_CANCEL_DOWNLOAD
+        }
+        val cancelPendingIntent = PendingIntent.getService(
+            context,
+            DOWNLOAD_NOTIFICATION_ID + 1,
+            cancelIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val sizeText = when {
+            totalBytes > 0L -> "${AppUpdateDownloadController.formatBytesMb(downloadedBytes)} / ${AppUpdateDownloadController.formatBytesMb(totalBytes)} (%$progressPercent)"
+            downloadedBytes > 0L -> "${AppUpdateDownloadController.formatBytesMb(downloadedBytes)} indirildi"
+            else -> "Bağlanıyor..."
+        }
+
+        return NotificationCompat.Builder(context, CHANNEL_DOWNLOAD_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("BİRİZ v${info.latestVersionName} İndiriliyor")
+            .setContentText(sizeText)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setProgress(100, progressPercent.coerceIn(0, 100), totalBytes <= 0L)
+            .setContentIntent(openPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "İptal Et", cancelPendingIntent)
+            .build()
+    }
+
+    fun updateDownloadProgressNotification(
+        context: Context,
+        info: UpdateInfo,
+        progressPercent: Int,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+        }
+        try {
+            val notif = buildDownloadProgressNotification(context, info, progressPercent, downloadedBytes, totalBytes)
+            NotificationManagerCompat.from(context).notify(DOWNLOAD_NOTIFICATION_ID, notif)
+        } catch (_: SecurityException) {}
+    }
+
+    fun cancelDownloadProgressNotification(context: Context) {
+        try {
+            NotificationManagerCompat.from(context).cancel(DOWNLOAD_NOTIFICATION_ID)
+        } catch (_: Exception) {}
+    }
+
+    fun showDownloadCompleteNotification(
+        context: Context,
+        updateInfo: UpdateInfo,
+        apkPath: String
+    ) {
+        createNotificationChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+        }
+
+        val installLaunchIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_INSTALL_READY_APK, true)
+            putExtra(EXTRA_INSTALL_APK_PATH, apkPath)
+            putExtra(EXTRA_UPDATE_VERSION, updateInfo.latestVersionName)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID + 10,
+            installLaunchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("✅ BİRİZ v${updateInfo.latestVersionName} İndirildi!")
+            .setContentText("Kurulumu hemen başlatmak için dokunun.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.stat_sys_download_done, "Şimdi Kur", pendingIntent)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {}
+    }
+
+    fun showDownloadFailedNotification(context: Context, updateInfo: UpdateInfo) {
+        createNotificationChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+        }
+
+        val retryIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_UPDATE_DIALOG, true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID + 11,
+            retryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle("BİRİZ Güncellemesi Tamamlanamadı")
+            .setContentText("v${updateInfo.latestVersionName} indirilemedi. Tekrar denemek için dokunun.")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {}
+    }
+
     /**
      * Güncelleme yüklendiğinde veya kullanıcı işlemi tamamladığında bildirimi kaldırır.
      */
     fun cancelUpdateNotification(context: Context) {
         try {
             NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+            NotificationManagerCompat.from(context).cancel(DOWNLOAD_NOTIFICATION_ID)
         } catch (_: Exception) {}
     }
 }
