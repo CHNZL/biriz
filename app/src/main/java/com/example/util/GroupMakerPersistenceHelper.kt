@@ -197,6 +197,7 @@ object GroupMakerPersistenceHelper {
     fun observeFirestoreGroups(
         context: Context,
         classId: String,
+        onUpdatedAtMillis: (Long) -> Unit = {},
         onUpdate: (GroupMakerState) -> Unit
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
@@ -222,6 +223,8 @@ object GroupMakerPersistenceHelper {
                                 .putString(KEY_PREFIX + classId, groupsJson)
                                 .putString(KEY_PREFIX + "default", groupsJson)
                                 .apply()
+                            val updatedAtMs = snapshot.getTimestamp("updatedAt")?.toDate()?.time ?: 0L
+                            onUpdatedAtMillis(updatedAtMs)
                             onUpdate(state)
                         } else {
                             val local = loadState(context, classId)

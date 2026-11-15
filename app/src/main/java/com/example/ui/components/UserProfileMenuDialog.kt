@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CheckCircle
@@ -28,7 +29,10 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
@@ -70,6 +74,8 @@ import com.example.ui.theme.BirizDarkCardBorder
 import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
+import com.example.util.NotificationCategory
+import com.example.util.NotificationPreferencesHelper
 
 @Composable
 fun UserAvatarCircle(
@@ -158,6 +164,9 @@ fun UserProfileMenuDialog(
     classRoom: ClassRoom?,
     linkedStudents: List<Student> = emptyList(),
     isDarkTheme: Boolean,
+    notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
+    onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
+    onSetAllNotificationCategories: (Boolean) -> Unit = {},
     onToggleTheme: () -> Unit,
     onDeleteRole: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -167,6 +176,7 @@ fun UserProfileMenuDialog(
 ) {
     var showDeleteRoleConfirm by remember { mutableStateOf(false) }
     var showDeleteAccountConfirm by remember { mutableStateOf(false) }
+    var isNotificationPrefsExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -292,6 +302,83 @@ fun UserProfileMenuDialog(
                                 uncheckedTrackColor = Color(0xFFCBD5E1)
                             )
                         )
+                    }
+                }
+
+                // --- 1b. KATEGORİ BAZLI BİLDİRİM TERCİHLERİ ---
+                val roleCategories = NotificationCategory.categoriesForRole(currentRole)
+                val activeCategoryCount = roleCategories.count {
+                    NotificationPreferencesHelper.isCategoryEnabled(notificationPreferences, it)
+                }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF8FAFC),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isNotificationPrefsExpanded) BirizTurquoise.copy(alpha = 0.6f)
+                        else if (isDarkTheme) BirizDarkCardBorder
+                        else Color(0xFFE2E8F0)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isNotificationPrefsExpanded = !isNotificationPrefsExpanded }
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                                .testTag("profile_notification_prefs_toggle"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = "Bildirim Tercihleri",
+                                    tint = BirizTurquoise,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "🔔 Bildirim Tercihleri",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                    )
+                                    Text(
+                                        text = "$activeCategoryCount/${roleCategories.size} kategori aktif • Aç/Kapat",
+                                        fontSize = 10.5.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = if (isNotificationPrefsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isNotificationPrefsExpanded) "Daralt" else "Genişlet",
+                                tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            )
+                        }
+
+                        AnimatedVisibility(visible = isNotificationPrefsExpanded) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                            ) {
+                                NotificationPreferencesSection(
+                                    role = currentRole,
+                                    preferences = notificationPreferences,
+                                    isDarkTheme = isDarkTheme,
+                                    onToggleCategory = onToggleNotificationCategory,
+                                    onSetAllCategories = onSetAllNotificationCategories
+                                )
+                            }
+                        }
                     }
                 }
 

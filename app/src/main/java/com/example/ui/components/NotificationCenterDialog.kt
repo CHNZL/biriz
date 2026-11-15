@@ -24,9 +24,12 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.EventSeat
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Badge
@@ -272,6 +275,21 @@ private fun NotificationRowItem(
             Icons.Default.EmojiEvents,
             Color(0xFFE11D48),
             Color(0xFFFFE4E6)
+        )
+        NotificationType.SCHEDULE -> Triple(
+            Icons.Default.Schedule,
+            Color(0xFF0284C7),
+            Color(0xFFE0F2FE)
+        )
+        NotificationType.SEATING -> Triple(
+            Icons.Default.EventSeat,
+            Color(0xFF0D9488),
+            Color(0xFFCCFBF1)
+        )
+        NotificationType.GROUP -> Triple(
+            Icons.Default.Groups,
+            Color(0xFF9333EA),
+            Color(0xFFF3E8FF)
         )
     }
 

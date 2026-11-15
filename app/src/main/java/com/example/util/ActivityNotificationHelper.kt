@@ -4,20 +4,30 @@ import com.example.data.model.Announcement
 import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.Book
+import com.example.data.model.GroupMakerState
 import com.example.data.model.NotificationType
 import com.example.data.model.ReadingRecord
+import com.example.data.model.ScheduleConfig
+import com.example.data.model.ScheduleLesson
+import com.example.data.model.SeatingPlanState
 import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
 import com.example.data.model.Tournament
 import com.example.data.model.TournamentMatch
 import com.example.data.model.TournamentStatus
 import com.example.data.model.TournamentType
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
- * Duyuru, yıldız, kitaplık (ödünç / iade) ve turnuva (katılım / maç / tur atlama / derece-sıra sonucu)
- * olaylarından üst menü bildirim zilinde gösterilecek bildirimleri deterministik ve mükerrersiz üreten katman.
+ * Duyuru, yıldız, kitaplık (ödünç / iade / gecikme), turnuva (katılım / maç / tur atlama / derece-sıra sonucu),
+ * ders programı, oturma düzeni, grup ataması ve veli katılım/ayrılma olaylarından bildirim üreten katman.
  */
 object ActivityNotificationHelper {
+
+    private const val OVERDUE_BOOK_THRESHOLD_MS = 14L * 24L * 60L * 60_000L
+    private const val DAY_MS = 24L * 60L * 60_000L
+    private val STAR_MILESTONES = listOf(25, 50, 100, 150, 200, 300, 500)
 
     data class ActivitySnapshot(
         val announcements: List<Announcement> = emptyList(),
@@ -27,11 +37,21 @@ object ActivityNotificationHelper {
         val tournaments: List<Tournament> = emptyList(),
         val matchesByTournament: Map<String, List<TournamentMatch>> = emptyMap(),
         val students: List<Student> = emptyList(),
+        val scheduleConfig: ScheduleConfig? = null,
+        val scheduleLessons: List<ScheduleLesson> = emptyList(),
+        val scheduleUpdatedAtMs: Long = 0L,
+        val seatingPlanState: SeatingPlanState? = null,
+        val seatingUpdatedAtMs: Long = 0L,
+        val groupMakerState: GroupMakerState? = null,
+        val groupsUpdatedAtMs: Long = 0L,
         val hasAnnouncements: Boolean = true,
         val hasStars: Boolean = true,
         val hasBooks: Boolean = true,
         val hasReadingRecords: Boolean = true,
         val hasTournaments: Boolean = true,
+        val hasSchedule: Boolean = false,
+        val hasSeating: Boolean = false,
+        val hasGroups: Boolean = false,
         val loadedMatchTournamentIds: Set<String> = matchesByTournament.keys
     )
 
@@ -235,11 +255,12 @@ object ActivityNotificationHelper {
             val prevAnn = prevAnnIds[ann.id]
             val isLiveTransition = canDiffAnnouncements && (prevAnn == null || prevAnn.updatedAt < ann.updatedAt)
             val ts = maxOf(ann.updatedAt, ann.createdAt)
+            val pollHint = ann.poll?.question?.takeIf { it.isNotBlank() }?.let { " • 📊 Anket: $it" } ?: ""
             processCandidate(eventKey, ts, isLiveTransition) {
                 BirizNotification(
                     id = "notif_$eventKey",
                     title = if (ann.isEdited) "Duyuru Güncellendi 📢" else "Yeni Sınıf Duyurusu 📢",
-                    message = "${ann.title}: ${ann.content.take(90)}",
+                    message = "${ann.title}: ${ann.content.take(90)}$pollHint",
                     timestamp = ts.takeIf { it > 0L } ?: nowMs,
                     type = NotificationType.ANNOUNCEMENT,
                     targetSubPageName = "COMMUNICATION",
@@ -249,18 +270,23 @@ object ActivityNotificationHelper {
             }
         }
 
-        // 2. Yeni Yıldız Ödülleri
+        // 2. Yıldız Ödülleri, Uyarılar (Eksi Yıldız) ve Kilometre Taşları
         val canDiffStars = previous != null && previous.hasStars
         val prevStarIds = previous?.starRecords?.map { it.id }?.toSet().orEmpty()
         current.starRecords.forEach { sr ->
-            if (sr.studentId !in linkedStudentIds || sr.starCount <= 0) return@forEach
+            if (sr.studentId !in linkedStudentIds || sr.starCount == 0) return@forEach
             val eventKey = "star_${sr.id}"
             val isLiveTransition = canDiffStars && sr.id !in prevStarIds
             val sName = resolveStudentName(sr.studentId, current.students, sr.studentName)
+            val isPositive = sr.starCount > 0
             processCandidate(eventKey, sr.timestamp, isLiveTransition) {
                 BirizNotification(
                     id = "notif_$eventKey",
-                    title = "⭐ $sName +${sr.starCount} Yıldız Kazandı!",
+                    title = if (isPositive) {
+                        "⭐ $sName +${sr.starCount} Yıldız Kazandı!"
+                    } else {
+                        "⚠️ $sName ${sr.starCount} Yıldız (Uyarı)"
+                    },
                     message = if (sr.note.isNotBlank()) "${sr.categoryName} • ${sr.note}" else sr.categoryName,
                     timestamp = sr.timestamp.takeIf { it > 0L } ?: nowMs,
                     type = NotificationType.STAR_REWARD,
@@ -271,11 +297,45 @@ object ActivityNotificationHelper {
             }
         }
 
-        // 3 & 4. Kitaplık Olayları (Yalnızca ödünç alma ve iade; yeni kitap ekleme bildirim üretmez)
+        if (current.hasStars) {
+            linkedStudentIds.forEach { sId ->
+                val studentStars = current.starRecords.filter { it.studentId == sId }
+                val hasRecentTrigger = studentStars.any { sr ->
+                    val isLive = canDiffStars && sr.id !in prevStarIds
+                    val isPostBaseline = sr.timestamp > 0L && sr.timestamp >= baselineTimestampMs
+                    sr.starCount > 0 && (isLive || isPostBaseline)
+                }
+                if (!hasRecentTrigger) return@forEach
+
+                val totalStars = studentStars.sumOf { it.starCount }
+                val prevTotalStars = previous?.starRecords?.filter { it.studentId == sId }?.sumOf { it.starCount } ?: 0
+                val sName = resolveStudentName(sId, current.students)
+                STAR_MILESTONES.forEach { milestone ->
+                    if (totalStars >= milestone) {
+                        val mKey = "star_milestone_${sId}_$milestone"
+                        val crossedLive = canDiffStars && prevTotalStars < milestone
+                        val latestTs = studentStars.maxOfOrNull { it.timestamp } ?: nowMs
+                        processCandidate(mKey, latestTs, crossedLive) {
+                            BirizNotification(
+                                id = "notif_$mKey",
+                                title = "🏅 $sName $milestone Yıldız Barajına Ulaştı!",
+                                message = "Tebrikler! $sName toplamda $totalStars yıldıza ulaştı.",
+                                timestamp = latestTs.takeIf { it > 0L } ?: nowMs,
+                                type = NotificationType.STAR_REWARD,
+                                targetSubPageName = "STARS",
+                                targetId = sId,
+                                isRead = false
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3 & 4. Kitaplık Olayları (Ödünç alma, 14 gün gecikme hatırlatması ve iade; yeni kitap ekleme bildirim üretmez)
         val canDiffBooks = previous != null && previous.hasBooks
         val prevBooksById = previous?.books?.associateBy { it.id }.orEmpty()
         current.books.forEach { book ->
-            // Öğrenci Kitap Ödünç Aldığında
             val currentAssignments = if (book.activeAssignments.isNotEmpty()) {
                 book.activeAssignments.map { it.studentId to it.assignmentDate }
             } else if (!book.currentStudentId.isNullOrBlank()) {
@@ -311,6 +371,28 @@ object ActivityNotificationHelper {
                         targetId = sId,
                         isRead = false
                     )
+                }
+
+                // 14 gün ve üzeri ödünç süresi geçen kitaplar için haftalık hatırlatma
+                if (assignDate > 0L && (nowMs - assignDate) >= OVERDUE_BOOK_THRESHOLD_MS) {
+                    val daysElapsed = ((nowMs - assignDate) / DAY_MS).toInt().coerceAtLeast(14)
+                    val weekBucket = (daysElapsed - 14) / 7
+                    val overdueKey = "book_overdue_${book.id}_${sId}_w$weekBucket"
+                    if (overdueKey !in updatedSeen) {
+                        updatedSeen.add(overdueKey)
+                        generated.add(
+                            BirizNotification(
+                                id = "notif_$overdueKey",
+                                title = "⏰ Kitap İade Hatırlatması",
+                                message = "$sName, \"${book.name}\" kitabını ödünç alalı $daysElapsed gün oldu. Okuma tamamlandıysa iade edebilirsiniz.",
+                                timestamp = nowMs,
+                                type = NotificationType.LIBRARY,
+                                targetSubPageName = "READING",
+                                targetId = sId,
+                                isRead = false
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -410,6 +492,38 @@ object ActivityNotificationHelper {
                     }
                 }
 
+                // 7b. Sıradaki / Yaklaşan Turnuva Maçı Eşleşmesi
+                matches.filter {
+                    it.status != "completed" &&
+                        (it.player1Id == sId || it.player2Id == sId) &&
+                        it.player1Id != "BYE" &&
+                        it.player2Id != "BYE"
+                }.forEach { match ->
+                    val upcomingKey = "tourney_upcoming_${tournament.id}_${match.id}_$sId"
+                    val prevMatch = prevMatchesById[match.id]
+                    val isLiveUpcoming = canDiffMatches && prevMatch == null
+                    val opponentName = if (match.player1Id == sId) match.player2Name else match.player1Name
+                    val roundDesc = when {
+                        !match.groupName.isNullOrBlank() -> match.groupName
+                        match.isThirdPlaceMatch || match.matchCode.contains("3RD", ignoreCase = true) -> "3.lük Maçı"
+                        tournament.type == TournamentType.LIG -> "${match.round}. Hafta"
+                        else -> knockoutRoundLabel(match.round, maxKnockoutRound)
+                    }
+                    val tsUpcoming = maxOf(match.createdAt, tournament.updatedAt)
+                    processCandidate(upcomingKey, tsUpcoming, isLiveUpcoming) {
+                        BirizNotification(
+                            id = "notif_$upcomingKey",
+                            title = "🗓️ Sıradaki Turnuva Maçı Belli Oldu",
+                            message = "\"${tournament.name}\" • $roundDesc: $sName vs $opponentName eşleşmesi hazır.",
+                            timestamp = tsUpcoming.takeIf { it > 0L } ?: nowMs,
+                            type = NotificationType.TOURNAMENT,
+                            targetSubPageName = "TOURNAMENT",
+                            targetId = sId,
+                            isRead = false
+                        )
+                    }
+                }
+
                 // 8. Turnuvada Tur Atladığında
                 val advanceRounds = matches.filter { match ->
                     match.stage == "knockout" &&
@@ -487,9 +601,357 @@ object ActivityNotificationHelper {
             }
         }
 
+        // 10. Ders Programı Güncellemeleri
+        if (current.hasSchedule && (current.scheduleLessons.isNotEmpty() || current.scheduleConfig?.isConfigured == true)) {
+            val currSig = scheduleSignature(current.scheduleConfig, current.scheduleLessons)
+            val prevSig = if (previous != null && previous.hasSchedule) {
+                scheduleSignature(previous.scheduleConfig, previous.scheduleLessons)
+            } else null
+            val isLiveSchedule = prevSig != null && prevSig != currSig
+            val tsSched = current.scheduleUpdatedAtMs
+            val schedKey = "schedule_${currSig}"
+            if (isLiveSchedule || (tsSched > 0L && tsSched >= baselineTimestampMs)) {
+                processCandidate(schedKey, tsSched.takeIf { it > 0L } ?: nowMs, isLiveSchedule) {
+                    BirizNotification(
+                        id = "notif_$schedKey",
+                        title = "📅 Ders Programı Güncellendi",
+                        message = "Sınıfın haftalık ders programı veya ders saatleri öğretmen tarafından güncellendi.",
+                        timestamp = tsSched.takeIf { it > 0L } ?: nowMs,
+                        type = NotificationType.SCHEDULE,
+                        targetSubPageName = "SCHEDULE",
+                        targetId = linkedStudentIds.firstOrNull(),
+                        isRead = false
+                    )
+                }
+            } else {
+                updatedSeen.add(schedKey)
+            }
+        }
+
+        // 11. Oturma (Sıra) Düzeni Güncellemeleri
+        if (current.hasSeating && current.seatingPlanState != null) {
+            val tsSeat = current.seatingUpdatedAtMs
+            linkedStudentIds.forEach { sId ->
+                val currSeatId = current.seatingPlanState.assignments.entries.firstOrNull { it.value == sId }?.key ?: return@forEach
+                val prevSeatId = previous?.seatingPlanState?.assignments?.entries?.firstOrNull { it.value == sId }?.key
+                val isLiveSeat = previous != null && previous.hasSeating && prevSeatId != currSeatId
+                val seatKey = "seating_${sId}_${currSeatId}_${tsSeat.takeIf { it > 0L } ?: 0L}"
+                if (isLiveSeat || (tsSeat > 0L && tsSeat >= baselineTimestampMs)) {
+                    val sName = resolveStudentName(sId, current.students)
+                    val seatDesc = formatSeatLabel(currSeatId)
+                    processCandidate(seatKey, tsSeat.takeIf { it > 0L } ?: nowMs, isLiveSeat) {
+                        BirizNotification(
+                            id = "notif_$seatKey",
+                            title = "🪑 Oturma Düzeni Güncellendi",
+                            message = "$sName için sınıf oturma planı güncellendi ($seatDesc).",
+                            timestamp = tsSeat.takeIf { it > 0L } ?: nowMs,
+                            type = NotificationType.SEATING,
+                            targetSubPageName = "SEATING",
+                            targetId = sId,
+                            isRead = false
+                        )
+                    }
+                } else {
+                    updatedSeen.add(seatKey)
+                }
+            }
+        }
+
+        // 12. Grup Çalışması & Grup Liderliği Atamaları
+        if (current.hasGroups && current.groupMakerState != null && current.groupMakerState.groups.isNotEmpty()) {
+            val tsGroup = current.groupsUpdatedAtMs
+            linkedStudentIds.forEach { sId ->
+                val currGroup = current.groupMakerState.groups.firstOrNull { sId in it.studentIds } ?: return@forEach
+                val isLeader = currGroup.leaderStudentId == sId
+                val prevGroup = previous?.groupMakerState?.groups?.firstOrNull { sId in it.studentIds }
+                val prevIsLeader = prevGroup?.leaderStudentId == sId
+                val isLiveGroup = previous != null && previous.hasGroups &&
+                    (prevGroup?.id != currGroup.id || prevGroup.name != currGroup.name || prevIsLeader != isLeader)
+                val groupKey = "group_${sId}_${currGroup.id}_${currGroup.name}_$isLeader"
+                if (isLiveGroup || (tsGroup > 0L && tsGroup >= baselineTimestampMs)) {
+                    val sName = resolveStudentName(sId, current.students)
+                    processCandidate(groupKey, tsGroup.takeIf { it > 0L } ?: nowMs, isLiveGroup) {
+                        BirizNotification(
+                            id = "notif_$groupKey",
+                            title = if (isLeader) "👑 Grup Lideri Seçildi!" else "👥 Yeni Çalışma Grubu",
+                            message = if (isLeader) {
+                                "$sName, \"${currGroup.name}\" grubunda Grup Lideri olarak görevlendirildi."
+                            } else {
+                                "$sName, \"${currGroup.name}\" çalışma grubuna yerleştirildi."
+                            },
+                            timestamp = tsGroup.takeIf { it > 0L } ?: nowMs,
+                            type = NotificationType.GROUP,
+                            targetSubPageName = "HOME",
+                            targetId = sId,
+                            isRead = false
+                        )
+                    }
+                } else {
+                    updatedSeen.add(groupKey)
+                }
+            }
+        }
+
         val sortedNew = generated.sortedByDescending { it.timestamp }
         return EvaluationResult(
             newNotifications = sortedNew,
+            updatedSeenKeys = updatedSeen
+        )
+    }
+
+    private fun scheduleSignature(config: ScheduleConfig?, lessons: List<ScheduleLesson>): String {
+        val cPart = config?.let {
+            "${it.dailyLessonCount}_${it.firstLessonStartTime}_${it.lessonDurationMinutes}_${it.recessDurations.joinToString("-")}_${it.isLunchBreakActive}_${it.lunchAfterLessonIndex}_${it.lunchDurationMinutes}"
+        } ?: "nocfg"
+        val lPart = lessons.sortedWith(compareBy({ it.dayOfWeek }, { it.lessonIndex }))
+            .joinToString("|") { "${it.dayOfWeek}:${it.lessonIndex}:${it.subjectName}:${it.topicOrNotes}" }
+        return "$cPart#$lPart".hashCode().toString()
+    }
+
+    private fun formatSeatLabel(seatId: String): String {
+        val match = Regex("""g(\d+)-r(\d+)-s(\d+)""").matchEntire(seatId.trim()) ?: return "Yeni Konum"
+        val g = (match.groupValues[1].toIntOrNull() ?: 0) + 1
+        val r = (match.groupValues[2].toIntOrNull() ?: 0) + 1
+        return "$g. Grup • $r. Sıra"
+    }
+
+    fun parseLinkedAtMillis(raw: String?): Long? {
+        val text = raw?.trim().orEmpty()
+        if (text.isBlank()) return null
+        val formats = listOf(
+            "dd MMMM yyyy, HH:mm",
+            "dd MMMM yyyy HH:mm",
+            "dd.MM.yyyy HH:mm",
+            "dd.MM.yyyy"
+        )
+        for (pattern in formats) {
+            try {
+                val sdf = SimpleDateFormat(pattern, Locale("tr")).apply { isLenient = false }
+                val parsed = sdf.parse(text)
+                if (parsed != null) return parsed.time
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
+    /**
+     * Öğretmen rolündeki kullanıcı için yeni veli katılımlarını deterministik ve mükerrersiz biçimde değerlendirir.
+     */
+    fun evaluateTeacherNotifications(
+        previousStudents: List<Student>?,
+        currentStudents: List<Student>,
+        seenEventKeys: Set<String>,
+        baselineTimestampMs: Long,
+        nowMs: Long = System.currentTimeMillis()
+    ): EvaluationResult {
+        if (currentStudents.isEmpty()) {
+            return EvaluationResult(emptyList(), seenEventKeys)
+        }
+
+        val updatedSeen = seenEventKeys.toMutableSet()
+        val generated = mutableListOf<BirizNotification>()
+
+        fun parentKeyFor(email: String, name: String): String {
+            val cleanEmail = email.trim().lowercase(Locale.ROOT)
+            if (cleanEmail.isNotBlank()) return cleanEmail
+            return name.trim().lowercase(Locale.ROOT)
+        }
+
+        val prevStudentsById = previousStudents?.associateBy { it.id }.orEmpty()
+        val prevParentKeysByStudent = previousStudents?.associate { st ->
+            st.id to st.allLinkedParents.mapNotNull { p ->
+                parentKeyFor(p.email, p.name).takeIf { it.isNotBlank() }
+            }.toSet()
+        }.orEmpty()
+
+        // Mevcut bir öğrenciden veli bağlantısı kaldırıldıysa ayrılma bildirimi üret ve ileride yeniden katılabilmesi için key temizle
+        if (previousStudents != null) {
+            currentStudents.forEach { st ->
+                val prevStudent = prevStudentsById[st.id] ?: return@forEach
+                val prevParentsByKey = prevStudent.allLinkedParents.associateBy { p ->
+                    parentKeyFor(p.email, p.name)
+                }.filterKeys { it.isNotBlank() }
+                val currKeys = st.allLinkedParents.mapNotNull { p ->
+                    parentKeyFor(p.email, p.name).takeIf { it.isNotBlank() }
+                }.toSet()
+                (prevParentsByKey.keys - currKeys).forEach { removedKey ->
+                    updatedSeen.remove("parent_reg_${st.id}_$removedKey")
+                    val prevParent = prevParentsByKey[removedKey]
+                    val studentNoPrefix = if (st.studentNumber.isNotBlank()) "${st.studentNumber} " else ""
+                    val unlinkKey = "parent_unlink_${st.id}_${removedKey}_${nowMs / 60_000L}"
+                    if (unlinkKey !in updatedSeen) {
+                        updatedSeen.add(unlinkKey)
+                        generated.add(
+                            BirizNotification(
+                                id = "notif_$unlinkKey",
+                                title = "🔗 Veli Bağlantısı Kaldırıldı",
+                                message = "${prevParent?.name ?: "Veli"}, $studentNoPrefix${st.fullName} öğrencisiyle olan bağlantısını sonlandırdı.",
+                                timestamp = nowMs,
+                                type = NotificationType.PARENT_REGISTRATION,
+                                targetSubPageName = "SINIF_LISTESI",
+                                targetId = st.id,
+                                isRead = false
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        currentStudents.forEach { student ->
+            val prevKeys = prevParentKeysByStudent[student.id].orEmpty()
+            val studentPresentBefore = student.id in prevStudentsById
+            student.allLinkedParents.forEach { parent ->
+                val pKey = parentKeyFor(parent.email, parent.name)
+                if (pKey.isBlank()) return@forEach
+
+                val eventKey = "parent_reg_${student.id}_$pKey"
+                if (eventKey in updatedSeen) return@forEach
+                updatedSeen.add(eventKey)
+
+                val isLiveTransition = previousStudents != null &&
+                    (!studentPresentBefore || pKey !in prevKeys)
+                val parsedTs = parseLinkedAtMillis(parent.linkedAt)
+                val isAfterBaseline = parsedTs != null && parsedTs >= baselineTimestampMs
+
+                if (isLiveTransition || isAfterBaseline) {
+                    val studentNoPrefix = if (student.studentNumber.isNotBlank()) "${student.studentNumber} " else ""
+                    val emailSuffix = if (parent.email.isNotBlank() && !parent.email.equals("veli@biriz.app", ignoreCase = true)) {
+                        " (${parent.email})"
+                    } else ""
+                    generated.add(
+                        BirizNotification(
+                            id = "notif_$eventKey",
+                            title = "👨‍👩‍👧 Yeni Veli Katılımı",
+                            message = "${parent.name}$emailSuffix, $studentNoPrefix${student.fullName} öğrencisi için sınıfa katıldı.",
+                            timestamp = parsedTs ?: nowMs,
+                            type = NotificationType.PARENT_REGISTRATION,
+                            targetSubPageName = "SINIF_LISTESI",
+                            targetId = student.id,
+                            isRead = false
+                        )
+                    )
+                }
+            }
+        }
+
+        return EvaluationResult(
+            newNotifications = generated.sortedByDescending { it.timestamp },
+            updatedSeenKeys = updatedSeen
+        )
+    }
+
+    /**
+     * Öğretmen için duyuru/anket tamamlanma özetleri ve 14+ gün geciken kitaplık iade hatırlatmalarını değerlendirir.
+     */
+    fun evaluateTeacherOperationalNotifications(
+        previousAnnouncements: List<Announcement>?,
+        currentAnnouncements: List<Announcement>,
+        books: List<Book>,
+        seenEventKeys: Set<String>,
+        baselineTimestampMs: Long,
+        nowMs: Long = System.currentTimeMillis()
+    ): EvaluationResult {
+        val updatedSeen = seenEventKeys.toMutableSet()
+        val generated = mutableListOf<BirizNotification>()
+
+        val prevAnnById = previousAnnouncements?.associateBy { it.id }.orEmpty()
+        currentAnnouncements.forEach { ann ->
+            val delivered = ann.deliveredCount
+            if (delivered <= 0) return@forEach
+            val prevAnn = prevAnnById[ann.id]
+
+            // Tüm hedef veliler duyuruyu okuduğunda özet bildirim
+            if (ann.readCount >= delivered) {
+                val readAllKey = "teacher_ann_all_read_${ann.id}_${ann.updatedAt}"
+                val becameAllReadLive = prevAnn != null && prevAnn.readCount < delivered
+                val latestReadTs = ann.readReceipts.values.maxOrNull() ?: ann.updatedAt
+                if (readAllKey !in updatedSeen) {
+                    updatedSeen.add(readAllKey)
+                    if (becameAllReadLive || (latestReadTs > 0L && latestReadTs >= baselineTimestampMs)) {
+                        generated.add(
+                            BirizNotification(
+                                id = "notif_$readAllKey",
+                                title = "✅ Duyuru Tüm Velilerce Okundu",
+                                message = "\"${ann.title}\" duyurusu tüm hedef veliler (${ann.readCount}/$delivered) tarafından okundu.",
+                                timestamp = latestReadTs.takeIf { it > 0L } ?: nowMs,
+                                type = NotificationType.ANNOUNCEMENT,
+                                targetSubPageName = "ILETISIM_DUYURULAR",
+                                targetId = ann.id,
+                                isRead = false
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Ankete tüm hedef veliler oy verdiğinde özet bildirim
+            val poll = ann.poll
+            if (poll != null && poll.totalVotes >= delivered) {
+                val pollAllKey = "teacher_poll_all_voted_${ann.id}_${poll.id}"
+                val prevVotes = prevAnn?.poll?.totalVotes ?: 0
+                val becameAllVotedLive = prevAnn != null && prevVotes < delivered
+                if (pollAllKey !in updatedSeen) {
+                    updatedSeen.add(pollAllKey)
+                    if (becameAllVotedLive || (ann.updatedAt > 0L && ann.updatedAt >= baselineTimestampMs)) {
+                        generated.add(
+                            BirizNotification(
+                                id = "notif_$pollAllKey",
+                                title = "📊 Anket Oylaması Tamamlandı",
+                                message = "\"${poll.question}\" anketinde tüm hedef veliler (${poll.totalVotes}/$delivered) oy kullandı.",
+                                timestamp = nowMs,
+                                type = NotificationType.ANNOUNCEMENT,
+                                targetSubPageName = "ILETISIM_DUYURULAR",
+                                targetId = ann.id,
+                                isRead = false
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // 14 gün ve üzeri iadesi geciken kitaplar için günlük tek özet bildirim
+        val overdueItems = mutableListOf<String>()
+        books.forEach { book ->
+            val assignments = if (book.activeAssignments.isNotEmpty()) {
+                book.activeAssignments.map { it.studentName to it.assignmentDate }
+            } else if (!book.currentStudentId.isNullOrBlank()) {
+                listOf((book.currentStudentName ?: "Öğrenci") to (book.assignmentDate ?: 0L))
+            } else emptyList()
+
+            assignments.forEach { (sName, assignDate) ->
+                if (assignDate > 0L && (nowMs - assignDate) >= OVERDUE_BOOK_THRESHOLD_MS) {
+                    val days = ((nowMs - assignDate) / DAY_MS).toInt().coerceAtLeast(14)
+                    overdueItems.add("$sName — \"${book.name}\" ($days gün)")
+                }
+            }
+        }
+        if (overdueItems.isNotEmpty()) {
+            val dayBucket = nowMs / DAY_MS
+            val overdueSummaryKey = "teacher_books_overdue_d$dayBucket"
+            if (overdueSummaryKey !in updatedSeen) {
+                updatedSeen.add(overdueSummaryKey)
+                val preview = overdueItems.take(2).joinToString(", ")
+                val extraSuffix = if (overdueItems.size > 2) " ve ${overdueItems.size - 2} kitap daha" else ""
+                generated.add(
+                    BirizNotification(
+                        id = "notif_$overdueSummaryKey",
+                        title = "📚 İadesi Geciken Kitaplar (${overdueItems.size})",
+                        message = "$preview$extraSuffix 14 günü aşkın süredir öğrencilerde.",
+                        timestamp = nowMs,
+                        type = NotificationType.LIBRARY,
+                        targetSubPageName = "KITAPLIK_LISTE",
+                        targetId = null,
+                        isRead = false
+                    )
+                )
+            }
+        }
+
+        return EvaluationResult(
+            newNotifications = generated.sortedByDescending { it.timestamp },
             updatedSeenKeys = updatedSeen
         )
     }

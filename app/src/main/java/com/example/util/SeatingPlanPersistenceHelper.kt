@@ -280,6 +280,7 @@ object SeatingPlanPersistenceHelper {
     fun observeActivePlanFromFirestore(
         context: Context,
         classId: String,
+        onUpdatedAtMillis: (Long) -> Unit = {},
         onUpdate: (SeatingPlanState) -> Unit
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
@@ -315,6 +316,8 @@ object SeatingPlanPersistenceHelper {
                                 .putString("config_" + classId, configStr)
                                 .putString("config_default", configStr)
                                 .apply()
+                            val updatedAtMs = snapshot.getTimestamp("updatedAt")?.toDate()?.time ?: 0L
+                            onUpdatedAtMillis(updatedAtMs)
                             onUpdate(state)
                         } else {
                             val localPlan = loadActivePlan(context, classId)

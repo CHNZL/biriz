@@ -3169,4 +3169,420 @@ class ExampleUnitTest {
       Regex("""\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}""").matches(formatted)
     )
   }
+
+  @Test
+  fun testTeacherParentRegistrationNotificationsAndSystemHelperRouting() {
+    val helper = com.example.util.ActivityNotificationHelper
+    val baseline = 1_763_200_000_000L
+    val sdf = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
+    val oldLinkedAt = sdf.format(java.util.Date(baseline - 3_600_000L))
+    val postBaselineLinkedAt = sdf.format(java.util.Date(baseline + 120_000L))
+
+    val legacyStudent = com.example.data.model.Student(
+      id = "s1",
+      studentNumber = "1",
+      fullName = "ALİ YILMAZ",
+      gender = "Erkek",
+      linkedParents = listOf(
+        com.example.data.model.LinkedParentAccount(
+          email = "old@example.com",
+          name = "Eski Veli",
+          linkedAt = oldLinkedAt
+        )
+      )
+    )
+    val offlineJoinedStudent = com.example.data.model.Student(
+      id = "s2",
+      studentNumber = "2",
+      fullName = "ZEYNEP KAYA",
+      gender = "Kız",
+      linkedParents = listOf(
+        com.example.data.model.LinkedParentAccount(
+          email = "offline@example.com",
+          name = "Yeni Çevrimdışı Veli",
+          linkedAt = postBaselineLinkedAt
+        )
+      )
+    )
+    val unlinkedStudent = com.example.data.model.Student(
+      id = "s3",
+      studentNumber = "3",
+      fullName = "SEMİH ÖZEL",
+      gender = "Erkek"
+    )
+
+    // 1. İlk yüklemede eski kayıt bildirim üretmez, baseline sonrası çevrimdışı katılım bildirim üretir
+    val initialRes = helper.evaluateTeacherNotifications(
+      previousStudents = null,
+      currentStudents = listOf(legacyStudent, offlineJoinedStudent, unlinkedStudent),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline
+    )
+    assertEquals(1, initialRes.newNotifications.size)
+    val offlineNotif = initialRes.newNotifications.first()
+    assertEquals(com.example.data.model.NotificationType.PARENT_REGISTRATION, offlineNotif.type)
+    assertEquals("SINIF_LISTESI", offlineNotif.targetSubPageName)
+    assertEquals("s2", offlineNotif.targetId)
+    assertTrue(offlineNotif.message.contains("Yeni Çevrimdışı Veli"))
+    assertTrue(offlineNotif.message.contains("2 ZEYNEP KAYA"))
+
+    // 2. Canlı katılım gerçekleştiğinde (unlinkedStudent -> yeni veli) anında bildirim üretilir
+    val liveJoinedStudent = unlinkedStudent.copy(
+      linkedParents = listOf(
+        com.example.data.model.LinkedParentAccount(
+          email = "canli@example.com",
+          name = "Cihan Veli",
+          linkedAt = postBaselineLinkedAt
+        )
+      )
+    )
+    val liveRes = helper.evaluateTeacherNotifications(
+      previousStudents = listOf(legacyStudent, offlineJoinedStudent, unlinkedStudent),
+      currentStudents = listOf(legacyStudent, offlineJoinedStudent, liveJoinedStudent),
+      seenEventKeys = initialRes.updatedSeenKeys,
+      baselineTimestampMs = baseline
+    )
+    assertEquals(1, liveRes.newNotifications.size)
+    assertEquals("s3", liveRes.newNotifications.first().targetId)
+    assertTrue(liveRes.newNotifications.first().message.contains("Cihan Veli"))
+
+    // 3. Yalnızca online/presence değişiminde tekrar bildirim üretilmez
+    val presenceOnlyStudent = liveJoinedStudent.copy(
+      parentIsOnline = true,
+      parentLastActiveMillis = baseline + 500_000L
+    )
+    val repeatRes = helper.evaluateTeacherNotifications(
+      previousStudents = listOf(legacyStudent, offlineJoinedStudent, liveJoinedStudent),
+      currentStudents = listOf(legacyStudent, offlineJoinedStudent, presenceOnlyStudent),
+      seenEventKeys = liveRes.updatedSeenKeys,
+      baselineTimestampMs = baseline
+    )
+    assertTrue(repeatRes.newNotifications.isEmpty())
+
+    // 4. Veli bağlantısı kaldırıldığında ayrılma bildirimi üretilir ve sonra yeniden bağlanırsa tekrar katılım bildirimi üretilir
+    val unlinkedAgainRes = helper.evaluateTeacherNotifications(
+      previousStudents = listOf(legacyStudent, offlineJoinedStudent, presenceOnlyStudent),
+      currentStudents = listOf(legacyStudent, offlineJoinedStudent, unlinkedStudent),
+      seenEventKeys = repeatRes.updatedSeenKeys,
+      baselineTimestampMs = baseline
+    )
+    assertEquals(1, unlinkedAgainRes.newNotifications.size)
+    assertTrue(unlinkedAgainRes.newNotifications.first().title.contains("Veli Bağlantısı Kaldırıldı"))
+
+    val rejoinedRes = helper.evaluateTeacherNotifications(
+      previousStudents = listOf(legacyStudent, offlineJoinedStudent, unlinkedStudent),
+      currentStudents = listOf(legacyStudent, offlineJoinedStudent, liveJoinedStudent),
+      seenEventKeys = unlinkedAgainRes.updatedSeenKeys,
+      baselineTimestampMs = baseline
+    )
+    assertEquals(1, rejoinedRes.newNotifications.size)
+
+    // 5. Sistem bildirim kanalları ve çakışmayan bildirim ID aralığı doğrulaması
+    val sysHelper = com.example.util.SystemActivityNotificationHelper
+    assertEquals(
+      sysHelper.CHANNEL_ANNOUNCEMENTS_ID,
+      sysHelper.channelIdForType(com.example.data.model.NotificationType.ANNOUNCEMENT)
+    )
+    assertEquals(
+      sysHelper.CHANNEL_PARENT_REG_ID,
+      sysHelper.channelIdForType(com.example.data.model.NotificationType.PARENT_REGISTRATION)
+    )
+    assertEquals(
+      sysHelper.CHANNEL_ACTIVITIES_ID,
+      sysHelper.channelIdForType(com.example.data.model.NotificationType.STAR_REWARD)
+    )
+    assertEquals(
+      sysHelper.CHANNEL_ACTIVITIES_ID,
+      sysHelper.channelIdForType(com.example.data.model.NotificationType.SCHEDULE)
+    )
+    val sysId = sysHelper.notificationIdForKey(liveRes.newNotifications.first().id)
+    assertTrue("System activity notification ID must avoid update/chat ranges: $sysId", sysId >= 15000)
+  }
+
+  @Test
+  fun testNotificationPreferencesMappingAndRoleFiltering() {
+    val prefHelper = com.example.util.NotificationPreferencesHelper
+    val parentCats = com.example.util.NotificationCategory.categoriesForRole(com.example.data.model.UserRole.PARENT)
+    val teacherCats = com.example.util.NotificationCategory.categoriesForRole(com.example.data.model.UserRole.TEACHER)
+
+    assertTrue(parentCats.contains(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM))
+    assertTrue(parentCats.contains(com.example.util.NotificationCategory.STAR_REWARDS))
+    assertFalse(parentCats.contains(com.example.util.NotificationCategory.PARENT_REGISTRATIONS))
+    assertFalse(parentCats.contains(com.example.util.NotificationCategory.SCHEDULED_DELIVERY_CONFIRM))
+
+    assertTrue(teacherCats.contains(com.example.util.NotificationCategory.PARENT_REGISTRATIONS))
+    assertTrue(teacherCats.contains(com.example.util.NotificationCategory.SCHEDULED_DELIVERY_CONFIRM))
+    assertFalse(teacherCats.contains(com.example.util.NotificationCategory.STAR_REWARDS))
+    assertFalse(teacherCats.contains(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM))
+
+    val reactionNotif = com.example.data.model.BirizNotification(
+      id = "msg_react_m1_u2_100",
+      title = "Mesajınıza Tepki Geldi",
+      message = "👍",
+      timestamp = 100L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "COMMUNICATION",
+      isRead = false
+    )
+    val schedConfirmNotif = com.example.data.model.BirizNotification(
+      id = "sched_confirm_sc1",
+      title = "Planlanan Mesaj İletildi",
+      message = "Veliye iletildi",
+      timestamp = 100L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "COMMUNICATION",
+      isRead = false
+    )
+    val schedNotif = com.example.data.model.BirizNotification(
+      id = "notif_sched_1",
+      title = "Ders Programı Güncellendi",
+      message = "Güncellendi",
+      timestamp = 100L,
+      type = com.example.data.model.NotificationType.SCHEDULE,
+      targetSubPageName = "SCHEDULE",
+      isRead = false
+    )
+    val seatingNotif = schedNotif.copy(id = "notif_seat_1", type = com.example.data.model.NotificationType.SEATING, targetSubPageName = "SEATING")
+    val groupNotif = schedNotif.copy(id = "notif_group_1", type = com.example.data.model.NotificationType.GROUP, targetSubPageName = "HOME")
+
+    assertEquals(com.example.util.NotificationCategory.MESSAGE_REACTIONS, prefHelper.categoryForNotification(reactionNotif))
+    assertEquals(com.example.util.NotificationCategory.SCHEDULED_DELIVERY_CONFIRM, prefHelper.categoryForNotification(schedConfirmNotif))
+    assertEquals(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM, prefHelper.categoryForNotification(schedNotif))
+    assertEquals(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM, prefHelper.categoryForNotification(seatingNotif))
+    assertEquals(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM, prefHelper.categoryForNotification(groupNotif))
+
+    val customPrefs = prefHelper.defaultPreferences().toMutableMap().apply {
+      put(com.example.util.NotificationCategory.MESSAGE_REACTIONS.key, false)
+      put(com.example.util.NotificationCategory.SCHEDULE_AND_CLASSROOM.key, false)
+    }
+    assertFalse(prefHelper.isNotificationEnabled(customPrefs, reactionNotif))
+    assertFalse(prefHelper.isNotificationEnabled(customPrefs, schedNotif))
+    assertTrue(prefHelper.isNotificationEnabled(customPrefs, schedConfirmNotif))
+  }
+
+  @Test
+  fun testNewParentAndTeacherActivityNotificationTriggers() {
+    val helper = com.example.util.ActivityNotificationHelper
+    val baseline = 1_763_200_000_000L
+    val now = baseline + 16L * 24L * 60L * 60_000L
+
+    val student = com.example.data.model.Student(
+      id = "std_1",
+      studentNumber = "45",
+      fullName = "Semih Ahmet",
+      gender = "Erkek"
+    )
+    val otherStudent = com.example.data.model.Student(
+      id = "std_2",
+      studentNumber = "12",
+      fullName = "Zeynep Demir",
+      gender = "Kız"
+    )
+
+    val prevSnapshot = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+      announcements = emptyList(),
+      starRecords = listOf(
+        com.example.data.model.StarRewardRecord(
+          id = "sr_init",
+          classId = "c1",
+          studentId = "std_1",
+          studentName = "Semih Ahmet",
+          studentNumber = "45",
+          categoryId = "cat1",
+          categoryName = "Katılım",
+          starCount = 22,
+          note = "Derse aktif katılım",
+          timestamp = baseline - 5_000L
+        )
+      ),
+      books = listOf(
+        com.example.data.model.Book(
+          id = "b_overdue",
+          registrationNo = 7,
+          name = "Şeker Portakalı",
+          author = "Vasconcelos",
+          pageCount = 180,
+          status = "Okunuyor",
+          activeAssignments = listOf(
+            com.example.data.model.ActiveAssignment(
+              studentId = "std_1",
+              studentName = "Semih Ahmet",
+              assignmentDate = now - (16L * 24L * 60L * 60_000L)
+            )
+          ),
+          updatedAt = baseline - 5_000L
+        )
+      ),
+      tournaments = listOf(
+        com.example.data.model.Tournament(
+          id = "t1",
+          classRoomId = "c1",
+          name = "Mangala Ligi",
+          type = com.example.data.model.TournamentType.LIG,
+          participants = listOf("std_1", "std_2"),
+          createdAt = baseline - 5_000L,
+          updatedAt = baseline - 5_000L
+        )
+      ),
+      matchesByTournament = mapOf("t1" to emptyList()),
+      students = listOf(student, otherStudent),
+      scheduleConfig = com.example.data.model.ScheduleConfig(isConfigured = true, dailyLessonCount = 6),
+      scheduleLessons = listOf(
+        com.example.data.model.ScheduleLesson(dayOfWeek = "PZT", lessonIndex = 1, subjectName = "Matematik")
+      ),
+      scheduleUpdatedAtMs = baseline - 5_000L,
+      seatingPlanState = com.example.data.model.SeatingPlanState(
+        assignments = mapOf("g0-r0-s0" to "std_1")
+      ),
+      seatingUpdatedAtMs = baseline - 5_000L,
+      groupMakerState = com.example.data.model.GroupMakerState(
+        groups = listOf(
+          com.example.data.model.GroupTeam(
+            id = "grp_1",
+            name = "Bilim Takımı",
+            studentIds = listOf("std_1", "std_2"),
+            leaderStudentId = "std_2"
+          )
+        )
+      ),
+      groupsUpdatedAtMs = baseline - 5_000L,
+      hasSchedule = true,
+      hasSeating = true,
+      hasGroups = true
+    )
+
+    val seedRes = helper.evaluateParentNotifications(
+      previous = null,
+      current = prevSnapshot,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = baseline - 1_000L
+    )
+
+    val announcementWithPoll = com.example.data.model.Announcement(
+      id = "ann_poll",
+      classId = "c1",
+      title = "Müze Gezisi",
+      content = "Katılım durumunuzu işaretleyiniz.",
+      createdAt = now,
+      updatedAt = now,
+      deliveredToParentNames = listOf("Veli 1", "Veli 2"),
+      readReceipts = mapOf("Veli 1" to now, "Veli 2" to now),
+      poll = com.example.data.model.AnnouncementPoll(
+        id = "p1",
+        question = "Gidiş saati uygun mu?",
+        options = listOf(
+          com.example.data.model.PollOption(
+            id = "o1",
+            text = "Evet",
+            voterParentNames = listOf("Veli 1", "Veli 2")
+          )
+        )
+      )
+    )
+
+    val updatedSnapshot = prevSnapshot.copy(
+      announcements = listOf(announcementWithPoll),
+      starRecords = prevSnapshot.starRecords + listOf(
+        com.example.data.model.StarRewardRecord(
+          id = "sr_plus5",
+          classId = "c1",
+          studentId = "std_1",
+          studentName = "Semih Ahmet",
+          studentNumber = "45",
+          categoryId = "cat1",
+          categoryName = "Ödev",
+          starCount = 5,
+          note = "Ödev eksiksiz tamamlandı",
+          timestamp = now
+        ),
+        com.example.data.model.StarRewardRecord(
+          id = "sr_minus2",
+          classId = "c1",
+          studentId = "std_1",
+          studentName = "Semih Ahmet",
+          studentNumber = "45",
+          categoryId = "cat_warn",
+          categoryName = "Sınıf Düzeni",
+          starCount = -2,
+          note = "Dersi bölme uyarısı",
+          timestamp = now + 100L
+        )
+      ),
+      matchesByTournament = mapOf(
+        "t1" to listOf(
+          com.example.data.model.TournamentMatch(
+            id = "m_next",
+            tournamentId = "t1",
+            round = 1,
+            matchCode = "L1-M1",
+            player1Id = "std_1",
+            player1Name = "Semih Ahmet",
+            player2Id = "std_2",
+            player2Name = "Zeynep Demir",
+            status = "pending",
+            createdAt = now
+          )
+        )
+      ),
+      scheduleLessons = listOf(
+        com.example.data.model.ScheduleLesson(dayOfWeek = "PZT", lessonIndex = 1, subjectName = "Fen Bilimleri")
+      ),
+      scheduleUpdatedAtMs = now,
+      seatingPlanState = com.example.data.model.SeatingPlanState(
+        assignments = mapOf("g1-r2-s0" to "std_1")
+      ),
+      seatingUpdatedAtMs = now,
+      groupMakerState = com.example.data.model.GroupMakerState(
+        groups = listOf(
+          com.example.data.model.GroupTeam(
+            id = "grp_1",
+            name = "Bilim Takımı",
+            studentIds = listOf("std_1", "std_2"),
+            leaderStudentId = "std_1"
+          )
+        )
+      ),
+      groupsUpdatedAtMs = now
+    )
+
+    val parentRes = helper.evaluateParentNotifications(
+      previous = prevSnapshot,
+      current = updatedSnapshot,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = seedRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now
+    )
+
+    val parentTitles = parentRes.newNotifications.map { it.title }
+    assertTrue(parentRes.newNotifications.any { it.message.contains("Anket: Gidiş saati uygun mu?") })
+    assertTrue(parentTitles.any { it.contains("-2 Yıldız (Uyarı)") })
+    assertTrue(parentTitles.any { it.contains("25 Yıldız Barajına Ulaştı") })
+    assertTrue(parentTitles.any { it.contains("Kitap İade Hatırlatması") })
+    assertTrue(parentTitles.any { it.contains("Sıradaki Turnuva Maçı Belli Oldu") })
+    assertTrue(parentRes.newNotifications.any { it.type == com.example.data.model.NotificationType.SCHEDULE })
+    assertTrue(parentRes.newNotifications.any { it.type == com.example.data.model.NotificationType.SEATING && it.message.contains("2. Grup • 3. Sıra") })
+    assertTrue(parentRes.newNotifications.any { it.type == com.example.data.model.NotificationType.GROUP && it.title.contains("Grup Lideri Seçildi") })
+
+    val prevAnnPartial = announcementWithPoll.copy(
+      readReceipts = mapOf("Veli 1" to now),
+      poll = announcementWithPoll.poll!!.copy(
+        options = listOf(com.example.data.model.PollOption(id = "o1", text = "Evet", voterParentNames = listOf("Veli 1")))
+      )
+    )
+    val teacherOpRes = helper.evaluateTeacherOperationalNotifications(
+      previousAnnouncements = listOf(prevAnnPartial),
+      currentAnnouncements = updatedSnapshot.announcements,
+      books = updatedSnapshot.books,
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = now
+    )
+    val teacherTitles = teacherOpRes.newNotifications.map { it.title }
+    assertTrue(teacherTitles.any { it.contains("Duyuru Tüm Velilerce Okundu") })
+    assertTrue(teacherTitles.any { it.contains("Anket Oylaması Tamamlandı") })
+    assertTrue(teacherTitles.any { it.contains("İadesi Geciken Kitaplar") })
+  }
 }

@@ -117,6 +117,8 @@ import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.DashboardSubPage
+import com.example.util.NotificationCategory
+import com.example.util.NotificationPreferencesHelper
 import com.example.util.SmartBoardHelper
 
 @Composable
@@ -216,7 +218,10 @@ fun TeacherDashboardScreen(
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
     onLogout: () -> Unit,
-    currentUser: AuthenticatedUser = AuthenticatedUser()
+    currentUser: AuthenticatedUser = AuthenticatedUser(),
+    notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
+    onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
+    onSetAllNotificationCategories: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
@@ -775,6 +780,9 @@ fun TeacherDashboardScreen(
                             classRoom = classRoom,
                             studentCount = students.size,
                             isDarkTheme = isDarkTheme,
+                            notificationPreferences = notificationPreferences,
+                            onToggleNotificationCategory = onToggleNotificationCategory,
+                            onSetAllNotificationCategories = onSetAllNotificationCategories,
                             onDeleteTeacherRoleAndClass = { showDeleteRoleDialog = true },
                             onDeleteEntireAccount = { showDeleteAccountDialog = true },
                             onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
@@ -873,6 +881,9 @@ fun TeacherDashboardScreen(
                                 NotificationType.STAR_REWARD -> DashboardSubPage.YILDIZLAR_SINIFI
                                 NotificationType.LIBRARY -> DashboardSubPage.KITAPLIK_LISTE
                                 NotificationType.TOURNAMENT -> DashboardSubPage.TURNUVA_DEVAM_EDENLER
+                                NotificationType.SCHEDULE -> DashboardSubPage.DERS_PROGRAMI
+                                NotificationType.SEATING -> DashboardSubPage.OTURMA_PLANI
+                                NotificationType.GROUP -> DashboardSubPage.GRUP_OLUSTURMA
                                 NotificationType.ANNOUNCEMENT,
                                 NotificationType.APP_UPDATE -> DashboardSubPage.ILETISIM_DUYURULAR
                             }
@@ -1068,6 +1079,9 @@ fun TeacherDashboardScreen(
                 currentRole = UserRole.TEACHER,
                 classRoom = classRoom,
                 isDarkTheme = isDarkTheme,
+                notificationPreferences = notificationPreferences,
+                onToggleNotificationCategory = onToggleNotificationCategory,
+                onSetAllNotificationCategories = onSetAllNotificationCategories,
                 onToggleTheme = onToggleTheme,
                 onDeleteRole = onDeleteTeacherRoleAndClass,
                 onDeleteEntireAccount = onDeleteEntireAccount,

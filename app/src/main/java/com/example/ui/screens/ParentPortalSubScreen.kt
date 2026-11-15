@@ -178,6 +178,8 @@ import com.example.util.CommunicationPersistenceHelper
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.ParentPrivacyHelper
 import com.example.data.model.TournamentStatus
+import com.example.util.NotificationCategory
+import com.example.util.NotificationPreferencesHelper
 import com.example.util.ScheduleHelper
 import com.example.util.TournamentEngine
 import com.example.util.TournamentOutcomeHelper
@@ -240,12 +242,16 @@ fun ParentPortalSubScreen(
     onToggleChatReaction: (String, String) -> Unit = { _, _ -> },
     onMarkAnnouncementRead: (String) -> Unit = {},
     requestedTab: ParentPortalTab? = null,
+    requestedCommIsChat: Boolean? = null,
     onRequestedTabConsumed: () -> Unit = {},
     onCommunicationTabStateChanged: (isCommTabActive: Boolean, isChatSubTabActive: Boolean) -> Unit = { _, _ -> },
     onMarkChatAsRead: (String) -> Unit = {},
     onDeleteChatMessagesForMe: (Set<String>) -> Unit = {},
     onDeleteChatMessagesForEveryone: (Set<String>) -> Unit = {},
-    onClearChatHistoryForMe: (String) -> Unit = {}
+    onClearChatHistoryForMe: (String) -> Unit = {},
+    notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
+    onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
+    onSetAllNotificationCategories: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
@@ -257,11 +263,11 @@ fun ParentPortalSubScreen(
     var chatInputText by remember { mutableStateOf("") }
 
     // Dışarıdan (ör. bildirime dokunularak) belirli bir sekmeye geçiş istendiyse uygula
-    LaunchedEffect(requestedTab) {
+    LaunchedEffect(requestedTab, requestedCommIsChat) {
         if (requestedTab != null) {
             activeTab = requestedTab
             if (requestedTab == ParentPortalTab.COMMUNICATION) {
-                isCommChatSubTabActive = true
+                isCommChatSubTabActive = requestedCommIsChat ?: true
             }
             onRequestedTabConsumed()
         }
@@ -1045,6 +1051,15 @@ fun ParentPortalSubScreen(
                     NotificationType.PARENT_REGISTRATION -> {
                         activeTab = ParentPortalTab.HOME
                     }
+                    NotificationType.SCHEDULE -> {
+                        activeTab = ParentPortalTab.SCHEDULE
+                    }
+                    NotificationType.SEATING -> {
+                        activeTab = ParentPortalTab.SEATING
+                    }
+                    NotificationType.GROUP -> {
+                        activeTab = ParentPortalTab.HOME
+                    }
                 }
             },
             onMarkAllAsRead = onMarkAllNotificationsAsRead
@@ -1058,6 +1073,9 @@ fun ParentPortalSubScreen(
             classRoom = classRoom,
             linkedStudents = linkedStudents,
             isDarkTheme = isDarkTheme,
+            notificationPreferences = notificationPreferences,
+            onToggleNotificationCategory = onToggleNotificationCategory,
+            onSetAllNotificationCategories = onSetAllNotificationCategories,
             onToggleTheme = onToggleTheme,
             onDeleteRole = onDeleteRole,
             onDeleteEntireAccount = onDeleteEntireAccount,

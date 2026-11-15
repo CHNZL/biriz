@@ -125,7 +125,10 @@ enum class NotificationType {
     APP_UPDATE,
     STAR_REWARD,
     LIBRARY,
-    TOURNAMENT
+    TOURNAMENT,
+    SCHEDULE,
+    SEATING,
+    GROUP
 }
 
 /**

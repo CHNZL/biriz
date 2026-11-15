@@ -82,6 +82,7 @@ import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
 import com.example.util.BackgroundUpdateState
 import com.example.util.ChatNotificationHelper
+import com.example.util.SystemActivityNotificationHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
         // Android 8.0+ bildirim kanallarını açılışta garantiye al
         AppUpdateNotificationHelper.createNotificationChannel(applicationContext)
         ChatNotificationHelper.createNotificationChannel(applicationContext)
+        SystemActivityNotificationHelper.createNotificationChannels(applicationContext)
 
         // Cihaz hafızasında eski APK kalıntılarının birikmesini önlemek için temizle
         com.example.util.AppUpdateManager.cleanOldApkFiles(applicationContext)
@@ -192,6 +194,27 @@ class MainActivity : ComponentActivity() {
             viewModel.openChatFromNotification(chatStudentId, isTeacherTarget)
             intent.removeExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_STUDENT_ID)
             intent.removeExtra(ChatNotificationHelper.EXTRA_OPEN_CHAT_IS_TEACHER)
+        }
+        val sysNotifType = intent.getStringExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_TYPE)
+        if (!sysNotifType.isNullOrBlank()) {
+            val sysNotifId = intent.getStringExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_ID)
+            val sysSubPage = intent.getStringExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_SUBPAGE)
+            val sysTargetId = intent.getStringExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_TARGET_ID)
+            val sysIsTeacher = if (intent.hasExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_IS_TEACHER)) {
+                intent.getBooleanExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_IS_TEACHER, false)
+            } else null
+            viewModel.openNotificationFromSystemBar(
+                notifId = sysNotifId,
+                typeName = sysNotifType,
+                targetSubPageName = sysSubPage,
+                targetId = sysTargetId,
+                isTeacherTarget = sysIsTeacher
+            )
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_ID)
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_TYPE)
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_SUBPAGE)
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_TARGET_ID)
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_IS_TEACHER)
         }
     }
 }
@@ -496,7 +519,14 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onDeleteTeacherRoleAndClass = { viewModel.deleteTeacherRoleAndClassroom() },
                             onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
                             onLogout = { viewModel.signOut(context) },
-                            currentUser = uiState.currentUser
+                            currentUser = uiState.currentUser,
+                            notificationPreferences = uiState.notificationPreferences,
+                            onToggleNotificationCategory = { category, enabled ->
+                                viewModel.toggleNotificationCategory(category, enabled)
+                            },
+                            onSetAllNotificationCategories = { enabled ->
+                                viewModel.setAllNotificationCategories(enabled)
+                            }
                         )
                     } else {
                         viewModel.resetToRoleSelection()
@@ -578,6 +608,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                         requestedTab = uiState.requestedParentTabName?.let { tabName ->
                             try { ParentPortalTab.valueOf(tabName) } catch (_: Exception) { null }
                         },
+                        requestedCommIsChat = uiState.requestedParentCommIsChat,
                         onRequestedTabConsumed = { viewModel.consumeRequestedParentTab() },
                         onCommunicationTabStateChanged = { isComm, isChat ->
                             viewModel.setParentCommunicationScreenState(isComm, isChat)
@@ -587,7 +618,14 @@ fun BirizApp(viewModel: BirizViewModel) {
                         },
                         onDeleteChatMessagesForMe = { viewModel.deleteChatMessagesForMe(it) },
                         onDeleteChatMessagesForEveryone = { viewModel.deleteChatMessagesForEveryone(it) },
-                        onClearChatHistoryForMe = { sId -> viewModel.clearChatHistoryForMe(sId) }
+                        onClearChatHistoryForMe = { sId -> viewModel.clearChatHistoryForMe(sId) },
+                        notificationPreferences = uiState.notificationPreferences,
+                        onToggleNotificationCategory = { category, enabled ->
+                            viewModel.toggleNotificationCategory(category, enabled)
+                        },
+                        onSetAllNotificationCategories = { enabled ->
+                            viewModel.setAllNotificationCategories(enabled)
+                        }
                     )
                 }
             }

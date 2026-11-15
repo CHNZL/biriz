@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.School
@@ -49,10 +50,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
 import com.example.data.model.ClassRoom
+import com.example.data.model.UserRole
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
+import com.example.ui.components.NotificationPreferencesSection
 import com.example.ui.components.ParentDownloadQrDialog
 import com.example.util.AppUpdateManager
+import com.example.util.NotificationCategory
+import com.example.util.NotificationPreferencesHelper
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -72,6 +77,9 @@ fun ProfileSettingsSubScreen(
     classRoom: ClassRoom,
     studentCount: Int,
     isDarkTheme: Boolean,
+    notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
+    onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
+    onSetAllNotificationCategories: (Boolean) -> Unit = {},
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
     onBackToClassList: () -> Unit,
@@ -196,6 +204,48 @@ fun ProfileSettingsSubScreen(
             ProfileDetailRow("İl / İlçe", "${classRoom.cityName} / ${classRoom.districtName}", isDark = isDarkTheme)
             ProfileDetailRow("Sınıf ve Şube", "${classRoom.gradeLevel}/${classRoom.section} Şubesi", isDark = isDarkTheme)
             ProfileDetailRow("Kayıtlı Öğrenci", "$studentCount Öğrenci", isDark = isDarkTheme)
+        }
+
+        // 2b. Bildirim Tercihleri (Kategori Bazlı Açma/Kapama) Bento Kartı
+        BentoCard(
+            isDark = isDarkTheme,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("teacher_notification_preferences_card")
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = "Bildirim Tercihleri",
+                    tint = BirizTurquoise,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "🔔 Bildirim Tercihleri",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Yalnızca takip etmek istediğiniz bildirim kategorilerini açık bırakabilirsiniz.",
+                fontSize = 11.5.sp,
+                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            NotificationPreferencesSection(
+                role = UserRole.TEACHER,
+                preferences = notificationPreferences,
+                isDarkTheme = isDarkTheme,
+                onToggleCategory = onToggleNotificationCategory,
+                onSetAllCategories = onSetAllNotificationCategories
+            )
         }
 
         // 3. UYGULAMA SÜRÜMÜ VE OTOMATİK GÜNCELLEME (APK & GITHUB) BENTO KARTI

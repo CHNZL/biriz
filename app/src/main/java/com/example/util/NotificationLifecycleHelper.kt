@@ -179,6 +179,8 @@ object NotificationLifecycleHelper {
     ): List<BirizNotification> {
         return notifications.filterNot { notif ->
             notif.type == NotificationType.MESSAGE &&
+                !notif.id.startsWith("msg_react_") &&
+                !notif.id.startsWith("sched_confirm_") &&
                 (notif.targetId == studentId || notif.id == "msg_notif_$studentId")
         }
     }

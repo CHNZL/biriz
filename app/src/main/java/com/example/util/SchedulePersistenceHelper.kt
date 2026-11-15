@@ -264,6 +264,7 @@ object SchedulePersistenceHelper {
     fun observeFirestoreSchedule(
         context: Context,
         classId: String,
+        onUpdatedAtMillis: (Long) -> Unit = {},
         onUpdate: (ScheduleConfig?, List<ScheduleLesson>?) -> Unit
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
@@ -347,6 +348,8 @@ object SchedulePersistenceHelper {
                             }
                         }
 
+                        val updatedAtMs = snapshot.getTimestamp("updatedAt")?.toDate()?.time ?: 0L
+                        onUpdatedAtMillis(updatedAtMs)
                         onUpdate(parsedConfig, parsedLessons)
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to parse schedule snapshot", e)
