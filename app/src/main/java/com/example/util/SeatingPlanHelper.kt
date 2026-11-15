@@ -520,6 +520,60 @@ object SeatingPlanHelper {
     }
 
     /**
+     * Mevcut oturma planındaki koltuk atamalarını güncel öğrenci listesiyle uzlaştırır ve temizler:
+     * - Geçersiz koltuk kimliklerini (mevcut grup/sıra/koltuk düzeni dışındakileri) temizler.
+     * - Öğrenci kimliği değişmişse (ör. "45" veya "std_45") okul numarası üzerinden gerçek öğrenci ID'sine eşler.
+     * - Sınıf listesinde artık bulunmayan (silinmiş/eski örnek) öğrenci kimliklerini koltuktan kaldırır;
+     *   böylece ekranda "Boş" görünen koltukların tıklanmasını engelleyen hayalet atamalar oluşmaz.
+     */
+    fun reconcileAndSanitizePlan(
+        state: SeatingPlanState,
+        students: List<Student>
+    ): SeatingPlanState {
+        if (students.isEmpty()) return state
+        val validSeatIds = generateAllSeatIdsFrontToBack(state.config).toSet()
+        val studentsById = students.associateBy { it.id }
+        val studentsByNo = students.associateBy { it.studentNumber.trim() }
+
+        fun resolveStudentId(rawId: String?): String? {
+            if (rawId.isNullOrBlank()) return null
+            val trimmed = rawId.trim()
+            studentsById[trimmed]?.let { return it.id }
+            val strippedNo = trimmed.removePrefix("std_").trim()
+            studentsByNo[strippedNo]?.let { return it.id }
+            return null
+        }
+
+        val cleanedAssignments = mutableMapOf<String, String>()
+        val usedStudentIds = mutableSetOf<String>()
+
+        state.assignments.forEach { (seatId, rawStudentId) ->
+            if (seatId in validSeatIds) {
+                val resolvedId = resolveStudentId(rawStudentId)
+                if (resolvedId != null && usedStudentIds.add(resolvedId)) {
+                    cleanedAssignments[seatId] = resolvedId
+                }
+            }
+        }
+
+        val cleanedPinned = state.pinnedStudents.mapNotNull { resolveStudentId(it) }.toSet()
+        val cleanedPriority = state.priorityStudents.mapNotNull { resolveStudentId(it) }.toSet()
+
+        if (cleanedAssignments == state.assignments &&
+            cleanedPinned == state.pinnedStudents &&
+            cleanedPriority == state.priorityStudents
+        ) {
+            return state
+        }
+
+        return state.copy(
+            assignments = cleanedAssignments,
+            pinnedStudents = cleanedPinned,
+            priorityStudents = cleanedPriority
+        )
+    }
+
+    /**
      * İlk açılışta sınıf listesindeki öğrencileri varsayılan olarak sıralara yerleştirir.
      */
     fun generateInitialAssignments(students: List<Student>, config: SeatingConfig): Map<String, String> {

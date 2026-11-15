@@ -907,6 +907,13 @@ class BirizViewModel(
                         saveParentSessionState()
                     }
                 }
+                if (currentStudents.isNotEmpty()) {
+                    val currentSeating = _uiState.value.seatingPlanState
+                    val reconciledSeating = SeatingPlanHelper.reconcileAndSanitizePlan(currentSeating, currentStudents)
+                    if (reconciledSeating != currentSeating) {
+                        _uiState.value = _uiState.value.copy(seatingPlanState = reconciledSeating)
+                    }
+                }
                 evaluateActivityNotifications()
             }
         }
@@ -1271,10 +1278,12 @@ class BirizViewModel(
 
     fun loadSeatingPlanFromStorage(classId: String = resolveActiveClassId()) {
         val ctx = appContext ?: return
+        val currentStudents = repository.students.value
         val savedPlan = SeatingPlanPersistenceHelper.loadActivePlan(ctx, classId)
         val savedConfig = SeatingPlanPersistenceHelper.loadSeatingConfig(ctx, classId)
         if (savedPlan != null) {
-            _uiState.value = _uiState.value.copy(seatingPlanState = savedPlan)
+            val reconciled = SeatingPlanHelper.reconcileAndSanitizePlan(savedPlan, currentStudents)
+            _uiState.value = _uiState.value.copy(seatingPlanState = reconciled)
         } else if (savedConfig != null) {
             _uiState.value = _uiState.value.copy(
                 seatingPlanState = _uiState.value.seatingPlanState.copy(config = savedConfig)
@@ -1291,7 +1300,8 @@ class BirizViewModel(
             }
         ) { cloudPlan ->
             hasCloudSeating = true
-            _uiState.value = _uiState.value.copy(seatingPlanState = cloudPlan)
+            val reconciledCloud = SeatingPlanHelper.reconcileAndSanitizePlan(cloudPlan, repository.students.value)
+            _uiState.value = _uiState.value.copy(seatingPlanState = reconciledCloud)
             evaluateActivityNotifications(classId)
         }
     }
@@ -3065,6 +3075,13 @@ class BirizViewModel(
                             resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
                         }
                     }
+                    if (resolvedClass == null) {
+                        resolvedClass = repository.defaultSampleClass.copy(
+                            teacherId = fbUser.uid,
+                            teacherName = name,
+                            teacherEmail = userEmail
+                        )
+                    }
                 }
 
                 if (resolvedClass != null) {
@@ -4118,15 +4135,27 @@ class BirizViewModel(
     }
 
     fun assignStudentToSeat(seatId: String, studentId: String?) {
-        val currentPlan = _uiState.value.seatingPlanState
+        val currentStudents = repository.students.value
+        val currentPlan = SeatingPlanHelper.reconcileAndSanitizePlan(_uiState.value.seatingPlanState, currentStudents)
         val newAssignments = SeatingPlanHelper.assignStudent(currentPlan.assignments, seatId, studentId)
         val updated = currentPlan.copy(assignments = newAssignments)
         persistActiveSeatingPlan(updated)
-        _uiState.value = _uiState.value.copy(seatingPlanState = updated)
+        val placedStudent = if (!studentId.isNullOrBlank()) currentStudents.firstOrNull { it.id == studentId } else null
+        val coord = SeatingPlanHelper.parseSeatId(seatId)
+        val seatLabel = if (coord != null) "${coord.groupIndex + 1}. Grup ${coord.rowIndex + 1}. Sıra ${coord.seatIndex + 1}. Koltuk" else "koltuk"
+        _uiState.value = _uiState.value.copy(
+            seatingPlanState = updated,
+            snackbarMessage = if (placedStudent != null) {
+                "✅ ${placedStudent.fullName} → $seatLabel konumuna yerleştirildi."
+            } else {
+                "🪑 $seatLabel boşaltıldı."
+            }
+        )
     }
 
     fun swapSeats(seatId1: String, seatId2: String) {
-        val currentPlan = _uiState.value.seatingPlanState
+        val currentStudents = repository.students.value
+        val currentPlan = SeatingPlanHelper.reconcileAndSanitizePlan(_uiState.value.seatingPlanState, currentStudents)
         val newAssignments = SeatingPlanHelper.swapSeats(currentPlan.assignments, seatId1, seatId2)
         val updated = currentPlan.copy(assignments = newAssignments)
         persistActiveSeatingPlan(updated)
@@ -4173,7 +4202,8 @@ class BirizViewModel(
     }
 
     fun clearSeatingPlan(clearFixed: Boolean = false) {
-        val currentPlan = _uiState.value.seatingPlanState
+        val currentStudents = repository.students.value
+        val currentPlan = SeatingPlanHelper.reconcileAndSanitizePlan(_uiState.value.seatingPlanState, currentStudents)
         val newAssignments = if (clearFixed) {
             emptyMap()
         } else {
@@ -4181,25 +4211,37 @@ class BirizViewModel(
                 currentPlan.pinnedStudents.contains(studentId)
             }
         }
-        val updated = currentPlan.copy(assignments = newAssignments)
+        val newPinned = if (clearFixed) emptySet() else currentPlan.pinnedStudents
+        val updated = currentPlan.copy(
+            assignments = newAssignments,
+            pinnedStudents = newPinned,
+            activePlanName = "Elle Yerleştirme Planı"
+        )
         persistActiveSeatingPlan(updated)
         _uiState.value = _uiState.value.copy(
             seatingPlanState = updated,
-            snackbarMessage = if (clearFixed) "Tüm koltuklar boşaltıldı." else "Sabitlenenler hariç tüm koltuklar boşaltıldı."
+            snackbarMessage = if (clearFixed) "Tüm koltuklar boşaltıldı. Boş koltuklara dokunarak öğrencileri elle yerleştirebilirsiniz."
+            else "Sabitlenenler hariç tüm koltuklar boşaltıldı. Boş koltuklara dokunarak elle yerleştirebilirsiniz."
         )
     }
 
     fun ensureSeatingPlanInitialized() {
-        val currentPlan = _uiState.value.seatingPlanState
         val currentStudents = repository.students.value
+        val currentPlan = SeatingPlanHelper.reconcileAndSanitizePlan(_uiState.value.seatingPlanState, currentStudents)
+        if (currentPlan != _uiState.value.seatingPlanState) {
+            _uiState.value = _uiState.value.copy(seatingPlanState = currentPlan)
+        }
         val classId = resolveActiveClassId()
-        val saved = appContext?.let { SeatingPlanPersistenceHelper.loadActivePlan(it, classId) }
+        val rawSaved = appContext?.let { SeatingPlanPersistenceHelper.loadActivePlan(it, classId) }
+        val saved = rawSaved?.let { SeatingPlanHelper.reconcileAndSanitizePlan(it, currentStudents) }
         val savedConfig = appContext?.let { SeatingPlanPersistenceHelper.loadSeatingConfig(it, classId) }
         val effectiveConfig = saved?.config ?: savedConfig ?: currentPlan.config
 
         if (saved != null) {
             if (currentPlan.assignments.isEmpty() && currentStudents.isNotEmpty()) {
-                if (saved.assignments.isNotEmpty()) {
+                val wasExplicitlyClearedForManual = saved.activePlanName.contains("Elle", ignoreCase = true) ||
+                    currentPlan.activePlanName.contains("Elle", ignoreCase = true)
+                if (saved.assignments.isNotEmpty() || wasExplicitlyClearedForManual) {
                     _uiState.value = _uiState.value.copy(seatingPlanState = saved)
                 } else {
                     val initial = SeatingPlanHelper.generateInitialAssignments(currentStudents, effectiveConfig)
@@ -4220,13 +4262,12 @@ class BirizViewModel(
                 activePlanName = "1. Başlangıç Planı"
             )
             _uiState.value = _uiState.value.copy(seatingPlanState = initialPlan)
-            // Eğer gerçek bir sınıf aktifse, önce Firestore'da plan olup olmadığını kontrol et;
-            // varsa buluttaki planı yükle, yoksa başlangıç planını kaydet (böylece 2. cihaz bulutu ezmez!)
             val ctx = appContext
             if (ctx != null && classId != "default") {
                 SeatingPlanPersistenceHelper.syncActivePlanFromFirestore(ctx, classId) { cloudState ->
-                    if (cloudState.assignments.isNotEmpty()) {
-                        _uiState.value = _uiState.value.copy(seatingPlanState = cloudState)
+                    val reconciledCloud = SeatingPlanHelper.reconcileAndSanitizePlan(cloudState, repository.students.value)
+                    if (reconciledCloud.assignments.isNotEmpty()) {
+                        _uiState.value = _uiState.value.copy(seatingPlanState = reconciledCloud)
                     } else {
                         persistActiveSeatingPlan(initialPlan)
                     }

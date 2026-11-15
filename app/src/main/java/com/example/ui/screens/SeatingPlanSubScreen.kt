@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -59,6 +60,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -67,6 +70,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -143,6 +148,9 @@ fun SeatingPlanSubScreen(
     // Takas (Swap) modu durumu
     var swapSourceSeatId by remember { mutableStateOf<String?>(null) }
 
+    // Ayaktaki öğrenci tepsisinden seçilip boş koltuğa dokunarak yerleştirme durumu
+    var selectedStandingStudentId by remember { mutableStateOf<String?>(null) }
+
     // Seçilen koltuk detay diyaloğu
     var selectedSeatForDetail by remember { mutableStateOf<String?>(null) }
 
@@ -151,6 +159,9 @@ fun SeatingPlanSubScreen(
 
     // Otomatik dağıtım mod diyaloğu (2 sütun x 4 satır kutu kutu - rotasyon modları dahil)
     var showAutoAssignDialog by remember { mutableStateOf(false) }
+
+    // Elle yerleştirme başlangıç seçenekleri diyaloğu
+    var showManualModeOptionsDialog by remember { mutableStateOf(false) }
 
     // Paylaşım menüsü
     var isShareMenuOpen by remember { mutableStateOf(false) }
@@ -164,15 +175,23 @@ fun SeatingPlanSubScreen(
     // Planı Sıfırla Güvenlik Uyarısı Diyaloğu
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
-    // Yerleşen ve Yerleşmemiş Öğrenciler
-    val assignedStudentIds = remember(seatingPlanState.assignments) {
-        seatingPlanState.assignments.values.filter { it.isNotBlank() }.toSet()
+    // Koltuk atamalarını güncel öğrenci listesiyle uzlaştır (hayalet/eski ID'lerin boş koltukları kilitlemesini önler)
+    val effectivePlanState = remember(seatingPlanState, students) {
+        SeatingPlanHelper.reconcileAndSanitizePlan(seatingPlanState, students)
+    }
+
+    // Yerleşen ve Yerleşmemiş (Ayaktaki) Öğrenciler
+    val assignedStudentIds = remember(effectivePlanState.assignments, students) {
+        val validStudentIds = students.map { it.id }.toSet()
+        effectivePlanState.assignments.values.filter { it.isNotBlank() && validStudentIds.contains(it) }.toSet()
     }
     val unassignedStudents = remember(students, assignedStudentIds) {
-        students.filter { !assignedStudentIds.contains(it.id) }
+        students
+            .filter { !assignedStudentIds.contains(it.id) }
+            .sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
     }
     val seatedCount = assignedStudentIds.size
-    val totalSeats = seatingPlanState.config.totalSeats
+    val totalSeats = effectivePlanState.config.totalSeats
 
     // Zemin ve Kart Renkleri
     val cardBg = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White
@@ -535,7 +554,7 @@ fun SeatingPlanSubScreen(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            val sourceStudentId = seatingPlanState.assignments[swapSourceSeatId]
+            val sourceStudentId = effectivePlanState.assignments[swapSourceSeatId]
             val sourceStudent = students.firstOrNull { it.id == sourceStudentId }
 
             Surface(
@@ -578,6 +597,76 @@ fun SeatingPlanSubScreen(
             }
         }
 
+        // --- 2B. AYAKTAKİ ÖĞRENCİYİ SEÇİP BOŞ KOLTUĞA YERLEŞTİRME ŞERİDİ ---
+        AnimatedVisibility(
+            visible = selectedStandingStudentId != null,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            val selectedStudent = students.firstOrNull { it.id == selectedStandingStudentId }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (isDarkTheme) Color(0xD00D4A56) else Color(0xFFE0F7F6),
+                border = BorderStroke(1.dp, BirizTurquoise)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("👆", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Elle Yerleştirme: ${selectedStudent?.studentNumber ?: ""} ${selectedStudent?.fullName ?: ""}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isDarkTheme) Color.White else Color(0xFF0F766E)
+                            )
+                            Text(
+                                text = "Oturtmak istediğiniz boş (+ Boş) koltuğa dokunun.",
+                                fontSize = 10.5.sp,
+                                color = if (isDarkTheme) Color(0xFFBAE6FD) else Color(0xFF0D9488)
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = {
+                                val st = selectedStudent ?: return@TextButton
+                                val allSeatIds = SeatingPlanHelper.generateAllSeatIdsFrontToBack(effectivePlanState.config)
+                                val firstEmptySeatId = allSeatIds.firstOrNull { seatId ->
+                                    val occId = effectivePlanState.assignments[seatId]
+                                    occId.isNullOrBlank() || students.none { it.id == occId }
+                                }
+                                if (firstEmptySeatId != null) {
+                                    onAssignStudentToSeat(firstEmptySeatId, st.id)
+                                    selectedStandingStudentId = null
+                                } else {
+                                    Toast.makeText(context, "Sınıfta boş koltuk kalmadı.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("İlk Boşa Oturt", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E))
+                        }
+
+                        TextButton(
+                            onClick = { selectedStandingStudentId = null }
+                        ) {
+                            Text("İptal", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE11D48))
+                        }
+                    }
+                }
+            }
+        }
+
         // --- 3. ANA İÇERİK: SINIF KROKİSİ VE OTURMA PLANI ---
         Box(
             modifier = Modifier
@@ -594,7 +683,7 @@ fun SeatingPlanSubScreen(
 
                 // 3.1. Sınıf Ön Cephesi (Akıllı Tahta, Öğretmen Kürsüsü, Kapı ve Pencere)
                 ClassroomFrontArchBanner(
-                    config = seatingPlanState.config,
+                    config = effectivePlanState.config,
                     isDarkTheme = isDarkTheme
                 )
 
@@ -611,7 +700,7 @@ fun SeatingPlanSubScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        val config = seatingPlanState.config
+                        val config = effectivePlanState.config
                         for (groupIndex in 0 until config.groupCount) {
                             val rowsInGroup = config.rowsPerGroup.getOrElse(groupIndex) { 5 }
 
@@ -619,9 +708,10 @@ fun SeatingPlanSubScreen(
                                 groupIndex = groupIndex,
                                 totalRows = rowsInGroup,
                                 peoplePerRow = config.peoplePerRow,
-                                seatingPlanState = seatingPlanState,
+                                seatingPlanState = effectivePlanState,
                                 students = students,
                                 swapSourceSeatId = swapSourceSeatId,
+                                isStandingPlacementActive = selectedStandingStudentId != null,
                                 isDarkTheme = isDarkTheme,
                                 onSeatClick = { seatId ->
                                     if (swapSourceSeatId != null) {
@@ -629,9 +719,13 @@ fun SeatingPlanSubScreen(
                                             onSwapSeats(swapSourceSeatId!!, seatId)
                                         }
                                         swapSourceSeatId = null
+                                    } else if (selectedStandingStudentId != null) {
+                                        onAssignStudentToSeat(seatId, selectedStandingStudentId)
+                                        selectedStandingStudentId = null
                                     } else {
-                                        val studentId = seatingPlanState.assignments[seatId]
-                                        if (studentId != null && studentId.isNotBlank()) {
+                                        val occupantId = effectivePlanState.assignments[seatId]
+                                        val occupantStudent = students.firstOrNull { it.id == occupantId }
+                                        if (occupantStudent != null) {
                                             selectedSeatForDetail = seatId
                                         } else {
                                             selectedSeatForAssignment = seatId
@@ -647,28 +741,24 @@ fun SeatingPlanSubScreen(
 
                 // 3.3. Sınıf Arka Cephesi (Arka Pencereler, Arka Kapı ve Sınıf Panosu)
                 ClassroomBackArchBanner(
-                    config = seatingPlanState.config,
+                    config = effectivePlanState.config,
                     isDarkTheme = isDarkTheme
                 )
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // 3.3. Yerleşmemiş Öğrenciler Tepsisi (Varsa)
+                // 3.4. Yerleşmemiş (Ayaktaki) Öğrenciler Tepsisi (Varsa)
                 if (unassignedStudents.isNotEmpty()) {
                     UnassignedStudentsSection(
                         unassignedStudents = unassignedStudents,
+                        selectedStandingStudentId = selectedStandingStudentId,
                         isDarkTheme = isDarkTheme,
                         onStudentClick = { student ->
-                            // İlk boş koltuğu bul ve oturt
-                            val allSeatIds = SeatingPlanHelper.generateAllSeatIdsFrontToBack(seatingPlanState.config)
-                            val firstEmptySeatId = allSeatIds.firstOrNull { seatId ->
-                                seatingPlanState.assignments[seatId].isNullOrBlank()
-                            }
-                            if (firstEmptySeatId != null) {
-                                onAssignStudentToSeat(firstEmptySeatId, student.id)
-                                Toast.makeText(context, "${student.fullName} boş koltuğa yerleştirildi.", Toast.LENGTH_SHORT).show()
+                            if (selectedStandingStudentId == student.id) {
+                                selectedStandingStudentId = null
                             } else {
-                                Toast.makeText(context, "Sınıfta boş koltuk kalmadı. Lütfen sıra düzenini genişletin.", Toast.LENGTH_SHORT).show()
+                                swapSourceSeatId = null
+                                selectedStandingStudentId = student.id
                             }
                         }
                     )
@@ -683,12 +773,12 @@ fun SeatingPlanSubScreen(
 
     // 1. Koltuk Detayı & İşlem Menüsü
     selectedSeatForDetail?.let { seatId ->
-        val studentId = seatingPlanState.assignments[seatId]
+        val studentId = effectivePlanState.assignments[seatId]
         val student = students.firstOrNull { it.id == studentId }
 
         if (student != null) {
-            val isPinned = seatingPlanState.pinnedStudents.contains(student.id)
-            val isPriority = seatingPlanState.priorityStudents.contains(student.id)
+            val isPinned = effectivePlanState.pinnedStudents.contains(student.id)
+            val isPriority = effectivePlanState.priorityStudents.contains(student.id)
 
             SeatDetailDialog(
                 seatId = seatId,
@@ -699,7 +789,12 @@ fun SeatingPlanSubScreen(
                 onDismiss = { selectedSeatForDetail = null },
                 onStartSwap = {
                     swapSourceSeatId = seatId
+                    selectedStandingStudentId = null
                     selectedSeatForDetail = null
+                },
+                onChangeStudentForSeat = {
+                    selectedSeatForDetail = null
+                    selectedSeatForAssignment = seatId
                 },
                 onTogglePin = {
                     onTogglePin(student.id)
@@ -714,20 +809,25 @@ fun SeatingPlanSubScreen(
             )
         } else {
             selectedSeatForDetail = null
+            selectedSeatForAssignment = seatId
         }
     }
 
-    // 2. Boş Koltuğa Öğrenci Seçme Diyaloğu
+    // 2. Boş (veya Seçilen) Koltuğa Öğrenci Seçme Diyaloğu
     selectedSeatForAssignment?.let { seatId ->
         AssignStudentDialog(
             seatId = seatId,
             unassignedStudents = unassignedStudents,
             allStudents = students,
-            seatingPlanState = seatingPlanState,
+            seatingPlanState = effectivePlanState,
             isDarkTheme = isDarkTheme,
             onDismiss = { selectedSeatForAssignment = null },
-            onSelectStudent = { studentId ->
+            onSelectStudent = { studentId, shouldPin ->
                 onAssignStudentToSeat(seatId, studentId)
+                if (shouldPin && !effectivePlanState.pinnedStudents.contains(studentId)) {
+                    onTogglePin(studentId)
+                }
+                selectedStandingStudentId = null
                 selectedSeatForAssignment = null
             }
         )
@@ -736,7 +836,7 @@ fun SeatingPlanSubScreen(
     // 3. Sınıf Mimarisi & Ayarlar Diyaloğu
     if (isConfigDialogOpen) {
         SeatingConfigDialog(
-            currentConfig = seatingPlanState.config,
+            currentConfig = effectivePlanState.config,
             isDarkTheme = isDarkTheme,
             onDismiss = onCloseConfigDialog,
             onSave = { newConfig ->
@@ -751,7 +851,7 @@ fun SeatingPlanSubScreen(
         PlannedSeatingWizardDialog(
             classRoom = classRoom,
             students = students,
-            currentState = seatingPlanState,
+            currentState = effectivePlanState,
             isDarkTheme = isDarkTheme,
             onDismiss = { isPlannedWizardOpen = false },
             onApplyPlannedPlan = { newPlanState ->
@@ -777,24 +877,135 @@ fun SeatingPlanSubScreen(
         )
     }
 
-    // 6. Akıllı Dağıt Modları Diyaloğu (2 sütun x 3 satır kutu kutu)
+    // 6. Akıllı Dağıt Modları Diyaloğu (2 sütun x 4 satır kutu kutu)
     if (showAutoAssignDialog) {
         AutoAssignModalDialog(
             isDarkTheme = isDarkTheme,
             onDismiss = { showAutoAssignDialog = false },
             onSelectMode = { mode ->
                 if (mode == SeatingPlacementMode.MANUAL) {
-                    Toast.makeText(
-                        context,
-                        "Elle Yerleştirme: Boş bir sıraya tıklayarak öğrenci yerleştirebilir, oturan öğrenciye tıklayarak sırayı boşaltabilirsiniz.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    if (seatedCount > 0) {
+                        showManualModeOptionsDialog = true
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "👆 Elle Yerleştirme: Boş bir koltuğa dokunarak ayaktaki öğrencilerden dilediğinizi seçebilirsiniz.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 } else {
                     onAutoAssign(mode)
                 }
             },
             onOpenPlannedWizard = {
                 isPlannedWizardOpen = true
+            }
+        )
+    }
+
+    // 6B. Elle Yerleştirme Başlangıç Seçenekleri Diyaloğu
+    if (showManualModeOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showManualModeOptionsDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("👆", fontSize = 20.sp)
+                    Column {
+                        Text(
+                            text = "Elle Yerleştirme Modu",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "Nasıl devam etmek istediğinizi seçin",
+                            fontSize = 11.5.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Şu anda sınıfta $seatedCount öğrenci oturuyor, ${unassignedStudents.size} öğrenci ayakta. Boş koltuklara tıkladığınızda ayaktaki öğrencilerden dilediğinizi seçebilirsiniz.",
+                        fontSize = 12.5.sp,
+                        color = if (isDarkTheme) BirizDarkTextPrimary else Color(0xFF334155),
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            showManualModeOptionsDialog = false
+                            onClearPlan(true)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BirizNavyPrimary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("manual_mode_clear_all_button")
+                    ) {
+                        Text(
+                            text = "🧍 Tüm Sınıfı Ayağa Kaldır (Sıfırdan Elle Yerleştir)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    if (effectivePlanState.pinnedStudents.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = {
+                                showManualModeOptionsDialog = false
+                                onClearPlan(false)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("manual_mode_keep_pinned_button")
+                        ) {
+                            Text(
+                                text = "🔒 Kilitliler Kalsın, Diğerlerini Ayağa Kaldır",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showManualModeOptionsDialog = false
+                            Toast.makeText(
+                                context,
+                                "👆 Boş koltuklara dokunarak ayaktaki öğrencileri seçebilir, dolu koltuklara dokunarak değiştirebilirsiniz.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("manual_mode_keep_current_button")
+                    ) {
+                        Text(
+                            text = "✏️ Mevcut Yerleşim Üzerinde Elle Düzenle",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManualModeOptionsDialog = false }) {
+                    Text("Kapat", fontSize = 12.sp)
+                }
             }
         )
     }
@@ -1054,6 +1265,7 @@ private fun GroupColumn(
     seatingPlanState: SeatingPlanState,
     students: List<Student>,
     swapSourceSeatId: String?,
+    isStandingPlacementActive: Boolean = false,
     isDarkTheme: Boolean,
     onSeatClick: (String) -> Unit
 ) {
@@ -1095,6 +1307,7 @@ private fun GroupColumn(
                 seatingPlanState = seatingPlanState,
                 students = students,
                 swapSourceSeatId = swapSourceSeatId,
+                isStandingPlacementActive = isStandingPlacementActive,
                 isDarkTheme = isDarkTheme,
                 onSeatClick = onSeatClick
             )
@@ -1113,6 +1326,7 @@ private fun DeskCard(
     seatingPlanState: SeatingPlanState,
     students: List<Student>,
     swapSourceSeatId: String?,
+    isStandingPlacementActive: Boolean = false,
     isDarkTheme: Boolean,
     onSeatClick: (String) -> Unit
 ) {
@@ -1151,6 +1365,7 @@ private fun DeskCard(
                         isPinned = student != null && seatingPlanState.pinnedStudents.contains(student.id),
                         isPriority = student != null && seatingPlanState.priorityStudents.contains(student.id),
                         isSelectedForSwap = isSelectedForSwap,
+                        isStandingTarget = student == null && isStandingPlacementActive,
                         isDarkTheme = isDarkTheme,
                         modifier = Modifier.weight(1f),
                         onClick = { onSeatClick(seatId) }
@@ -1171,6 +1386,7 @@ private fun SeatItem(
     isPinned: Boolean,
     isPriority: Boolean,
     isSelectedForSwap: Boolean,
+    isStandingTarget: Boolean = false,
     isDarkTheme: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -1179,6 +1395,7 @@ private fun SeatItem(
 
     val backgroundColor = when {
         isSelectedForSwap -> if (isDarkTheme) Color(0xFF78350F) else Color(0xFFFEF3C7)
+        isStandingTarget -> if (isDarkTheme) Color(0x3528B8C2) else Color(0xFFE0F7F6)
         student == null -> if (isDarkTheme) Color(0x20334E68) else Color.White
         isGirl -> if (isDarkTheme) Color(0x35BE185D) else Color(0xFFFDF2F8)
         else -> if (isDarkTheme) Color(0x350284C7) else Color(0xFFEFF6FF)
@@ -1186,7 +1403,8 @@ private fun SeatItem(
 
     val borderColor = when {
         isSelectedForSwap -> BirizAmber
-        student == null -> if (isDarkTheme) Color(0x4064748B) else Color(0xFFE2E8F0)
+        isStandingTarget -> BirizTurquoise
+        student == null -> if (isDarkTheme) Color(0x5564748B) else Color(0xFFCBD5E1)
         isGirl -> if (isDarkTheme) Color(0xFFF472B6) else Color(0xFFF472B6)
         else -> if (isDarkTheme) Color(0xFF60A5FA) else Color(0xFF93C5FD)
     }
@@ -1195,7 +1413,7 @@ private fun SeatItem(
         onClick = onClick,
         shape = RoundedCornerShape(8.dp),
         color = backgroundColor,
-        border = BorderStroke(if (isSelectedForSwap) 2.dp else 1.dp, borderColor),
+        border = BorderStroke(if (isSelectedForSwap || isStandingTarget) 2.dp else 1.dp, borderColor),
         modifier = modifier
             .height(58.dp)
             .testTag("seat_item_$seatId")
@@ -1255,15 +1473,23 @@ private fun SeatItem(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        tint = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF94A3B8),
-                        modifier = Modifier.size(12.dp)
+                        tint = if (isStandingTarget) {
+                            if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E)
+                        } else {
+                            if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                        },
+                        modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = "Boş",
-                        fontSize = 11.sp,
-                        color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B),
-                        fontWeight = FontWeight.SemiBold
+                        text = if (isStandingTarget) "Buraya Oturt" else "Boş (Seç)",
+                        fontSize = if (isStandingTarget) 10.sp else 10.5.sp,
+                        color = if (isStandingTarget) {
+                            if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E)
+                        } else {
+                            if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                        },
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1272,11 +1498,12 @@ private fun SeatItem(
 }
 
 /**
- * Yerleşmemiş Öğrenciler Yatay Tepsisi
+ * Yerleşmemiş (Ayaktaki) Öğrenciler Yatay Tepsisi
  */
 @Composable
 private fun UnassignedStudentsSection(
     unassignedStudents: List<Student>,
+    selectedStandingStudentId: String? = null,
     isDarkTheme: Boolean,
     onStudentClick: (Student) -> Unit
 ) {
@@ -1295,15 +1522,16 @@ private fun UnassignedStudentsSection(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Yerleşmemiş Öğrenciler (${unassignedStudents.size})",
+                    text = "🧍 Ayaktaki Öğrenciler (${unassignedStudents.size})",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                 )
                 Text(
-                    text = "Dokunarak boş koltuğa ata",
+                    text = if (selectedStandingStudentId != null) "Şimdi boş koltuğa dokunun" else "Boş koltuğa veya öğrenciye dokunun",
                     fontSize = 11.sp,
-                    color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+                    fontWeight = if (selectedStandingStudentId != null) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selectedStandingStudentId != null) BirizTurquoise else if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
                 )
             }
 
@@ -1315,16 +1543,19 @@ private fun UnassignedStudentsSection(
             ) {
                 items(unassignedStudents, key = { it.id }) { student ->
                     val isGirl = student.gender.equals("Kız", ignoreCase = true)
+                    val isSelected = selectedStandingStudentId == student.id
                     Surface(
                         onClick = { onStudentClick(student) },
                         shape = RoundedCornerShape(10.dp),
                         color = when {
+                            isSelected -> if (isDarkTheme) Color(0x4528B8C2) else Color(0xFFCCFBF1)
                             isGirl -> if (isDarkTheme) Color(0x30F472B6) else Color.White
                             else -> if (isDarkTheme) Color(0x3038BDF8) else Color.White
                         },
                         border = BorderStroke(
-                            1.dp,
+                            if (isSelected) 2.dp else 1.dp,
                             when {
+                                isSelected -> BirizTurquoise
                                 isGirl -> if (isDarkTheme) Color(0xFFF472B6) else Color(0xFFFCE7F3)
                                 else -> if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFFE0F2FE)
                             }
@@ -1350,16 +1581,16 @@ private fun UnassignedStudentsSection(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = TurkishTextHelper.toTurkishUpperCase(student.fullName),
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 fontSize = 11.sp,
                                 color = if (isDarkTheme) Color.White else Color(0xFF0F172A)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isGirl) "♀" else "♂",
+                                text = if (isSelected) "✓" else if (isGirl) "♀" else "♂",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isGirl) Color(0xFFEC4899) else Color(0xFF0EA5E9)
+                                color = if (isSelected) Color(0xFF0F766E) else if (isGirl) Color(0xFFEC4899) else Color(0xFF0EA5E9)
                             )
                         }
                     }
@@ -1392,6 +1623,7 @@ private fun SeatDetailDialog(
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
     onStartSwap: () -> Unit,
+    onChangeStudentForSeat: () -> Unit = {},
     onTogglePin: () -> Unit,
     onTogglePriority: () -> Unit,
     onEmptySeat: () -> Unit
@@ -1453,6 +1685,48 @@ private fun SeatDetailDialog(
                             color = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
+                    }
+                }
+
+                // Hızlı Öğrenci Değiştir Butonu (Ayaktaki veya sınıftaki başka bir öğrenciyi doğrudan bu koltuğa seç)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkTheme) Color(0x2528B8C2) else Color(0xFFE0F7F6),
+                    border = BorderStroke(1.dp, BirizTurquoise),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onChangeStudentForSeat() }
+                        .testTag("dialog_change_student_button")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(BirizTurquoise.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🧍", fontSize = 16.sp)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Bu Koltuğa Başka Öğrenci Seç",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (isDarkTheme) Color.White else Color(0xFF0F766E)
+                            )
+                            Text(
+                                text = "Ayaktaki öğrencilerden veya sınıftan bu koltuğa öğrenci ata",
+                                fontSize = 10.sp,
+                                color = if (isDarkTheme) Color(0xFFBAE6FD) else Color(0xFF0D9488)
+                            )
+                        }
                     }
                 }
 
@@ -1861,7 +2135,11 @@ private fun AutoAssignModalDialog(
 }
 
 /**
- * Boş Koltuğa Öğrenci Seçme Diyaloğu
+ * Boş (veya Seçilen) Koltuğa Öğrenci Seçme Diyaloğu:
+ * - Ayaktaki (yerleşmemiş) öğrencileri varsayılan sekmede gösterir; boş koltuğa tıklanır tıklanmaz
+ *   öğretmenin ayaktaki öğrencilerden dilediğini seçip yerleştirmesine olanak tanır.
+ * - İkinci sekmeden ("Oturanlardan Taşı") başka bir sırada oturan öğrencinin de bu koltuğa taşınmasını destekler.
+ * - Arama, cinsiyet filtresi, yan sıra arkadaşı bilgisi ve "Bu koltuğa sabitle (kilitle)" seçeneği içerir.
  */
 @Composable
 private fun AssignStudentDialog(
@@ -1871,116 +2149,366 @@ private fun AssignStudentDialog(
     seatingPlanState: SeatingPlanState,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
-    onSelectStudent: (String) -> Unit
+    onSelectStudent: (studentId: String, shouldPin: Boolean) -> Unit
 ) {
     val seatInfo = SeatingPlanHelper.parseSeatId(seatId)
+    var searchQuery by remember { mutableStateOf("") }
+    // 0 = Ayaktaki Öğrenciler, 1 = Oturanlar / Tüm Sınıf
+    var activeTab by remember(unassignedStudents.size) {
+        mutableIntStateOf(if (unassignedStudents.isNotEmpty()) 0 else 1)
+    }
+    // "ALL", "GIRL", "BOY"
+    var genderFilter by remember { mutableStateOf("ALL") }
+    var pinOnAssign by remember { mutableStateOf(false) }
+
+    val seatedStudents = remember(allStudents, unassignedStudents) {
+        val unassignedIds = unassignedStudents.map { it.id }.toSet()
+        allStudents
+            .filter { !unassignedIds.contains(it.id) }
+            .sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
+    }
+
+    val deskNeighbors = remember(seatId, seatingPlanState, allStudents) {
+        if (seatInfo == null) emptyList()
+        else {
+            (0 until seatingPlanState.config.peoplePerRow)
+                .filter { it != seatInfo.seatIndex }
+                .mapNotNull { sIdx ->
+                    val neighborSeatId = "g${seatInfo.groupIndex}-r${seatInfo.rowIndex}-s$sIdx"
+                    val neighborStudentId = seatingPlanState.assignments[neighborSeatId]
+                    allStudents.firstOrNull { it.id == neighborStudentId }
+                }
+        }
+    }
+
+    val seatByStudentId = remember(seatingPlanState.assignments) {
+        seatingPlanState.assignments.entries.associate { (sId, stId) -> stId to sId }
+    }
+
+    val baseList = if (activeTab == 0) unassignedStudents else seatedStudents
+    val filteredList = remember(baseList, searchQuery, genderFilter) {
+        val q = TurkishTextHelper.toTurkishUpperCase(searchQuery.trim())
+        baseList.filter { st ->
+            val matchesGender = when (genderFilter) {
+                "GIRL" -> st.gender.equals("Kız", ignoreCase = true)
+                "BOY" -> !st.gender.equals("Kız", ignoreCase = true)
+                else -> true
+            }
+            val matchesQuery = q.isBlank() ||
+                st.studentNumber.contains(q, ignoreCase = true) ||
+                TurkishTextHelper.toTurkishUpperCase(st.fullName).contains(q)
+            matchesGender && matchesQuery
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                text = "Koltuğa Öğrenci Yerleştir",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-        },
-        text = {
-            Column(modifier = Modifier.height(380.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "🪑 Koltuğa Öğrenci Seç",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp
+                )
                 if (seatInfo != null) {
                     Text(
-                        text = "Hedef: ${seatInfo.groupIndex + 1}. Grup, ${seatInfo.rowIndex + 1}. Sıra, ${seatInfo.seatIndex + 1}. Koltuk",
+                        text = "📍 ${seatInfo.groupIndex + 1}. Grup • ${seatInfo.rowIndex + 1}. Sıra • ${seatInfo.seatIndex + 1}. Koltuk",
                         fontSize = 12.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(440.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Sıra arkadaşı bilgisi
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val neighborText = if (deskNeighbors.isEmpty()) {
+                        "🪑 Bu sıradaki yan koltuk şu an boş"
+                    } else {
+                        "🤝 Sıra Arkadaşı: " + deskNeighbors.joinToString(", ") {
+                            "${it.studentNumber} ${TurkishTextHelper.toTurkishUpperCase(it.fullName)} (${it.gender})"
+                        }
+                    }
+                    Text(
+                        text = neighborText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isDarkTheme) Color.White else Color(0xFF334155),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
 
-                Text(
-                    text = if (unassignedStudents.isNotEmpty()) "Yerleşmemiş Öğrenciler:" else "Tüm Sınıf Öğrencileri:",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = BirizTurquoise,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                // Sekme Seçici: Ayaktaki Öğrenciler vs Oturanlardan Taşı
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        onClick = { activeTab = 0 },
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (activeTab == 0) BirizNavyPrimary else if (isDarkTheme) Color(0x25334E68) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (activeTab == 0) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .testTag("assign_tab_standing")
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                text = "🧍 Ayaktakiler (${unassignedStudents.size})",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (activeTab == 0) Color.White else if (isDarkTheme) Color.White else Color(0xFF334155)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = { activeTab = 1 },
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (activeTab == 1) BirizNavyPrimary else if (isDarkTheme) Color(0x25334E68) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (activeTab == 1) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .testTag("assign_tab_seated")
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                text = "🪑 Oturanlar (${seatedStudents.size})",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (activeTab == 1) Color.White else if (isDarkTheme) Color.White else Color(0xFF334155)
+                            )
+                        }
+                    }
+                }
+
+                // Arama Çubuğu
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Öğrenci adı veya okul no ara...", fontSize = 11.5.sp) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(imageVector = Icons.Default.Clear, contentDescription = "Temizle", modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BirizTurquoise,
+                        unfocusedBorderColor = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .testTag("assign_student_search_input")
                 )
 
-                val displayList = if (unassignedStudents.isNotEmpty()) unassignedStudents else allStudents
-
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                // Cinsiyet Filtresi + Sabitleme Seçeneği
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(displayList, key = { it.id }) { student ->
-                        val isGirl = student.gender.equals("Kız", ignoreCase = true)
-                        val isAssigned = seatingPlanState.assignments.values.contains(student.id)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(
+                            "ALL" to "Tümü",
+                            "GIRL" to "👧 Kız",
+                            "BOY" to "👦 Erkek"
+                        ).forEach { (code, label) ->
+                            val selected = genderFilter == code
+                            Surface(
+                                onClick = { genderFilter = code },
+                                shape = RoundedCornerShape(7.dp),
+                                color = if (selected) BirizTurquoise.copy(alpha = 0.2f) else Color.Transparent,
+                                border = BorderStroke(1.dp, if (selected) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1))
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) (if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E)) else Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
 
-                        Surface(
-                            onClick = { onSelectStudent(student.id) },
-                            shape = RoundedCornerShape(10.dp),
-                            color = when {
-                                isGirl -> if (isDarkTheme) Color(0x30F472B6) else Color.White
-                                else -> if (isDarkTheme) Color(0x3038BDF8) else Color.White
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                when {
-                                    isGirl -> if (isDarkTheme) Color(0xFFF472B6) else Color(0xFFFCE7F3)
-                                    else -> if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFFE0F2FE)
-                                }
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { pinOnAssign = !pinOnAssign }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Checkbox(
+                            checked = pinOnAssign,
+                            onCheckedChange = { pinOnAssign = it },
+                            colors = CheckboxDefaults.colors(checkedColor = BirizAmber),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "🔒 Kilitle",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (pinOnAssign) BirizAmber else Color.Gray
+                        )
+                    }
+                }
+
+                if (filteredList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
+                            Text(
+                                text = if (activeTab == 0 && unassignedStudents.isEmpty()) {
+                                    "🎉 Ayakta öğrenci kalmadı, tüm öğrenciler yerleşti!"
+                                } else {
+                                    "Arama kriterine uygun öğrenci bulunamadı."
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                            if (activeTab == 0 && unassignedStudents.isEmpty() && seatedStudents.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { activeTab = 1 },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("🪑 Oturan Öğrencilerden Seç (${seatedStudents.size})", fontSize = 11.5.sp)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(filteredList, key = { it.id }) { student ->
+                            val isGirl = student.gender.equals("Kız", ignoreCase = true)
+                            val currentSeatId = seatByStudentId[student.id]
+                            val currentCoord = currentSeatId?.let { SeatingPlanHelper.parseSeatId(it) }
+                            val isPriority = seatingPlanState.priorityStudents.contains(student.id) || student.isPriority
+
+                            Surface(
+                                onClick = { onSelectStudent(student.id, pinOnAssign) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = when {
+                                    isGirl -> if (isDarkTheme) Color(0x30F472B6) else Color.White
+                                    else -> if (isDarkTheme) Color(0x3038BDF8) else Color.White
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    when {
+                                        isGirl -> if (isDarkTheme) Color(0xFFF472B6) else Color(0xFFFCE7F3)
+                                        else -> if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFFE0F2FE)
+                                    }
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .testTag("assign_dialog_student_${student.studentNumber}")
                             ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(5.dp),
+                                            color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
+                                        ) {
+                                            Text(
+                                                text = student.studentNumber,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = TurkishTextHelper.toTurkishUpperCase(student.fullName),
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp,
+                                                    color = if (isDarkTheme) Color.White else Color(0xFF1E293B),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                if (isPriority) {
+                                                    Text("👓", fontSize = 11.sp)
+                                                }
+                                            }
+                                            if (currentCoord != null) {
+                                                Text(
+                                                    text = "Şu an: ${currentCoord.groupIndex + 1}. Grup • ${currentCoord.rowIndex + 1}. Sıra",
+                                                    fontSize = 10.sp,
+                                                    color = BirizAmber,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                    }
+
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE)
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (currentCoord != null) {
+                                            if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7)
+                                        } else {
+                                            if (isDarkTheme) Color(0x3528B8C2) else Color(0xFFE0F7F6)
+                                        }
                                     ) {
                                         Text(
-                                            text = student.studentNumber,
-                                            fontSize = 10.sp,
+                                            text = if (currentCoord != null) "↔️ Buraya Taşı" else "➕ Oturt",
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isGirl) Color(0xFFDB2777) else Color(0xFF0284C7),
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            color = if (currentCoord != null) Color(0xFFB45309) else Color(0xFF0F766E),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = TurkishTextHelper.toTurkishUpperCase(student.fullName),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
-                                        color = if (isDarkTheme) Color.White else Color(0xFF1E293B),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    if (isAssigned) {
-                                        Text(
-                                            text = "Mevcut Koltuktan Taşı",
-                                            fontSize = 10.sp,
-                                            color = BirizAmber,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Text(
-                                        text = if (isGirl) "♀" else "♂",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isGirl) Color(0xFFEC4899) else Color(0xFF0EA5E9)
-                                    )
                                 }
                             }
                         }
