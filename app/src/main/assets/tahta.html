@@ -337,7 +337,7 @@
             <div class="code-label">⌨️ AKILLI TAHTA EŞLEŞTİRME KODU</div>
             <div id="session-code-display" class="session-code-text">--------</div>
             <div class="code-actions-row">
-              <button class="secondary-btn" onclick="copyCode()">📋 Kodu Kopyala</button>
+              <button class="secondary-btn" onclick="copyCode(this)">📋 Kodu Kopyala</button>
               <button class="secondary-btn" onclick="regenerateCode()">🔄 Yeni Kod Üret</button>
             </div>
           </div>
@@ -411,7 +411,7 @@
   </main>
 
   <script>
-    const firebaseConfigs = [
+    var firebaseConfigs = [
       {
         name: "biriz_studio",
         config: {
@@ -434,77 +434,95 @@
       }
     ];
 
-    const activeDbs = [];
-    let preferredDb = null;
+    var activeDbs = [];
+    var preferredDb = null;
 
     try {
-      firebaseConfigs.forEach((entry, idx) => {
-        try {
-          const appInstance = idx === 0
-            ? firebase.initializeApp(entry.config)
-            : firebase.initializeApp(entry.config, entry.name);
+      if (typeof firebase !== "undefined") {
+        for (var cIdx = 0; cIdx < firebaseConfigs.length; cIdx++) {
+          var entry = firebaseConfigs[cIdx];
           try {
-            const namedDb = appInstance.firestore(entry.dbId);
-            if (namedDb && !activeDbs.includes(namedDb)) activeDbs.push(namedDb);
-          } catch (e) {}
-          try {
-            const defDb = appInstance.firestore();
-            if (defDb && !activeDbs.includes(defDb)) activeDbs.push(defDb);
-          } catch (e) {}
-        } catch (innerErr) {
-          console.warn("Firebase app init warning:", innerErr);
+            var appInstance = (cIdx === 0)
+              ? firebase.initializeApp(entry.config)
+              : firebase.initializeApp(entry.config, entry.name);
+            try {
+              var namedDb = appInstance.firestore(entry.dbId);
+              if (namedDb && activeDbs.indexOf(namedDb) === -1) activeDbs.push(namedDb);
+            } catch (e1) {}
+            try {
+              var defDb = appInstance.firestore();
+              if (defDb && activeDbs.indexOf(defDb) === -1) activeDbs.push(defDb);
+            } catch (e2) {}
+          } catch (innerErr) {}
         }
-      });
-    } catch (err) {
-      console.error("Firebase init error:", err);
-    }
+      }
+    } catch (err) {}
 
     function getActiveDbs() {
       return activeDbs;
     }
 
-    const STORAGE_KEY_CODE = "biriz_tahta_session_code_v3";
-    let currentSessionCode = "";
-    let activeUnsubscribers = [];
-    let classLiveUnsubscribers = [];
-    let attachedClassId = null;
-    let isBoardConnected = false;
+    var STORAGE_KEY_CODE = "biriz_tahta_session_code_v4";
+    var currentSessionCode = "";
+    var activeUnsubscribers = [];
+    var classLiveUnsubscribers = [];
+    var attachedClassId = null;
+    var isBoardConnected = false;
 
-    let currentSortMode = "no";
-    let currentLibraryTab = "LISTE";
-    let currentTournamentTab = "DEVAM";
+    var currentSortMode = "no";
+    var currentLibraryTab = "LISTE";
+    var currentTournamentTab = "DEVAM";
 
-    let liveStudentsMap = {};
-    let liveStarsMap = {};
-    let liveBooksMap = {};
-    let previousTotalsMap = {};
-    let latestStateData = {};
-    let lastAppliedModuleAt = 0;
+    var liveStudentsMap = {};
+    var liveStarsMap = {};
+    var liveBooksMap = {};
+    var previousTotalsMap = {};
+    var latestStateData = {};
+    var lastAppliedModuleAt = 0;
+
+    function cleanAlphanumericUpper(raw) {
+      var str = String(raw || "").toUpperCase();
+      var allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      var out = "";
+      for (var i = 0; i < str.length; i++) {
+        var ch = str.charAt(i);
+        if (allowed.indexOf(ch) !== -1) out += ch;
+      }
+      return out;
+    }
 
     function generateCleanSessionCode() {
-      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      let result = "BRZ";
-      for (let i = 0; i < 5; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+      var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      var result = "BRZ";
+      for (var i = 0; i < 5; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
       return result;
     }
 
     function initSessionCode() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const paramCode = urlParams.get("kod") || urlParams.get("code");
-      if (paramCode && paramCode.trim().length >= 4) {
-        currentSessionCode = paramCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-        try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
-      } else {
-        let saved = null;
-        try {
-          saved = localStorage.getItem(STORAGE_KEY_CODE) || localStorage.getItem("biriz_board_session_code");
-        } catch (_) {}
-        if (saved && saved.replace(/[^A-Za-z0-9]/g, "").length === 8) {
-          currentSessionCode = saved.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      try {
+        var urlParams = new URLSearchParams(window.location.search);
+        var paramCode = urlParams.get("kod") || urlParams.get("code");
+        var cleanedParam = cleanAlphanumericUpper(paramCode);
+        if (cleanedParam.length >= 4) {
+          currentSessionCode = cleanedParam;
+          try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (e) {}
         } else {
-          currentSessionCode = generateCleanSessionCode();
-          try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
+          var saved = "";
+          try {
+            saved = localStorage.getItem(STORAGE_KEY_CODE) || localStorage.getItem("biriz_tahta_session_code_v3") || localStorage.getItem("biriz_board_session_code") || "";
+          } catch (e) {}
+          var cleanedSaved = cleanAlphanumericUpper(saved);
+          if (cleanedSaved.length === 8) {
+            currentSessionCode = cleanedSaved;
+          } else {
+            currentSessionCode = generateCleanSessionCode();
+            try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (e) {}
+          }
         }
+      } catch (e) {
+        currentSessionCode = generateCleanSessionCode();
       }
       renderCodeDisplay();
       ensureInitialSessionDoc();
@@ -512,17 +530,16 @@
     }
 
     function renderCodeDisplay() {
-      const el = document.getElementById("session-code-display");
+      var el = document.getElementById("session-code-display");
       if (el) {
         el.textContent = currentSessionCode.length === 8
           ? currentSessionCode.slice(0, 4) + "-" + currentSessionCode.slice(4)
           : currentSessionCode;
       }
-      const qrEl = document.getElementById("qr-code-container");
+      var qrEl = document.getElementById("qr-code-container");
       if (qrEl && currentSessionCode) {
         qrEl.innerHTML = "";
-        // ÖNEMLİ: Karekod içinde SADECE 8 haneli saf eşleştirme kodu bulunur (Örn: BRZ94K7P)
-        const qrPayload = currentSessionCode;
+        var qrPayload = currentSessionCode;
         try {
           if (typeof QRCode !== "undefined") {
             new QRCode(qrEl, {
@@ -534,10 +551,10 @@
               correctLevel: QRCode.CorrectLevel.H
             });
           } else {
-            throw new Error("QRCode lib not loaded");
+            throw new Error("QRCode fallback");
           }
-        } catch (_) {
-          const img = document.createElement("img");
+        } catch (e) {
+          var img = document.createElement("img");
           img.src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=1B2A4A&bgcolor=FFFFFF&margin=4&data=" + encodeURIComponent(qrPayload);
           img.alt = "Akıllı Tahta Karekodu";
           qrEl.appendChild(img);
@@ -546,24 +563,29 @@
     }
 
     function ensureInitialSessionDoc() {
-      getActiveDbs().forEach(db => {
-        const docRef = db.collection("board_sessions").doc(currentSessionCode);
-        docRef.get().then(snap => {
-          if (!snap.exists) {
-            docRef.set({
-              sessionCode: currentSessionCode,
-              status: "WAITING",
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            }, { merge: true }).catch(() => {});
-          }
-        }).catch(() => {});
-      });
+      var dbs = getActiveDbs();
+      for (var i = 0; i < dbs.length; i++) {
+        (function(db) {
+          try {
+            var docRef = db.collection("board_sessions").doc(currentSessionCode);
+            docRef.get().then(function(snap) {
+              if (!snap.exists) {
+                docRef.set({
+                  sessionCode: currentSessionCode,
+                  status: "WAITING",
+                  createdAt: Date.now(),
+                  updatedAt: Date.now()
+                }, { merge: true }).catch(function() {});
+              }
+            }).catch(function() {});
+          } catch (e) {}
+        })(dbs[i]);
+      }
     }
 
     function regenerateCode() {
       currentSessionCode = generateCleanSessionCode();
-      try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
+      try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (e) {}
       attachedClassId = null;
       isBoardConnected = false;
       lastAppliedModuleAt = 0;
@@ -575,32 +597,44 @@
       listenToSession();
     }
 
-    function copyCode() {
-      navigator.clipboard.writeText(currentSessionCode);
-      const btn = event.target;
-      const oldText = btn.textContent;
-      btn.textContent = "✅ Kopyalandı!";
-      setTimeout(() => { btn.textContent = oldText; }, 1500);
+    function copyCode(btnEl) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(currentSessionCode);
+        }
+      } catch (e) {}
+      if (btnEl) {
+        var oldText = btnEl.textContent;
+        btnEl.textContent = "✅ Kopyalandı!";
+        setTimeout(function() { btnEl.textContent = oldText; }, 1500);
+      }
     }
 
     function toggleFullScreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      } else {
-        document.exitFullscreen().catch(() => {});
-      }
+      try {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(function() {});
+        } else {
+          document.exitFullscreen().catch(function() {});
+        }
+      } catch (e) {}
     }
 
     function setStudentSortMode(mode) {
       currentSortMode = mode;
-      document.getElementById("btn-sort-no")?.classList.toggle("active", mode === "no");
-      document.getElementById("btn-sort-stars")?.classList.toggle("active", mode === "stars");
-      document.getElementById("btn-sort-books")?.classList.toggle("active", mode === "books");
+      var btnNo = document.getElementById("btn-sort-no");
+      var btnStars = document.getElementById("btn-sort-stars");
+      var btnBooks = document.getElementById("btn-sort-books");
+      if (btnNo) btnNo.classList.toggle("active", mode === "no");
+      if (btnStars) btnStars.classList.toggle("active", mode === "stars");
+      if (btnBooks) btnBooks.classList.toggle("active", mode === "books");
       renderStudents(getMergedStudentsList());
     }
 
     function clearClassLiveListeners() {
-      classLiveUnsubscribers.forEach(u => { try { u(); } catch (_) {} });
+      for (var i = 0; i < classLiveUnsubscribers.length; i++) {
+        try { classLiveUnsubscribers[i](); } catch (e) {}
+      }
       classLiveUnsubscribers = [];
       liveStudentsMap = {};
       liveStarsMap = {};
@@ -612,113 +646,127 @@
       clearClassLiveListeners();
       attachedClassId = classId;
 
-      const dbsToWatch = sourceDb ? [sourceDb, ...getActiveDbs().filter(d => d !== sourceDb)] : getActiveDbs();
+      var allDbs = getActiveDbs();
+      var dbsToWatch = [];
+      if (sourceDb) dbsToWatch.push(sourceDb);
+      for (var i = 0; i < allDbs.length; i++) {
+        if (allDbs[i] !== sourceDb) dbsToWatch.push(allDbs[i]);
+      }
 
-      dbsToWatch.forEach(db => {
-        const unsubLiveState = db.collection("classrooms").doc(classId)
-          .collection("live_board").doc("state")
-          .onSnapshot(snap => {
-            if (snap.exists) handleSessionSnapshot(snap.data() || {}, "live_board", db);
-          }, () => {});
-        classLiveUnsubscribers.push(unsubLiveState);
+      for (var dIdx = 0; dIdx < dbsToWatch.length; dIdx++) {
+        (function(db) {
+          try {
+            var unsubLiveState = db.collection("classrooms").doc(classId)
+              .collection("live_board").doc("state")
+              .onSnapshot(function(snap) {
+                if (snap.exists) handleSessionSnapshot(snap.data() || {}, "live_board", db);
+              }, function() {});
+            classLiveUnsubscribers.push(unsubLiveState);
 
-        const unsubStudents = db.collection("classrooms").doc(classId)
-          .collection("students")
-          .onSnapshot(snap => {
-            if (snap.empty) return;
-            const map = {};
-            snap.forEach(doc => {
-              const d = doc.data() || {};
-              const sNo = d.studentNumber || String(d.studentNo || "");
-              map[doc.id] = {
-                id: doc.id,
-                studentNo: Number(d.studentNo || sNo) || 0,
-                studentNumber: String(sNo),
-                fullName: d.fullName || d.name || "",
-                gender: d.gender || "Erkek"
-              };
-            });
-            if (Object.keys(map).length > 0) {
-              liveStudentsMap = map;
-              refreshLiveViews();
-            }
-          }, () => {});
-        classLiveUnsubscribers.push(unsubStudents);
+            var unsubStudents = db.collection("classrooms").doc(classId)
+              .collection("students")
+              .onSnapshot(function(snap) {
+                if (snap.empty) return;
+                var map = {};
+                snap.forEach(function(doc) {
+                  var d = doc.data() || {};
+                  var sNo = d.studentNumber || String(d.studentNo || "");
+                  map[doc.id] = {
+                    id: doc.id,
+                    studentNo: Number(d.studentNo || sNo) || 0,
+                    studentNumber: String(sNo),
+                    fullName: d.fullName || d.name || "",
+                    gender: d.gender || "Erkek"
+                  };
+                });
+                if (Object.keys(map).length > 0) {
+                  liveStudentsMap = map;
+                  refreshLiveViews();
+                }
+              }, function() {});
+            classLiveUnsubscribers.push(unsubStudents);
 
-        const unsubStars = db.collection("classrooms").doc(classId)
-          .collection("star_records")
-          .onSnapshot(snap => {
-            if (snap.empty && Object.keys(liveStarsMap).length > 0) return;
-            const map = {};
-            const recentList = [];
-            snap.forEach(doc => {
-              const d = doc.data() || {};
-              const sid = d.studentId || "";
-              const cnt = Number(d.starCount);
-              const validCnt = isNaN(cnt) ? 1 : cnt;
-              if (sid) map[sid] = (map[sid] || 0) + validCnt;
-              recentList.push({
-                id: doc.id,
-                studentId: sid,
-                studentName: d.studentName || "",
-                studentNumber: String(d.studentNumber || ""),
-                categoryName: d.categoryName || "Başarı Yıldızı",
-                starCount: validCnt,
-                timestamp: Number(d.timestamp || 0)
-              });
-            });
-            if (Object.keys(map).length > 0 || recentList.length > 0) {
-              recentList.sort((a, b) => b.timestamp - a.timestamp);
-              liveStarsMap = map;
-              if (recentList.length > 0) latestStateData.recentStars = recentList.slice(0, 15);
-              refreshLiveViews();
-            }
-          }, () => {});
-        classLiveUnsubscribers.push(unsubStars);
+            var unsubStars = db.collection("classrooms").doc(classId)
+              .collection("star_records")
+              .onSnapshot(function(snap) {
+                if (snap.empty && Object.keys(liveStarsMap).length > 0) return;
+                var map = {};
+                var recentList = [];
+                snap.forEach(function(doc) {
+                  var d = doc.data() || {};
+                  var sid = d.studentId || "";
+                  var cnt = Number(d.starCount);
+                  var validCnt = isNaN(cnt) ? 1 : cnt;
+                  if (sid) map[sid] = (map[sid] || 0) + validCnt;
+                  recentList.push({
+                    id: doc.id,
+                    studentId: sid,
+                    studentName: d.studentName || "",
+                    studentNumber: String(d.studentNumber || ""),
+                    categoryName: d.categoryName || "Başarı Yıldızı",
+                    starCount: validCnt,
+                    timestamp: Number(d.timestamp || 0)
+                  });
+                });
+                if (Object.keys(map).length > 0 || recentList.length > 0) {
+                  recentList.sort(function(a, b) { return b.timestamp - a.timestamp; });
+                  liveStarsMap = map;
+                  if (recentList.length > 0) latestStateData.recentStars = recentList.slice(0, 15);
+                  refreshLiveViews();
+                }
+              }, function() {});
+            classLiveUnsubscribers.push(unsubStars);
 
-        const unsubBooks = db.collection("classrooms").doc(classId)
-          .collection("reading_records")
-          .onSnapshot(snap => {
-            if (snap.empty && Object.keys(liveBooksMap).length > 0) return;
-            const map = {};
-            snap.forEach(doc => {
-              const d = doc.data() || {};
-              const sid = d.studentId || "";
-              if (sid) map[sid] = (map[sid] || 0) + 1;
-            });
-            if (Object.keys(map).length > 0) {
-              liveBooksMap = map;
-              refreshLiveViews();
-            }
-          }, () => {});
-        classLiveUnsubscribers.push(unsubBooks);
-      });
+            var unsubBooks = db.collection("classrooms").doc(classId)
+              .collection("reading_records")
+              .onSnapshot(function(snap) {
+                if (snap.empty && Object.keys(liveBooksMap).length > 0) return;
+                var map = {};
+                snap.forEach(function(doc) {
+                  var d = doc.data() || {};
+                  var sid = d.studentId || "";
+                  if (sid) map[sid] = (map[sid] || 0) + 1;
+                });
+                if (Object.keys(map).length > 0) {
+                  liveBooksMap = map;
+                  refreshLiveViews();
+                }
+              }, function() {});
+            classLiveUnsubscribers.push(unsubBooks);
+          } catch (e) {}
+        })(dbsToWatch[dIdx]);
+      }
     }
 
     function getMergedStudentsList() {
-      const baseList = Array.isArray(latestStateData.students) && latestStateData.students.length > 0
+      var baseList = (Array.isArray(latestStateData.students) && latestStateData.students.length > 0)
         ? latestStateData.students
         : Object.values(liveStudentsMap);
 
-      const hasLiveStars = Object.keys(liveStarsMap).length > 0;
-      const hasLiveBooks = Object.keys(liveBooksMap).length > 0;
+      var hasLiveStars = Object.keys(liveStarsMap).length > 0;
+      var hasLiveBooks = Object.keys(liveBooksMap).length > 0;
 
-      return baseList.map(s => {
-        const sid = s.id || "";
-        const starsFromPayload = Number(s.stars || 0);
-        const booksFromPayload = Number(s.booksRead || 0);
-        const liveStarVal = hasLiveStars && liveStarsMap[sid] !== undefined ? liveStarsMap[sid] : starsFromPayload;
-        const liveBookVal = hasLiveBooks && liveBooksMap[sid] !== undefined ? liveBooksMap[sid] : booksFromPayload;
-        return {
-          ...s,
-          stars: Math.max(starsFromPayload, liveStarVal),
-          booksRead: Math.max(booksFromPayload, liveBookVal)
-        };
-      });
+      var result = [];
+      for (var i = 0; i < baseList.length; i++) {
+        var s = baseList[i] || {};
+        var sid = s.id || "";
+        var starsFromPayload = Number(s.stars || 0);
+        var booksFromPayload = Number(s.booksRead || 0);
+        var liveStarVal = (hasLiveStars && liveStarsMap[sid] !== undefined) ? liveStarsMap[sid] : starsFromPayload;
+        var liveBookVal = (hasLiveBooks && liveBooksMap[sid] !== undefined) ? liveBooksMap[sid] : booksFromPayload;
+        var mergedItem = {};
+        for (var k in s) {
+          if (Object.prototype.hasOwnProperty.call(s, k)) mergedItem[k] = s[k];
+        }
+        mergedItem.stars = Math.max(starsFromPayload, liveStarVal);
+        mergedItem.booksRead = Math.max(booksFromPayload, liveBookVal);
+        result.push(mergedItem);
+      }
+      return result;
     }
 
     function refreshLiveViews() {
-      const merged = getMergedStudentsList();
+      var merged = getMergedStudentsList();
       renderStudents(merged);
       renderStarStandings(merged);
       if (latestStateData.seatingPlan) renderSeatingPlan(latestStateData.seatingPlan, merged);
@@ -729,33 +777,40 @@
     }
 
     function listenToSession() {
-      activeUnsubscribers.forEach(unsub => { try { unsub(); } catch (_) {} });
+      for (var i = 0; i < activeUnsubscribers.length; i++) {
+        try { activeUnsubscribers[i](); } catch (e) {}
+      }
       activeUnsubscribers = [];
 
-      const candidateCodes = [currentSessionCode, "BIRIZ" + currentSessionCode];
+      var candidateCodes = [currentSessionCode, "BIRIZ" + currentSessionCode];
+      var dbs = getActiveDbs();
 
-      getActiveDbs().forEach(db => {
-        candidateCodes.forEach(codeKey => {
-          const unsub = db.collection("board_sessions").doc(codeKey)
-            .onSnapshot(doc => {
-              if (!doc.exists) return;
-              handleSessionSnapshot(doc.data() || {}, "board_session", db);
-            }, err => console.warn("Session listener warning:", err));
-          activeUnsubscribers.push(unsub);
-        });
-      });
+      for (var dIdx = 0; dIdx < dbs.length; dIdx++) {
+        for (var cIdx = 0; cIdx < candidateCodes.length; cIdx++) {
+          (function(db, codeKey) {
+            try {
+              var unsub = db.collection("board_sessions").doc(codeKey)
+                .onSnapshot(function(doc) {
+                  if (!doc.exists) return;
+                  handleSessionSnapshot(doc.data() || {}, "board_session", db);
+                }, function() {});
+              activeUnsubscribers.push(unsub);
+            } catch (e) {}
+          })(dbs[dIdx], candidateCodes[cIdx]);
+        }
+      }
     }
 
     function normalizeModuleKey(rawMod) {
-      const m = (rawMod || "SINIF_LISTESI").toUpperCase().trim();
+      var m = String(rawMod || "SINIF_LISTESI").toUpperCase().trim();
       if (m === "ANA_SAYFA" || m === "SINIF_LISTESI" || m === "PROFIL_AYARLARI") return "SINIF_LISTESI";
-      if (m.startsWith("KITAPLIK")) {
+      if (m.indexOf("KITAPLIK") === 0) {
         if (m === "KITAPLIK_KAYITLAR") currentLibraryTab = "KAYITLAR";
         else if (m === "KITAPLIK_DEGERLENDIRME") currentLibraryTab = "DEGERLENDIRME";
         else currentLibraryTab = "LISTE";
         return "KITAPLIK";
       }
-      if (m.startsWith("TURNUVA")) {
+      if (m.indexOf("TURNUVA") === 0) {
         if (m === "TURNUVA_TAMAMLANANLAR") currentTournamentTab = "TAMAMLANAN";
         else currentTournamentTab = "DEVAM";
         return "TURNUVA";
@@ -763,16 +818,32 @@
       return m;
     }
 
+    function shallowMerge(target, source) {
+      var out = {};
+      var k;
+      if (target) {
+        for (k in target) {
+          if (Object.prototype.hasOwnProperty.call(target, k)) out[k] = target[k];
+        }
+      }
+      if (source) {
+        for (k in source) {
+          if (Object.prototype.hasOwnProperty.call(source, k)) out[k] = source[k];
+        }
+      }
+      return out;
+    }
+
     function handleSessionSnapshot(data, source, sourceDb) {
       if (!data) return;
-      const rawStatus = (data.status || "").toUpperCase();
+      var rawStatus = String(data.status || "").toUpperCase();
       if (rawStatus === "DISCONNECTED" && source === "board_session") {
         isBoardConnected = false;
         showWaitingScreen();
         return;
       }
 
-      const incomingConnected =
+      var incomingConnected =
         rawStatus === "CONNECTED" ||
         data.isConnected === true ||
         data.isLiveMirrorActive === true ||
@@ -786,54 +857,58 @@
       isBoardConnected = true;
       if (sourceDb) preferredDb = sourceDb;
 
-      const incomingTs = Number(data.updatedAt || 0);
+      var incomingTs = Number(data.updatedAt || 0);
       if (incomingTs > 0 && incomingTs < lastAppliedModuleAt) {
-        latestStateData = { ...data, ...latestStateData };
+        latestStateData = shallowMerge(data, latestStateData);
       } else {
         if (incomingTs > 0) lastAppliedModuleAt = incomingTs;
-        latestStateData = { ...latestStateData, ...data };
+        latestStateData = shallowMerge(latestStateData, data);
       }
 
       if (latestStateData.classId) attachClassroomLiveListeners(latestStateData.classId, preferredDb);
 
-      const pill = document.getElementById("conn-status-pill");
-      const pillText = document.getElementById("conn-status-text");
-      pill.classList.add("connected");
-      pillText.textContent = "Canlı Bağlantı Aktif";
+      var pill = document.getElementById("conn-status-pill");
+      var pillText = document.getElementById("conn-status-text");
+      if (pill) pill.classList.add("connected");
+      if (pillText) pillText.textContent = "Canlı Bağlantı Aktif";
 
-      const schoolEl = document.getElementById("header-school-name");
-      if (latestStateData.schoolName) {
+      var schoolEl = document.getElementById("header-school-name");
+      if (schoolEl && latestStateData.schoolName) {
         schoolEl.textContent = latestStateData.schoolName + (latestStateData.teacherName ? " • " + latestStateData.teacherName : "");
       }
 
-      const classBadge = document.getElementById("header-class-badge");
-      if (latestStateData.grade || latestStateData.branch) {
+      var classBadge = document.getElementById("header-class-badge");
+      if (classBadge && (latestStateData.grade || latestStateData.branch)) {
         classBadge.style.display = "inline-flex";
         classBadge.textContent = "🏫 " + (latestStateData.grade || "") + "/" + (latestStateData.branch || "") + " Sınıfı";
       }
 
-      const isPrivacy = latestStateData.isPrivacyMode === true || latestStateData.isLiveMirrorActive === false;
-      document.getElementById("pairing-screen").style.display = "none";
+      var isPrivacy = latestStateData.isPrivacyMode === true || latestStateData.isLiveMirrorActive === false;
+      var pairingEl = document.getElementById("pairing-screen");
+      var privacyEl = document.getElementById("privacy-screen");
+      if (pairingEl) pairingEl.style.display = "none";
 
       if (isPrivacy) {
-        document.getElementById("privacy-screen").style.display = "flex";
+        if (privacyEl) privacyEl.style.display = "flex";
         hideAllModules();
         return;
       } else {
-        document.getElementById("privacy-screen").style.display = "none";
+        if (privacyEl) privacyEl.style.display = "none";
       }
 
-      const rawModule = latestStateData.activeModule || latestStateData.currentSubPage || "SINIF_LISTESI";
-      const rawTitle = latestStateData.activeModuleTitle || latestStateData.currentSubPageTitle || getModuleTitle(rawModule);
+      var rawModule = latestStateData.activeModule || latestStateData.currentSubPage || "SINIF_LISTESI";
+      var rawTitle = latestStateData.activeModuleTitle || latestStateData.currentSubPageTitle || getModuleTitle(rawModule);
 
-      const modBadge = document.getElementById("header-module-badge");
-      modBadge.style.display = "inline-flex";
-      modBadge.textContent = (rawModule === "ANA_SAYFA" || rawModule === "SINIF_LISTESI") ? "📋 Sınıf Listesi" : rawTitle;
+      var modBadge = document.getElementById("header-module-badge");
+      if (modBadge) {
+        modBadge.style.display = "inline-flex";
+        modBadge.textContent = (rawModule === "ANA_SAYFA" || rawModule === "SINIF_LISTESI") ? "📋 Sınıf Listesi" : rawTitle;
+      }
 
-      const targetKey = normalizeModuleKey(rawModule);
+      var targetKey = normalizeModuleKey(rawModule);
       switchActiveModuleScreen(targetKey);
 
-      const mergedStudents = getMergedStudentsList();
+      var mergedStudents = getMergedStudentsList();
       renderStudents(mergedStudents);
       renderSchedule(latestStateData.schedule || [], latestStateData.selectedDay || latestStateData.activeScheduleDay || "PZT", latestStateData.scheduleConfig);
       renderSeatingPlan(latestStateData.seatingPlan, mergedStudents);
@@ -846,29 +921,36 @@
     }
 
     function showWaitingScreen() {
-      const pill = document.getElementById("conn-status-pill");
-      const pillText = document.getElementById("conn-status-text");
-      pill.classList.remove("connected");
-      pillText.textContent = "Eşleştirme Bekleniyor";
-      document.getElementById("header-class-badge").style.display = "none";
-      document.getElementById("header-module-badge").style.display = "none";
-      document.getElementById("privacy-screen").style.display = "none";
+      var pill = document.getElementById("conn-status-pill");
+      var pillText = document.getElementById("conn-status-text");
+      if (pill) pill.classList.remove("connected");
+      if (pillText) pillText.textContent = "Eşleştirme Bekleniyor";
+      var cb = document.getElementById("header-class-badge");
+      var mb = document.getElementById("header-module-badge");
+      var ps = document.getElementById("privacy-screen");
+      var pair = document.getElementById("pairing-screen");
+      if (cb) cb.style.display = "none";
+      if (mb) mb.style.display = "none";
+      if (ps) ps.style.display = "none";
       hideAllModules();
-      document.getElementById("pairing-screen").style.display = "flex";
+      if (pair) pair.style.display = "flex";
     }
 
     function hideAllModules() {
-      document.querySelectorAll(".module-screen").forEach(el => el.classList.remove("active"));
+      var list = document.querySelectorAll(".module-screen");
+      for (var i = 0; i < list.length; i++) {
+        list[i].classList.remove("active");
+      }
     }
 
     function switchActiveModuleScreen(modKey) {
       hideAllModules();
-      const target = document.getElementById("mod-" + modKey) || document.getElementById("mod-SINIF_LISTESI");
+      var target = document.getElementById("mod-" + modKey) || document.getElementById("mod-SINIF_LISTESI");
       if (target) target.classList.add("active");
     }
 
     function getModuleTitle(key) {
-      const map = {
+      var map = {
         "ANA_SAYFA": "Sınıf Listesi",
         "SINIF_LISTESI": "Sınıf Listesi",
         "DERS_PROGRAMI": "Ders Programı",
@@ -884,8 +966,8 @@
     }
 
     function isGirlStudent(genderStr) {
-      const g = (genderStr || "").toUpperCase();
-      return g.includes("KIZ") || g === "K" || g === "FEMALE";
+      var g = String(genderStr || "").toUpperCase();
+      return g.indexOf("KIZ") !== -1 || g === "K" || g === "FEMALE";
     }
 
     function computeOptimalGrid(total) {
@@ -902,43 +984,48 @@
     }
 
     function renderStudents(students) {
-      const statsBar = document.getElementById("student-stats-bar");
-      const grid = document.getElementById("students-grid");
+      var statsBar = document.getElementById("student-stats-bar");
+      var grid = document.getElementById("students-grid");
       if (!grid || !statsBar) return;
 
-      const list = Array.isArray(students) ? [...students] : [];
-      const total = list.length;
-      const girls = list.filter(s => isGirlStudent(s.gender)).length;
-      const boys = total - girls;
-      const totalStars = list.reduce((acc, s) => acc + (Number(s.stars) || 0), 0);
-      const totalBooks = list.reduce((acc, s) => acc + (Number(s.booksRead) || 0), 0);
+      var list = Array.isArray(students) ? students.slice() : [];
+      var total = list.length;
+      var girls = 0;
+      var totalStars = 0;
+      var totalBooks = 0;
+      for (var i = 0; i < total; i++) {
+        if (isGirlStudent(list[i].gender)) girls++;
+        totalStars += Number(list[i].stars) || 0;
+        totalBooks += Number(list[i].booksRead) || 0;
+      }
+      var boys = total - girls;
 
-      statsBar.innerHTML = `
-        <div class="stat-pill">👥 Toplam: <strong>${total} Öğrenci</strong></div>
-        <div class="stat-pill girl-stat">🌸 Kız: <strong>${girls}</strong></div>
-        <div class="stat-pill boy-stat">⚡ Erkek: <strong>${boys}</strong></div>
-        <div class="stat-pill star-stat">⭐ Toplam Yıldız: <strong>${totalStars}</strong></div>
-        <div class="stat-pill book-stat">📚 Okunan Kitap: <strong>${totalBooks}</strong></div>
-      `;
+      statsBar.innerHTML =
+        '<div class="stat-pill">👥 Toplam: <strong>' + total + ' Öğrenci</strong></div>' +
+        '<div class="stat-pill girl-stat">🌸 Kız: <strong>' + girls + '</strong></div>' +
+        '<div class="stat-pill boy-stat">⚡ Erkek: <strong>' + boys + '</strong></div>' +
+        '<div class="stat-pill star-stat">⭐ Toplam Yıldız: <strong>' + totalStars + '</strong></div>' +
+        '<div class="stat-pill book-stat">📚 Okunan Kitap: <strong>' + totalBooks + '</strong></div>';
 
       if (total === 0) {
         grid.style.gridTemplateColumns = "1fr";
         grid.style.gridTemplateRows = "1fr";
-        grid.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">👨‍🎓</div>
-          <h3 style="margin-top:8px;">Sınıf Listesi Henüz Boş</h3>
-          <p style="color:#64748B;">Telefondan öğrenci eklediğinizde burada anında listelenecektir.</p>
-        </div>`;
+        grid.innerHTML =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">👨‍🎓</div>' +
+            '<h3 style="margin-top:8px;">Sınıf Listesi Henüz Boş</h3>' +
+            '<p style="color:#64748B;">Telefondan öğrenci eklediğinizde burada anında listelenecektir.</p>' +
+          '</div>';
         return;
       }
 
-      list.sort((a, b) => {
-        const noA = Number(a.studentNo || a.studentNumber) || 0;
-        const noB = Number(b.studentNo || b.studentNumber) || 0;
-        const starsA = Number(a.stars) || 0;
-        const starsB = Number(b.stars) || 0;
-        const booksA = Number(a.booksRead) || 0;
-        const booksB = Number(b.booksRead) || 0;
+      list.sort(function(a, b) {
+        var noA = Number(a.studentNo || a.studentNumber) || 0;
+        var noB = Number(b.studentNo || b.studentNumber) || 0;
+        var starsA = Number(a.stars) || 0;
+        var starsB = Number(b.stars) || 0;
+        var booksA = Number(a.booksRead) || 0;
+        var booksB = Number(b.booksRead) || 0;
 
         if (currentSortMode === "stars") {
           if (starsB !== starsA) return starsB - starsA;
@@ -953,57 +1040,64 @@
         return noA - noB;
       });
 
-      const { cols, rows } = computeOptimalGrid(total);
-      grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-      grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+      var dims = computeOptimalGrid(total);
+      grid.style.gridTemplateColumns = "repeat(" + dims.cols + ", minmax(0, 1fr))";
+      grid.style.gridTemplateRows = "repeat(" + dims.rows + ", minmax(0, 1fr))";
 
-      grid.innerHTML = list.map((s, idx) => {
-        const isKiz = isGirlStudent(s.gender);
-        const sNo = s.studentNo || s.studentNumber || "";
-        const stars = Number(s.stars) || 0;
-        const books = Number(s.booksRead) || 0;
-        const sid = s.id || String(sNo);
+      var htmlParts = [];
+      for (var idx = 0; idx < list.length; idx++) {
+        var s = list[idx];
+        var isKiz = isGirlStudent(s.gender);
+        var sNo = s.studentNo || s.studentNumber || "";
+        var stars = Number(s.stars) || 0;
+        var books = Number(s.booksRead) || 0;
+        var sid = s.id || String(sNo);
 
-        const prevKey = `${stars}_${books}`;
-        const hadChange = previousTotalsMap[sid] && previousTotalsMap[sid] !== prevKey;
+        var prevKey = stars + "_" + books;
+        var hadChange = previousTotalsMap[sid] && previousTotalsMap[sid] !== prevKey;
         previousTotalsMap[sid] = prevKey;
 
-        const isRankMode = currentSortMode === "stars" || currentSortMode === "books";
-        const medal = isRankMode ? (idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : `${idx + 1}.`) : "";
+        var isRankMode = currentSortMode === "stars" || currentSortMode === "books";
+        var medal = isRankMode ? (idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : (idx + 1) + ".") : "";
 
-        return `
-          <div class="student-card ${isKiz ? 'kiz-card' : 'erkek-card'} ${hadChange ? 'just-updated' : ''}">
-            <div class="student-left">
-              <div class="student-no-badge">
-                ${medal ? `<span class="rank-mini">${medal}</span>` : ""}
-                <span>#${sNo}</span>
-              </div>
-              <div class="student-info">
-                <h4>${s.fullName || ''}</h4>
-                <span class="gender-tag">${isKiz ? '🌸 Kız' : '⚡ Erkek'}</span>
-              </div>
-            </div>
-            <div class="student-metrics">
-              <div class="metric-pill star-pill" title="Toplam Yıldız">
-                <span class="metric-icon">⭐</span>
-                <span class="metric-val">${stars}</span>
-              </div>
-              <div class="metric-pill book-pill" title="Okunan Kitap">
-                <span class="metric-icon">📚</span>
-                <span class="metric-val">${books}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
+        htmlParts.push(
+          '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + (hadChange ? ' just-updated' : '') + '">' +
+            '<div class="student-left">' +
+              '<div class="student-no-badge">' +
+                (medal ? '<span class="rank-mini">' + medal + '</span>' : '') +
+                '<span>#' + sNo + '</span>' +
+              '</div>' +
+              '<div class="student-info">' +
+                '<h4>' + (s.fullName || '') + '</h4>' +
+                '<span class="gender-tag">' + (isKiz ? '🌸 Kız' : '⚡ Erkek') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="student-metrics">' +
+              '<div class="metric-pill star-pill" title="Toplam Yıldız">' +
+                '<span class="metric-icon">⭐</span>' +
+                '<span class="metric-val">' + stars + '</span>' +
+              '</div>' +
+              '<div class="metric-pill book-pill" title="Okunan Kitap">' +
+                '<span class="metric-icon">📚</span>' +
+                '<span class="metric-val">' + books + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
+      grid.innerHTML = htmlParts.join("");
     }
 
     function addMinutesToTime(timeStr, minsToAdd) {
-      const parts = (timeStr || "08:30").split(":");
-      let h = parseInt(parts[0] || "8", 10);
-      let m = parseInt(parts[1] || "30", 10);
-      let total = h * 60 + m + minsToAdd;
-      return String(Math.floor(total / 60) % 24).padStart(2, "0") + ":" + String(total % 60).padStart(2, "0");
+      var parts = String(timeStr || "08:30").split(":");
+      var h = parseInt(parts[0] || "8", 10);
+      var m = parseInt(parts[1] || "30", 10);
+      var total = h * 60 + m + minsToAdd;
+      var hh = String(Math.floor(total / 60) % 24);
+      var mm = String(total % 60);
+      if (hh.length < 2) hh = "0" + hh;
+      if (mm.length < 2) mm = "0" + mm;
+      return hh + ":" + mm;
     }
 
     function setBoardScheduleDay(dayKey) {
@@ -1012,467 +1106,524 @@
     }
 
     function renderSchedule(scheduleList, selectedDay, config) {
-      const toolbar = document.getElementById("schedule-toolbar");
-      const grid = document.getElementById("schedule-grid");
+      var toolbar = document.getElementById("schedule-toolbar");
+      var grid = document.getElementById("schedule-grid");
       if (!toolbar || !grid) return;
 
-      const dayMap = [
+      var dayMap = [
         { key: "PZT", label: "Pazartesi" },
         { key: "SAL", label: "Salı" },
         { key: "ÇAR", label: "Çarşamba" },
         { key: "PER", label: "Perşembe" },
         { key: "CUM", label: "Cuma" }
       ];
-      const activeDay = (selectedDay || "PZT").toUpperCase();
-      const cfg = config || {};
-      const lessonMins = Number(cfg.lessonDurationMinutes) || 40;
-      const startTime = cfg.firstLessonStartTime || "08:30";
-      const recessList = Array.isArray(cfg.recessDurations) ? cfg.recessDurations : [15, 15, 15, 15, 15];
-      const lunchActive = cfg.isLunchBreakActive !== false;
-      const lunchAfter = Number(cfg.lunchAfterLessonIndex) || 4;
-      const lunchMins = Number(cfg.lunchDurationMinutes) || 50;
+      var activeDay = String(selectedDay || "PZT").toUpperCase();
+      var cfg = config || {};
+      var lessonMins = Number(cfg.lessonDurationMinutes) || 40;
+      var startTime = cfg.firstLessonStartTime || "08:30";
+      var recessList = Array.isArray(cfg.recessDurations) ? cfg.recessDurations : [15, 15, 15, 15, 15];
+      var lunchActive = cfg.isLunchBreakActive !== false;
+      var lunchAfter = Number(cfg.lunchAfterLessonIndex) || 4;
+      var lunchMins = Number(cfg.lunchDurationMinutes) || 50;
 
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill">📅 Günlük Ders: <strong>${cfg.dailyLessonCount || 6} Ders</strong></div>
-          <div class="stat-pill star-stat">⏰ Başlangıç: <strong>${startTime}</strong> (${lessonMins} dk)</div>
-        </div>
-        <div class="sort-controls">
-          ${dayMap.map(d => `
-            <button class="sort-btn ${activeDay === d.key ? 'active' : ''}" onclick="setBoardScheduleDay('${d.key}')">${d.label}</button>
-          `).join("")}
-        </div>
-      `;
+      var dayBtns = "";
+      for (var dIdx = 0; dIdx < dayMap.length; dIdx++) {
+        var d = dayMap[dIdx];
+        dayBtns += '<button class="sort-btn ' + (activeDay === d.key ? 'active' : '') + '" data-day="' + d.key + '" onclick="setBoardScheduleDay(this.getAttribute(&quot;data-day&quot;))">' + d.label + '</button>';
+      }
 
-      const filtered = (Array.isArray(scheduleList) ? scheduleList : [])
-        .filter(item => (item.dayOfWeek || "").toUpperCase() === activeDay)
-        .sort((a, b) => (Number(a.lessonIndex) || 0) - (Number(b.lessonIndex) || 0));
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill">📅 Günlük Ders: <strong>' + (cfg.dailyLessonCount || 6) + ' Ders</strong></div>' +
+          '<div class="stat-pill star-stat">⏰ Başlangıç: <strong>' + startTime + '</strong> (' + lessonMins + ' dk)</div>' +
+        '</div>' +
+        '<div class="sort-controls">' + dayBtns + '</div>';
 
-      const dailyCount = Math.max(Number(cfg.dailyLessonCount) || 6, filtered.length);
+      var rawArr = Array.isArray(scheduleList) ? scheduleList : [];
+      var filtered = [];
+      for (var fIdx = 0; fIdx < rawArr.length; fIdx++) {
+        if (String(rawArr[fIdx].dayOfWeek || "").toUpperCase() === activeDay) {
+          filtered.push(rawArr[fIdx]);
+        }
+      }
+      filtered.sort(function(a, b) { return (Number(a.lessonIndex) || 0) - (Number(b.lessonIndex) || 0); });
+
+      var dailyCount = Math.max(Number(cfg.dailyLessonCount) || 6, filtered.length);
       if (filtered.length === 0) {
-        grid.innerHTML = `<div class="stage-panel" style="grid-column:1/-1; align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">📅</div>
-          <h3 style="margin-top:8px;">Bu Gün İçin Ders Programı Girilmemiş</h3>
-        </div>`;
+        grid.innerHTML =
+          '<div class="stage-panel" style="grid-column:1/-1; align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">📅</div>' +
+            '<h3 style="margin-top:8px;">Bu Gün İçin Ders Programı Girilmemiş</h3>' +
+          '</div>';
         return;
       }
 
-      let cursorMins = 0;
-      const slots = [];
-      for (let i = 1; i <= dailyCount; i++) {
-        const sTime = addMinutesToTime(startTime, cursorMins);
-        const eTime = addMinutesToTime(startTime, cursorMins + lessonMins);
+      var cursorMins = 0;
+      var slots = [];
+      for (var i = 1; i <= dailyCount; i++) {
+        var sTime = addMinutesToTime(startTime, cursorMins);
+        var eTime = addMinutesToTime(startTime, cursorMins + lessonMins);
         cursorMins += lessonMins;
-        const found = filtered.find(x => Number(x.lessonIndex) === i);
+        var found = null;
+        for (var j = 0; j < filtered.length; j++) {
+          if (Number(filtered[j].lessonIndex) === i) { found = filtered[j]; break; }
+        }
         slots.push({
           lessonIndex: i,
           startTime: sTime,
           endTime: eTime,
-          subjectName: found?.subjectName || `${i}. Ders`,
-          topicOrNotes: found?.topicOrNotes || "",
-          colorTheme: found?.colorTheme || "NAVY",
+          subjectName: (found && found.subjectName) ? found.subjectName : (i + ". Ders"),
+          topicOrNotes: (found && found.topicOrNotes) ? found.topicOrNotes : "",
+          colorTheme: (found && found.colorTheme) ? found.colorTheme : "NAVY",
           isAfterLunch: lunchActive && i === lunchAfter
         });
         cursorMins += (lunchActive && i === lunchAfter) ? lunchMins : Number(recessList[i - 1] || 15);
       }
 
-      const cols = slots.length <= 6 ? 3 : 4;
-      const rows = Math.ceil(slots.length / cols);
-      grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-      grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+      var cols = slots.length <= 6 ? 3 : 4;
+      var rows = Math.ceil(slots.length / cols);
+      grid.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+      grid.style.gridTemplateRows = "repeat(" + rows + ", minmax(0, 1fr))";
 
-      grid.innerHTML = slots.map(item => `
-        <div class="lesson-card theme-${item.colorTheme}">
-          <div style="display:flex; align-items:center; gap:12px; min-width:0;">
-            <div class="lesson-num-circle">
-              <span>${item.lessonIndex}.</span>
-              <span style="font-size:0.55em; opacity:0.85;">DERS</span>
-            </div>
-            <div style="min-width:0;">
-              <div style="font-size:clamp(0.72rem, 1.35vh, 0.88rem); font-weight:800; color:#0284C7;">⏰ ${item.startTime} - ${item.endTime}</div>
-              <h4 class="font-display" style="font-size:clamp(1rem, 2.1vh, 1.35rem); color:var(--navy-primary); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                ${item.subjectName}
-              </h4>
-              ${item.topicOrNotes ? `<p style="font-size:clamp(0.74rem, 1.3vh, 0.88rem); color:#475569; font-weight:700;">${item.topicOrNotes}</p>` : ''}
-              ${item.isAfterLunch ? `<span style="display:inline-block; margin-top:3px; background:#FEF3C7; color:#B45309; font-size:0.7rem; font-weight:800; padding:1px 7px; border-radius:999px;">🍽️ Öğle Arası (${lunchMins} dk)</span>` : ''}
-            </div>
-          </div>
-          <div style="font-size:clamp(1.4rem, 2.8vh, 2rem); flex-shrink:0;">📘</div>
-        </div>
-      `).join("");
+      var slotHtml = [];
+      for (var sIdx = 0; sIdx < slots.length; sIdx++) {
+        var item = slots[sIdx];
+        slotHtml.push(
+          '<div class="lesson-card theme-' + item.colorTheme + '">' +
+            '<div style="display:flex; align-items:center; gap:12px; min-width:0;">' +
+              '<div class="lesson-num-circle">' +
+                '<span>' + item.lessonIndex + '.</span>' +
+                '<span style="font-size:0.55em; opacity:0.85;">DERS</span>' +
+              '</div>' +
+              '<div style="min-width:0;">' +
+                '<div style="font-size:clamp(0.72rem, 1.35vh, 0.88rem); font-weight:800; color:#0284C7;">⏰ ' + item.startTime + ' - ' + item.endTime + '</div>' +
+                '<h4 class="font-display" style="font-size:clamp(1rem, 2.1vh, 1.35rem); color:var(--navy-primary); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' +
+                  item.subjectName +
+                '</h4>' +
+                (item.topicOrNotes ? '<p style="font-size:clamp(0.74rem, 1.3vh, 0.88rem); color:#475569; font-weight:700;">' + item.topicOrNotes + '</p>' : '') +
+                (item.isAfterLunch ? '<span style="display:inline-block; margin-top:3px; background:#FEF3C7; color:#B45309; font-size:0.7rem; font-weight:800; padding:1px 7px; border-radius:999px;">🍽️ Öğle Arası (' + lunchMins + ' dk)</span>' : '') +
+              '</div>' +
+            '</div>' +
+            '<div style="font-size:clamp(1.4rem, 2.8vh, 2rem); flex-shrink:0;">📘</div>' +
+          '</div>'
+        );
+      }
+      grid.innerHTML = slotHtml.join("");
     }
 
     function renderSeatingPlan(plan, students) {
-      const toolbar = document.getElementById("seating-toolbar");
-      const container = document.getElementById("seating-container");
+      var toolbar = document.getElementById("seating-toolbar");
+      var container = document.getElementById("seating-container");
       if (!toolbar || !container) return;
 
       if (!plan || !plan.assignments) {
-        toolbar.innerHTML = `<div class="stats-bar"><div class="stat-pill">🪑 Sınıf Oturma Planı</div></div>`;
-        container.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">🪑</div>
-          <h3 style="margin-top:8px;">Oturma Planı Hazırlanıyor</h3>
-        </div>`;
+        toolbar.innerHTML = '<div class="stats-bar"><div class="stat-pill">🪑 Sınıf Oturma Planı</div></div>';
+        container.innerHTML =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">🪑</div>' +
+            '<h3 style="margin-top:8px;">Oturma Planı Hazırlanıyor</h3>' +
+          '</div>';
         return;
       }
 
-      const studentMap = {};
-      (students || []).forEach(s => {
+      var studentMap = {};
+      var stArr = students || [];
+      for (var i = 0; i < stArr.length; i++) {
+        var s = stArr[i];
         if (s.id) studentMap[s.id] = s;
         if (s.studentNo) studentMap[String(s.studentNo)] = s;
         if (s.studentNumber) studentMap[String(s.studentNumber)] = s;
-      });
-
-      const groupCount = Number(plan.groupCount) || 3;
-      const peoplePerRow = Number(plan.peoplePerRow) || 2;
-      const rowsList = Array.isArray(plan.rowsPerGroup)
-        ? plan.rowsPerGroup.map(n => Number(n) || 5)
-        : Array.from({ length: groupCount }, () => Number(plan.rowsPerGroup) || 5);
-      const assignments = plan.assignments || {};
-      const seatedCount = Object.values(assignments).filter(Boolean).length;
-      const deskTypeLabel = peoplePerRow === 1 ? "Tekli Sıra" : peoplePerRow === 2 ? "İkili Sıra" : peoplePerRow === 3 ? "Üçlü Sıra" : "Dörtlü Sıra";
-      const deskPos = (plan.deskPosition || "LEFT").toUpperCase();
-
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill">🪑 Plan: <strong>${plan.activePlanName || 'Aktif Plan'}</strong></div>
-          <div class="stat-pill boy-stat">📐 Düzen: <strong>${groupCount} Grup • ${deskTypeLabel}</strong></div>
-          <div class="stat-pill book-stat">👨‍🎓 Yerleşen: <strong>${seatedCount} / ${(students || []).length} Öğrenci</strong></div>
-        </div>
-        <div class="stats-bar">
-          <div class="stat-pill star-stat">🪟 Pencere: <strong>${plan.windowPosition === 'RIGHT' ? 'Sağ' : 'Sol'}</strong></div>
-          <div class="stat-pill girl-stat">🚪 Kapı: <strong>${(plan.doorPosition || 'SAG_ON').replace('_', ' ')}</strong></div>
-        </div>
-      `;
-
-      const leftFront = deskPos === "LEFT"
-        ? `<div class="front-fixture desk-fixture">👨‍🏫 ÖĞRETMEN MASASI</div>`
-        : `<div class="front-fixture empty-fixture">🪟 Ön Cephe</div>`;
-      const rightFront = deskPos === "RIGHT"
-        ? `<div class="front-fixture desk-fixture">👨‍🏫 ÖĞRETMEN MASASI</div>`
-        : `<div class="front-fixture empty-fixture">🚪 Sınıf Kapısı Yönü</div>`;
-
-      let groupsHtml = "";
-      for (let g = 0; g < groupCount; g++) {
-        const rowCount = rowsList[g] || 5;
-        let rowsHtml = "";
-        for (let r = 0; r < rowCount; r++) {
-          let seatsHtml = "";
-          for (let sIdx = 0; sIdx < peoplePerRow; sIdx++) {
-            const assignedId = assignments[`g${g}-r${r}-s${sIdx}`] || assignments[`G${g}_R${r}_S${sIdx}`] || assignments[`${g}_${r}_${sIdx}`];
-            const st = assignedId ? studentMap[assignedId] : null;
-            if (st) {
-              const isKiz = isGirlStudent(st.gender);
-              const sNo = st.studentNo || st.studentNumber || "";
-              seatsHtml += `<div class="seat-slot ${isKiz ? 'kiz-seat' : 'erkek-seat'}"><span class="seat-no">#${sNo}</span><span class="seat-name">${st.fullName || ''}</span></div>`;
-            } else {
-              seatsHtml += `<div class="seat-slot empty-seat">Boş Koltuk</div>`;
-            }
-          }
-          rowsHtml += `<div class="desk-row" style="grid-template-columns: repeat(${peoplePerRow}, minmax(0, 1fr));">${seatsHtml}</div>`;
-        }
-        groupsHtml += `
-          <div class="seating-group-col">
-            <div class="seating-group-header">${g + 1}. GRUP (${rowCount} Sıra)</div>
-            <div class="seating-rows-list" style="grid-template-rows: repeat(${rowCount}, minmax(0, 1fr));">${rowsHtml}</div>
-          </div>
-        `;
       }
 
-      container.innerHTML = `
-        <div class="classroom-front-bar">
-          ${leftFront}
-          <div class="front-fixture board-fixture">🖥️ AKILLI TAHTA (ÖN CEPHE)</div>
-          ${rightFront}
-        </div>
-        <div class="seating-columns-wrap" style="grid-template-columns: repeat(${groupCount}, minmax(0, 1fr));">${groupsHtml}</div>
-      `;
+      var groupCount = Number(plan.groupCount) || 3;
+      var peoplePerRow = Number(plan.peoplePerRow) || 2;
+      var rowsList = [];
+      if (Array.isArray(plan.rowsPerGroup)) {
+        for (var rIdx = 0; rIdx < plan.rowsPerGroup.length; rIdx++) {
+          rowsList.push(Number(plan.rowsPerGroup[rIdx]) || 5);
+        }
+      } else {
+        for (var gIdx = 0; gIdx < groupCount; gIdx++) {
+          rowsList.push(Number(plan.rowsPerGroup) || 5);
+        }
+      }
+
+      var assignments = plan.assignments || {};
+      var seatedCount = 0;
+      for (var aKey in assignments) {
+        if (Object.prototype.hasOwnProperty.call(assignments, aKey) && assignments[aKey]) seatedCount++;
+      }
+
+      var deskTypeLabel = peoplePerRow === 1 ? "Tekli Sıra" : peoplePerRow === 2 ? "İkili Sıra" : peoplePerRow === 3 ? "Üçlü Sıra" : "Dörtlü Sıra";
+      var deskPos = String(plan.deskPosition || "LEFT").toUpperCase();
+
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill">🪑 Plan: <strong>' + (plan.activePlanName || 'Aktif Plan') + '</strong></div>' +
+          '<div class="stat-pill boy-stat">📐 Düzen: <strong>' + groupCount + ' Grup • ' + deskTypeLabel + '</strong></div>' +
+          '<div class="stat-pill book-stat">👨‍🎓 Yerleşen: <strong>' + seatedCount + ' / ' + stArr.length + ' Öğrenci</strong></div>' +
+        '</div>' +
+        '<div class="stats-bar">' +
+          '<div class="stat-pill star-stat">🪟 Pencere: <strong>' + (plan.windowPosition === 'RIGHT' ? 'Sağ' : 'Sol') + '</strong></div>' +
+          '<div class="stat-pill girl-stat">🚪 Kapı: <strong>' + String(plan.doorPosition || 'SAG_ON').replace('_', ' ') + '</strong></div>' +
+        '</div>';
+
+      var leftFront = deskPos === "LEFT"
+        ? '<div class="front-fixture desk-fixture">👨‍🏫 ÖĞRETMEN MASASI</div>'
+        : '<div class="front-fixture empty-fixture">🪟 Ön Cephe</div>';
+      var rightFront = deskPos === "RIGHT"
+        ? '<div class="front-fixture desk-fixture">👨‍🏫 ÖĞRETMEN MASASI</div>'
+        : '<div class="front-fixture empty-fixture">🚪 Sınıf Kapısı Yönü</div>';
+
+      var groupsHtml = "";
+      for (var g = 0; g < groupCount; g++) {
+        var rowCount = rowsList[g] || 5;
+        var rowsHtml = "";
+        for (var r = 0; r < rowCount; r++) {
+          var seatsHtml = "";
+          for (var sIdx = 0; sIdx < peoplePerRow; sIdx++) {
+            var assignedId = assignments["g" + g + "-r" + r + "-s" + sIdx] || assignments["G" + g + "_R" + r + "_S" + sIdx] || assignments[g + "_" + r + "_" + sIdx];
+            var st = assignedId ? studentMap[assignedId] : null;
+            if (st) {
+              var isKiz = isGirlStudent(st.gender);
+              var sNo = st.studentNo || st.studentNumber || "";
+              seatsHtml += '<div class="seat-slot ' + (isKiz ? 'kiz-seat' : 'erkek-seat') + '"><span class="seat-no">#' + sNo + '</span><span class="seat-name">' + (st.fullName || '') + '</span></div>';
+            } else {
+              seatsHtml += '<div class="seat-slot empty-seat">Boş Koltuk</div>';
+            }
+          }
+          rowsHtml += '<div class="desk-row" style="grid-template-columns: repeat(' + peoplePerRow + ', minmax(0, 1fr));">' + seatsHtml + '</div>';
+        }
+        groupsHtml +=
+          '<div class="seating-group-col">' +
+            '<div class="seating-group-header">' + (g + 1) + '. GRUP (' + rowCount + ' Sıra)</div>' +
+            '<div class="seating-rows-list" style="grid-template-rows: repeat(' + rowCount + ', minmax(0, 1fr));">' + rowsHtml + '</div>' +
+          '</div>';
+      }
+
+      container.innerHTML =
+        '<div class="classroom-front-bar">' +
+          leftFront +
+          '<div class="front-fixture board-fixture">🖥️ AKILLI TAHTA (ÖN CEPHE)</div>' +
+          rightFront +
+        '</div>' +
+        '<div class="seating-columns-wrap" style="grid-template-columns: repeat(' + groupCount + ', minmax(0, 1fr));">' + groupsHtml + '</div>';
     }
 
     function renderGroups(groupsPayload, students) {
-      const toolbar = document.getElementById("groups-toolbar");
-      const grid = document.getElementById("groups-grid");
+      var toolbar = document.getElementById("groups-toolbar");
+      var grid = document.getElementById("groups-grid");
       if (!toolbar || !grid) return;
 
-      const groupList = Array.isArray(groupsPayload)
+      var groupList = Array.isArray(groupsPayload)
         ? groupsPayload
         : (groupsPayload && Array.isArray(groupsPayload.groups) ? groupsPayload.groups : []);
 
-      const studentMap = {};
-      (students || []).forEach(s => { if (s.id) studentMap[s.id] = s; });
+      var studentMap = {};
+      var stArr = students || [];
+      for (var i = 0; i < stArr.length; i++) {
+        if (stArr[i].id) studentMap[stArr[i].id] = stArr[i];
+      }
 
-      const totalAssigned = groupList.reduce((acc, g) => acc + ((g.studentIds || []).length), 0);
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill">🧩 Toplam Grup: <strong>${groupList.length} Takım</strong></div>
-          <div class="stat-pill book-stat">👥 Gruplardaki Öğrenci: <strong>${totalAssigned} Öğrenci</strong></div>
-        </div>
-      `;
+      var totalAssigned = 0;
+      for (var j = 0; j < groupList.length; j++) {
+        totalAssigned += (groupList[j].studentIds || []).length;
+      }
+
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill">🧩 Toplam Grup: <strong>' + groupList.length + ' Takım</strong></div>' +
+          '<div class="stat-pill book-stat">👥 Gruplardaki Öğrenci: <strong>' + totalAssigned + ' Öğrenci</strong></div>' +
+        '</div>';
 
       if (groupList.length === 0) {
         grid.style.gridTemplateColumns = "1fr";
-        grid.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">🧩</div>
-          <h3 style="margin-top:8px;">Henüz Çalışma Grubu Oluşturulmadı</h3>
-        </div>`;
+        grid.innerHTML =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">🧩</div>' +
+            '<h3 style="margin-top:8px;">Henüz Çalışma Grubu Oluşturulmadı</h3>' +
+          '</div>';
         return;
       }
 
-      const cols = groupList.length <= 3 ? groupList.length : groupList.length <= 6 ? 3 : 4;
-      const rows = Math.ceil(groupList.length / cols);
-      grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-      grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+      var cols = groupList.length <= 3 ? groupList.length : groupList.length <= 6 ? 3 : 4;
+      var rows = Math.ceil(groupList.length / cols);
+      grid.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+      grid.style.gridTemplateRows = "repeat(" + rows + ", minmax(0, 1fr))";
 
-      grid.innerHTML = groupList.map((g, idx) => {
-        const memberIds = Array.isArray(g.studentIds) ? g.studentIds : [];
-        const membersHtml = memberIds.map(id => {
-          const st = studentMap[id];
-          if (!st) return "";
-          const isLeader = g.leaderStudentId === id;
-          const isKiz = isGirlStudent(st.gender);
-          const sNo = st.studentNo || st.studentNumber || "";
-          return `
-            <div class="group-member-row ${isKiz ? 'kiz-member' : 'erkek-member'}">
-              <div style="display:flex; align-items:center; gap:6px; min-width:0;">
-                <span style="background:#FFF; padding:1px 5px; border-radius:5px; font-weight:800; font-size:0.84em;">#${sNo}</span>
-                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${st.fullName}</span>
-              </div>
-              <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
-                ${isLeader ? '<span style="background:#FEF3C7; color:#B45309; padding:1px 6px; border-radius:999px; font-size:0.78em; font-weight:800;">👑 Lider</span>' : ''}
-                <span style="font-size:0.8em; color:#B45309;">⭐ ${st.stars || 0}</span>
-              </div>
-            </div>
-          `;
-        }).join("");
-
-        return `
-          <div class="group-card">
-            <div class="group-header">
-              <h3>🏆 ${g.name || (idx + 1) + '. Grup'}</h3>
-              <span class="stat-pill" style="padding:2px 9px; font-size:0.75rem;">${memberIds.length} Üye</span>
-            </div>
-            <div class="group-members-list">${membersHtml || '<div style="color:#94A3B8; font-size:0.82rem;">Üye yok</div>'}</div>
-          </div>
-        `;
-      }).join("");
+      var cardsHtml = [];
+      for (var idx = 0; idx < groupList.length; idx++) {
+        var g = groupList[idx];
+        var memberIds = Array.isArray(g.studentIds) ? g.studentIds : [];
+        var membersParts = [];
+        for (var mIdx = 0; mIdx < memberIds.length; mIdx++) {
+          var id = memberIds[mIdx];
+          var st = studentMap[id];
+          if (!st) continue;
+          var isLeader = g.leaderStudentId === id;
+          var isKiz = isGirlStudent(st.gender);
+          var sNo = st.studentNo || st.studentNumber || "";
+          membersParts.push(
+            '<div class="group-member-row ' + (isKiz ? 'kiz-member' : 'erkek-member') + '">' +
+              '<div style="display:flex; align-items:center; gap:6px; min-width:0;">' +
+                '<span style="background:#FFF; padding:1px 5px; border-radius:5px; font-weight:800; font-size:0.84em;">#' + sNo + '</span>' +
+                '<span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (st.fullName || '') + '</span>' +
+              '</div>' +
+              '<div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">' +
+                (isLeader ? '<span style="background:#FEF3C7; color:#B45309; padding:1px 6px; border-radius:999px; font-size:0.78em; font-weight:800;">👑 Lider</span>' : '') +
+                '<span style="font-size:0.8em; color:#B45309;">⭐ ' + (st.stars || 0) + '</span>' +
+              '</div>' +
+            '</div>'
+          );
+        }
+        cardsHtml.push(
+          '<div class="group-card">' +
+            '<div class="group-header">' +
+              '<h3>🏆 ' + (g.name || (idx + 1) + '. Grup') + '</h3>' +
+              '<span class="stat-pill" style="padding:2px 9px; font-size:0.75rem;">' + memberIds.length + ' Üye</span>' +
+            '</div>' +
+            '<div class="group-members-list">' + (membersParts.join("") || '<div style="color:#94A3B8; font-size:0.82rem;">Üye yok</div>') + '</div>' +
+          '</div>'
+        );
+      }
+      grid.innerHTML = cardsHtml.join("");
     }
 
     function renderLuckyStudent(data, students) {
-      const toolbar = document.getElementById("lucky-toolbar");
-      const stage = document.getElementById("lucky-stage");
+      var toolbar = document.getElementById("lucky-toolbar");
+      var stage = document.getElementById("lucky-stage");
       if (!toolbar || !stage) return;
 
-      const extra = data.extraData || {};
-      const lucky = data.luckyStudent || extra.luckyStudent;
-      const isRolling = data.isRolling || extra.isRolling;
-      const rollingCand = data.rollingCandidate || extra.rollingCandidate;
-      const luckyMeta = data.luckyData || {};
-      const drawnIds = Array.isArray(luckyMeta.drawnStudentIds) ? luckyMeta.drawnStudentIds : [];
-      const excludedIds = Array.isArray(luckyMeta.excludedStudentIds) ? luckyMeta.excludedStudentIds : [];
+      var extra = data.extraData || {};
+      var lucky = data.luckyStudent || extra.luckyStudent;
+      var isRolling = data.isRolling || extra.isRolling;
+      var rollingCand = data.rollingCandidate || extra.rollingCandidate;
+      var luckyMeta = data.luckyData || {};
+      var drawnIds = Array.isArray(luckyMeta.drawnStudentIds) ? luckyMeta.drawnStudentIds : [];
+      var excludedIds = Array.isArray(luckyMeta.excludedStudentIds) ? luckyMeta.excludedStudentIds : [];
 
-      const studentMap = {};
-      (students || []).forEach(s => { if (s.id) studentMap[s.id] = s; });
+      var studentMap = {};
+      var stArr = students || [];
+      for (var i = 0; i < stArr.length; i++) {
+        if (stArr[i].id) studentMap[stArr[i].id] = stArr[i];
+      }
 
-      const drawnStudents = drawnIds.map(id => studentMap[id]).filter(Boolean);
-      const remainingCount = Math.max(0, (students || []).length - excludedIds.length);
-      const modeNames = {
+      var drawnStudents = [];
+      for (var dIdx = 0; dIdx < drawnIds.length; dIdx++) {
+        if (studentMap[drawnIds[dIdx]]) drawnStudents.push(studentMap[drawnIds[dIdx]]);
+      }
+
+      var remainingCount = Math.max(0, stArr.length - excludedIds.length);
+      var modeNames = {
         "ROULETTE": "🎡 Dijital İsim Çarkı",
         "MYSTERY_CARDS": "🎴 Gizemli Kartlar",
         "LIGHTNING": "⚡ Şimşek Çekiliş",
         "TREASURE_CHEST": "🪙 Hazine Sandığı"
       };
 
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill star-stat">${modeNames[luckyMeta.selectedModeName] || '🎡 Şans Çarkı'}</div>
-          <div class="stat-pill book-stat">👥 Kalan Aday: <strong>${remainingCount} Öğrenci</strong></div>
-          <div class="stat-pill girl-stat">🏆 Kürsüye Çıkan: <strong>${drawnStudents.length} Öğrenci</strong></div>
-        </div>
-      `;
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill star-stat">' + (modeNames[luckyMeta.selectedModeName] || '🎡 Şans Çarkı') + '</div>' +
+          '<div class="stat-pill book-stat">👥 Kalan Aday: <strong>' + remainingCount + ' Öğrenci</strong></div>' +
+          '<div class="stat-pill girl-stat">🏆 Kürsüye Çıkan: <strong>' + drawnStudents.length + ' Öğrenci</strong></div>' +
+        '</div>';
 
-      let heroHtml = "";
+      var heroHtml = "";
       if (isRolling) {
-        const rName = rollingCand?.fullName || "Şanslı Öğrenci Seçiliyor...";
-        const rNo = rollingCand?.studentNumber ? `#${rollingCand.studentNumber}` : "🎲";
-        heroHtml = `
-          <div class="stage-panel" style="align-items:center; justify-content:center; text-align:center; background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color:#FCD34D;">
-            <div style="font-size:clamp(3rem, 6.5vh, 4.6rem);">🎡</div>
-            <div style="margin-top:10px; background:#F59E0B; color:#FFF; padding:4px 15px; border-radius:999px; font-family:'Fredoka',sans-serif; font-weight:700; font-size:1.05rem;">${rNo}</div>
-            <h2 style="font-size:clamp(1.7rem, 4vh, 2.8rem); color:var(--navy-primary); margin-top:8px;">${rName}</h2>
-            <p style="color:#B45309; font-weight:800; margin-top:6px;">Heyecan dorukta, çark dönüyor...</p>
-          </div>
-        `;
+        var rName = (rollingCand && rollingCand.fullName) ? rollingCand.fullName : "Şanslı Öğrenci Seçiliyor...";
+        var rNo = (rollingCand && rollingCand.studentNumber) ? ("#" + rollingCand.studentNumber) : "🎲";
+        heroHtml =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center; background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color:#FCD34D;">' +
+            '<div style="font-size:clamp(3rem, 6.5vh, 4.6rem);">🎡</div>' +
+            '<div style="margin-top:10px; background:#F59E0B; color:#FFF; padding:4px 15px; border-radius:999px; font-family:Fredoka,sans-serif; font-weight:700; font-size:1.05rem;">' + rNo + '</div>' +
+            '<h2 style="font-size:clamp(1.7rem, 4vh, 2.8rem); color:var(--navy-primary); margin-top:8px;">' + rName + '</h2>' +
+            '<p style="color:#B45309; font-weight:800; margin-top:6px;">Heyecan dorukta, çark dönüyor...</p>' +
+          '</div>';
       } else if (lucky && lucky.fullName) {
-        const fullStudent = (students || []).find(s => s.id === lucky.id || String(s.studentNumber) === String(lucky.studentNumber) || s.fullName === lucky.fullName) || lucky;
-        const isKiz = isGirlStudent(fullStudent.gender);
-        const sNo = fullStudent.studentNo || fullStudent.studentNumber || "";
-        heroHtml = `
-          <div class="stage-panel" style="align-items:center; justify-content:center; text-align:center; background:${isKiz ? 'var(--girl-bg)' : 'var(--boy-bg)'}; border:3px solid ${isKiz ? 'var(--girl-border)' : 'var(--boy-border)'};">
-            <div style="font-size:clamp(1.4rem, 2.8vh, 2rem); letter-spacing:5px;">🎉 ✨ 🏆 ✨ 🎉</div>
-            <div style="margin-top:6px; background:#F59E0B; color:#FFF; padding:4px 16px; border-radius:999px; font-family:'Fredoka',sans-serif; font-weight:700; font-size:clamp(0.86rem, 1.7vh, 1.1rem);">GÜNÜN ŞANSLI ÖĞRENCİSİ</div>
-            <div style="margin-top:12px; background:#FFF; padding:5px 18px; border-radius:13px; font-family:'Fredoka',sans-serif; font-weight:700; font-size:clamp(1.1rem, 2.3vh, 1.55rem); color:${isKiz ? 'var(--girl-badge-text)' : 'var(--boy-badge-text)'}; border:2px solid ${isKiz ? '#F9A8D4' : '#7DD3FC'};">OKUL NO: #${sNo}</div>
-            <h2 style="font-size:clamp(1.85rem, 4.3vh, 3rem); color:var(--navy-primary); margin-top:8px;">${fullStudent.fullName}</h2>
-            <div style="display:flex; gap:10px; margin-top:12px;">
-              <div class="stat-pill star-stat">⭐ ${fullStudent.stars || 0} Yıldız</div>
-              <div class="stat-pill book-stat">📚 ${fullStudent.booksRead || 0} Kitap</div>
-            </div>
-          </div>
-        `;
+        var fullStudent = lucky;
+        for (var k = 0; k < stArr.length; k++) {
+          var cand = stArr[k];
+          if (cand.id === lucky.id || String(cand.studentNumber) === String(lucky.studentNumber) || cand.fullName === lucky.fullName) {
+            fullStudent = cand;
+            break;
+          }
+        }
+        var isKiz = isGirlStudent(fullStudent.gender);
+        var sNo = fullStudent.studentNo || fullStudent.studentNumber || "";
+        heroHtml =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center; background:' + (isKiz ? 'var(--girl-bg)' : 'var(--boy-bg)') + '; border:3px solid ' + (isKiz ? 'var(--girl-border)' : 'var(--boy-border)') + ';">' +
+            '<div style="font-size:clamp(1.4rem, 2.8vh, 2rem); letter-spacing:5px;">🎉 ✨ 🏆 ✨ 🎉</div>' +
+            '<div style="margin-top:6px; background:#F59E0B; color:#FFF; padding:4px 16px; border-radius:999px; font-family:Fredoka,sans-serif; font-weight:700; font-size:clamp(0.86rem, 1.7vh, 1.1rem);">GÜNÜN ŞANSLI ÖĞRENCİSİ</div>' +
+            '<div style="margin-top:12px; background:#FFF; padding:5px 18px; border-radius:13px; font-family:Fredoka,sans-serif; font-weight:700; font-size:clamp(1.1rem, 2.3vh, 1.55rem); color:' + (isKiz ? 'var(--girl-badge-text)' : 'var(--boy-badge-text)') + '; border:2px solid ' + (isKiz ? '#F9A8D4' : '#7DD3FC') + ';">OKUL NO: #' + sNo + '</div>' +
+            '<h2 style="font-size:clamp(1.85rem, 4.3vh, 3rem); color:var(--navy-primary); margin-top:8px;">' + (fullStudent.fullName || '') + '</h2>' +
+            '<div style="display:flex; gap:10px; margin-top:12px;">' +
+              '<div class="stat-pill star-stat">⭐ ' + (fullStudent.stars || 0) + ' Yıldız</div>' +
+              '<div class="stat-pill book-stat">📚 ' + (fullStudent.booksRead || 0) + ' Kitap</div>' +
+            '</div>' +
+          '</div>';
       } else {
-        heroHtml = `
-          <div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-            <div style="font-size:clamp(3rem, 6.5vh, 4.6rem);">🎲</div>
-            <h2 style="font-size:clamp(1.5rem, 3vh, 2.1rem); color:var(--navy-primary); margin-top:8px;">Şanslı Öğrenci Çekilişi Hazır!</h2>
-            <p style="color:#64748B; font-size:1rem; max-width:420px; margin-top:6px; font-weight:700;">Öğretmeniniz telefondan çekilişi başlattığında şanslı öğrenci burada büyük ekranda açıklanacak!</p>
-          </div>
-        `;
+        heroHtml =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:clamp(3rem, 6.5vh, 4.6rem);">🎲</div>' +
+            '<h2 style="font-size:clamp(1.5rem, 3vh, 2.1rem); color:var(--navy-primary); margin-top:8px;">Şanslı Öğrenci Çekilişi Hazır!</h2>' +
+            '<p style="color:#64748B; font-size:1rem; max-width:420px; margin-top:6px; font-weight:700;">Öğretmeniniz telefondan çekilişi başlattığında şanslı öğrenci burada büyük ekranda açıklanacak!</p>' +
+          '</div>';
       }
 
-      const historyHtml = drawnStudents.slice(0, 10).map((st, idx) => {
-        const isKiz = isGirlStudent(st.gender);
-        const sNo = st.studentNo || st.studentNumber || "";
-        return `
-          <div class="group-member-row ${isKiz ? 'kiz-member' : 'erkek-member'}">
-            <div style="display:flex; align-items:center; gap:7px; min-width:0;">
-              <span style="font-weight:900; color:#64748B;">${idx + 1}.</span>
-              <span style="background:#FFF; padding:1px 6px; border-radius:5px; font-weight:800;">#${sNo}</span>
-              <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${st.fullName}</span>
-            </div>
-            <span>${isKiz ? '🌸' : '⚡'}</span>
-          </div>
-        `;
-      }).join("");
+      var historyParts = [];
+      var topDrawn = drawnStudents.slice(0, 10);
+      for (var hIdx = 0; hIdx < topDrawn.length; hIdx++) {
+        var st = topDrawn[hIdx];
+        var isGirl = isGirlStudent(st.gender);
+        var stNo = st.studentNo || st.studentNumber || "";
+        historyParts.push(
+          '<div class="group-member-row ' + (isGirl ? 'kiz-member' : 'erkek-member') + '">' +
+            '<div style="display:flex; align-items:center; gap:7px; min-width:0;">' +
+              '<span style="font-weight:900; color:#64748B;">' + (hIdx + 1) + '.</span>' +
+              '<span style="background:#FFF; padding:1px 6px; border-radius:5px; font-weight:800;">#' + stNo + '</span>' +
+              '<span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (st.fullName || '') + '</span>' +
+            '</div>' +
+            '<span>' + (isGirl ? '🌸' : '⚡') + '</span>' +
+          '</div>'
+        );
+      }
 
-      stage.innerHTML = `
-        ${heroHtml}
-        <div class="stage-panel">
-          <div class="group-header"><h3>🏆 Seçilen Öğrenciler Kürsüsü (${drawnStudents.length})</h3></div>
-          <div class="group-members-list" style="margin-top:6px;">
-            ${historyHtml || '<div style="color:#94A3B8; text-align:center; margin:auto;">Henüz öğrenci seçilmedi.</div>'}
-          </div>
-        </div>
-      `;
+      stage.innerHTML =
+        heroHtml +
+        '<div class="stage-panel">' +
+          '<div class="group-header"><h3>🏆 Seçilen Öğrenciler Kürsüsü (' + drawnStudents.length + ')</h3></div>' +
+          '<div class="group-members-list" style="margin-top:6px;">' +
+            (historyParts.join("") || '<div style="color:#94A3B8; text-align:center; margin:auto;">Henüz öğrenci seçilmedi.</div>') +
+          '</div>' +
+        '</div>';
     }
 
     function renderStarStandings(students) {
-      const toolbar = document.getElementById("stars-toolbar");
-      const stage = document.getElementById("stars-stage");
+      var toolbar = document.getElementById("stars-toolbar");
+      var stage = document.getElementById("stars-stage");
       if (!toolbar || !stage) return;
 
-      const list = Array.isArray(students) ? [...students] : [];
-      list.sort((a, b) => (Number(b.stars) || 0) - (Number(a.stars) || 0));
+      var list = Array.isArray(students) ? students.slice() : [];
+      list.sort(function(a, b) { return (Number(b.stars) || 0) - (Number(a.stars) || 0); });
 
-      const totalStars = list.reduce((acc, s) => acc + (Number(s.stars) || 0), 0);
-      const recentStars = Array.isArray(latestStateData.recentStars) ? latestStateData.recentStars : [];
-      const latestAward = recentStars[0];
+      var totalStars = 0;
+      for (var i = 0; i < list.length; i++) totalStars += Number(list[i].stars) || 0;
+      var recentStars = Array.isArray(latestStateData.recentStars) ? latestStateData.recentStars : [];
+      var latestAward = recentStars[0];
 
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill star-stat">🌟 Sınıf Toplamı: <strong>${totalStars} Yıldız</strong></div>
-          ${list[0] ? `<div class="stat-pill">🥇 Lider: <strong>${list[0].fullName} (${list[0].stars || 0} ⭐)</strong></div>` : ''}
-          ${latestAward ? `<div class="stat-pill book-stat">✨ Son Ödül: <strong>${latestAward.studentName} (+${latestAward.starCount} ⭐ ${latestAward.categoryName || ''})</strong></div>` : ''}
-        </div>
-      `;
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill star-stat">🌟 Sınıf Toplamı: <strong>' + totalStars + ' Yıldız</strong></div>' +
+          (list[0] ? '<div class="stat-pill">🥇 Lider: <strong>' + (list[0].fullName || '') + ' (' + (list[0].stars || 0) + ' ⭐)</strong></div>' : '') +
+          (latestAward ? '<div class="stat-pill book-stat">✨ Son Ödül: <strong>' + (latestAward.studentName || '') + ' (+' + latestAward.starCount + ' ⭐ ' + (latestAward.categoryName || '') + ')</strong></div>' : '') +
+        '</div>';
 
       if (list.length === 0) {
-        stage.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center;"><h3>Henüz Yıldız Verisi Yok</h3></div>`;
+        stage.innerHTML = '<div class="stage-panel" style="align-items:center; justify-content:center;"><h3>Henüz Yıldız Verisi Yok</h3></div>';
         return;
       }
 
-      const top3 = list.slice(0, 3);
-      const medals = [
+      var top3 = list.slice(0, 3);
+      var medals = [
         { cls: "gold", icon: "🥇 1. ŞAMPİYON" },
         { cls: "silver", icon: "🥈 2. İKİNCİ" },
         { cls: "bronze", icon: "🥉 3. ÜÇÜNCÜ" }
       ];
 
-      const podiumHtml = top3.map((s, i) => `
-        <div class="podium-card ${medals[i].cls}">
-          <div style="min-width:0;">
-            <div style="font-family:'Fredoka',sans-serif; font-size:clamp(0.7rem, 1.25vh, 0.84rem); font-weight:700; color:#B45309;">${medals[i].icon} • #${s.studentNo || s.studentNumber || ''}</div>
-            <div class="font-display" style="font-size:clamp(0.9rem, 1.75vh, 1.15rem); font-weight:700; color:var(--navy-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.fullName}</div>
-          </div>
-          <div class="metric-pill star-pill" style="min-width:50px; height:36px; flex-direction:row; gap:4px; padding:0 8px;">
-            <span>⭐</span><span class="metric-val" style="font-size:1rem;">${s.stars || 0}</span>
-          </div>
-        </div>
-      `).join("");
+      var podiumParts = [];
+      for (var pIdx = 0; pIdx < top3.length; pIdx++) {
+        var ps = top3[pIdx];
+        podiumParts.push(
+          '<div class="podium-card ' + medals[pIdx].cls + '">' +
+            '<div style="min-width:0;">' +
+              '<div style="font-family:Fredoka,sans-serif; font-size:clamp(0.7rem, 1.25vh, 0.84rem); font-weight:700; color:#B45309;">' + medals[pIdx].icon + ' • #' + (ps.studentNo || ps.studentNumber || '') + '</div>' +
+              '<div class="font-display" style="font-size:clamp(0.9rem, 1.75vh, 1.15rem); font-weight:700; color:var(--navy-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (ps.fullName || '') + '</div>' +
+            '</div>' +
+            '<div class="metric-pill star-pill" style="min-width:50px; height:36px; flex-direction:row; gap:4px; padding:0 8px;">' +
+              '<span>⭐</span><span class="metric-val" style="font-size:1rem;">' + (ps.stars || 0) + '</span>' +
+            '</div>' +
+          '</div>'
+        );
+      }
 
-      const { cols, rows } = computeOptimalGrid(list.length);
-      const gridCards = list.map((s, idx) => {
-        const isKiz = isGirlStudent(s.gender);
-        const sNo = s.studentNo || s.studentNumber || "";
-        return `
-          <div class="student-card ${isKiz ? 'kiz-card' : 'erkek-card'}">
-            <div class="student-left">
-              <div class="student-no-badge"><span class="rank-mini">${idx + 1}.</span><span>#${sNo}</span></div>
-              <div class="student-info">
-                <h4>${s.fullName || ''}</h4>
-                <span class="gender-tag">${isKiz ? '🌸 Kız' : '⚡ Erkek'}</span>
-              </div>
-            </div>
-            <div class="student-metrics">
-              <div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">${s.stars || 0}</span></div>
-            </div>
-          </div>
-        `;
-      }).join("");
+      var dims = computeOptimalGrid(list.length);
+      var gridCards = [];
+      for (var idx = 0; idx < list.length; idx++) {
+        var s = list[idx];
+        var isKiz = isGirlStudent(s.gender);
+        var sNo = s.studentNo || s.studentNumber || "";
+        gridCards.push(
+          '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + '">' +
+            '<div class="student-left">' +
+              '<div class="student-no-badge"><span class="rank-mini">' + (idx + 1) + '.</span><span>#' + sNo + '</span></div>' +
+              '<div class="student-info">' +
+                '<h4>' + (s.fullName || '') + '</h4>' +
+                '<span class="gender-tag">' + (isKiz ? '🌸 Kız' : '⚡ Erkek') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="student-metrics">' +
+              '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">' + (s.stars || 0) + '</span></div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
 
-      stage.innerHTML = `
-        <div class="podium-row">${podiumHtml}</div>
-        <div class="students-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr)); grid-template-rows:repeat(${rows}, minmax(0, 1fr));">${gridCards}</div>
-      `;
+      stage.innerHTML =
+        '<div class="podium-row">' + podiumParts.join("") + '</div>' +
+        '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + gridCards.join("") + '</div>';
     }
 
     function renderTimer(data) {
-      const toolbar = document.getElementById("timer-toolbar");
-      const stage = document.getElementById("timer-stage");
+      var toolbar = document.getElementById("timer-toolbar");
+      var stage = document.getElementById("timer-stage");
       if (!toolbar || !stage) return;
 
-      const extra = data.extraData || {};
-      const modeTitle = data.timerMode || extra.timerMode || "Hızlı Sayaç";
-      const modeEmoji = data.timerModeEmoji || extra.timerModeEmoji || "⏱️";
-      const totalSec = Number(data.timerTotalSeconds ?? extra.timerTotalSeconds ?? 300) || 300;
-      const remSec = Number(data.timerRemainingSeconds ?? extra.timerRemainingSeconds ?? totalSec);
-      const isRunning = Boolean(data.timerIsRunning ?? extra.timerIsRunning);
-      const isFinished = Boolean(data.timerIsFinished ?? extra.timerIsFinished) || remSec <= 0;
+      var extra = data.extraData || {};
+      var modeTitle = data.timerMode || extra.timerMode || "Hızlı Sayaç";
+      var modeEmoji = data.timerModeEmoji || extra.timerModeEmoji || "⏱️";
+      var rawTotal = data.timerTotalSeconds !== undefined ? data.timerTotalSeconds : (extra.timerTotalSeconds !== undefined ? extra.timerTotalSeconds : 300);
+      var totalSec = Number(rawTotal) || 300;
+      var rawRem = data.timerRemainingSeconds !== undefined ? data.timerRemainingSeconds : (extra.timerRemainingSeconds !== undefined ? extra.timerRemainingSeconds : totalSec);
+      var remSec = Number(rawRem);
+      if (isNaN(remSec)) remSec = totalSec;
+      var isRunning = Boolean(data.timerIsRunning !== undefined ? data.timerIsRunning : extra.timerIsRunning);
+      var isFinished = Boolean(data.timerIsFinished !== undefined ? data.timerIsFinished : extra.timerIsFinished) || remSec <= 0;
 
-      const mins = Math.floor(Math.max(0, remSec) / 60);
-      const secs = Math.max(0, remSec) % 60;
-      const formatted = String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
-      const ratio = totalSec > 0 ? Math.max(0, Math.min(1, remSec / totalSec)) : 0;
-      const dashArray = 2 * Math.PI * 110;
-      const dashOffset = dashArray * (1 - ratio);
+      var mins = String(Math.floor(Math.max(0, remSec) / 60));
+      var secs = String(Math.max(0, remSec) % 60);
+      if (mins.length < 2) mins = "0" + mins;
+      if (secs.length < 2) secs = "0" + secs;
+      var formatted = mins + ":" + secs;
 
-      const ringColor = isFinished ? "#EF4444" : remSec <= 15 ? "#F59E0B" : "#0EA5E9";
-      const statusText = isFinished ? "🔔 SÜRE TAMAMLANDI!" : isRunning ? "🟢 GERİ SAYILIYOR" : "⏸️ DURAKLATILDI";
+      var ratio = totalSec > 0 ? Math.max(0, Math.min(1, remSec / totalSec)) : 0;
+      var dashArray = 2 * Math.PI * 110;
+      var dashOffset = dashArray * (1 - ratio);
 
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill boy-stat">${modeEmoji} Mod: <strong>${modeTitle}</strong></div>
-          <div class="stat-pill star-stat">⏳ Toplam Süre: <strong>${Math.round(totalSec / 60)} Dakika</strong></div>
-          <div class="stat-pill ${isRunning ? 'book-stat' : 'girl-stat'}"><strong>${statusText}</strong></div>
-        </div>
-      `;
+      var ringColor = isFinished ? "#EF4444" : remSec <= 15 ? "#F59E0B" : "#0EA5E9";
+      var statusText = isFinished ? "🔔 SÜRE TAMAMLANDI!" : isRunning ? "🟢 GERİ SAYILIYOR" : "⏸️ DURAKLATILDI";
 
-      stage.innerHTML = `
-        <div class="stage-panel" style="flex:1; align-items:center; justify-content:center; text-align:center; background:linear-gradient(135deg, #F0F9FF 0%, #FFF0F6 100%); border-color:#7DD3FC;">
-          <div style="position:relative; width:clamp(210px, 40vh, 300px); height:clamp(210px, 40vh, 300px); display:flex; align-items:center; justify-content:center;">
-            <svg viewBox="0 0 260 260" style="width:100%; height:100%; transform:rotate(-90deg);">
-              <circle cx="130" cy="130" r="110" stroke="#E2E8F0" stroke-width="18" fill="#FFFFFF" />
-              <circle cx="130" cy="130" r="110" stroke="${ringColor}" stroke-width="18" stroke-linecap="round"
-                fill="transparent" stroke-dasharray="${dashArray}" stroke-dashoffset="${dashOffset}"
-                style="transition: stroke-dashoffset 0.5s linear;" />
-            </svg>
-            <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-              <span style="font-size:clamp(1.3rem, 2.8vh, 1.9rem);">${modeEmoji}</span>
-              <div class="font-display" style="font-size:clamp(2.6rem, 7vh, 4.4rem); font-weight:700; color:var(--navy-primary); line-height:1.05;">${formatted}</div>
-              <span style="margin-top:5px; font-family:'Fredoka',sans-serif; font-size:clamp(0.82rem, 1.6vh, 1.05rem); font-weight:700; color:${ringColor};">${statusText}</span>
-            </div>
-          </div>
-          <h3 style="margin-top:12px; font-size:clamp(1.15rem, 2.2vh, 1.5rem); color:var(--navy-primary);">${modeTitle}</h3>
-        </div>
-      `;
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill boy-stat">' + modeEmoji + ' Mod: <strong>' + modeTitle + '</strong></div>' +
+          '<div class="stat-pill star-stat">⏳ Toplam Süre: <strong>' + Math.round(totalSec / 60) + ' Dakika</strong></div>' +
+          '<div class="stat-pill ' + (isRunning ? 'book-stat' : 'girl-stat') + '"><strong>' + statusText + '</strong></div>' +
+        '</div>';
+
+      stage.innerHTML =
+        '<div class="stage-panel" style="flex:1; align-items:center; justify-content:center; text-align:center; background:linear-gradient(135deg, #F0F9FF 0%, #FFF0F6 100%); border-color:#7DD3FC;">' +
+          '<div style="position:relative; width:clamp(210px, 40vh, 300px); height:clamp(210px, 40vh, 300px); display:flex; align-items:center; justify-content:center;">' +
+            '<svg viewBox="0 0 260 260" style="width:100%; height:100%; transform:rotate(-90deg);">' +
+              '<circle cx="130" cy="130" r="110" stroke="#E2E8F0" stroke-width="18" fill="#FFFFFF" />' +
+              '<circle cx="130" cy="130" r="110" stroke="' + ringColor + '" stroke-width="18" stroke-linecap="round" fill="transparent" stroke-dasharray="' + dashArray + '" stroke-dashoffset="' + dashOffset + '" style="transition: stroke-dashoffset 0.5s linear;" />' +
+            '</svg>' +
+            '<div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;">' +
+              '<span style="font-size:clamp(1.3rem, 2.8vh, 1.9rem);">' + modeEmoji + '</span>' +
+              '<div class="font-display" style="font-size:clamp(2.6rem, 7vh, 4.4rem); font-weight:700; color:var(--navy-primary); line-height:1.05;">' + formatted + '</div>' +
+              '<span style="margin-top:5px; font-family:Fredoka,sans-serif; font-size:clamp(0.82rem, 1.6vh, 1.05rem); font-weight:700; color:' + ringColor + ';">' + statusText + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<h3 style="margin-top:12px; font-size:clamp(1.15rem, 2.2vh, 1.5rem); color:var(--navy-primary);">' + modeTitle + '</h3>' +
+        '</div>';
     }
 
     function setBoardLibraryTab(tab) {
@@ -1481,197 +1632,212 @@
     }
 
     function renderLibrary(data, students) {
-      const toolbar = document.getElementById("library-toolbar");
-      const stage = document.getElementById("library-stage");
+      var toolbar = document.getElementById("library-toolbar");
+      var stage = document.getElementById("library-stage");
       if (!toolbar || !stage) return;
 
-      const lib = data.libraryData || {};
-      const books = Array.isArray(lib.books) ? lib.books : [];
-      const records = Array.isArray(lib.recentRecords) ? lib.recentRecords : [];
-      const totalBooks = Number(lib.totalBooksCount ?? books.length);
-      const activeLoans = Number(lib.activeLoansCount ?? books.filter(b => b.status === "Okunuyor").length);
-      const totalCompleted = Number(lib.totalCompletedCount ?? records.length);
+      var lib = data.libraryData || {};
+      var books = Array.isArray(lib.books) ? lib.books : [];
+      var records = Array.isArray(lib.recentRecords) ? lib.recentRecords : [];
+      var loanedCnt = 0;
+      for (var bIdx = 0; bIdx < books.length; bIdx++) {
+        if (books[bIdx].status === "Okunuyor") loanedCnt++;
+      }
+      var totalBooks = Number(lib.totalBooksCount !== undefined ? lib.totalBooksCount : books.length);
+      var activeLoans = Number(lib.activeLoansCount !== undefined ? lib.activeLoansCount : loanedCnt);
+      var totalCompleted = Number(lib.totalCompletedCount !== undefined ? lib.totalCompletedCount : records.length);
 
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill boy-stat">📚 Kitaplık: <strong>${totalBooks} Kitap</strong></div>
-          <div class="stat-pill star-stat">📖 Şu An Okunan: <strong>${activeLoans} Öğrenci</strong></div>
-          <div class="stat-pill book-stat">✅ Tamamlanan: <strong>${totalCompleted} Kitap</strong></div>
-        </div>
-        <div class="sort-controls">
-          <button class="sort-btn ${currentLibraryTab === 'LISTE' ? 'active' : ''}" onclick="setBoardLibraryTab('LISTE')">📚 Kitap Listesi</button>
-          <button class="sort-btn ${currentLibraryTab === 'KAYITLAR' ? 'active' : ''}" onclick="setBoardLibraryTab('KAYITLAR')">📖 Okuma Kayıtları</button>
-          <button class="sort-btn sort-book ${currentLibraryTab === 'DEGERLENDIRME' ? 'active' : ''}" onclick="setBoardLibraryTab('DEGERLENDIRME')">🏆 Kitap Kurtları</button>
-        </div>
-      `;
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill boy-stat">📚 Kitaplık: <strong>' + totalBooks + ' Kitap</strong></div>' +
+          '<div class="stat-pill star-stat">📖 Şu An Okunan: <strong>' + activeLoans + ' Öğrenci</strong></div>' +
+          '<div class="stat-pill book-stat">✅ Tamamlanan: <strong>' + totalCompleted + ' Kitap</strong></div>' +
+        '</div>' +
+        '<div class="sort-controls">' +
+          '<button class="sort-btn ' + (currentLibraryTab === 'LISTE' ? 'active' : '') + '" data-tab="LISTE" onclick="setBoardLibraryTab(this.getAttribute(&quot;data-tab&quot;))">📚 Kitap Listesi</button>' +
+          '<button class="sort-btn ' + (currentLibraryTab === 'KAYITLAR' ? 'active' : '') + '" data-tab="KAYITLAR" onclick="setBoardLibraryTab(this.getAttribute(&quot;data-tab&quot;))">📖 Okuma Kayıtları</button>' +
+          '<button class="sort-btn sort-book ' + (currentLibraryTab === 'DEGERLENDIRME' ? 'active' : '') + '" data-tab="DEGERLENDIRME" onclick="setBoardLibraryTab(this.getAttribute(&quot;data-tab&quot;))">🏆 Kitap Kurtları</button>' +
+        '</div>';
 
       if (currentLibraryTab === "DEGERLENDIRME") {
-        const list = Array.isArray(students) ? [...students] : [];
-        list.sort((a, b) => (Number(b.booksRead) || 0) - (Number(a.booksRead) || 0));
-        const { cols, rows } = computeOptimalGrid(list.length);
-        stage.innerHTML = `
-          <div class="students-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr)); grid-template-rows:repeat(${rows}, minmax(0, 1fr));">
-            ${list.map((s, idx) => {
-              const isKiz = isGirlStudent(s.gender);
-              const sNo = s.studentNo || s.studentNumber || "";
-              return `
-                <div class="student-card ${isKiz ? 'kiz-card' : 'erkek-card'}">
-                  <div class="student-left">
-                    <div class="student-no-badge"><span class="rank-mini">${idx + 1}.</span><span>#${sNo}</span></div>
-                    <div class="student-info">
-                      <h4>${s.fullName || ''}</h4>
-                      <span class="gender-tag">${s.pagesRead || 0} Sayfa</span>
-                    </div>
-                  </div>
-                  <div class="student-metrics">
-                    <div class="metric-pill book-pill"><span class="metric-icon">📚</span><span class="metric-val">${s.booksRead || 0}</span></div>
-                  </div>
-                </div>
-              `;
-            }).join("")}
-          </div>
-        `;
+        var list = Array.isArray(students) ? students.slice() : [];
+        list.sort(function(a, b) { return (Number(b.booksRead) || 0) - (Number(a.booksRead) || 0); });
+        var dims = computeOptimalGrid(list.length);
+        var evalCards = [];
+        for (var idx = 0; idx < list.length; idx++) {
+          var s = list[idx];
+          var isKiz = isGirlStudent(s.gender);
+          var sNo = s.studentNo || s.studentNumber || "";
+          evalCards.push(
+            '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + '">' +
+              '<div class="student-left">' +
+                '<div class="student-no-badge"><span class="rank-mini">' + (idx + 1) + '.</span><span>#' + sNo + '</span></div>' +
+                '<div class="student-info">' +
+                  '<h4>' + (s.fullName || '') + '</h4>' +
+                  '<span class="gender-tag">' + (s.pagesRead || 0) + ' Sayfa</span>' +
+                '</div>' +
+              '</div>' +
+              '<div class="student-metrics">' +
+                '<div class="metric-pill book-pill"><span class="metric-icon">📚</span><span class="metric-val">' + (s.booksRead || 0) + '</span></div>' +
+              '</div>' +
+            '</div>'
+          );
+        }
+        stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + evalCards.join("") + '</div>';
         return;
       }
 
       if (currentLibraryTab === "KAYITLAR") {
-        const displayRecs = records.slice(0, 20);
+        var displayRecs = records.slice(0, 20);
         if (displayRecs.length === 0) {
-          stage.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-            <div style="font-size:3rem;">📖</div><h3 style="margin-top:8px;">Henüz Tamamlanan Okuma Kaydı Yok</h3>
-          </div>`;
+          stage.innerHTML =
+            '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+              '<div style="font-size:3rem;">📖</div><h3 style="margin-top:8px;">Henüz Tamamlanan Okuma Kaydı Yok</h3>' +
+            '</div>';
           return;
         }
-        const { cols, rows } = computeOptimalGrid(displayRecs.length);
-        stage.innerHTML = `
-          <div class="students-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr)); grid-template-rows:repeat(${rows}, minmax(0, 1fr));">
-            ${displayRecs.map(r => `
-              <div class="student-card erkek-card">
-                <div class="student-left">
-                  <div class="student-no-badge">#${r.studentNumber || '📖'}</div>
-                  <div class="student-info">
-                    <h4>${r.studentName || ''}</h4>
-                    <span class="gender-tag">📘 ${r.bookName || ''} (${r.pageCount || 0} syf)</span>
-                  </div>
-                </div>
-                <div class="student-metrics">
-                  <div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">+${r.earnedStars || 1}</span></div>
-                </div>
-              </div>
-            `).join("")}
-          </div>
-        `;
+        var rDims = computeOptimalGrid(displayRecs.length);
+        var recCards = [];
+        for (var rIdx = 0; rIdx < displayRecs.length; rIdx++) {
+          var r = displayRecs[rIdx];
+          recCards.push(
+            '<div class="student-card erkek-card">' +
+              '<div class="student-left">' +
+                '<div class="student-no-badge">#' + (r.studentNumber || '📖') + '</div>' +
+                '<div class="student-info">' +
+                  '<h4>' + (r.studentName || '') + '</h4>' +
+                  '<span class="gender-tag">📘 ' + (r.bookName || '') + ' (' + (r.pageCount || 0) + ' syf)</span>' +
+                '</div>' +
+              '</div>' +
+              '<div class="student-metrics">' +
+                '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">+' + (r.earnedStars || 1) + '</span></div>' +
+              '</div>' +
+            '</div>'
+          );
+        }
+        stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + rDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + rDims.rows + ', minmax(0, 1fr));">' + recCards.join("") + '</div>';
         return;
       }
 
-      const displayBooks = books.slice(0, 30);
+      var displayBooks = books.slice(0, 30);
       if (displayBooks.length === 0) {
-        stage.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">📚</div><h3 style="margin-top:8px;">Sınıf Kitaplığına Henüz Kitap Eklenmemiş</h3>
-        </div>`;
+        stage.innerHTML =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">📚</div><h3 style="margin-top:8px;">Sınıf Kitaplığına Henüz Kitap Eklenmemiş</h3>' +
+          '</div>';
         return;
       }
 
-      const { cols, rows } = computeOptimalGrid(displayBooks.length);
-      stage.innerHTML = `
-        <div class="students-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr)); grid-template-rows:repeat(${rows}, minmax(0, 1fr));">
-          ${displayBooks.map(b => {
-            const isLoaned = (b.status || "").toLowerCase() === "okunuyor" || Boolean(b.currentStudentName);
-            return `
-              <div class="student-card ${isLoaned ? 'kiz-card' : 'erkek-card'}">
-                <div class="student-left">
-                  <div class="student-no-badge">#${b.registrationNo || ''}</div>
-                  <div class="student-info">
-                    <h4>${b.name || ''}</h4>
-                    <span class="gender-tag">${isLoaned ? '📖 Okuyan: ' + (b.currentStudentName || '') : '🟢 Rafta (' + (b.pageCount || 0) + ' syf)'}</span>
-                  </div>
-                </div>
-                <div class="student-metrics">
-                  <div class="metric-pill ${isLoaned ? 'star-pill' : 'book-pill'}">
-                    <span class="metric-icon">${isLoaned ? '📖' : '📗'}</span>
-                    <span class="metric-val" style="font-size:0.68rem;">${isLoaned ? 'Ödünç' : 'Rafta'}</span>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
+      var bDims = computeOptimalGrid(displayBooks.length);
+      var bookCards = [];
+      for (var k = 0; k < displayBooks.length; k++) {
+        var b = displayBooks[k];
+        var isLoaned = String(b.status || "").toLowerCase() === "okunuyor" || Boolean(b.currentStudentName);
+        bookCards.push(
+          '<div class="student-card ' + (isLoaned ? 'kiz-card' : 'erkek-card') + '">' +
+            '<div class="student-left">' +
+              '<div class="student-no-badge">#' + (b.registrationNo || '') + '</div>' +
+              '<div class="student-info">' +
+                '<h4>' + (b.name || '') + '</h4>' +
+                '<span class="gender-tag">' + (isLoaned ? '📖 Okuyan: ' + (b.currentStudentName || '') : '🟢 Rafta (' + (b.pageCount || 0) + ' syf)') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="student-metrics">' +
+              '<div class="metric-pill ' + (isLoaned ? 'star-pill' : 'book-pill') + '">' +
+                '<span class="metric-icon">' + (isLoaned ? '📖' : '📗') + '</span>' +
+                '<span class="metric-val" style="font-size:0.68rem;">' + (isLoaned ? 'Ödünç' : 'Rafta') + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
+      stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + bDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + bDims.rows + ', minmax(0, 1fr));">' + bookCards.join("") + '</div>';
     }
 
-    function renderTournament(data, students) {
-      const toolbar = document.getElementById("tournament-toolbar");
-      const stage = document.getElementById("tournament-stage");
+    function renderTournament(data) {
+      var toolbar = document.getElementById("tournament-toolbar");
+      var stage = document.getElementById("tournament-stage");
       if (!toolbar || !stage) return;
 
-      const tData = data.tournamentData || {};
-      const allTournaments = Array.isArray(tData.tournaments) ? tData.tournaments : [];
+      var tData = data.tournamentData || {};
+      var allTournaments = Array.isArray(tData.tournaments) ? tData.tournaments : [];
 
       if (allTournaments.length === 0) {
-        toolbar.innerHTML = `<div class="stats-bar"><div class="stat-pill">🏆 Sınıf Turnuvaları</div></div>`;
-        stage.innerHTML = `<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">
-          <div style="font-size:3rem;">🏆</div><h3 style="margin-top:8px;">Henüz Aktif Turnuva Yok</h3>
-        </div>`;
+        toolbar.innerHTML = '<div class="stats-bar"><div class="stat-pill">🏆 Sınıf Turnuvaları</div></div>';
+        stage.innerHTML =
+          '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
+            '<div style="font-size:3rem;">🏆</div><h3 style="margin-top:8px;">Henüz Aktif Turnuva Yok</h3>' +
+          '</div>';
         return;
       }
 
-      const activeT = currentTournamentTab === "TAMAMLANAN"
-        ? (allTournaments.find(t => t.status === "TAMAMLANDI") || allTournaments[0])
-        : (allTournaments.find(t => t.status === "DEVAM_EDIYOR") || allTournaments[0]);
-
-      const matches = Array.isArray(activeT.matches) ? activeT.matches : [];
-      const currentRound = Number(activeT.currentRound) || 1;
-      const roundMatches = matches.filter(m => Number(m.round) === currentRound);
-      const displayMatches = (roundMatches.length > 0 ? roundMatches : matches).slice(0, 20);
-
-      toolbar.innerHTML = `
-        <div class="stats-bar">
-          <div class="stat-pill star-stat">🏆 Turnuva: <strong>${activeT.name || 'Sınıf Turnuvası'}</strong></div>
-          <div class="stat-pill boy-stat">⚡ Sistem: <strong>${activeT.type || 'ELEME'} (${currentRound}. Tur)</strong></div>
-          <div class="stat-pill ${activeT.status === 'TAMAMLANDI' ? 'book-stat' : 'girl-stat'}">
-            <strong>${activeT.status === 'TAMAMLANDI' ? '🏁 Tamamlandı' : '🟢 Devam Ediyor'}</strong>
-          </div>
-        </div>
-      `;
-
-      let podiumHtml = "";
-      if (activeT.winnerName) {
-        podiumHtml = `
-          <div class="podium-row">
-            <div class="podium-card gold"><div><div style="font-size:0.75rem; font-weight:800; color:#B45309;">🥇 ŞAMPİYON</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">${activeT.winnerName}</div></div><span style="font-size:1.5rem;">🏆</span></div>
-            <div class="podium-card silver"><div><div style="font-size:0.75rem; font-weight:800; color:#475569;">🥈 İKİNCİ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">${activeT.runnerUpName || '-'}</div></div><span style="font-size:1.5rem;">🥈</span></div>
-            <div class="podium-card bronze"><div><div style="font-size:0.75rem; font-weight:800; color:#C2410C;">🥉 ÜÇÜNCÜ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">${activeT.thirdPlaceName || '-'}</div></div><span style="font-size:1.5rem;">🥉</span></div>
-          </div>
-        `;
+      var activeT = allTournaments[0];
+      for (var tIdx = 0; tIdx < allTournaments.length; tIdx++) {
+        if (currentTournamentTab === "TAMAMLANAN" && allTournaments[tIdx].status === "TAMAMLANDI") {
+          activeT = allTournaments[tIdx];
+          break;
+        }
+        if (currentTournamentTab !== "TAMAMLANAN" && allTournaments[tIdx].status === "DEVAM_EDIYOR") {
+          activeT = allTournaments[tIdx];
+          break;
+        }
       }
 
-      const { cols, rows } = computeOptimalGrid(Math.max(1, displayMatches.length));
-      const matchesHtml = displayMatches.map((m, idx) => {
-        const p1Won = m.winnerId && m.winnerId === m.player1Id;
-        const p2Won = m.winnerId && m.winnerId === m.player2Id;
-        const hasScore = m.score1 !== null && m.score1 !== undefined && m.score2 !== null && m.score2 !== undefined;
-        return `
-          <div class="student-card ${m.winnerId ? 'kiz-card' : 'erkek-card'}">
-            <div class="student-left" style="width:100%; justify-content:space-between;">
-              <div style="min-width:0; flex:1;">
-                <div style="font-size:0.68rem; font-weight:800; color:#0284C7;">${m.groupName ? m.groupName + ' • ' : ''}${m.round || 1}. Tur • Maç #${idx + 1}</div>
-                <div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:${p1Won ? '#047857' : '#0F172A'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p1Won ? '👑 ' : ''}${m.player1Name || 'Bekleniyor'}</div>
-                <div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:${p2Won ? '#047857' : '#0F172A'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p2Won ? '👑 ' : ''}${m.player2Name || 'BAY (Tur Atladı)'}</div>
-              </div>
-              <div class="metric-pill star-pill" style="min-width:48px; padding:0 6px;">
-                <span class="metric-val">${hasScore ? `${m.score1} - ${m.score2}` : (m.winnerId ? '✅' : 'VS')}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
+      var matches = Array.isArray(activeT.matches) ? activeT.matches : [];
+      var currentRound = Number(activeT.currentRound) || 1;
+      var roundMatches = [];
+      for (var mIdx = 0; mIdx < matches.length; mIdx++) {
+        if (Number(matches[mIdx].round) === currentRound) roundMatches.push(matches[mIdx]);
+      }
+      var displayMatches = (roundMatches.length > 0 ? roundMatches : matches).slice(0, 20);
 
-      stage.innerHTML = `
-        ${podiumHtml}
-        <div class="students-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr)); grid-template-rows:repeat(${rows}, minmax(0, 1fr));">
-          ${matchesHtml || '<div class="stage-panel" style="align-items:center; justify-content:center;">Fikstür eşleşmesi bekleniyor...</div>'}
-        </div>
-      `;
+      toolbar.innerHTML =
+        '<div class="stats-bar">' +
+          '<div class="stat-pill star-stat">🏆 Turnuva: <strong>' + (activeT.name || 'Sınıf Turnuvası') + '</strong></div>' +
+          '<div class="stat-pill boy-stat">⚡ Sistem: <strong>' + (activeT.type || 'ELEME') + ' (' + currentRound + '. Tur)</strong></div>' +
+          '<div class="stat-pill ' + (activeT.status === 'TAMAMLANDI' ? 'book-stat' : 'girl-stat') + '">' +
+            '<strong>' + (activeT.status === 'TAMAMLANDI' ? '🏁 Tamamlandı' : '🟢 Devam Ediyor') + '</strong>' +
+          '</div>' +
+        '</div>';
+
+      var podiumHtml = "";
+      if (activeT.winnerName) {
+        podiumHtml =
+          '<div class="podium-row">' +
+            '<div class="podium-card gold"><div><div style="font-size:0.75rem; font-weight:800; color:#B45309;">🥇 ŞAMPİYON</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + activeT.winnerName + '</div></div><span style="font-size:1.5rem;">🏆</span></div>' +
+            '<div class="podium-card silver"><div><div style="font-size:0.75rem; font-weight:800; color:#475569;">🥈 İKİNCİ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + (activeT.runnerUpName || '-') + '</div></div><span style="font-size:1.5rem;">🥈</span></div>' +
+            '<div class="podium-card bronze"><div><div style="font-size:0.75rem; font-weight:800; color:#C2410C;">🥉 ÜÇÜNCÜ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + (activeT.thirdPlaceName || '-') + '</div></div><span style="font-size:1.5rem;">🥉</span></div>' +
+          '</div>';
+      }
+
+      var dims = computeOptimalGrid(Math.max(1, displayMatches.length));
+      var matchesParts = [];
+      for (var idx = 0; idx < displayMatches.length; idx++) {
+        var m = displayMatches[idx];
+        var p1Won = m.winnerId && m.winnerId === m.player1Id;
+        var p2Won = m.winnerId && m.winnerId === m.player2Id;
+        var hasScore = m.score1 !== null && m.score1 !== undefined && m.score2 !== null && m.score2 !== undefined;
+        matchesParts.push(
+          '<div class="student-card ' + (m.winnerId ? 'kiz-card' : 'erkek-card') + '">' +
+            '<div class="student-left" style="width:100%; justify-content:space-between;">' +
+              '<div style="min-width:0; flex:1;">' +
+                '<div style="font-size:0.68rem; font-weight:800; color:#0284C7;">' + (m.groupName ? m.groupName + ' • ' : '') + (m.round || 1) + '. Tur • Maç #' + (idx + 1) + '</div>' +
+                '<div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:' + (p1Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p1Won ? '👑 ' : '') + (m.player1Name || 'Bekleniyor') + '</div>' +
+                '<div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:' + (p2Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p2Won ? '👑 ' : '') + (m.player2Name || 'BAY (Tur Atladı)') + '</div>' +
+              '</div>' +
+              '<div class="metric-pill star-pill" style="min-width:48px; padding:0 6px;">' +
+                '<span class="metric-val">' + (hasScore ? (m.score1 + ' - ' + m.score2) : (m.winnerId ? '✅' : 'VS')) + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
+
+      stage.innerHTML =
+        podiumHtml +
+        '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' +
+          (matchesParts.join("") || '<div class="stage-panel" style="align-items:center; justify-content:center;">Fikstür eşleşmesi bekleniyor...</div>') +
+        '</div>';
     }
 
     window.addEventListener("DOMContentLoaded", initSessionCode);
