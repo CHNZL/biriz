@@ -221,7 +221,11 @@ fun TeacherDashboardScreen(
     currentUser: AuthenticatedUser = AuthenticatedUser(),
     notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
     onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
-    onSetAllNotificationCategories: (Boolean) -> Unit = {}
+    onSetAllNotificationCategories: (Boolean) -> Unit = {},
+    quietHoursConfig: com.example.util.QuietHoursConfig = com.example.util.QuietHoursConfig(),
+    deferredQuietCount: Int = 0,
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> }
 ) {
     val context = LocalContext.current
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
@@ -783,6 +787,10 @@ fun TeacherDashboardScreen(
                             notificationPreferences = notificationPreferences,
                             onToggleNotificationCategory = onToggleNotificationCategory,
                             onSetAllNotificationCategories = onSetAllNotificationCategories,
+                            quietHoursConfig = quietHoursConfig,
+                            deferredQuietCount = deferredQuietCount,
+                            onToggleQuietHours = onToggleQuietHours,
+                            onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
                             onDeleteTeacherRoleAndClass = { showDeleteRoleDialog = true },
                             onDeleteEntireAccount = { showDeleteAccountDialog = true },
                             onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
@@ -1082,6 +1090,10 @@ fun TeacherDashboardScreen(
                 notificationPreferences = notificationPreferences,
                 onToggleNotificationCategory = onToggleNotificationCategory,
                 onSetAllNotificationCategories = onSetAllNotificationCategories,
+                quietHoursConfig = quietHoursConfig,
+                deferredQuietCount = deferredQuietCount,
+                onToggleQuietHours = onToggleQuietHours,
+                onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
                 onToggleTheme = onToggleTheme,
                 onDeleteRole = onDeleteTeacherRoleAndClass,
                 onDeleteEntireAccount = onDeleteEntireAccount,

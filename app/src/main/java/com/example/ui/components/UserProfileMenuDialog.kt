@@ -76,6 +76,7 @@ import com.example.ui.theme.BirizTurquoise
 import com.example.ui.viewmodel.AuthenticatedUser
 import com.example.util.NotificationCategory
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.QuietHoursConfig
 
 @Composable
 fun UserAvatarCircle(
@@ -167,6 +168,10 @@ fun UserProfileMenuDialog(
     notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
     onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
     onSetAllNotificationCategories: (Boolean) -> Unit = {},
+    quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    deferredQuietCount: Int = 0,
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onToggleTheme: () -> Unit,
     onDeleteRole: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -350,7 +355,8 @@ fun UserProfileMenuDialog(
                                         color = if (isDarkTheme) Color.White else BirizNavyPrimary
                                     )
                                     Text(
-                                        text = "$activeCategoryCount/${roleCategories.size} kategori aktif • Aç/Kapat",
+                                        text = "$activeCategoryCount/${roleCategories.size} kategori aktif" +
+                                            if (quietHoursConfig.enabled) " • 🌙 Sessiz Saatler" else " • Aç/Kapat",
                                         fontSize = 10.5.sp,
                                         color = Color.Gray
                                     )
@@ -375,7 +381,11 @@ fun UserProfileMenuDialog(
                                     preferences = notificationPreferences,
                                     isDarkTheme = isDarkTheme,
                                     onToggleCategory = onToggleNotificationCategory,
-                                    onSetAllCategories = onSetAllNotificationCategories
+                                    onSetAllCategories = onSetAllNotificationCategories,
+                                    quietHoursConfig = quietHoursConfig,
+                                    deferredQuietCount = deferredQuietCount,
+                                    onToggleQuietHours = onToggleQuietHours,
+                                    onUpdateQuietHoursWindow = onUpdateQuietHoursWindow
                                 )
                             }
                         }

@@ -9,7 +9,16 @@ package com.example.data.model
 enum class UserRole(val code: String, val displayName: String, val description: String) {
     MEMBER("UYE", "Üye", "Henüz bir rol seçilmemiş başlangıç hesabı"),
     TEACHER("OGRETMEN", "Öğretmen", "Sınıf yöneticisi, ödev ve veli iletişim koordinatörü"),
-    PARENT("VELI", "Veli", "Öğrenci gelişim takibi ve öğretmen iletişimi")
+    PARENT("VELI", "Veli", "Öğrenci gelişim takibi ve öğretmen iletişimi");
+
+    companion object {
+        fun fromCode(code: String): UserRole {
+            val trimmed = code.trim()
+            return entries.firstOrNull {
+                it.code.equals(trimmed, ignoreCase = true) || it.name.equals(trimmed, ignoreCase = true)
+            } ?: MEMBER
+        }
+    }
 }
 
 data class City(

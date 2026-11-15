@@ -3585,4 +3585,195 @@ class ExampleUnitTest {
     assertTrue(teacherTitles.any { it.contains("Anket Oylaması Tamamlandı") })
     assertTrue(teacherTitles.any { it.contains("İadesi Geciken Kitaplar") })
   }
+
+  @Test
+  fun testSecondParentSecurityAlertLifecycle() {
+    val helper = com.example.util.ActivityNotificationHelper
+    val baseline = 1_763_200_000_000L
+    val now = baseline + 10_000L
+
+    val selfParent = com.example.data.model.LinkedParentAccount(
+      email = "anne@example.com",
+      name = "Ayşe Anne",
+      linkedAt = "Bağlandı"
+    )
+    val secondParent = com.example.data.model.LinkedParentAccount(
+      email = "baba@example.com",
+      name = "Mehmet Baba",
+      linkedAt = "15 Kasım 2026, 14:30"
+    )
+    val legacyOtherParent = com.example.data.model.LinkedParentAccount(
+      email = "eski@example.com",
+      name = "Eski Veli",
+      linkedAt = "Bağlandı"
+    )
+
+    val initialStudent = com.example.data.model.Student(
+      id = "std_1",
+      studentNumber = "10",
+      fullName = "Ali Yılmaz",
+      gender = "Erkek",
+      parentEmail = selfParent.email,
+      parentName = selfParent.name,
+      linkedParents = listOf(selfParent, legacyOtherParent)
+    )
+    val initialSnap = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+      students = listOf(initialStudent)
+    )
+
+    // Cold-start with legacy "Bağlandı" must NOT fire a security alert, nor for self email
+    val coldRes = helper.evaluateParentNotifications(
+      previous = null,
+      current = initialSnap,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = now,
+      currentUserEmail = "anne@example.com"
+    )
+    assertTrue(
+      "Legacy Bağlandı entry should not false-trigger on cold start",
+      coldRes.newNotifications.none { it.id.startsWith("notif_parent_sec_link_") }
+    )
+
+    // Live transition when a second parent links via code
+    val updatedStudent = initialStudent.copy(
+      linkedParents = listOf(selfParent, legacyOtherParent, secondParent)
+    )
+    val liveRes = helper.evaluateParentNotifications(
+      previous = initialSnap,
+      current = initialSnap.copy(students = listOf(updatedStudent)),
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = coldRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 5_000L,
+      currentUserEmail = "anne@example.com"
+    )
+    val secAlerts = liveRes.newNotifications.filter { it.id.startsWith("notif_parent_sec_link_") }
+    assertEquals(1, secAlerts.size)
+    assertTrue(secAlerts.first().title.contains("İkinci Veli Bağlantısı Algılandı"))
+    assertTrue(secAlerts.first().message.contains("Mehmet Baba"))
+    assertTrue(secAlerts.first().message.contains("baba@example.com"))
+
+    // Duplicate check must not re-fire
+    val repeatRes = helper.evaluateParentNotifications(
+      previous = initialSnap.copy(students = listOf(updatedStudent)),
+      current = initialSnap.copy(students = listOf(updatedStudent)),
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = liveRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 8_000L,
+      currentUserEmail = "anne@example.com"
+    )
+    assertTrue(repeatRes.newNotifications.none { it.id.startsWith("notif_parent_sec_link_") })
+
+    // Unlink then re-link should fire again
+    val unlinkedSnap = initialSnap.copy(
+      students = listOf(initialStudent.copy(linkedParents = listOf(selfParent, legacyOtherParent)))
+    )
+    val unlinkRes = helper.evaluateParentNotifications(
+      previous = initialSnap.copy(students = listOf(updatedStudent)),
+      current = unlinkedSnap,
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = repeatRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 12_000L,
+      currentUserEmail = "anne@example.com"
+    )
+    val relinkRes = helper.evaluateParentNotifications(
+      previous = unlinkedSnap,
+      current = initialSnap.copy(students = listOf(updatedStudent)),
+      linkedStudentIds = setOf("std_1"),
+      seenEventKeys = unlinkRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 15_000L,
+      currentUserEmail = "anne@example.com"
+    )
+    assertEquals(1, relinkRes.newNotifications.count { it.id.startsWith("notif_parent_sec_link_") })
+  }
+
+  @Test
+  fun testQuietHoursEvaluationAndBypass() {
+    val helper = com.example.util.NotificationPreferencesHelper
+    val overnightCfg = com.example.util.QuietHoursConfig(
+      enabled = true,
+      startHour = 22,
+      startMinute = 0,
+      endHour = 8,
+      endMinute = 0
+    )
+
+    fun calAt(dayOffset: Int, hour: Int, min: Int): Long {
+      return java.util.Calendar.getInstance().apply {
+        set(2026, java.util.Calendar.NOVEMBER, 15 + dayOffset, hour, min, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+      }.timeInMillis
+    }
+
+    val t2315 = calAt(0, 23, 15)
+    val t0330Next = calAt(1, 3, 30)
+    val t1400 = calAt(0, 14, 0)
+
+    assertTrue("23:15 should be inside 22:00-08:00", helper.isWithinQuietHours(overnightCfg, t2315))
+    assertTrue("03:30 should be inside 22:00-08:00", helper.isWithinQuietHours(overnightCfg, t0330Next))
+    assertFalse("14:00 should be outside 22:00-08:00", helper.isWithinQuietHours(overnightCfg, t1400))
+
+    val expectedEndFrom2315 = calAt(1, 8, 0) + 5_000L
+    assertEquals(expectedEndFrom2315, helper.nextQuietHoursEndMillis(overnightCfg, t2315))
+
+    val expectedEndFrom0330 = calAt(1, 8, 0) + 5_000L
+    assertEquals(expectedEndFrom0330, helper.nextQuietHoursEndMillis(overnightCfg, t0330Next))
+
+    // Security & App Update must bypass quiet hours; routine notifications must defer inside quiet hours
+    val routineStar = com.example.data.model.BirizNotification(
+      id = "star_1",
+      title = "Yeni Yıldız",
+      message = "+3 Yıldız",
+      type = com.example.data.model.NotificationType.STAR_REWARD,
+      targetSubPageName = "STARS"
+    )
+    val securityAlert = com.example.data.model.BirizNotification(
+      id = "notif_parent_sec_link_std_1_baba@example.com",
+      title = "🔐 İkinci Veli Bağlantısı Algılandı",
+      message = "Yeni veli bağlandı",
+      type = com.example.data.model.NotificationType.PARENT_REGISTRATION,
+      targetSubPageName = "HOME"
+    )
+    val appUpdateAlert = com.example.data.model.BirizNotification(
+      id = "app_update_1002",
+      title = "Yeni Güncelleme",
+      message = "v1.0.2 hazır",
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "APP_UPDATE"
+    )
+
+    assertEquals(com.example.util.NotificationCategory.PARENT_SECURITY, helper.categoryForNotification(securityAlert))
+    assertTrue(helper.shouldDeferForQuietHours(overnightCfg, routineStar, t2315))
+    assertFalse(helper.shouldDeferForQuietHours(overnightCfg, securityAlert, t2315))
+    assertFalse(helper.shouldDeferForQuietHours(overnightCfg, appUpdateAlert, t2315))
+    assertFalse(helper.shouldDeferForQuietHours(overnightCfg, routineStar, t1400))
+    assertFalse(helper.shouldDeferForQuietHours(overnightCfg.copy(enabled = false), routineStar, t2315))
+  }
+
+  @Test
+  fun testSmartNotificationGroupSummaryFormatting() {
+    val sysHelper = com.example.util.SystemActivityNotificationHelper
+    val activityItems = listOf(
+      com.example.data.model.BirizNotification("a1", "Yıldız Kazandı ⭐", "Ali +5 yıldız", type = com.example.data.model.NotificationType.STAR_REWARD, targetSubPageName = "STARS"),
+      com.example.data.model.BirizNotification("a2", "Kitap Ödünç 📚", "Küçük Prens", type = com.example.data.model.NotificationType.LIBRARY, targetSubPageName = "READING"),
+      com.example.data.model.BirizNotification("a3", "Ders Programı 📅", "Matematik güncellendi", type = com.example.data.model.NotificationType.SCHEDULE, targetSubPageName = "SCHEDULE")
+    )
+    val actPayload = sysHelper.buildGroupSummaryText(activityItems, sysHelper.GROUP_KEY_ACTIVITIES, isMorningDigest = false)
+    assertEquals("✨ Bugün 3 Yeni Sınıf Hareketi", actPayload.title)
+    assertEquals(3, actPayload.lines.size)
+
+    val annPayload = sysHelper.buildGroupSummaryText(activityItems.take(2), sysHelper.GROUP_KEY_ANNOUNCEMENTS, isMorningDigest = false)
+    assertEquals("📢 Bugün 2 Yeni Sınıf Duyurusu", annPayload.title)
+
+    val parentRegPayload = sysHelper.buildGroupSummaryText(activityItems.take(2), sysHelper.GROUP_KEY_PARENT_REG, isMorningDigest = false)
+    assertEquals("👨‍👩‍👧 2 Yeni Veli Bağlantı Bildirimi", parentRegPayload.title)
+
+    val morningPayload = sysHelper.buildGroupSummaryText(activityItems + activityItems.first(), sysHelper.GROUP_KEY_ACTIVITIES, isMorningDigest = true)
+    assertEquals("🌅 Günaydın! Gece Gelen 4 Bildirim", morningPayload.title)
+  }
 }

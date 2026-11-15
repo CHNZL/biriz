@@ -42,6 +42,7 @@ import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.util.NotificationCategory
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.QuietHoursConfig
 
 @Composable
 fun NotificationPreferencesSection(
@@ -50,6 +51,10 @@ fun NotificationPreferencesSection(
     isDarkTheme: Boolean,
     onToggleCategory: (NotificationCategory, Boolean) -> Unit,
     onSetAllCategories: (Boolean) -> Unit,
+    quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    deferredQuietCount: Int = 0,
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val categories = NotificationCategory.categoriesForRole(role)
@@ -61,6 +66,175 @@ fun NotificationPreferencesSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // --- SESSİZ SAATLER (GECE KORUMASI) KARTI ---
+        val quietRangeLabel = NotificationPreferencesHelper.formatQuietHoursRange(quietHoursConfig)
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = if (isDarkTheme) {
+                if (quietHoursConfig.enabled) Color(0xFF16273B) else Color(0xFF111827)
+            } else {
+                if (quietHoursConfig.enabled) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
+            },
+            border = BorderStroke(
+                1.dp,
+                if (quietHoursConfig.enabled) {
+                    BirizTurquoise.copy(alpha = if (isDarkTheme) 0.55f else 0.45f)
+                } else if (isDarkTheme) {
+                    BirizDarkCardBorder
+                } else {
+                    Color(0xFFE2E8F0)
+                }
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { onToggleQuietHours(!quietHoursConfig.enabled) }
+                .testTag("quiet_hours_card")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (quietHoursConfig.enabled) {
+                                BirizAmber.copy(alpha = 0.18f)
+                            } else {
+                                Color.Gray.copy(alpha = 0.12f)
+                            },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(text = "🌙", fontSize = 16.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.padding(end = 8.dp)) {
+                            Text(
+                                text = "Sessiz Saatler (Gece Koruması)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                            )
+                            Text(
+                                text = "$quietRangeLabel • Rutin bildirimler sabah topluca iletilir; güvenlik uyarıları anında gelir",
+                                fontSize = 10.5.sp,
+                                lineHeight = 14.sp,
+                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = quietHoursConfig.enabled,
+                        onCheckedChange = { onToggleQuietHours(it) },
+                        modifier = Modifier
+                            .testTag("quiet_hours_switch")
+                            .semantics {
+                                contentDescription = if (quietHoursConfig.enabled) {
+                                    "Sessiz saatleri kapat"
+                                } else {
+                                    "Sessiz saatleri aç"
+                                }
+                            },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = BirizAmber,
+                            uncheckedThumbColor = if (isDarkTheme) Color(0xFFCBD5E1) else BirizNavyPrimary,
+                            uncheckedTrackColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)
+                        )
+                    )
+                }
+
+                if (quietHoursConfig.enabled) {
+                    val presets = listOf(
+                        Triple("21:00 – 08:00", "quiet_hours_preset_21_08", listOf(21, 0, 8, 0)),
+                        Triple("22:00 – 08:00", "quiet_hours_preset_22_08", listOf(22, 0, 8, 0)),
+                        Triple("23:00 – 07:30", "quiet_hours_preset_23_0730", listOf(23, 0, 7, 30))
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        presets.forEach { (label, tag, coords) ->
+                            val isSelected = quietHoursConfig.startHour == coords[0] &&
+                                quietHoursConfig.startMinute == coords[1] &&
+                                quietHoursConfig.endHour == coords[2] &&
+                                quietHoursConfig.endMinute == coords[3]
+                            Surface(
+                                onClick = {
+                                    onUpdateQuietHoursWindow(coords[0], coords[1], coords[2], coords[3])
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) {
+                                    BirizTurquoise
+                                } else if (isDarkTheme) {
+                                    Color(0xFF1E293B)
+                                } else {
+                                    Color.White
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) BirizTurquoise else if (isDarkTheme) BirizDarkCardBorder else Color(0xFFCBD5E1)
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag(tag)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        color = if (isSelected) {
+                                            Color.White
+                                        } else if (isDarkTheme) {
+                                            BirizDarkTextPrimary
+                                        } else {
+                                            BirizNavyPrimary
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (deferredQuietCount > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BirizAmber.copy(alpha = 0.16f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "🌅 Sabah özeti için $deferredQuietCount bildirim bekliyor",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -84,7 +258,7 @@ fun NotificationPreferencesSection(
                     onClick = { onSetAllCategories(true) },
                     enabled = !allEnabled,
                     modifier = Modifier
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("notif_prefs_enable_all")
                 ) {
                     Text(
@@ -98,7 +272,7 @@ fun NotificationPreferencesSection(
                     onClick = { onSetAllCategories(false) },
                     enabled = !noneEnabled,
                     modifier = Modifier
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = 48.dp)
                         .testTag("notif_prefs_disable_all")
                 ) {
                     Text(

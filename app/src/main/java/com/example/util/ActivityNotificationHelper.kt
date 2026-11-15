@@ -219,7 +219,8 @@ object ActivityNotificationHelper {
         linkedStudentIds: Set<String>,
         seenEventKeys: Set<String>,
         baselineTimestampMs: Long,
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        currentUserEmail: String = ""
     ): EvaluationResult {
         if (linkedStudentIds.isEmpty()) {
             return EvaluationResult(emptyList(), seenEventKeys)
@@ -688,6 +689,65 @@ object ActivityNotificationHelper {
                     }
                 } else {
                     updatedSeen.add(groupKey)
+                }
+            }
+        }
+
+        // 13. Güvenlik Bildirimi: Aynı Öğrenciye İkinci Veli Bağlantısı Algılandı
+        val cleanViewerEmail = currentUserEmail.trim().lowercase(Locale.ROOT)
+        val prevStudentsById = previous?.students?.associateBy { it.id }.orEmpty()
+        linkedStudentIds.forEach { sId ->
+            val currStudent = current.students.firstOrNull { it.id == sId } ?: return@forEach
+            val prevStudent = prevStudentsById[sId]
+
+            val currOtherEmails = currStudent.allLinkedParents
+                .map { it.email.trim().lowercase(Locale.ROOT) }
+                .filter { it.isNotBlank() && it != "veli@biriz.app" && (cleanViewerEmail.isBlank() || it != cleanViewerEmail) }
+                .toSet()
+
+            if (prevStudent != null) {
+                val prevOtherEmails = prevStudent.allLinkedParents
+                    .map { it.email.trim().lowercase(Locale.ROOT) }
+                    .filter { it.isNotBlank() && it != "veli@biriz.app" && (cleanViewerEmail.isBlank() || it != cleanViewerEmail) }
+                    .toSet()
+                (prevOtherEmails - currOtherEmails).forEach { removedEmail ->
+                    updatedSeen.remove("parent_sec_link_${sId}_$removedEmail")
+                }
+            }
+
+            currStudent.allLinkedParents.forEach { otherParent ->
+                val pEmail = otherParent.email.trim().lowercase(Locale.ROOT)
+                if (pEmail.isBlank() || pEmail == "veli@biriz.app") return@forEach
+                if (cleanViewerEmail.isNotBlank() && pEmail == cleanViewerEmail) return@forEach
+
+                val prevParentEmails = prevStudent?.allLinkedParents
+                    ?.map { it.email.trim().lowercase(Locale.ROOT) }
+                    ?.toSet()
+                    .orEmpty()
+                val isLiveTransition = previous != null &&
+                    previous.students.isNotEmpty() &&
+                    prevStudent != null &&
+                    pEmail !in prevParentEmails
+                val parsedLinkedAt = parseLinkedAtMillis(otherParent.linkedAt)
+                val secKey = "parent_sec_link_${sId}_$pEmail"
+
+                processCandidate(
+                    eventKey = secKey,
+                    eventTimestamp = parsedLinkedAt ?: 1L,
+                    isLiveTransition = isLiveTransition
+                ) {
+                    val sName = resolveStudentName(sId, current.students, currStudent.fullName)
+                    val emailLabel = if (otherParent.email.isNotBlank()) " (${otherParent.email})" else ""
+                    BirizNotification(
+                        id = "notif_$secKey",
+                        title = "🔐 İkinci Veli Bağlantısı Algılandı",
+                        message = "${otherParent.name}$emailLabel, $sName öğrencisine veli katılım koduyla bağlandı. Bu işlemi bilmiyorsanız öğretmeninizle iletişime geçiniz.",
+                        timestamp = parsedLinkedAt ?: nowMs,
+                        type = NotificationType.PARENT_REGISTRATION,
+                        targetSubPageName = "HOME",
+                        targetId = sId,
+                        isRead = false
+                    )
                 }
             }
         }

@@ -58,6 +58,7 @@ import com.example.ui.components.ParentDownloadQrDialog
 import com.example.util.AppUpdateManager
 import com.example.util.NotificationCategory
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.QuietHoursConfig
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -80,6 +81,10 @@ fun ProfileSettingsSubScreen(
     notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
     onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
     onSetAllNotificationCategories: (Boolean) -> Unit = {},
+    quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    deferredQuietCount: Int = 0,
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
     onBackToClassList: () -> Unit,
@@ -244,7 +249,11 @@ fun ProfileSettingsSubScreen(
                 preferences = notificationPreferences,
                 isDarkTheme = isDarkTheme,
                 onToggleCategory = onToggleNotificationCategory,
-                onSetAllCategories = onSetAllNotificationCategories
+                onSetAllCategories = onSetAllNotificationCategories,
+                quietHoursConfig = quietHoursConfig,
+                deferredQuietCount = deferredQuietCount,
+                onToggleQuietHours = onToggleQuietHours,
+                onUpdateQuietHoursWindow = onUpdateQuietHoursWindow
             )
         }
 

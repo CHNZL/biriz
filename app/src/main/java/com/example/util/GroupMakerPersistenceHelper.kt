@@ -71,7 +71,7 @@ object GroupMakerPersistenceHelper {
         }
     }
 
-    private fun deserializeState(json: JSONObject): GroupMakerState {
+    internal fun deserializeState(json: JSONObject): GroupMakerState {
         val configObj = json.optJSONObject("config")
         val modeName = configObj?.optString("mode", GroupDistributionMode.BY_GROUP_COUNT.name) ?: GroupDistributionMode.BY_GROUP_COUNT.name
         val mode = try { GroupDistributionMode.valueOf(modeName) } catch (_: Exception) { GroupDistributionMode.BY_GROUP_COUNT }

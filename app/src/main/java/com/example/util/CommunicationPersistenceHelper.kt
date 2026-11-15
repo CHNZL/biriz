@@ -1203,7 +1203,7 @@ object CommunicationPersistenceHelper {
         return obj
     }
 
-    private fun parseAnnouncementJson(obj: JSONObject): Announcement {
+    internal fun parseAnnouncementJson(obj: JSONObject): Announcement {
         val targetStudentIds = mutableListOf<String>()
         val targetStudentIdsArr = obj.optJSONArray("targetStudentIds")
         if (targetStudentIdsArr != null) {

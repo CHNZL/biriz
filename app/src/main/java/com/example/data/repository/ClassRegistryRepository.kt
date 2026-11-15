@@ -289,7 +289,7 @@ class ClassRegistryRepository(
             isOnline = true,
             lastActiveMillis = nowMillis
         )
-        val updatedParents = listOf(newParentAccount) + match.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+        val updatedParents = listOf(newParentAccount) + match.allLinkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
         val updatedStudent = match.copy(
             parentName = finalName,
             parentEmail = finalEmail,
@@ -333,7 +333,7 @@ class ClassRegistryRepository(
             if (s.id in linkedStudentIds) {
                 val hasThisParent = s.allLinkedParents.any { it.email.equals(finalEmail, ignoreCase = true) }
                 if (!hasThisParent) {
-                    val updatedParents = listOf(account) + s.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+                    val updatedParents = listOf(account) + s.allLinkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
                     s.copy(
                         parentName = s.parentName ?: finalName,
                         parentEmail = s.parentEmail ?: finalEmail,
@@ -382,7 +382,7 @@ class ClassRegistryRepository(
         }
         if (inMemoryMatch != null) {
             val matchedClass = _registeredClasses.value.firstOrNull() ?: defaultSampleClass
-            val updatedParents = listOf(newParentAccount) + inMemoryMatch.linkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
+            val updatedParents = listOf(newParentAccount) + inMemoryMatch.allLinkedParents.filterNot { it.email.equals(finalEmail, ignoreCase = true) }
             val updatedStudent = inMemoryMatch.copy(
                 parentName = finalName,
                 parentEmail = finalEmail,
@@ -455,7 +455,10 @@ class ClassRegistryRepository(
 
                         if (isMatch) {
                             val finalCode = if (normCode.isNotBlank()) normCode else normTarget
-                            val updatedParents = listOf(newParentAccount)
+                            val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
+                            val updatedParents = listOf(newParentAccount) + existingParents.filterNot {
+                                it.email.equals(finalEmail, ignoreCase = true)
+                            }
                             val updatePayload = mapOf<String, Any?>(
                                 "parentCode" to finalCode,
                                 "parentInviteCode" to finalCode,
@@ -1674,5 +1677,106 @@ class ClassRegistryRepository(
         }
 
         return results
+    }
+
+    suspend fun saveFcmToken(uid: String, token: String) {
+        if (uid.isBlank() || token.isBlank()) return
+        try {
+            db.collection("users").document(uid)
+                .set(
+                    mapOf(
+                        "fcmToken" to token,
+                        "fcmUpdatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                .await()
+        } catch (_: Exception) {
+        }
+    }
+
+    companion object {
+        internal fun parseLinkedParentsFromDoc(
+            doc: com.google.firebase.firestore.DocumentSnapshot,
+            includeLegacyFallback: Boolean = true
+        ): List<LinkedParentAccount> {
+            val parentName = doc.getString("parentName")?.trim()
+            val parentEmail = doc.getString("parentEmail")?.trim()
+            val parentLinkedAt = doc.getString("parentLinkedAt")
+            val parentLastLoginAt = doc.getString("parentLastLoginAt")
+            val hasTopOnlineField = doc.contains("parentIsOnline")
+            val parentIsOnline = doc.getBoolean("parentIsOnline") ?: false
+            val parentLastActiveMillis = doc.getLong("parentLastActiveMillis")
+
+            @Suppress("UNCHECKED_CAST")
+            val rawLinkedParents = doc.get("linkedParents") as? List<Map<String, Any?>>
+            val parsedLinked = rawLinkedParents?.mapNotNull { map ->
+                val e = (map["email"] as? String)?.trim()
+                val n = (map["name"] as? String)?.trim()
+                if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
+                    val singleParent = rawLinkedParents.size <= 1
+                    val pOnline = (map["isOnline"] as? Boolean)
+                        ?: if (hasTopOnlineField && singleParent) parentIsOnline else false
+                    val pActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong()
+                        ?: if (singleParent) parentLastActiveMillis else null
+                    val pLastLogin = (map["lastLoginAt"] as? String)
+                        ?: if (singleParent) parentLastLoginAt else null
+                    LinkedParentAccount(
+                        email = e,
+                        name = n,
+                        phone = (map["phone"] as? String) ?: "",
+                        relationship = (map["relationship"] as? String) ?: "Veli",
+                        linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
+                        lastLoginAt = pLastLogin,
+                        isOnline = pOnline,
+                        lastActiveMillis = pActiveMillis
+                    )
+                } else null
+            } ?: emptyList()
+
+            if (!includeLegacyFallback || parsedLinked.isNotEmpty() || parentEmail.isNullOrBlank()) {
+                return parsedLinked
+            }
+            return listOf(
+                LinkedParentAccount(
+                    email = parentEmail,
+                    name = parentName?.takeIf { it.isNotBlank() } ?: "Öğrenci Velisi",
+                    phone = "",
+                    relationship = "Veli",
+                    linkedAt = parentLinkedAt ?: "Bağlandı",
+                    lastLoginAt = parentLastLoginAt,
+                    isOnline = parentIsOnline,
+                    lastActiveMillis = parentLastActiveMillis
+                )
+            )
+        }
+
+        internal fun parseStudentFromDoc(
+            doc: com.google.firebase.firestore.DocumentSnapshot,
+            fallbackCode: String = ""
+        ): Student {
+            val studentNo = (doc.getLong("studentNo") ?: 0L).toInt()
+            val fullName = doc.getString("fullName") ?: ""
+            val gender = doc.getString("gender") ?: "Erkek"
+            val rawCode = doc.getString("parentCode")
+                ?: doc.getString("parentInviteCode")
+                ?: doc.getString("veliKodu")
+                ?: doc.getString("code")
+                ?: fallbackCode
+            return Student(
+                id = doc.id,
+                studentNumber = studentNo.toString(),
+                fullName = fullName,
+                gender = gender,
+                parentInviteCode = rawCode,
+                parentName = doc.getString("parentName"),
+                parentEmail = doc.getString("parentEmail"),
+                parentLinkedAt = doc.getString("parentLinkedAt"),
+                parentLastLoginAt = doc.getString("parentLastLoginAt"),
+                parentIsOnline = doc.getBoolean("parentIsOnline") ?: false,
+                parentLastActiveMillis = doc.getLong("parentLastActiveMillis"),
+                linkedParents = parseLinkedParentsFromDoc(doc, includeLegacyFallback = false)
+            )
+        }
     }
 }

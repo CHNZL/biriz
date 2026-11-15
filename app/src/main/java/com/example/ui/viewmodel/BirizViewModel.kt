@@ -51,11 +51,14 @@ import com.example.util.CommunicationPersistenceHelper
 import com.example.util.AppUpdateDownloadController
 import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
+import com.example.util.BackgroundNotificationSyncHelper
 import com.example.util.BackgroundUpdateState
+import com.example.util.DeferredSystemNotification
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.QuietHoursConfig
 import com.example.util.SmartBoardHelper
 import com.example.util.SystemActivityNotificationHelper
 import com.example.util.TournamentPersistenceHelper
@@ -63,6 +66,7 @@ import com.example.util.UpdateInfo
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.messaging.FirebaseMessaging
 import java.util.UUID
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -188,6 +192,8 @@ data class BirizUiState(
     val requestedParentTabName: String? = null,
     val requestedParentCommIsChat: Boolean? = null,
     val notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
+    val quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    val deferredQuietCount: Int = 0,
 
     // Uygulama Güncelleme Durumu (Arka planda & gezinirken otomatik tespit)
     val availableUpdateInfo: UpdateInfo? = null,
@@ -297,8 +303,17 @@ class BirizViewModel(
         val ctx = appContext ?: return
         val viewerKey = currentViewerKey(state)
         val loaded = NotificationPreferencesHelper.loadPreferences(ctx, viewerKey)
-        if (_uiState.value.notificationPreferences != loaded) {
-            _uiState.value = _uiState.value.copy(notificationPreferences = loaded)
+        val quietCfg = NotificationPreferencesHelper.loadQuietHours(ctx, viewerKey)
+        val pendingCount = NotificationPreferencesHelper.peekDeferredCount(ctx, viewerKey)
+        if (_uiState.value.notificationPreferences != loaded ||
+            _uiState.value.quietHoursConfig != quietCfg ||
+            _uiState.value.deferredQuietCount != pendingCount
+        ) {
+            _uiState.value = _uiState.value.copy(
+                notificationPreferences = loaded,
+                quietHoursConfig = quietCfg,
+                deferredQuietCount = pendingCount
+            )
         }
     }
 
@@ -322,6 +337,129 @@ class BirizViewModel(
         _uiState.value = state.copy(notificationPreferences = updated)
         appContext?.let { ctx ->
             NotificationPreferencesHelper.saveAllPreferences(ctx, currentViewerKey(state), updated)
+        }
+    }
+
+    fun toggleQuietHours(enabled: Boolean) {
+        val state = _uiState.value
+        val updated = state.quietHoursConfig.copy(enabled = enabled)
+        val viewerKey = currentViewerKey(state)
+        _uiState.value = state.copy(
+            quietHoursConfig = updated,
+            snackbarMessage = if (enabled) {
+                "🌙 Sessiz Saatler açıldı (${NotificationPreferencesHelper.formatQuietHoursRange(updated)})"
+            } else {
+                "🔔 Sessiz Saatler kapatıldı"
+            }
+        )
+        appContext?.let { ctx ->
+            NotificationPreferencesHelper.saveQuietHours(ctx, viewerKey, updated)
+            if (enabled) {
+                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, updated, viewerKey)
+                if (!NotificationPreferencesHelper.isWithinQuietHours(updated)) {
+                    flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = false)
+                }
+            } else {
+                BackgroundNotificationSyncHelper.cancelQuietHoursFlush(ctx)
+                flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = true)
+            }
+        }
+    }
+
+    fun updateQuietHoursWindow(
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int,
+        endMinute: Int
+    ) {
+        val state = _uiState.value
+        val updated = state.quietHoursConfig.copy(
+            startHour = startHour.coerceIn(0, 23),
+            startMinute = startMinute.coerceIn(0, 59),
+            endHour = endHour.coerceIn(0, 23),
+            endMinute = endMinute.coerceIn(0, 59)
+        )
+        val viewerKey = currentViewerKey(state)
+        _uiState.value = state.copy(
+            quietHoursConfig = updated,
+            snackbarMessage = "🌙 Sessiz Saatler güncellendi: ${NotificationPreferencesHelper.formatQuietHoursRange(updated)}"
+        )
+        appContext?.let { ctx ->
+            NotificationPreferencesHelper.saveQuietHours(ctx, viewerKey, updated)
+            if (updated.enabled) {
+                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, updated, viewerKey)
+                if (!NotificationPreferencesHelper.isWithinQuietHours(updated)) {
+                    flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = false)
+                }
+            }
+        }
+    }
+
+    private fun flushPendingMorningDigest(
+        ctx: Context,
+        viewerKey: String,
+        forceEvenIfWithinWindow: Boolean = false
+    ) {
+        val flushed = BackgroundNotificationSyncHelper.flushQuietHoursDigestIfDue(
+            context = ctx,
+            viewerKey = viewerKey,
+            forceFlushEvenIfWithinWindow = forceEvenIfWithinWindow
+        )
+        val remaining = NotificationPreferencesHelper.peekDeferredCount(ctx, viewerKey)
+        if (flushed > 0 || remaining != _uiState.value.deferredQuietCount) {
+            _uiState.value = _uiState.value.copy(deferredQuietCount = remaining)
+        }
+    }
+
+    private fun dispatchSystemNotifications(
+        ctx: Context,
+        notifications: List<BirizNotification>,
+        isRecipientTeacher: Boolean
+    ) {
+        if (notifications.isEmpty()) return
+        val state = _uiState.value
+        val viewerKey = currentViewerKey(state)
+        val quietCfg = state.quietHoursConfig
+        val now = System.currentTimeMillis()
+        val (deferred, immediate) = notifications.partition {
+            NotificationPreferencesHelper.shouldDeferForQuietHours(quietCfg, it, now)
+        }
+        if (deferred.isNotEmpty()) {
+            val newCount = NotificationPreferencesHelper.enqueueDeferredNotifications(
+                context = ctx,
+                viewerKey = viewerKey,
+                items = deferred.map { DeferredSystemNotification(it, isRecipientTeacher) }
+            )
+            _uiState.value = _uiState.value.copy(deferredQuietCount = newCount)
+            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, quietCfg, viewerKey, now)
+        }
+        if (immediate.isNotEmpty()) {
+            SystemActivityNotificationHelper.showNotificationsBatch(
+                context = ctx,
+                notifications = immediate,
+                isRecipientTeacher = isRecipientTeacher
+            )
+        }
+    }
+
+    private fun syncBackgroundWorkersAndPushToken(state: BirizUiState = _uiState.value) {
+        val ctx = appContext ?: return
+        if (state.currentRole != UserRole.TEACHER && state.currentRole != UserRole.PARENT) return
+        BackgroundNotificationSyncHelper.schedulePeriodicSync(ctx)
+        val viewerKey = currentViewerKey(state)
+        if (state.quietHoursConfig.enabled) {
+            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, state.quietHoursConfig, viewerKey)
+        }
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null } ?: return
+        try {
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                if (!token.isNullOrBlank()) {
+                    viewModelScope.launch {
+                        repository.saveFcmToken(uid, token)
+                    }
+                }
+            }
+        } catch (_: Throwable) {
         }
     }
 
@@ -514,13 +652,7 @@ class BirizViewModel(
                         snackbarMessage = bannerText ?: latestUi.snackbarMessage
                     )
                     CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, viewerKey)
-                    uniqueNew.forEach { notif ->
-                        SystemActivityNotificationHelper.showNotification(
-                            context = ctx,
-                            notification = notif,
-                            isRecipientTeacher = true
-                        )
-                    }
+                    dispatchSystemNotifications(ctx, uniqueNew, isRecipientTeacher = true)
                 }
             }
             return
@@ -564,7 +696,8 @@ class BirizViewModel(
             current = currentSnapshot,
             linkedStudentIds = freshState.linkedParentStudentIds.toSet(),
             seenEventKeys = seenActivityEventKeys,
-            baselineTimestampMs = activityBaselineTimestampMs
+            baselineTimestampMs = activityBaselineTimestampMs,
+            currentUserEmail = freshState.currentUser.email
         )
         previousActivitySnapshot = currentSnapshot
 
@@ -599,13 +732,7 @@ class BirizViewModel(
                     snackbarMessage = bannerText ?: latestUi.snackbarMessage
                 )
                 CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, viewerKey)
-                uniqueNew.forEach { notif ->
-                    SystemActivityNotificationHelper.showNotification(
-                        context = ctx,
-                        notification = notif,
-                        isRecipientTeacher = false
-                    )
-                }
+                dispatchSystemNotifications(ctx, uniqueNew, isRecipientTeacher = false)
             }
         }
     }
@@ -728,6 +855,9 @@ class BirizViewModel(
             loadCommunicationFromStorage(targetClassId)
             loadGroupMakerFromStorage(targetClassId)
             reloadNotificationPreferences(_uiState.value)
+            if (restoredRole == UserRole.TEACHER || restoredRole == UserRole.PARENT) {
+                BackgroundNotificationSyncHelper.schedulePeriodicSync(appContext)
+            }
 
             if (linkedList.isNotEmpty() && Firebase.auth.currentUser == null) {
                 repository.syncLinkedStudentsWithParent(
@@ -798,8 +928,11 @@ class BirizViewModel(
 
     fun onAppForegrounded() {
         isAppInForeground = true
-        evaluateDueScheduledMessages()
         val state = _uiState.value
+        appContext?.let { ctx ->
+            flushPendingMorningDigest(ctx, currentViewerKey(state), forceEvenIfWithinWindow = false)
+        }
+        evaluateDueScheduledMessages()
         if (state.currentRole == UserRole.PARENT) {
             updateParentPresence(isOnline = true)
             if (isParentCommunicationTabActive && isParentChatSubTabActive && !state.activeParentStudentId.isNullOrBlank()) {
@@ -902,6 +1035,8 @@ class BirizViewModel(
             .putString("key_linked_student_ids", state.linkedParentStudentIds.joinToString(","))
             .putString("key_active_parent_student_id", state.activeParentStudentId ?: "")
             .putString("key_linked_classroom_id", activeClass?.id ?: "")
+            .putString("key_user_email", state.currentUser.email)
+            .putString("key_user_name", state.currentUser.fullName)
         if (activeClass != null) {
             editor
                 .putString("key_classroom_city", activeClass.cityName)
@@ -1398,11 +1533,7 @@ class BirizViewModel(
             CommunicationPersistenceHelper.uploadAnnouncementToFirestore(it, classId, savedAnnouncement)
             if (allowAnnNotif) {
                 CommunicationPersistenceHelper.saveNotifications(it, classId, updatedNotifs, currentViewerKey())
-                SystemActivityNotificationHelper.showNotification(
-                    context = it,
-                    notification = newNotif,
-                    isRecipientTeacher = true
-                )
+                dispatchSystemNotifications(it, listOf(newNotif), isRecipientTeacher = true)
             }
         }
     }
@@ -1516,11 +1647,7 @@ class BirizViewModel(
             }
             if (allowAnnNotif) {
                 CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
-                SystemActivityNotificationHelper.showNotification(
-                    context = ctx,
-                    notification = newNotif,
-                    isRecipientTeacher = true
-                )
+                dispatchSystemNotifications(ctx, listOf(newNotif), isRecipientTeacher = true)
             }
         }
     }
@@ -2053,11 +2180,7 @@ class BirizViewModel(
                 )
                 if (ctx != null) {
                     CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey(latestUi))
-                    SystemActivityNotificationHelper.showNotification(
-                        context = ctx,
-                        notification = confirmNotif,
-                        isRecipientTeacher = true
-                    )
+                    dispatchSystemNotifications(ctx, listOf(confirmNotif), isRecipientTeacher = true)
                 }
             }
         }
@@ -2262,12 +2385,23 @@ class BirizViewModel(
                     notifsChanged = true
 
                     if (ctx != null) {
-                        ChatNotificationHelper.showIncomingMessageNotification(
-                            context = ctx,
-                            message = latestMsg,
-                            isRecipientTeacher = viewerIsTeacher,
-                            unreadCountForStudent = totalUnreadForStudent
-                        )
+                        if (NotificationPreferencesHelper.shouldDeferForQuietHours(state.quietHoursConfig, notif, now)) {
+                            val viewerKey = currentViewerKey(state)
+                            val deferredCount = NotificationPreferencesHelper.enqueueDeferredNotifications(
+                                context = ctx,
+                                viewerKey = viewerKey,
+                                items = listOf(DeferredSystemNotification(notif, viewerIsTeacher))
+                            )
+                            _uiState.value = _uiState.value.copy(deferredQuietCount = deferredCount)
+                            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, state.quietHoursConfig, viewerKey, now)
+                        } else {
+                            ChatNotificationHelper.showIncomingMessageNotification(
+                                context = ctx,
+                                message = latestMsg,
+                                isRecipientTeacher = viewerIsTeacher,
+                                unreadCountForStudent = totalUnreadForStudent
+                            )
+                        }
                     }
                 }
 
@@ -2336,11 +2470,7 @@ class BirizViewModel(
                                     updatedNotifs = listOf(reactNotif) + updatedNotifs
                                     notifsChanged = true
                                     if (ctx != null) {
-                                        SystemActivityNotificationHelper.showNotification(
-                                            context = ctx,
-                                            notification = reactNotif,
-                                            isRecipientTeacher = viewerIsTeacher
-                                        )
+                                        dispatchSystemNotifications(ctx, listOf(reactNotif), isRecipientTeacher = viewerIsTeacher)
                                     }
                                     if (isAppInForeground && bannerText == null) {
                                         bannerText = "$emoji $reactorLabel mesajınıza tepki verdi"
@@ -2879,6 +3009,7 @@ class BirizViewModel(
                     loadSeatingPlanFromStorage(resolvedClass.id)
                     loadCommunicationFromStorage(resolvedClass.id)
                     loadGroupMakerFromStorage(resolvedClass.id)
+                    syncBackgroundWorkersAndPushToken(_uiState.value)
                     return@launch
                 }
 
@@ -2952,6 +3083,7 @@ class BirizViewModel(
                     reloadNotificationPreferences(_uiState.value)
                     refreshChatClearStateForCurrentViewer(parentClass.id, forceReload = true)
                     saveParentSessionState()
+                    syncBackgroundWorkersAndPushToken(_uiState.value)
                     return@launch
                 }
 
@@ -3113,6 +3245,7 @@ class BirizViewModel(
         evaluateActivityNotifications(targetClass.id, forceReloadViewerNotifications = true)
         refreshChatClearStateForCurrentViewer(targetClass.id, forceReload = true)
         saveParentSessionState()
+        syncBackgroundWorkersAndPushToken(_uiState.value)
     }
 
     fun switchToTeacherRole() {
@@ -3139,6 +3272,7 @@ class BirizViewModel(
         evaluateActivityNotifications(forceReloadViewerNotifications = true)
         refreshChatClearStateForCurrentViewer(forceReload = true)
         saveParentSessionState()
+        syncBackgroundWorkersAndPushToken(_uiState.value)
     }
 
     fun linkStudentByParentCode(codeInput: String) {
@@ -3191,6 +3325,7 @@ class BirizViewModel(
                 evaluateActivityNotifications(activeClass.id, forceReloadViewerNotifications = true)
                 refreshChatClearStateForCurrentViewer(activeClass.id, forceReload = true)
                 saveParentSessionState()
+                syncBackgroundWorkersAndPushToken(_uiState.value)
             } else {
                 _uiState.value = _uiState.value.copy(
                     snackbarMessage = "❌ Girilen '$sanitizedInput' kodu ile eşleşen öğrenci bulunamadı. Lütfen 8 haneli katılım kodunu kontrol ediniz."
@@ -3402,6 +3537,7 @@ class BirizViewModel(
                     occupiedClassRoom = null
                 )
                 saveParentSessionState()
+                syncBackgroundWorkersAndPushToken(_uiState.value)
                 loadScheduleFromStorage(createdClass.id)
                 loadSeatingPlanFromStorage(createdClass.id)
                 loadCommunicationFromStorage(createdClass.id)
@@ -4444,6 +4580,18 @@ class BirizViewModel(
         observedNotificationClassId = null
         loadedActivityStateKey = null
         previousActivitySnapshot = null
+        val cleanupCtx = context ?: appContext
+        cleanupCtx?.let { ctx ->
+            ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE).edit()
+                .remove("key_saved_role")
+                .remove("key_linked_classroom_id")
+                .remove("key_linked_student_ids")
+                .remove("key_active_parent_student_id")
+                .remove("key_user_email")
+                .remove("key_user_name")
+                .apply()
+            BackgroundNotificationSyncHelper.cancelAllBackgroundSync(ctx)
+        }
         context?.let { ctx ->
             viewModelScope.launch {
                 com.example.auth.GoogleAuthHelper.clearCredentialState(ctx)

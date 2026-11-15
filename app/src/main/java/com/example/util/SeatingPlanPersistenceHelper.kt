@@ -170,7 +170,7 @@ object SeatingPlanPersistenceHelper {
         }
     }
 
-    private fun deserializePlanState(json: JSONObject): SeatingPlanState {
+    internal fun deserializePlanState(json: JSONObject): SeatingPlanState {
         val activeName = json.optString("activePlanName", "Varsayılan Plan")
         val config = deserializeConfig(json.optJSONObject("config"))
 

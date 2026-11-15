@@ -1237,7 +1237,7 @@ object LibraryPersistenceHelper {
         }
     }
 
-    private fun deserializeBook(obj: JSONObject, defaultRegNo: Int = 1, fallbackId: String? = null): Book {
+    internal fun deserializeBook(obj: JSONObject, defaultRegNo: Int = 1, fallbackId: String? = null): Book {
         val nowMs = System.currentTimeMillis()
         val assignmentsList = mutableListOf<ActiveAssignment>()
         val assignArray = obj.optJSONArray("activeAssignments")
@@ -1313,7 +1313,7 @@ object LibraryPersistenceHelper {
         }
     }
 
-    private fun deserializeReadingRecord(obj: JSONObject, fallbackId: String? = null): ReadingRecord {
+    internal fun deserializeReadingRecord(obj: JSONObject, fallbackId: String? = null): ReadingRecord {
         val nowMs = System.currentTimeMillis()
         val resolvedId = safeOptString(obj, "id", "").trim()
             .ifBlank { fallbackId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString() }

@@ -251,7 +251,11 @@ fun ParentPortalSubScreen(
     onClearChatHistoryForMe: (String) -> Unit = {},
     notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
     onToggleNotificationCategory: (NotificationCategory, Boolean) -> Unit = { _, _ -> },
-    onSetAllNotificationCategories: (Boolean) -> Unit = {}
+    onSetAllNotificationCategories: (Boolean) -> Unit = {},
+    quietHoursConfig: com.example.util.QuietHoursConfig = com.example.util.QuietHoursConfig(),
+    deferredQuietCount: Int = 0,
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> }
 ) {
     val context = LocalContext.current
     var activeTab by remember { mutableStateOf(ParentPortalTab.HOME) }
@@ -1076,6 +1080,10 @@ fun ParentPortalSubScreen(
             notificationPreferences = notificationPreferences,
             onToggleNotificationCategory = onToggleNotificationCategory,
             onSetAllNotificationCategories = onSetAllNotificationCategories,
+            quietHoursConfig = quietHoursConfig,
+            deferredQuietCount = deferredQuietCount,
+            onToggleQuietHours = onToggleQuietHours,
+            onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
             onToggleTheme = onToggleTheme,
             onDeleteRole = onDeleteRole,
             onDeleteEntireAccount = onDeleteEntireAccount,

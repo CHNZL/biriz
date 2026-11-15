@@ -216,6 +216,10 @@ class MainActivity : ComponentActivity() {
             intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_TARGET_ID)
             intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIF_IS_TEACHER)
         }
+        if (intent.getBooleanExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIFICATION_CENTER, false)) {
+            viewModel.setNotificationCenterOpen(true)
+            intent.removeExtra(SystemActivityNotificationHelper.EXTRA_OPEN_NOTIFICATION_CENTER)
+        }
     }
 }
 
@@ -526,6 +530,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                             },
                             onSetAllNotificationCategories = { enabled ->
                                 viewModel.setAllNotificationCategories(enabled)
+                            },
+                            quietHoursConfig = uiState.quietHoursConfig,
+                            deferredQuietCount = uiState.deferredQuietCount,
+                            onToggleQuietHours = { viewModel.toggleQuietHours(it) },
+                            onUpdateQuietHoursWindow = { sH, sM, eH, eM ->
+                                viewModel.updateQuietHoursWindow(sH, sM, eH, eM)
                             }
                         )
                     } else {
@@ -625,6 +635,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                         },
                         onSetAllNotificationCategories = { enabled ->
                             viewModel.setAllNotificationCategories(enabled)
+                        },
+                        quietHoursConfig = uiState.quietHoursConfig,
+                        deferredQuietCount = uiState.deferredQuietCount,
+                        onToggleQuietHours = { viewModel.toggleQuietHours(it) },
+                        onUpdateQuietHoursWindow = { sH, sM, eH, eM ->
+                            viewModel.updateQuietHoursWindow(sH, sM, eH, eM)
                         }
                     )
                 }
