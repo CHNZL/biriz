@@ -21,21 +21,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: JDK 17 Kurulumu
+      - name: JDK 21 Kurulumu
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
 
       - name: Gradle Kurulumu
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Gradlew Çalıştırma İzni Ver
         run: chmod +x gradlew
 
-      - name: Debug Keystore Hazırla (Resmi Firebase Onaylı SHA-1)
+      - name: Ortam Değişkenleri (.env) ve Debug Keystore Hazırla
         run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
           python3 scripts/setup_keystore.py
           ls -lh debug.keystore
 

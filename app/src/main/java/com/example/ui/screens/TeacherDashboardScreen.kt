@@ -225,7 +225,8 @@ fun TeacherDashboardScreen(
     quietHoursConfig: com.example.util.QuietHoursConfig = com.example.util.QuietHoursConfig(),
     deferredQuietCount: Int = 0,
     onToggleQuietHours: (Boolean) -> Unit = {},
-    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> }
+    onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
+    onSyncWebMigrationData: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
@@ -795,7 +796,8 @@ fun TeacherDashboardScreen(
                             onDeleteEntireAccount = { showDeleteAccountDialog = true },
                             onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
                             onCopyCode = copyCodeToClipboard,
-                            onOpenUpdateDialog = onOpenUpdateDialog
+                            onOpenUpdateDialog = onOpenUpdateDialog,
+                            onSyncWebMigrationData = onSyncWebMigrationData
                         )
                     }
 

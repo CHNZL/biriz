@@ -358,5 +358,142 @@ class ExampleRobolectricTest {
             googleIdRequest.credentialOptions.first() is com.google.android.libraries.identity.googleid.GetGoogleIdOption
         )
     }
+
+    @Test
+    fun `test web data migration zero loss integrity and end to end classroom persistence`() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val jsonStr = com.example.util.WebDataMigrationHelper.readBundledMigrationJson(context)
+        assertNotNull("Bundled migration JSON must be readable", jsonStr)
+        assertTrue("Bundled migration JSON must not be blank", jsonStr!!.isNotBlank())
+
+        val classId = "58_merkez_suleyman_sami_kepenek_ilkokulu_4d"
+        val mapped = com.example.util.WebDataMigrationHelper.parseAndMapMigrationJson(
+            jsonStr = jsonStr,
+            classId = classId,
+            teacherUid = "w0hA86kG5DSl7tI9kic46xVagbw1"
+        )
+
+        // 1. Students check (25 students)
+        assertEquals(25, mapped.students.size)
+        assertEquals("cihan.ozel10@gmail.com", mapped.teacherEmail)
+        assertEquals("45", mapped.students.first().studentNumber)
+        assertEquals("SEMİH AHMET KAVAKOĞLU", mapped.students.first().fullName)
+        assertEquals("555", mapped.students.last().studentNumber)
+        assertEquals("ARAS GÖKKAYA", mapped.students.last().fullName)
+
+        // 2. Books check (113 books: 110 Rafta, 3 Okunuyor)
+        assertEquals(113, mapped.books.size)
+        assertEquals(3, mapped.activeLoanBooksCount)
+        assertEquals(110, mapped.books.count { it.status == "Rafta" })
+        assertEquals(3, mapped.books.count { it.status == "Okunuyor" })
+
+        // Verify classic titles (#35 Don Kişot, #36 Pinokyo, #51 Keloğlan Masalları) are NOT treated as virtual/sample books
+        val donKisot = mapped.books.firstOrNull { it.registrationNo == 35 }
+        val pinokyo = mapped.books.firstOrNull { it.registrationNo == 36 }
+        val keloglan = mapped.books.firstOrNull { it.registrationNo == 51 }
+        assertNotNull(donKisot)
+        assertNotNull(pinokyo)
+        assertNotNull(keloglan)
+        org.junit.Assert.assertFalse(com.example.util.LibraryPersistenceHelper.isVirtualOrCorruptBook(donKisot!!))
+        org.junit.Assert.assertFalse(com.example.util.LibraryPersistenceHelper.isVirtualOrCorruptBook(pinokyo!!))
+        org.junit.Assert.assertFalse(com.example.util.LibraryPersistenceHelper.isVirtualOrCorruptBook(keloglan!!))
+
+        // Verify active book loans (#79 -> #45, #100 -> #407, #112 -> #405)
+        val book79 = mapped.books.first { it.registrationNo == 79 }
+        val book100 = mapped.books.first { it.registrationNo == 100 }
+        val book112 = mapped.books.first { it.registrationNo == 112 }
+        assertEquals("std_45", book79.currentStudentId)
+        assertEquals("SEMİH AHMET KAVAKOĞLU", book79.currentStudentName)
+        assertEquals("std_407", book100.currentStudentId)
+        assertEquals("EMİR ASAF AKKAŞ", book100.currentStudentName)
+        assertEquals("std_405", book112.currentStudentId)
+        assertEquals("BAHATTİN SÜER", book112.currentStudentName)
+
+        // 3. Reading records check (214 records)
+        assertEquals(214, mapped.readingRecords.size)
+
+        // 4. Star records check (1,325 records totaling 10,084 stars)
+        assertEquals(1325, mapped.starRecords.size)
+        assertEquals(10084, mapped.totalStarsSum)
+
+        // 5. Per-student 100% reconciliation against verificationSummary
+        assertEquals(25, mapped.verificationItems.size)
+        for (vItem in mapped.verificationItems) {
+            val student = mapped.students.first { it.studentNumber == vItem.studentNo.toString() }
+            val studentStars = mapped.starRecords.filter { it.studentId == student.id }.sumOf { it.starCount }
+            val studentReads = mapped.readingRecords.count { it.studentId == student.id }
+            assertEquals("Star sum mismatch for #${vItem.studentNo}", vItem.siteTotalStarsShownToUser, studentStars)
+            assertEquals("Reading count mismatch for #${vItem.studentNo}", vItem.readingCount, studentReads)
+        }
+
+        // 6. Preserve existing linked parents & custom Firestore student IDs
+        val existingCustomStudent = com.example.data.model.Student(
+            id = "custom_firestore_doc_426",
+            studentNumber = "426",
+            fullName = "ELİF YAZICI",
+            gender = "Kız",
+            parentInviteCode = "CUSTOM88",
+            parentName = "Ayşe Yazıcı",
+            parentEmail = "ayse.yazici@example.com",
+            linkedParents = listOf(
+                com.example.data.model.LinkedParentAccount(
+                    email = "ayse.yazici@example.com",
+                    name = "Ayşe Yazıcı",
+                    relationship = "Anne",
+                    linkedAt = "15 Kasım 2026"
+                )
+            )
+        )
+        val mergedWithExisting = com.example.util.WebDataMigrationHelper.parseAndMapMigrationJson(
+            jsonStr = jsonStr,
+            classId = classId,
+            teacherUid = "teacher_1",
+            existingStudents = listOf(existingCustomStudent)
+        )
+        val elif = mergedWithExisting.students.first { it.studentNumber == "426" }
+        assertEquals("custom_firestore_doc_426", elif.id)
+        assertEquals("CUSTOM88", elif.parentInviteCode)
+        assertTrue(elif.isParentLinked)
+        assertEquals(540, mergedWithExisting.starRecords.filter { it.studentId == "custom_firestore_doc_426" }.sumOf { it.starCount })
+        assertEquals(11, mergedWithExisting.readingRecords.count { it.studentId == "custom_firestore_doc_426" })
+
+        // 7. End-to-end migrateClassroomData persistence + cleanup safety check
+        val repo = com.example.data.repository.ClassRegistryRepository(context)
+        repo.enableTestMode("test_uid")
+        val summary = com.example.util.WebDataMigrationHelper.migrateClassroomData(
+            context = context,
+            repository = repo,
+            classId = classId,
+            teacherUid = "test_uid",
+            force = true
+        )
+        assertTrue(summary.success)
+        assertEquals(25, summary.studentsCount)
+        assertEquals(113, summary.booksCount)
+        assertEquals(110, summary.booksOnShelfCount)
+        assertEquals(3, summary.activeLoanBooksCount)
+        assertEquals(214, summary.readingRecordsCount)
+        assertEquals(1325, summary.starRecordsCount)
+        assertEquals(10084, summary.totalStarsCount)
+
+        // Verify cleanupStaleAndOrphanedLibraryData and cleanupStaleAndOrphanedStarRecords do NOT delete any migrated records!
+        val cleanupReport = com.example.util.LibraryPersistenceHelper.cleanupStaleAndOrphanedLibraryData(
+            context = context,
+            classId = classId,
+            validStudents = repo.students.value,
+            resequenceNumbers = false
+        )
+        assertEquals(0, cleanupReport.removedBooksCount)
+        assertEquals(0, cleanupReport.removedRecordsCount)
+        assertEquals(0, cleanupReport.revokedStarsCount)
+
+        val loadedBooksAfterCleanup = com.example.util.LibraryPersistenceHelper.loadBooks(context, classId)
+        val loadedRecordsAfterCleanup = com.example.util.LibraryPersistenceHelper.loadReadingRecords(context, classId)
+        val loadedStarsAfterCleanup = com.example.data.repository.StarRewardPersistenceHelper.loadStarRecords(context, classId)
+        assertEquals(113, loadedBooksAfterCleanup.size)
+        assertEquals(214, loadedRecordsAfterCleanup.size)
+        assertEquals(1325, loadedStarsAfterCleanup.size)
+        assertEquals(10084, loadedStarsAfterCleanup.sumOf { it.starCount })
+    }
 }
 

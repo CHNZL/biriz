@@ -190,6 +190,7 @@ object StarRewardPersistenceHelper {
     }
 
     fun clearAllRecords(context: Context, classId: String): List<StarRewardRecord> {
+        com.example.util.WebDataMigrationHelper.onExplicitStarsClear(context, classId)
         saveStarRecords(context, classId, emptyList())
 
         syncScope.launch {
@@ -331,6 +332,19 @@ object StarRewardPersistenceHelper {
                             }
                         }
 
+                        if (cloudRecords.isEmpty() &&
+                            com.example.util.WebDataMigrationHelper.shouldPreserveLocalMigratedStars(context, classId)
+                        ) {
+                            val localMigrated = loadStarRecords(context, classId)
+                            if (localMigrated.isNotEmpty()) {
+                                syncScope.launch {
+                                    uploadRecordsBatchToFirestore(context, classId, localMigrated)
+                                }
+                                onUpdate(localMigrated)
+                                return@addSnapshotListener
+                            }
+                        }
+
                         // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan yıldızları geri yükleme!)
                         saveStarRecords(context, classId, cloudRecords)
                         onUpdate(cloudRecords)
@@ -366,7 +380,7 @@ object StarRewardPersistenceHelper {
             }
     }
 
-    private fun uploadRecordsBatchToFirestore(context: Context, classId: String, records: List<StarRewardRecord>) {
+    fun uploadRecordsBatchToFirestore(context: Context, classId: String, records: List<StarRewardRecord>) {
         if (classId.isBlank() || classId == "default" || records.isEmpty()) return
         val db = getFirestore(context) ?: return
         records.chunked(400).forEach { chunk ->

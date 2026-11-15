@@ -17,10 +17,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonRemove
@@ -55,10 +59,13 @@ import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.BentoCard
 import com.example.ui.components.NotificationPreferencesSection
 import com.example.ui.components.ParentDownloadQrDialog
+import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.util.AppUpdateManager
+import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationPreferencesHelper
 import com.example.util.QuietHoursConfig
+import com.example.util.WebDataMigrationHelper
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -89,11 +96,27 @@ fun ProfileSettingsSubScreen(
     onDeleteEntireAccount: () -> Unit,
     onBackToClassList: () -> Unit,
     onCopyCode: (String) -> Unit,
-    onOpenUpdateDialog: (() -> Unit)? = null
+    onOpenUpdateDialog: (() -> Unit)? = null,
+    onSyncWebMigrationData: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showParentQrDialog by remember { mutableStateOf(false) }
+    val jsonPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val jsonText = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                if (!jsonText.isNullOrBlank()) {
+                    onSyncWebMigrationData(jsonText)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -255,6 +278,143 @@ fun ProfileSettingsSubScreen(
                 onToggleQuietHours = onToggleQuietHours,
                 onUpdateQuietHoursWindow = onUpdateQuietHoursWindow
             )
+        }
+
+        // 2c. Web Sitemden Veri Aktarımı (Sınıf • Kitaplık • Yıldızlar) Bento Kartı
+        val localBooks = remember(classRoom.id, studentCount) {
+            LibraryPersistenceHelper.loadBooks(context, classRoom.id)
+        }
+        val localRecords = remember(classRoom.id, studentCount) {
+            LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
+        }
+        val localStars = remember(classRoom.id, studentCount) {
+            StarRewardPersistenceHelper.loadStarRecords(context, classRoom.id)
+        }
+        val isMigrated = WebDataMigrationHelper.hasCompletedMigration(context, classRoom.id) ||
+            (localBooks.size >= 113 && localStars.size >= 1325)
+        val activeLoanCount = localBooks.count { it.activeAssignments.isNotEmpty() }
+        val totalStarsSum = localStars.sumOf { it.starCount }
+
+        BentoCard(
+            isDark = isDarkTheme,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("web_data_migration_card")
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CloudSync,
+                        contentDescription = "Web Veri Aktarımı",
+                        tint = BirizTurquoise,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "📦 Web Sitemden Veri Aktarımı",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isMigrated) BirizSuccess.copy(alpha = 0.16f) else BirizTurquoise.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = if (isMigrated) "✅ Senkronize" else "Hazır",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isMigrated) BirizSuccess else BirizTurquoise,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            ProfileDetailRow(
+                label = "Sınıf Listesi",
+                value = "$studentCount Öğrenci",
+                isDark = isDarkTheme
+            )
+            ProfileDetailRow(
+                label = "Kitaplık Envanteri",
+                value = "${localBooks.size} Kitap (${localBooks.size - activeLoanCount} Rafta, $activeLoanCount Okunuyor)",
+                isDark = isDarkTheme
+            )
+            ProfileDetailRow(
+                label = "Okuma Geçmişi",
+                value = "${localRecords.size} Tamamlanan Okuma",
+                isDark = isDarkTheme
+            )
+            ProfileDetailRow(
+                label = "Yıldızlar Sınıfı",
+                value = "${localStars.size} İşlem • Toplam $totalStarsSum ⭐",
+                isDark = isDarkTheme
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onSyncWebMigrationData(null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("sync_web_migration_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BirizTurquoise,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudSync,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🔄 Web Verilerimi Şimdi Eşitle (25 Öğrenci • 113 Kitap • 10.084 ⭐)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = { jsonPickerLauncher.launch("application/json") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("pick_web_migration_json_button"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.2.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FileOpen,
+                        contentDescription = null,
+                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "📂 Cihazdan .JSON Yedek Dosyası Seçerek Yükle",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    )
+                }
+            }
         }
 
         // 3. UYGULAMA SÜRÜMÜ VE OTOMATİK GÜNCELLEME (APK & GITHUB) BENTO KARTI

@@ -536,6 +536,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onToggleQuietHours = { viewModel.toggleQuietHours(it) },
                             onUpdateQuietHoursWindow = { sH, sM, eH, eM ->
                                 viewModel.updateQuietHoursWindow(sH, sM, eH, eM)
+                            },
+                            onSyncWebMigrationData = { customJson ->
+                                viewModel.syncWebMigrationDataNow(customJson)
                             }
                         )
                     } else {

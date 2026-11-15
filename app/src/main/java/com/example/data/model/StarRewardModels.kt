@@ -76,8 +76,14 @@ data class StarCategory(
             StarCategory("ogretmen_ozel", "Öğretmen Özel Ödülü", false, 0xFFEF4444, "ogretmen_ozel")
         )
 
-        fun findById(id: String): StarCategory =
-            ALL_CATEGORIES.firstOrNull { it.id == id } ?: ALL_CATEGORIES.first()
+        fun findById(id: String): StarCategory {
+            val normalizedId = if (id == "cat_kitap_kurdu" || id.contains("kitap_kurdu", ignoreCase = true)) {
+                "kitap_kurdu"
+            } else {
+                id
+            }
+            return ALL_CATEGORIES.firstOrNull { it.id == normalizedId } ?: ALL_CATEGORIES.first()
+        }
     }
 }
 

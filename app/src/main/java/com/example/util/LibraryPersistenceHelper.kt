@@ -77,34 +77,9 @@ object LibraryPersistenceHelper {
     }
 
     /**
-     * Önceki sürümlerde otomatik üretilmiş sanal/örnek kitap adları (Büyük harf Türkçe normalize)
+     * Önceki sürümlerde otomatik üretilmiş sanal/örnek kitap adları (Gerçek kitap adlarıyla çakışmaması için devre dışı)
      */
-    private val LEGACY_SAMPLE_BOOK_NAMES_UPPER = setOf(
-        "KÜÇÜK PRENS",
-        "ŞEKER PORTAKALI",
-        "DEDEMİN BAKKALI",
-        "PAL SOKAĞI ÇOCUKLARI",
-        "KELOĞLAN MASALLARI",
-        "PETER PAN",
-        "MOMO",
-        "PİNOKYO",
-        "80 GÜNDE DEVRİALEM",
-        "SEKSEN GÜNDE DEVRİALEM",
-        "BEYAZ DİŞ",
-        "ÇOCUK KALBİ",
-        "HEİDİ",
-        "HEIDI",
-        "ALİCE HARİKALAR DİYARINDA",
-        "DEFİNE ADASI",
-        "GULLİVER'İN GEZİLERİ",
-        "DON KİŞOT",
-        "OLİVER TWİST",
-        "ROBİN HOOD",
-        "TOM SAWYER",
-        "POLLYANNA",
-        "NASREDDİN HOCA FIKRALARI",
-        "LA FONTAİNE MASALLARI"
-    )
+    private val LEGACY_SAMPLE_BOOK_NAMES_UPPER = emptySet<String>()
 
     private val LEGACY_SAMPLE_ID_PREFIXES = listOf(
         "sample_", "mock_", "default_", "seed_", "init_", "demo_", "test_",
@@ -129,11 +104,17 @@ object LibraryPersistenceHelper {
 
     private fun markBookAsUserAdded(context: Context, classId: String, bookId: String) {
         if (bookId.isBlank()) return
+        markBooksAsUserAdded(context, classId, listOf(bookId))
+    }
+
+    fun markBooksAsUserAdded(context: Context, classId: String, bookIds: Collection<String>) {
+        val validIds = bookIds.map { it.trim() }.filter { it.isNotEmpty() }
+        if (validIds.isEmpty()) return
         synchronized(prefsLock) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val stored = prefs.getStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", null)
             val current = if (stored != null) HashSet(stored) else HashSet()
-            if (current.add(bookId)) {
+            if (current.addAll(validIds)) {
                 prefs.edit().putStringSet("$KEY_USER_ADDED_IDS_PREFIX$classId", current).apply()
             }
         }
@@ -628,6 +609,7 @@ object LibraryPersistenceHelper {
         val affectedStudents = records.map { it.studentId }.toSet().size
 
         // 1. Yerel tercihleri sıfırla (boş dizi yazarak senkron durumunu koru)
+        WebDataMigrationHelper.onExplicitLibraryClear(context, classRoomId)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putString("$KEY_BOOKS_PREFIX$classRoomId", "[]")
@@ -672,6 +654,7 @@ object LibraryPersistenceHelper {
         val affectedStudents = records.map { it.studentId }.toSet().size
 
         // 1. Yerel okuma kayıtlarını sıfırla
+        WebDataMigrationHelper.onExplicitReadingRecordsClear(context, classRoomId)
         saveRecordsToLocalPrefsOnly(context, classRoomId, emptyList())
 
         // 2. Kitap Kurdu yıldızlarını yerelden ve Firestore'dan temizle
@@ -1415,7 +1398,7 @@ object LibraryPersistenceHelper {
                     val batch = db.batch()
                     chunk.forEach { rawBook ->
                         val book = normalizeBookState(rawBook)
-                        val isExplicitTeacherBook = knownUserIds.contains(book.id)
+                        val isExplicitTeacherBook = true
                         val doc = col.document(book.id)
                         batch.set(
                             doc,
@@ -1572,6 +1555,16 @@ object LibraryPersistenceHelper {
                         }
 
                         val dedupedSorted = cleanList.distinctBy { it.id }.sortedBy { it.registrationNo }
+                        if (dedupedSorted.isEmpty() &&
+                            WebDataMigrationHelper.shouldPreserveLocalMigratedBooks(context, classId)
+                        ) {
+                            val localMigrated = loadBooks(context, classId)
+                            if (localMigrated.isNotEmpty()) {
+                                uploadBooksToFirestore(context, classId, localMigrated)
+                                onUpdate(localMigrated)
+                                return@addSnapshotListener
+                            }
+                        }
                         // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (eski silinmiş kitapları geri yükleme!)
                         saveBooksToLocalPrefsOnly(context, classId, dedupedSorted)
                         onUpdate(dedupedSorted)
@@ -1662,6 +1655,16 @@ object LibraryPersistenceHelper {
                         }
 
                         val cleanSorted = list.distinctBy { it.id }.sortedByDescending { it.endDate }
+                        if (cleanSorted.isEmpty() &&
+                            WebDataMigrationHelper.shouldPreserveLocalMigratedReadingRecords(context, classId)
+                        ) {
+                            val localMigrated = loadReadingRecords(context, classId)
+                            if (localMigrated.isNotEmpty()) {
+                                uploadRecordsToFirestore(context, classId, localMigrated)
+                                onUpdate(localMigrated)
+                                return@addSnapshotListener
+                            }
+                        }
                         // Firestore SSOT: Yerel önbelleği Firestore ile birebir eşitle
                         saveRecordsToLocalPrefsOnly(context, classId, cleanSorted)
                         onUpdate(cleanSorted)

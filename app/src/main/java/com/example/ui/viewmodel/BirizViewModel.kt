@@ -2940,6 +2940,57 @@ class BirizViewModel(
             snackbarMessage = "Önizleme Test Modu: 4/D Sınıfı (25 Öğrenci) hazır yüklendi."
         )
         refreshChatClearStateForCurrentViewer(defaultClass.id, forceReload = true)
+        ensureWebDataMigrationIfNeeded(
+            classId = defaultClass.id,
+            teacherUid = testUid,
+            teacherEmail = "cihan.ozel10@gmail.com"
+        )
+    }
+
+    private fun ensureWebDataMigrationIfNeeded(
+        classId: String,
+        teacherUid: String,
+        teacherEmail: String,
+        force: Boolean = false,
+        customJsonStr: String? = null
+    ) {
+        val ctx = appContext ?: return
+        if (!force && customJsonStr.isNullOrBlank() && !com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(teacherEmail)) {
+            return
+        }
+        val wasAlreadyMigrated = com.example.util.WebDataMigrationHelper.hasCompletedMigration(ctx, classId)
+        viewModelScope.launch {
+            val summary = com.example.util.WebDataMigrationHelper.migrateClassroomData(
+                context = ctx,
+                repository = repository,
+                classId = classId,
+                teacherUid = teacherUid,
+                customJsonStr = customJsonStr,
+                force = force
+            )
+            if (summary.success) {
+                previousActivitySnapshot = null
+                seedLocalActivitySnapshotsIfNeeded(ctx, classId, forceAllLocal = true)
+                if (force || !customJsonStr.isNullOrBlank() || !wasAlreadyMigrated) {
+                    _uiState.value = _uiState.value.copy(snackbarMessage = summary.message)
+                }
+            } else if (force || !customJsonStr.isNullOrBlank()) {
+                _uiState.value = _uiState.value.copy(snackbarMessage = "⚠️ ${summary.message}")
+            }
+        }
+    }
+
+    fun syncWebMigrationDataNow(customJsonStr: String? = null) {
+        val state = _uiState.value
+        val classId = resolveActiveClassId()
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null } ?: "teacher_uid"
+        ensureWebDataMigrationIfNeeded(
+            classId = classId,
+            teacherUid = uid,
+            teacherEmail = state.currentUser.email,
+            force = true,
+            customJsonStr = customJsonStr
+        )
     }
 
     fun refreshCurrentUser() {
@@ -2994,6 +3045,28 @@ class BirizViewModel(
                     resolvedClass = repository.findTeacherClassroom(fbUser.uid, userEmail)
                 }
 
+                if (resolvedClass == null && com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(userEmail)) {
+                    resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
+                    if (resolvedClass == null) {
+                        val sivasCity = repository.cities.firstOrNull { it.id == "58" }
+                            ?: City("58", "SİVAS", listOf("MERKEZ"))
+                        try {
+                            repository.addSchool(sivasCity.id, "MERKEZ", "SÜLEYMAN SAMİ KEPENEK İLKOKULU")
+                            resolvedClass = repository.registerClass(
+                                city = sivasCity,
+                                districtName = "MERKEZ",
+                                schoolName = "SÜLEYMAN SAMİ KEPENEK İLKOKULU",
+                                gradeLevel = 4,
+                                section = "D",
+                                teacherName = name,
+                                teacherEmail = userEmail
+                            )
+                        } catch (_: Exception) {
+                            resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
+                        }
+                    }
+                }
+
                 if (resolvedClass != null) {
                     _uiState.value = _uiState.value.copy(
                         activeClassRoom = resolvedClass,
@@ -3005,6 +3078,11 @@ class BirizViewModel(
                     saveParentSessionState()
 
                     repository.observeStudents(resolvedClass.id)
+                    ensureWebDataMigrationIfNeeded(
+                        classId = resolvedClass.id,
+                        teacherUid = fbUser.uid,
+                        teacherEmail = userEmail
+                    )
                     loadScheduleFromStorage(resolvedClass.id)
                     loadSeatingPlanFromStorage(resolvedClass.id)
                     loadCommunicationFromStorage(resolvedClass.id)
@@ -3527,6 +3605,12 @@ class BirizViewModel(
                 )
 
                 repository.observeStudents(createdClass.id)
+                val currentUid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null } ?: ""
+                ensureWebDataMigrationIfNeeded(
+                    classId = createdClass.id,
+                    teacherUid = currentUid,
+                    teacherEmail = teacherEmail
+                )
 
                 _uiState.value = _uiState.value.copy(
                     activeClassRoom = createdClass,

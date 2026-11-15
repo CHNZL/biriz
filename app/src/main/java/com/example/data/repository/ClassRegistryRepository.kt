@@ -216,6 +216,9 @@ class ClassRegistryRepository(
         ),
         Student(id = "std_326", studentNumber = "326", fullName = "GÜNEŞ DEMİR", gender = "Kız", parentInviteCode = "7M3K8Q2P", isPriority = true),
         Student(id = "std_402", studentNumber = "402", fullName = "AHMET ASAF IŞIK", gender = "Erkek", parentInviteCode = "TD8GDLU8"),
+        Student(id = "std_403", studentNumber = "403", fullName = "AYŞE MİRAY BORHAN", gender = "Kız", parentInviteCode = "4K8M2P9R"),
+        Student(id = "std_405", studentNumber = "405", fullName = "BAHATTİN SÜER", gender = "Erkek", parentInviteCode = "7N3Q6T8W"),
+        Student(id = "std_406", studentNumber = "406", fullName = "DEFNE YARAMIŞ", gender = "Kız", parentInviteCode = "2R9V4X7Z"),
         Student(id = "std_407", studentNumber = "407", fullName = "EMİR ASAF AKKAŞ", gender = "Erkek", parentInviteCode = "8K3N9P2X"),
         Student(
             id = "std_408",
@@ -238,26 +241,23 @@ class ClassRegistryRepository(
                 )
             )
         ),
-        Student(id = "std_409", studentNumber = "409", fullName = "MEHMET AKİF KILIÇ", gender = "Erkek", parentInviteCode = "3V7W2X8Y"),
-        Student(id = "std_410", studentNumber = "410", fullName = "ELİF ZÜLAL YILMAZ", gender = "Kız", parentInviteCode = "6B4N9M1K"),
-        Student(id = "std_412", studentNumber = "412", fullName = "YUSUF KEREM KAYA", gender = "Erkek", parentInviteCode = "2P8Q5R3T"),
-        Student(id = "std_415", studentNumber = "415", fullName = "ZEYNEP MİRA ÇETİN", gender = "Kız", parentInviteCode = "9X1Y4Z7W"),
-        Student(id = "std_418", studentNumber = "418", fullName = "YAĞIZ EFE DEMİRTAŞ", gender = "Erkek", parentInviteCode = "4M6N8P2R"),
-        Student(id = "std_420", studentNumber = "420", fullName = "ASYA ÇELİK", gender = "Kız", parentInviteCode = "7T3K9L5Q"),
-        Student(id = "std_422", studentNumber = "422", fullName = "MEHMET EREN ŞAHİN", gender = "Erkek", parentInviteCode = "5R8W2V4X"),
-        Student(id = "std_425", studentNumber = "425", fullName = "ECRİN NAZLI KOÇ", gender = "Kız", parentInviteCode = "3N6P9Q1M"),
-        Student(id = "std_428", studentNumber = "428", fullName = "MUSTAFA BURAK ARSLAN", gender = "Erkek", parentInviteCode = "8K4L7R2T"),
-        Student(id = "std_430", studentNumber = "430", fullName = "DEFNE ÖZTÜRK", gender = "Kız", parentInviteCode = "2W5Y8Z3V"),
-        Student(id = "std_433", studentNumber = "433", fullName = "BERAT ALİ YILDIZ", gender = "Erkek", parentInviteCode = "6Q9M2N4P"),
-        Student(id = "std_435", studentNumber = "435", fullName = "MERYEM ADA AYDIN", gender = "Kız", parentInviteCode = "4T7R1K8L"),
-        Student(id = "std_438", studentNumber = "438", fullName = "ENES TALHA DOĞAN", gender = "Erkek", parentInviteCode = "9V2X5Y7Z"),
-        Student(id = "std_440", studentNumber = "440", fullName = "HİRANUR POLAT", gender = "Kız", parentInviteCode = "3P6Q8R1M"),
-        Student(id = "std_442", studentNumber = "442", fullName = "ÖMER ASAF GÜLER", gender = "Erkek", parentInviteCode = "7K4L9N2T"),
-        Student(id = "std_445", studentNumber = "445", fullName = "BEREN SU ÇAKIR", gender = "Kız", parentInviteCode = "5W8Y2Z4V"),
-        Student(id = "std_448", studentNumber = "448", fullName = "ALPEREN KILIÇASLAN", gender = "Erkek", parentInviteCode = "1M4P7Q9R"),
-        Student(id = "std_450", studentNumber = "450", fullName = "ZEHRA BETÜL KORKMAZ", gender = "Kız", parentInviteCode = "8T2K5L7N"),
-        Student(id = "std_452", studentNumber = "452", fullName = "BATUHAN YAVUZ", gender = "Erkek", parentInviteCode = "6V9X3Y1Z"),
-        Student(id = "std_455", studentNumber = "455", fullName = "EYLÜL SARE TAŞKIN", gender = "Kız", parentInviteCode = "2Q5R8M4P")
+        Student(id = "std_409", studentNumber = "409", fullName = "MEHMET AKİF KILAVUZ", gender = "Erkek", parentInviteCode = "3V7W2X8Y"),
+        Student(id = "std_411", studentNumber = "411", fullName = "MELİSA YÜCE", gender = "Kız", parentInviteCode = "6B4N9M1K"),
+        Student(id = "std_413", studentNumber = "413", fullName = "MERT KARA", gender = "Erkek", parentInviteCode = "2P8Q5R3T"),
+        Student(id = "std_414", studentNumber = "414", fullName = "METİN BARIŞ DUMAN", gender = "Erkek", parentInviteCode = "8M4K7P2N"),
+        Student(id = "std_415", studentNumber = "415", fullName = "MİRA GÜLMEZ", gender = "Kız", parentInviteCode = "9X1Y4Z7W"),
+        Student(id = "std_416", studentNumber = "416", fullName = "MUHAMMED ERTUĞRUL AYDIN", gender = "Erkek", parentInviteCode = "5T9R3K7L"),
+        Student(id = "std_418", studentNumber = "418", fullName = "ÖMER SAKİ ÇETİN", gender = "Erkek", parentInviteCode = "4M6N8P2R"),
+        Student(id = "std_420", studentNumber = "420", fullName = "YİĞİT EFE ŞEN", gender = "Erkek", parentInviteCode = "7T3K9L5Q"),
+        Student(id = "std_421", studentNumber = "421", fullName = "ZEHRA CEYLAN", gender = "Kız", parentInviteCode = "6Q9M2N4P"),
+        Student(id = "std_422", studentNumber = "422", fullName = "ZEYNEP İKRA DENİZ", gender = "Kız", parentInviteCode = "5R8W2V4X"),
+        Student(id = "std_425", studentNumber = "425", fullName = "CANSEL VAROL", gender = "Kız", parentInviteCode = "3N6P9Q1M"),
+        Student(id = "std_426", studentNumber = "426", fullName = "ELİF YAZICI", gender = "Kız", parentInviteCode = "8K4L7R2T"),
+        Student(id = "std_429", studentNumber = "429", fullName = "DORUK KİRAZ", gender = "Erkek", parentInviteCode = "4T7R1K8L"),
+        Student(id = "std_430", studentNumber = "430", fullName = "ZEYNEPSU ÇALIŞKAN", gender = "Kız", parentInviteCode = "2W5Y8Z3V"),
+        Student(id = "std_441", studentNumber = "441", fullName = "KÜRŞAD ADEM CEBECİ", gender = "Erkek", parentInviteCode = "9V2X5Y7Z"),
+        Student(id = "std_444", studentNumber = "444", fullName = "ESİLA ATMACA", gender = "Kız", parentInviteCode = "3P6Q8R1M"),
+        Student(id = "std_555", studentNumber = "555", fullName = "ARAS GÖKKAYA", gender = "Erkek", parentInviteCode = "7K4L9N2T")
     )
 
     fun findInSampleStudents(
@@ -1693,6 +1693,139 @@ class ClassRegistryRepository(
                 .await()
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * Web sisteminden aktarılan öğrencileri mevcut sınıftaki öğrencilerle (varsa bağlı velilerini ve ID'lerini koruyarak)
+     * birleştirir, hem yerel _students StateFlow'una hem de Firestore'a toplu olarak yazar.
+     */
+    suspend fun syncMigratedStudentsToClassroom(
+        classroomId: String,
+        incomingStudents: List<Student>
+    ): List<Student> {
+        if (incomingStudents.isEmpty()) return _students.value
+
+        val existingByNo = mutableMapOf<String, Student>()
+        val duplicateDocIdsToRemove = mutableSetOf<String>()
+
+        // 1. Önce hafızadaki mevcut öğrencileri al
+        _students.value.forEach { st ->
+            val no = st.studentNumber.trim()
+            if (no.isNotBlank()) {
+                val prev = existingByNo[no]
+                if (prev == null || (!prev.isParentLinked && st.isParentLinked)) {
+                    existingByNo[no] = st
+                }
+            }
+        }
+
+        // 2. Firebase oturumu açıksa Firestore'daki mevcut öğrenci belgelerini de kontrol et (bağlı veli ve belge ID'sini korumak için)
+        if (classroomId.isNotBlank() && classroomId != "default" && isFirebaseAuthAvailable) {
+            try {
+                val snap = db.collection("classrooms").document(classroomId).collection("students").get().await()
+                for (doc in snap.documents) {
+                    val parsed = parseStudentFromDoc(doc, fallbackCode = TurkishTextHelper.generateVeliKatilimKodu())
+                    val no = parsed.studentNumber.trim()
+                    if (no.isBlank() || no == "0") continue
+                    val prev = existingByNo[no]
+                    if (prev == null) {
+                        existingByNo[no] = parsed
+                    } else if (!prev.isParentLinked && parsed.isParentLinked) {
+                        if (prev.id != parsed.id) duplicateDocIdsToRemove.add(prev.id)
+                        existingByNo[no] = parsed
+                    } else if (prev.id != parsed.id) {
+                        duplicateDocIdsToRemove.add(parsed.id)
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        val sampleCodesByNo = defaultSampleStudents.associate { it.studentNumber.trim() to it.parentInviteCode }
+        val resolvedStudents = incomingStudents.map { incoming ->
+            val no = incoming.studentNumber.trim()
+            val existing = existingByNo[no]
+            val finalId = existing?.id?.takeIf { it.isNotBlank() } ?: incoming.id.ifBlank { "std_$no" }
+            val finalCode = existing?.parentInviteCode?.takeIf { it.isNotBlank() }
+                ?: sampleCodesByNo[no]?.takeIf { it.isNotBlank() }
+                ?: incoming.parentInviteCode.ifBlank { TurkishTextHelper.generateVeliKatilimKodu() }
+
+            Student(
+                id = finalId,
+                studentNumber = no,
+                fullName = TurkishTextHelper.toTurkishUpperCase(incoming.fullName.trim()),
+                gender = if (incoming.gender.equals("Kız", ignoreCase = true)) "Kız" else "Erkek",
+                parentInviteCode = finalCode,
+                isPriority = incoming.isPriority || (existing?.isPriority == true),
+                isFixed = incoming.isFixed || (existing?.isFixed == true),
+                parentName = existing?.parentName,
+                parentEmail = existing?.parentEmail,
+                parentLinkedAt = existing?.parentLinkedAt,
+                parentLastLoginAt = existing?.parentLastLoginAt,
+                parentIsOnline = existing?.parentIsOnline ?: false,
+                parentLastActiveMillis = existing?.parentLastActiveMillis,
+                linkedParents = existing?.linkedParents ?: emptyList()
+            )
+        }.sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
+
+        _students.value = resolvedStudents
+
+        if (classroomId.isNotBlank() && classroomId != "default" && isFirebaseAuthAvailable) {
+            try {
+                val studentsCol = db.collection("classrooms").document(classroomId).collection("students")
+                val batch = db.batch()
+                resolvedStudents.forEach { st ->
+                    val docRef = studentsCol.document(st.id)
+                    val payload = mutableMapOf<String, Any?>(
+                        "studentNo" to (st.studentNumber.toIntOrNull() ?: 0),
+                        "fullName" to st.fullName,
+                        "gender" to st.gender,
+                        "parentCode" to st.parentInviteCode,
+                        "parentInviteCode" to st.parentInviteCode,
+                        "isPriority" to st.isPriority,
+                        "isFixed" to st.isFixed,
+                        "classroomId" to classroomId,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    if (!st.parentEmail.isNullOrBlank()) payload["parentEmail"] = st.parentEmail
+                    if (!st.parentName.isNullOrBlank()) payload["parentName"] = st.parentName
+                    if (!st.parentLinkedAt.isNullOrBlank()) payload["parentLinkedAt"] = st.parentLinkedAt
+                    if (!st.parentLastLoginAt.isNullOrBlank()) payload["parentLastLoginAt"] = st.parentLastLoginAt
+                    if (st.linkedParents.isNotEmpty()) {
+                        payload["linkedParents"] = st.linkedParents.map { p ->
+                            mapOf(
+                                "email" to p.email,
+                                "name" to p.name,
+                                "phone" to p.phone,
+                                "relationship" to p.relationship,
+                                "linkedAt" to p.linkedAt,
+                                "lastLoginAt" to p.lastLoginAt,
+                                "isOnline" to p.isOnline,
+                                "lastActiveMillis" to p.lastActiveMillis
+                            )
+                        }
+                    }
+                    batch.set(docRef, payload, com.google.firebase.firestore.SetOptions.merge())
+                }
+                duplicateDocIdsToRemove.forEach { dupId ->
+                    if (dupId.isNotBlank() && resolvedStudents.none { it.id == dupId }) {
+                        batch.delete(studentsCol.document(dupId))
+                    }
+                }
+                batch.set(
+                    db.collection("classrooms").document(classroomId),
+                    mapOf(
+                        "studentCount" to resolvedStudents.size,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    com.google.firebase.firestore.SetOptions.merge()
+                )
+                batch.commit().await()
+            } catch (_: Exception) {
+            }
+        }
+
+        return resolvedStudents
     }
 
     companion object {

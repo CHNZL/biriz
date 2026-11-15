@@ -3776,4 +3776,13 @@ class ExampleUnitTest {
     val morningPayload = sysHelper.buildGroupSummaryText(activityItems + activityItems.first(), sysHelper.GROUP_KEY_ACTIVITIES, isMorningDigest = true)
     assertEquals("🌅 Günaydın! Gece Gelen 4 Bildirim", morningPayload.title)
   }
+
+  @Test
+  fun testStarCategoryKitapKurduMappingAndTargetTeacherEmail() {
+    assertEquals("kitap_kurdu", com.example.data.model.StarCategory.findById("cat_kitap_kurdu").id)
+    assertEquals("kitap_kurdu", com.example.data.model.StarCategory.findById("kitap_kurdu").id)
+    assertTrue(com.example.util.WebDataMigrationHelper.isTargetTeacherEmail("cihan.ozel10@gmail.com"))
+    assertTrue(com.example.util.WebDataMigrationHelper.isTargetTeacherEmail("  CIHAN.OZEL10@gmail.com "))
+    assertFalse(com.example.util.WebDataMigrationHelper.isTargetTeacherEmail("other@gmail.com"))
+  }
 }
