@@ -327,5 +327,36 @@ class ExampleRobolectricTest {
         assertEquals(null, legacyParsed.readAt)
         assertEquals(null, legacyParsed.scheduledFor)
     }
+
+    @Test
+    fun `test google auth helper uses single credential option per request and resolves web client id`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val clientId = com.example.auth.GoogleAuthHelper.getServerClientId(context)
+        assertTrue("default_web_client_id must be present from google-services.json", clientId.isNotBlank())
+
+        val interactiveRequest = com.example.auth.GoogleAuthHelper.buildInteractiveSignInRequest(clientId)
+        assertEquals(
+            "Interactive sign-in request must contain exactly 1 CredentialOption",
+            1,
+            interactiveRequest.credentialOptions.size
+        )
+        assertTrue(
+            interactiveRequest.credentialOptions.first() is com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+        )
+
+        val googleIdRequest = com.example.auth.GoogleAuthHelper.buildGoogleIdRequest(
+            serverClientId = clientId,
+            filterByAuthorizedAccounts = false,
+            autoSelectEnabled = false
+        )
+        assertEquals(
+            "Google ID request must contain exactly 1 CredentialOption",
+            1,
+            googleIdRequest.credentialOptions.size
+        )
+        assertTrue(
+            googleIdRequest.credentialOptions.first() is com.google.android.libraries.identity.googleid.GetGoogleIdOption
+        )
+    }
 }
 
