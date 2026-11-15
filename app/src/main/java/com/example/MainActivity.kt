@@ -427,6 +427,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onSendChatMessage = { sId, text, isTeacher, email, name, replyTo, scheduledFor ->
                                 viewModel.sendChatMessage(sId, text, isTeacher, email, name, replyTo, scheduledFor)
                             },
+                            onSendBulkChatMessage = { recipients, text, scheduledFor ->
+                                viewModel.sendBulkChatMessages(recipients, text, scheduledFor)
+                            },
                             onToggleChatReaction = { msgId, emoji -> viewModel.toggleChatMessageReaction(msgId, emoji) },
                             onDeliverScheduledMessageNow = { msgId -> viewModel.deliverScheduledMessageNow(msgId) },
                             onUpdateScheduledMessage = { msgId, text, scheduledFor ->

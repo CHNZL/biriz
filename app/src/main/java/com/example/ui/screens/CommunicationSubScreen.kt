@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HowToVote
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -155,6 +156,7 @@ import com.example.data.model.ParentChatSummary
 import com.example.data.model.PollOption
 import com.example.data.model.Student
 import com.example.ui.components.BentoCard
+import com.example.ui.components.BulkMessageDialog
 import com.example.ui.components.MessageInfoDialog
 import com.example.ui.components.MessageLongPressActionDialog
 import com.example.ui.components.QuietHoursHintBanner
@@ -163,6 +165,8 @@ import com.example.ui.components.ReplyComposerBanner
 import com.example.ui.components.ScheduleDeliveryDialog
 import com.example.ui.components.WhatsAppChatBubble
 import com.example.ui.components.WhatsAppChatComposer
+import com.example.util.BulkMessageHelper
+import com.example.util.BulkMessageRecipient
 import com.example.util.ChatFeatureHelper
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
@@ -197,6 +201,7 @@ fun CommunicationSubScreen(
     onDeleteAnnouncement: (String) -> Unit,
     onVotePollOption: (String, String, String) -> Unit,
     onSendMessage: (String, String, Boolean, String, String, ChatMessage?, Long?) -> Unit,
+    onSendBulkMessage: (List<BulkMessageRecipient>, String, Long?) -> Unit = { _, _, _ -> },
     onToggleChatReaction: (String, String) -> Unit = { _, _ -> },
     onDeliverScheduledMessageNow: (String) -> Unit = {},
     onUpdateScheduledMessage: (String, String, Long) -> Unit = { _, _, _ -> },
@@ -250,6 +255,7 @@ fun CommunicationSubScreen(
 
     // Modal Durumları
     var isCreateOrEditDialogOpen by remember { mutableStateOf(false) }
+    var isBulkMessageDialogOpen by remember { mutableStateOf(false) }
     var editingAnnouncement by remember { mutableStateOf<Announcement?>(null) }
     var reportAnnouncement by remember { mutableStateOf<Announcement?>(null) }
     var announcementToDelete by remember { mutableStateOf<Announcement?>(null) }
@@ -396,6 +402,7 @@ fun CommunicationSubScreen(
                     chatMessages = chatMessages,
                     isDarkTheme = isDarkTheme,
                     fontOffset = fontOffset,
+                    onOpenBulkMessage = { isBulkMessageDialogOpen = true },
                     onSelectParentChat = { student, parentAccount ->
                         selectedChatTarget = Pair(student, parentAccount)
                         onActiveChatStudentChange(student.id)
@@ -506,6 +513,28 @@ fun CommunicationSubScreen(
                     Text("Vazgeç", color = if (isDarkTheme) Color.White else BirizNavyPrimary)
                 }
             }
+        )
+    }
+
+    // 4. Toplu Veli Mesajı Modalı
+    if (isBulkMessageDialogOpen) {
+        val scheduledTeacherMessages = remember(chatMessages) {
+            ChatFeatureHelper.sortScheduledMessagesChronologically(
+                chatMessages.filter { it.isFromTeacher }
+            )
+        }
+        BulkMessageDialog(
+            students = students,
+            scheduledMessages = scheduledTeacherMessages,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { isBulkMessageDialogOpen = false },
+            onSendBulk = { recipients, text, scheduledFor ->
+                onSendBulkMessage(recipients, text, scheduledFor)
+                isBulkMessageDialogOpen = false
+            },
+            onUpdateScheduledMessage = onUpdateScheduledMessage,
+            onDeleteScheduledMessage = onCancelScheduledMessage,
+            onDeliverScheduledNow = onDeliverScheduledMessageNow
         )
     }
 }
@@ -2268,6 +2297,7 @@ private fun ParentMessagesListView(
     chatMessages: List<ChatMessage>,
     isDarkTheme: Boolean,
     fontOffset: Int,
+    onOpenBulkMessage: () -> Unit = {},
     onSelectParentChat: (Student, LinkedParentAccount) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -2368,6 +2398,92 @@ private fun ParentMessagesListView(
                             color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF166534),
                             lineHeight = 13.sp
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Toplu Veli Mesajı Eylem Kartı
+            val linkedRecipientCount = remember(students) {
+                BulkMessageHelper.collectAllLinkedRecipients(students).size
+            }
+            Surface(
+                onClick = onOpenBulkMessage,
+                shape = RoundedCornerShape(14.dp),
+                color = if (isDarkTheme) Color(0xFF12263F) else Color(0xFFEFF6FF),
+                border = BorderStroke(
+                    1.dp,
+                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.45f) else BirizNavyPrimary.copy(alpha = 0.22f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .testTag("btn_open_bulk_message")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Groups,
+                                contentDescription = "Toplu Mesaj Gönder",
+                                tint = if (isDarkTheme) BirizNavyDark else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Toplu Mesaj Gönder",
+                            fontSize = (13.5 + (fontOffset / 2)).sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                        Text(
+                            text = if (linkedRecipientCount > 0) {
+                                "Tüm velilere veya seçili velilere gizli 1'e 1 ilet"
+                            } else {
+                                "Henüz bağlı veli yok — alıcı durumunu görüntüle"
+                            },
+                            fontSize = (11 + (fontOffset / 2)).sp,
+                            color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = if (isDarkTheme) Color(0x302DD4BF) else Color(0xFFDBEAFE)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "$linkedRecipientCount Veli",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
                     }
                 }
             }

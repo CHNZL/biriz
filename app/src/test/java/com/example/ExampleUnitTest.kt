@@ -3012,4 +3012,97 @@ class ExampleUnitTest {
     )
     assertEquals(listOf("m_soonest", "m_middle", "m_furthest"), sorted.map { it.id })
   }
+
+  @Test
+  fun testBulkMessageHelperCollectionDeduplicationFilterAndPersonalization() {
+    val helper = com.example.util.BulkMessageHelper
+    val p1Anne = com.example.data.model.LinkedParentAccount(
+      email = "Anne.Ali@example.com",
+      name = "Ayşe Yılmaz"
+    )
+    val p1Baba = com.example.data.model.LinkedParentAccount(
+      email = "baba.ali@example.com",
+      name = "Mehmet Yılmaz"
+    )
+    val p2Veli = com.example.data.model.LinkedParentAccount(
+      email = "veli.zeynep@example.com",
+      name = "Fatma Kaya"
+    )
+
+    val student1 = com.example.data.model.Student(
+      id = "s1",
+      studentNumber = "12",
+      fullName = "Ali Yılmaz",
+      gender = "Erkek",
+      parentInviteCode = "ABCD1234",
+      linkedParents = listOf(p1Anne, p1Baba),
+      parentEmail = p1Anne.email,
+      parentName = p1Anne.name
+    )
+    val student2 = com.example.data.model.Student(
+      id = "s2",
+      studentNumber = "3",
+      fullName = "Zeynep Kaya",
+      gender = "Kız",
+      parentInviteCode = "EFGH5678",
+      linkedParents = listOf(p2Veli),
+      parentEmail = p2Veli.email,
+      parentName = p2Veli.name
+    )
+    val unlinkedStudent = com.example.data.model.Student(
+      id = "s3",
+      studentNumber = "5",
+      fullName = "Can Demir",
+      gender = "Erkek",
+      parentInviteCode = "JKLM9012"
+    )
+
+    val students = listOf(student1, unlinkedStudent, student2)
+
+    // 1. collectAllLinkedRecipients: sorted by student number (3 -> 12), unlinked excluded, multi-parent included
+    val allRecipients = helper.collectAllLinkedRecipients(students)
+    assertEquals(3, allRecipients.size)
+    assertEquals("s2", allRecipients[0].student.id)
+    assertEquals("veli.zeynep@example.com", allRecipients[0].parent.email)
+    assertEquals("s1", allRecipients[1].student.id)
+    assertEquals("Anne.Ali@example.com", allRecipients[1].parent.email)
+    assertEquals("baba.ali@example.com", allRecipients[2].parent.email)
+
+    // 2. collectPrimaryParentRecipients: 1 primary parent per linked student
+    val primaryRecipients = helper.collectPrimaryParentRecipients(students)
+    assertEquals(2, primaryRecipients.size)
+    assertEquals(listOf("s2", "s1"), primaryRecipients.map { it.student.id })
+    assertEquals("Anne.Ali@example.com", primaryRecipients[1].parent.email)
+
+    // 3. deduplicateRecipients: ignores email case and surrounding whitespace
+    val duplicateCandidate = com.example.util.BulkMessageRecipient(
+      student = student1,
+      parent = p1Anne.copy(email = "  anne.ali@example.com ")
+    )
+    val deduped = helper.deduplicateRecipients(allRecipients + duplicateCandidate)
+    assertEquals(3, deduped.size)
+
+    // 4. filterLinkedStudents: matches student number, student name, parent name, and parent email
+    assertEquals(1, helper.filterLinkedStudents(students, "12").size)
+    assertEquals(1, helper.filterLinkedStudents(students, "zeynep").size)
+    assertEquals(1, helper.filterLinkedStudents(students, "mehmet").size)
+    assertEquals(1, helper.filterLinkedStudents(students, "baba.ali").size)
+    assertEquals(2, helper.filterLinkedStudents(students, "").size)
+
+    // 5. personalizeBulkMessageText: case-insensitive {veli}, {ogrenci}, {öğrenci} + blank fallbacks
+    val template = "Merhaba {VELİ}, öğrencimiz {ogrenci} ve {ÖĞRENCİ} için yarın gezi var."
+    val personalized = helper.personalizeBulkMessageText(
+      template = template,
+      studentName = "Ali Yılmaz",
+      parentName = "Ayşe Yılmaz"
+    )
+    assertEquals("Merhaba Ayşe Yılmaz, öğrencimiz Ali Yılmaz ve Ali Yılmaz için yarın gezi var.", personalized)
+
+    val fallbackPersonalized = helper.personalizeBulkMessageText(
+      template = "Sayın {veli}, {ogrenci} hakkında",
+      studentName = "  ",
+      parentName = ""
+    )
+    assertEquals("Sayın Değerli Velimiz, Öğrencimiz hakkında", fallbackPersonalized)
+  }
 }

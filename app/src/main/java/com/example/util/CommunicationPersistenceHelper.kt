@@ -522,6 +522,78 @@ object CommunicationPersistenceHelper {
     }
 
     /**
+     * Toplu gönderilen sohbet mesajlarını Firestore WriteBatch ile toplu yükler (500'lü gruplar halinde).
+     */
+    fun uploadChatMessagesBatchToFirestore(
+        context: Context,
+        classId: String,
+        messages: List<ChatMessage>,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        if (messages.isEmpty()) return
+        if (classId.isBlank() || classId == "default") {
+            onFailure?.invoke(IllegalStateException("Aktif sınıf bulunamadı"))
+            return
+        }
+        val db = getFirestore(context)
+        if (db == null) {
+            onFailure?.invoke(IllegalStateException("Firestore bağlantısı kurulamadı"))
+            return
+        }
+        syncScope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val collectionRef = db.collection("classrooms").document(classId).collection("messages")
+                messages.chunked(450).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { message ->
+                        val isPendingScheduled = message.isPendingScheduled(now)
+                        val deliveredMessage = when {
+                            isPendingScheduled -> message.copy(
+                                classId = classId,
+                                status = MessageStatus.SENT,
+                                deliveredAt = null
+                            )
+                            message.status == MessageStatus.SENT -> message.copy(
+                                classId = classId,
+                                status = MessageStatus.DELIVERED,
+                                deliveredAt = message.deliveredAt ?: now
+                            )
+                            else -> message.copy(
+                                classId = classId,
+                                deliveredAt = message.deliveredAt ?: message.timestamp
+                            )
+                        }
+                        val json = serializeChatMessageJson(deliveredMessage).toString()
+                        val data = hashMapOf<String, Any?>(
+                            "id" to deliveredMessage.id,
+                            "classId" to classId,
+                            "studentId" to deliveredMessage.studentId,
+                            "parentEmail" to deliveredMessage.parentEmail,
+                            "isFromTeacher" to deliveredMessage.isFromTeacher,
+                            "timestamp" to deliveredMessage.timestamp,
+                            "status" to deliveredMessage.status.name,
+                            "deliveredAt" to deliveredMessage.deliveredAt,
+                            "readAt" to deliveredMessage.readAt,
+                            "scheduledFor" to deliveredMessage.scheduledFor,
+                            "json" to json,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        batch.set(collectionRef.document(deliveredMessage.id), data, SetOptions.merge())
+                    }
+                    batch.commit().addOnFailureListener { e ->
+                        Log.e(TAG, "Failed to batch upload bulk chat messages", e)
+                        onFailure?.invoke(e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to batch upload chat messages to Firestore", e)
+                onFailure?.invoke(e)
+            }
+        }
+    }
+
+    /**
      * İki yönlü okundu durumlarını Firestore'a işler (yalnızca durumu READ olan mesajları yazar).
      */
     fun markChatMessagesReadInFirestore(context: Context, classId: String, readMessages: List<ChatMessage>) {

@@ -1460,6 +1460,111 @@ class BirizViewModel(
         }
     }
 
+    fun sendBulkChatMessages(
+        recipients: List<com.example.util.BulkMessageRecipient>,
+        text: String,
+        scheduledFor: Long? = null
+    ) {
+        val cleanTemplate = text.trim()
+        if (cleanTemplate.isEmpty()) return
+
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+
+        val uniqueRecipients = com.example.util.BulkMessageHelper.deduplicateRecipients(recipients)
+        if (uniqueRecipients.isEmpty()) {
+            _uiState.value = state.copy(snackbarMessage = "⚠️ Lütfen en az bir veli seçin.")
+            return
+        }
+
+        val classId = resolveActiveClassId()
+        if (classId == "default" && !state.isTestMode) {
+            _uiState.value = state.copy(
+                snackbarMessage = "⚠️ Toplu mesaj gönderebilmek için aktif bir sınıf bağlantısı gereklidir."
+            )
+            return
+        }
+
+        val resolvedTeacherName = state.activeClassRoom?.teacherName?.takeIf { it.isNotBlank() }
+            ?: state.currentUser.fullName.takeIf { it.isNotBlank() }
+            ?: "Sınıf Öğretmeni"
+
+        val now = System.currentTimeMillis()
+        val effectiveScheduledFor = if (scheduledFor != null && scheduledFor > now + 5_000L) {
+            scheduledFor
+        } else {
+            null
+        }
+
+        val createdMessages = uniqueRecipients.mapIndexed { idx, recipient ->
+            val student = recipient.student
+            val parent = recipient.parent
+            val resolvedEmail = parent.email.trim()
+            val resolvedParentName = parent.name.trim().ifBlank {
+                student.parentName?.takeIf { it.isNotBlank() }
+                    ?: "${student.fullName.split(" ").firstOrNull().orEmpty()} Velisi"
+            }
+            val personalizedText = com.example.util.BulkMessageHelper.personalizeBulkMessageText(
+                template = cleanTemplate,
+                studentName = student.fullName,
+                parentName = resolvedParentName
+            ).ifBlank { cleanTemplate }
+
+            val clearWatermark = ChatVisibilityHelper.resolvedTeacherClearTimestamp(
+                student.id,
+                resolvedEmail,
+                chatClearTimestamps
+            )
+            val baseTs = effectiveScheduledFor ?: maxOf(now + idx.toLong(), clearWatermark + 1L)
+
+            ChatMessage(
+                id = "chat_${UUID.randomUUID()}",
+                classId = classId,
+                studentId = student.id,
+                studentNumber = student.studentNumber,
+                studentName = student.fullName,
+                parentName = resolvedParentName,
+                parentEmail = resolvedEmail,
+                isFromTeacher = true,
+                senderName = resolvedTeacherName,
+                text = personalizedText,
+                timestamp = baseTs,
+                status = MessageStatus.SENT,
+                scheduledFor = effectiveScheduledFor
+            )
+        }
+
+        createdMessages.forEach { msg ->
+            knownMessageIds.add(msg.id)
+            processedNotifMessageIds.add(msg.id)
+        }
+
+        rawChatMessages = (rawChatMessages + createdMessages).sortedBy { it.timestamp }
+        val visibleMessages = filterMessagesForCurrentViewer(rawChatMessages)
+        val count = createdMessages.size
+        _uiState.value = _uiState.value.copy(
+            chatMessages = visibleMessages,
+            snackbarMessage = if (effectiveScheduledFor != null) {
+                "⏰ $count veli için toplu mesaj ${ChatFeatureHelper.formatScheduledLabel(effectiveScheduledFor, now)} için zamanlandı"
+            } else {
+                "📢 $count veliye toplu mesaj başarıyla gönderildi"
+            }
+        )
+        scheduleNextDueEvaluation()
+
+        appContext?.let { ctx ->
+            CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, rawChatMessages)
+            CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            if (classId != "default") {
+                CommunicationPersistenceHelper.uploadChatMessagesBatchToFirestore(ctx, classId, createdMessages) { err ->
+                    _uiState.value = _uiState.value.copy(
+                        snackbarMessage = "⚠️ Bazı toplu mesajlar buluta gönderilemedi: ${err.localizedMessage ?: "Bağlantı hatası"}"
+                    )
+                }
+            }
+        }
+    }
+
     fun toggleChatMessageReaction(messageId: String, emoji: String) {
         if (messageId.isBlank() || emoji.isBlank()) return
         val state = _uiState.value
