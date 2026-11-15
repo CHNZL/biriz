@@ -204,25 +204,21 @@ fun TimerSubScreen(
 
     // Firestore Akıllı Tahta Oturumu Senkronizasyonu
     fun syncTimerToSmartBoard(isFinished: Boolean = false) {
-        coroutineScope.launch {
-            try {
-                val db = com.example.util.FirestoreProvider.get(context)
-                val prefs = context.getSharedPreferences("biriz_board_sync", Context.MODE_PRIVATE)
-                val activeCode = prefs.getString("active_session_code", null)
-                if (!activeCode.isNullOrBlank()) {
-                    val payload = mapOf(
-                        "timerMode" to selectedMode.title,
-                        "timerModeEmoji" to selectedMode.iconEmoji,
-                        "timerTotalSeconds" to totalSeconds,
-                        "timerRemainingSeconds" to remainingSeconds,
-                        "timerIsRunning" to isRunning,
-                        "timerIsFinished" to isFinished,
-                        "updatedAt" to System.currentTimeMillis()
-                    )
-                    db.collection("board_sessions").document(activeCode).set(payload, com.google.firebase.firestore.SetOptions.merge())
-                }
-            } catch (_: Exception) {}
-        }
+        com.example.util.SmartBoardHelper.syncTimerState(
+            context = context,
+            classId = classRoom.id,
+            modeTitle = selectedMode.title,
+            modeEmoji = selectedMode.iconEmoji,
+            modeDescription = selectedMode.description,
+            totalSeconds = totalSeconds,
+            remainingSeconds = remainingSeconds,
+            isRunning = isRunning,
+            isFinished = isFinished
+        )
+    }
+
+    LaunchedEffect(classRoom.id) {
+        syncTimerToSmartBoard(isFinished = false)
     }
 
     // Zamanlayıcı Motoru (1 saniye aralıklarla çalışır)

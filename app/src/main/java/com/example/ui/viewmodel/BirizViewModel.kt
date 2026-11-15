@@ -1334,7 +1334,7 @@ class BirizViewModel(
         val ctx = appContext ?: return
         val classId = resolveActiveClassId()
         GroupMakerPersistenceHelper.saveState(ctx, classId, state)
-        triggerSmartBoardSync()
+        triggerSmartBoardSync(groupMaker = state)
     }
 
     fun loadCommunicationFromStorage(classId: String = resolveActiveClassId()) {
@@ -3710,6 +3710,9 @@ class BirizViewModel(
                 currentSubPage = subPage,
                 activeChatStudentId = nextActiveChatStudentId
             )
+            if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.SINIF_LISTESI) {
+                triggerSmartBoardSync(subPage = subPage)
+            }
             return
         }
 
@@ -3743,7 +3746,10 @@ class BirizViewModel(
     fun triggerSmartBoardSync(
         subPage: DashboardSubPage = _uiState.value.currentSubPage,
         day: String = _uiState.value.activeScheduleDay,
-        isMirrorActive: Boolean = _uiState.value.isLiveBoardMirrorActive
+        isMirrorActive: Boolean = _uiState.value.isLiveBoardMirrorActive,
+        seatingPlan: SeatingPlanState? = _uiState.value.seatingPlanState,
+        groupMaker: GroupMakerState? = _uiState.value.groupMakerState,
+        scheduleCfg: ScheduleConfig = _uiState.value.scheduleConfig
     ) {
         val activeCode = _uiState.value.connectedBoardSessionCode ?: return
         val ctx = appContext ?: return
@@ -3759,8 +3765,9 @@ class BirizViewModel(
             activeDay = day,
             students = repository.students.value,
             schedule = _uiState.value.scheduleLessons,
-            seatingPlanState = _uiState.value.seatingPlanState,
-            groupMakerState = _uiState.value.groupMakerState
+            scheduleConfig = scheduleCfg,
+            seatingPlanState = seatingPlan,
+            groupMakerState = groupMaker
         )
     }
 
@@ -3814,6 +3821,7 @@ class BirizViewModel(
                     activeDay = _uiState.value.activeScheduleDay,
                     students = repository.students.value,
                     schedule = _uiState.value.scheduleLessons,
+                    scheduleConfig = _uiState.value.scheduleConfig,
                     seatingPlanState = _uiState.value.seatingPlanState,
                     groupMakerState = _uiState.value.groupMakerState
                 )
@@ -4059,7 +4067,7 @@ class BirizViewModel(
         appContext?.let { ctx ->
             SeatingPlanPersistenceHelper.saveActivePlan(ctx, classId, state)
         }
-        triggerSmartBoardSync()
+        triggerSmartBoardSync(seatingPlan = state)
     }
 
     fun updateSeatingConfig(newConfig: SeatingConfig) {

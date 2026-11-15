@@ -238,6 +238,15 @@ fun LuckyStudentSubScreen(
                     val candidate = candidatePool.random()
                     displayedRollingName = candidate.fullName
                     displayedRollingNo = candidate.studentNumber
+                    if (!savedSession.isNullOrBlank() && i % 4 == 0) {
+                        com.example.util.SmartBoardHelper.syncLuckyRollingCandidate(
+                            context = context,
+                            classId = classRoom.id,
+                            rollingName = candidate.fullName,
+                            rollingNo = candidate.studentNumber,
+                            rollingGender = candidate.gender
+                        )
+                    }
                     SoundHelper.playTickSound()
                     val currentDelay = if (selectedMode == LuckyDrawMode.LIGHTNING) delayBase else delayBase + (i * i * 0.4f).toLong()
                     delay(currentDelay)
@@ -273,7 +282,9 @@ fun LuckyStudentSubScreen(
                     students = students,
                     extraData = mapOf(
                         "isRolling" to false,
+                        "rollingCandidate" to null,
                         "luckyStudent" to mapOf(
+                            "id" to winner.id,
                             "fullName" to winner.fullName,
                             "studentNo" to (winner.studentNumber.toIntOrNull() ?: 0),
                             "studentNumber" to winner.studentNumber,

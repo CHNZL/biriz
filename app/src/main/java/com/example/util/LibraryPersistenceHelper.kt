@@ -327,6 +327,9 @@ object LibraryPersistenceHelper {
     fun saveBooks(context: Context, classId: String, books: List<Book>) {
         val normalized = books.map { normalizeBookState(it) }.sortedBy { it.registrationNo }
         saveBooksToLocalPrefsOnly(context, classId, normalized)
+        try {
+            SmartBoardHelper.notifyDataChanged(context, classId)
+        } catch (_: Exception) {}
 
         // Firestore bulut yedeklemesi
         syncScope.launch {

@@ -1485,31 +1485,6 @@ fun SmartBoardDialog(
                             fontSize = 10.5.sp,
                             color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            onClick = { SmartBoardHelper.downloadOrShareTahtaHtml(context) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isDarkTheme) Color(0x3000B4D8) else Color(0x1500B4D8),
-                            border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.5f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("smart_board_share_html_button")
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📥 Güncel tahta.html Kodu Kopyala / Paylaş",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BirizTurquoise
-                                )
-                            }
-                        }
                     }
                 }
             }

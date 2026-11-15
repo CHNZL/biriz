@@ -177,6 +177,9 @@ object TournamentPersistenceHelper {
 
     fun saveTournaments(context: Context, classId: String, tournaments: List<Tournament>) {
         saveTournamentsToLocalPrefsOnly(context, classId, tournaments)
+        try {
+            SmartBoardHelper.notifyDataChanged(context, classId)
+        } catch (_: Exception) {}
 
         syncScope.launch {
             uploadTournamentsToFirestore(context, classId, tournaments)
@@ -231,6 +234,9 @@ object TournamentPersistenceHelper {
 
     fun saveMatches(context: Context, tournamentId: String, matches: List<TournamentMatch>) {
         saveMatchesToLocalPrefsOnly(context, tournamentId, matches)
+        try {
+            SmartBoardHelper.notifyDataChanged(context, "")
+        } catch (_: Exception) {}
 
         syncScope.launch {
             uploadMatchesToFirestore(context, tournamentId, matches)

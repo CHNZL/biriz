@@ -86,6 +86,10 @@ object LuckyStudentPersistenceHelper {
             editor.putString(KEY_PREFIX + "default", jsonStr)
             editor.apply()
 
+            try {
+                SmartBoardHelper.notifyDataChanged(context, classId)
+            } catch (_: Exception) {}
+
             if (classId.isNotBlank() && classId != "default") {
                 syncScope.launch {
                     try {

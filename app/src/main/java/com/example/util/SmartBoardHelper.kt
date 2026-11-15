@@ -7,6 +7,7 @@ import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import com.example.data.model.GroupMakerState
+import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.SeatingPlanState
 import com.example.data.model.Student
@@ -24,8 +25,8 @@ import java.io.File
  * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
  *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
  *   belgelerini anlık günceller.
- * - Öğrenci yıldızları, okunan kitap sayıları, oturma planı, gruplar ve ders programı modül verilerini eksiksiz aktarır.
- * - Akıllı Tahta web dosyasını (`tahta.html`) cihazda üretir ve indirme/paylaşma imkanı sunar.
+ * - Öğrenci yıldızları, okunan kitap sayıları, oturma planı, gruplar, ders programı,
+ *   şanslı öğrenci, zamanlayıcı, kitaplık ve turnuva verilerini eksiksiz aktarır.
  */
 object SmartBoardHelper {
     private const val TAG = "SmartBoardHelper"
@@ -34,7 +35,7 @@ object SmartBoardHelper {
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // Son bilinen durum önbelleği (Yıldız veya kitap eklendiğinde anında senkronizasyon tetiklemek için)
+    // Son bilinen durum önbelleği (Yıldız, kitap, turnuva veya öğrenci verisi değiştiğinde anında senkronizasyon tetiklemek için)
     @Volatile
     private var lastClassId: String = ""
     @Volatile
@@ -47,6 +48,8 @@ object SmartBoardHelper {
     private var lastStudents: List<Student> = emptyList()
     @Volatile
     private var lastSchedule: List<ScheduleLesson> = emptyList()
+    @Volatile
+    private var lastScheduleConfig: ScheduleConfig = ScheduleConfig()
     @Volatile
     private var lastSeatingPlanState: SeatingPlanState? = null
     @Volatile
@@ -157,8 +160,140 @@ object SmartBoardHelper {
         }
     }
 
+    private fun prepareRecentStarsData(context: Context, classId: String): List<Map<String, Any?>> {
+        return try {
+            StarRewardPersistenceHelper.loadStarRecords(context, classId)
+                .take(15)
+                .map { r ->
+                    mapOf(
+                        "id" to r.id,
+                        "studentId" to r.studentId,
+                        "studentName" to r.studentName,
+                        "studentNumber" to r.studentNumber,
+                        "categoryName" to r.categoryName,
+                        "starCount" to r.starCount,
+                        "note" to r.note,
+                        "isLuckyBonus" to r.isLuckyBonus,
+                        "timestamp" to r.timestamp
+                    )
+                }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun prepareLuckyStudentData(context: Context, classId: String): Map<String, Any?> {
+        return try {
+            val state = LuckyStudentPersistenceHelper.loadState(context, classId)
+            mapOf(
+                "selectedModeName" to (state?.selectedModeName ?: "ROULETTE"),
+                "drawnStudentIds" to (state?.drawnStudentIds ?: emptyList<String>()),
+                "excludedStudentIds" to (state?.excludedStudentIds?.toList() ?: emptyList<String>())
+            )
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun prepareLibraryData(context: Context, classId: String): Map<String, Any?> {
+        return try {
+            val books = LibraryPersistenceHelper.loadBooks(context, classId)
+            val records = LibraryPersistenceHelper.loadReadingRecords(context, classId)
+            val activeLoans = books.count { it.status.equals("Okunuyor", ignoreCase = true) || it.activeAssignments.isNotEmpty() }
+            mapOf(
+                "totalBooksCount" to books.size,
+                "activeLoansCount" to activeLoans,
+                "totalCompletedCount" to records.size,
+                "books" to books.map { b ->
+                    mapOf(
+                        "id" to b.id,
+                        "registrationNo" to b.registrationNo,
+                        "name" to b.name,
+                        "author" to b.author,
+                        "pageCount" to b.pageCount,
+                        "status" to b.status,
+                        "currentStudentId" to b.currentStudentId,
+                        "currentStudentName" to b.currentStudentName,
+                        "assignmentDate" to b.assignmentDate,
+                        "activeAssignments" to b.activeAssignments.map { a ->
+                            mapOf(
+                                "studentId" to a.studentId,
+                                "studentName" to a.studentName,
+                                "assignmentDate" to a.assignmentDate
+                            )
+                        }
+                    )
+                },
+                "recentRecords" to records.take(24).map { r ->
+                    mapOf(
+                        "id" to r.id,
+                        "bookId" to r.bookId,
+                        "bookName" to r.bookName,
+                        "pageCount" to r.pageCount,
+                        "studentId" to r.studentId,
+                        "studentName" to r.studentName,
+                        "studentNumber" to r.studentNumber,
+                        "startDate" to r.startDate,
+                        "endDate" to r.endDate,
+                        "earnedStars" to r.earnedStars
+                    )
+                }
+            )
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun prepareTournamentData(context: Context, classId: String): Map<String, Any?> {
+        return try {
+            val tournaments = TournamentPersistenceHelper.loadTournaments(context, classId)
+            mapOf(
+                "tournaments" to tournaments.map { t ->
+                    val matches = TournamentPersistenceHelper.loadMatches(context, t.id)
+                    mapOf(
+                        "id" to t.id,
+                        "name" to t.name,
+                        "description" to t.description,
+                        "type" to t.type.name,
+                        "matchType" to t.matchType.name,
+                        "status" to t.status.name,
+                        "currentRound" to t.currentRound,
+                        "currentStage" to t.currentStage,
+                        "participantsCount" to t.participants.size,
+                        "winnerId" to t.winnerId,
+                        "winnerName" to t.winnerName,
+                        "runnerUpId" to t.runnerUpId,
+                        "runnerUpName" to t.runnerUpName,
+                        "thirdPlaceId" to t.thirdPlaceId,
+                        "thirdPlaceName" to t.thirdPlaceName,
+                        "matches" to matches.map { m ->
+                            mapOf(
+                                "id" to m.id,
+                                "round" to m.round,
+                                "matchCode" to m.matchCode,
+                                "player1Id" to m.player1Id,
+                                "player2Id" to m.player2Id,
+                                "player1Name" to m.player1Name,
+                                "player2Name" to m.player2Name,
+                                "score1" to m.score1,
+                                "score2" to m.score2,
+                                "winnerId" to m.winnerId,
+                                "status" to m.status,
+                                "groupName" to m.groupName,
+                                "stage" to m.stage,
+                                "isThirdPlaceMatch" to m.isThirdPlaceMatch
+                            )
+                        }
+                    )
+                }
+            )
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
     /**
-     * Yıldız, kitap veya öğrenci verisi değiştiğinde bağlı akıllı tahtayı anında günceller.
+     * Yıldız, kitap, turnuva, şanslı öğrenci veya öğrenci verisi değiştiğinde bağlı akıllı tahtayı anında günceller.
      */
     fun notifyDataChanged(context: Context, classId: String) {
         val activeCode = getSavedSessionCode(context)
@@ -178,9 +313,103 @@ object SmartBoardHelper {
             activeDay = lastActiveDay,
             students = studentsToUse,
             schedule = lastSchedule,
+            scheduleConfig = lastScheduleConfig,
             seatingPlanState = lastSeatingPlanState,
             groupMakerState = lastGroupMakerState
         )
+    }
+
+    /**
+     * Zamanlayıcı (Timer) durumunu doğrudan bağlı akıllı tahtaya ve canlı sınıf durumuna senkronize eder.
+     */
+    fun syncTimerState(
+        context: Context,
+        classId: String,
+        modeTitle: String,
+        modeEmoji: String,
+        modeDescription: String,
+        totalSeconds: Int,
+        remainingSeconds: Int,
+        isRunning: Boolean,
+        isFinished: Boolean
+    ) {
+        val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
+        val targetClassId = classId.ifBlank { lastClassId }
+        val now = System.currentTimeMillis()
+        val payload = hashMapOf<String, Any?>(
+            "timerMode" to modeTitle,
+            "timerModeEmoji" to modeEmoji,
+            "timerModeDescription" to modeDescription,
+            "timerTotalSeconds" to totalSeconds,
+            "timerRemainingSeconds" to remainingSeconds,
+            "timerIsRunning" to isRunning,
+            "timerIsFinished" to isFinished,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
+        scope.launch {
+            val mainDb = getMainFirestore(context)
+            try {
+                if (!activeCode.isNullOrBlank()) {
+                    mainDb.collection("board_sessions")
+                        .document(activeCode)
+                        .set(payload, SetOptions.merge())
+                }
+                if (targetClassId.isNotBlank() && targetClassId != "default") {
+                    mainDb.collection("classrooms")
+                        .document(targetClassId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+                    mainDb.collection("classes")
+                        .document(targetClassId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error syncing timer state: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Şanslı Öğrenci çarkı dönerken o anki adayı canlı olarak akıllı tahtaya iletir.
+     */
+    fun syncLuckyRollingCandidate(
+        context: Context,
+        classId: String,
+        rollingName: String,
+        rollingNo: String,
+        rollingGender: String
+    ) {
+        val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        val targetClassId = classId.ifBlank { lastClassId }
+        val now = System.currentTimeMillis()
+        val payload = mapOf(
+            "isRolling" to true,
+            "rollingCandidate" to mapOf(
+                "fullName" to rollingName,
+                "studentNumber" to rollingNo,
+                "gender" to rollingGender
+            ),
+            "updatedAt" to now
+        )
+        scope.launch {
+            val mainDb = getMainFirestore(context)
+            try {
+                mainDb.collection("board_sessions")
+                    .document(activeCode)
+                    .set(payload, SetOptions.merge())
+                if (targetClassId.isNotBlank() && targetClassId != "default") {
+                    mainDb.collection("classrooms")
+                        .document(targetClassId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -201,6 +430,7 @@ object SmartBoardHelper {
         activeDay: String = "PZT",
         students: List<Student> = emptyList(),
         schedule: List<ScheduleLesson> = emptyList(),
+        scheduleConfig: ScheduleConfig = ScheduleConfig(),
         seatingPlanState: SeatingPlanState? = null,
         groupMakerState: GroupMakerState? = null
     ): Result<Unit> {
@@ -215,11 +445,16 @@ object SmartBoardHelper {
         lastActiveDay = activeDay
         if (students.isNotEmpty()) lastStudents = students
         if (schedule.isNotEmpty()) lastSchedule = schedule
+        lastScheduleConfig = scheduleConfig
         if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
         if (groupMakerState != null) lastGroupMakerState = groupMakerState
 
         val now = System.currentTimeMillis()
         val studentData = prepareStudentPresentationData(context, classId, students)
+        val recentStars = prepareRecentStarsData(context, classId)
+        val luckyData = prepareLuckyStudentData(context, classId)
+        val libraryData = prepareLibraryData(context, classId)
+        val tournamentData = prepareTournamentData(context, classId)
 
         val scheduleData = schedule.map { l ->
             mapOf(
@@ -232,11 +467,24 @@ object SmartBoardHelper {
             )
         }
 
+        val scheduleConfigData = mapOf(
+            "dailyLessonCount" to scheduleConfig.dailyLessonCount,
+            "firstLessonStartTime" to scheduleConfig.firstLessonStartTime,
+            "lessonDurationMinutes" to scheduleConfig.lessonDurationMinutes,
+            "recessDurations" to scheduleConfig.recessDurations,
+            "isLunchBreakActive" to scheduleConfig.isLunchBreakActive,
+            "lunchAfterLessonIndex" to scheduleConfig.lunchAfterLessonIndex,
+            "lunchDurationMinutes" to scheduleConfig.lunchDurationMinutes
+        )
+
         val seatingData = seatingPlanState?.let { plan ->
             mapOf(
                 "groupCount" to plan.config.groupCount,
                 "rowsPerGroup" to plan.config.rowsPerGroup,
                 "peoplePerRow" to plan.config.peoplePerRow,
+                "windowPosition" to plan.config.windowPosition.name,
+                "doorPosition" to plan.config.doorPosition.name,
+                "deskPosition" to plan.config.deskPosition.name,
                 "assignments" to plan.assignments,
                 "activePlanName" to plan.activePlanName
             )
@@ -253,6 +501,7 @@ object SmartBoardHelper {
                         "studentIds" to g.studentIds
                     )
                 },
+                "unassignedStudentIds" to gm.unassignedStudentIds,
                 "isPresenterMode" to gm.isPresenterMode
             )
         }
@@ -272,7 +521,12 @@ object SmartBoardHelper {
             "isPrivacyMode" to false,
             "selectedDay" to activeDay,
             "students" to studentData,
+            "recentStars" to recentStars,
             "schedule" to scheduleData,
+            "scheduleConfig" to scheduleConfigData,
+            "luckyData" to luckyData,
+            "libraryData" to libraryData,
+            "tournamentData" to tournamentData,
             "updatedAt" to now,
             "connectedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
@@ -311,6 +565,7 @@ object SmartBoardHelper {
                 activeDay = activeDay,
                 students = students,
                 schedule = schedule,
+                scheduleConfig = scheduleConfig,
                 seatingPlanState = seatingPlanState,
                 groupMakerState = groupMakerState
             )
@@ -338,6 +593,7 @@ object SmartBoardHelper {
         activeDay: String = "PZT",
         students: List<Student> = emptyList(),
         schedule: List<ScheduleLesson> = emptyList(),
+        scheduleConfig: ScheduleConfig = lastScheduleConfig,
         seatingPlanState: SeatingPlanState? = null,
         groupMakerState: GroupMakerState? = null,
         extraData: Map<String, Any?> = emptyMap()
@@ -348,6 +604,7 @@ object SmartBoardHelper {
         lastActiveDay = activeDay
         if (students.isNotEmpty()) lastStudents = students
         if (schedule.isNotEmpty()) lastSchedule = schedule
+        lastScheduleConfig = scheduleConfig
         if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
         if (groupMakerState != null) lastGroupMakerState = groupMakerState
 
@@ -356,9 +613,17 @@ object SmartBoardHelper {
         val now = System.currentTimeMillis()
 
         val effectiveStudents = if (students.isNotEmpty()) students else lastStudents
-        val studentData = prepareStudentPresentationData(context, classId, effectiveStudents)
+        val effectiveSchedule = if (schedule.isNotEmpty()) schedule else lastSchedule
+        val effectiveSeating = seatingPlanState ?: lastSeatingPlanState
+        val effectiveGroups = groupMakerState ?: lastGroupMakerState
 
-        val scheduleData = schedule.map { l ->
+        val studentData = prepareStudentPresentationData(context, classId, effectiveStudents)
+        val recentStars = prepareRecentStarsData(context, classId)
+        val luckyData = prepareLuckyStudentData(context, classId)
+        val libraryData = prepareLibraryData(context, classId)
+        val tournamentData = prepareTournamentData(context, classId)
+
+        val scheduleData = effectiveSchedule.map { l ->
             mapOf(
                 "dayOfWeek" to l.dayOfWeek,
                 "lessonIndex" to l.lessonIndex,
@@ -369,17 +634,30 @@ object SmartBoardHelper {
             )
         }
 
-        val seatingData = seatingPlanState?.let { plan ->
+        val scheduleConfigData = mapOf(
+            "dailyLessonCount" to scheduleConfig.dailyLessonCount,
+            "firstLessonStartTime" to scheduleConfig.firstLessonStartTime,
+            "lessonDurationMinutes" to scheduleConfig.lessonDurationMinutes,
+            "recessDurations" to scheduleConfig.recessDurations,
+            "isLunchBreakActive" to scheduleConfig.isLunchBreakActive,
+            "lunchAfterLessonIndex" to scheduleConfig.lunchAfterLessonIndex,
+            "lunchDurationMinutes" to scheduleConfig.lunchDurationMinutes
+        )
+
+        val seatingData = effectiveSeating?.let { plan ->
             mapOf(
                 "groupCount" to plan.config.groupCount,
                 "rowsPerGroup" to plan.config.rowsPerGroup,
                 "peoplePerRow" to plan.config.peoplePerRow,
+                "windowPosition" to plan.config.windowPosition.name,
+                "doorPosition" to plan.config.doorPosition.name,
+                "deskPosition" to plan.config.deskPosition.name,
                 "assignments" to plan.assignments,
                 "activePlanName" to plan.activePlanName
             )
         }
 
-        val groupsData = groupMakerState?.let { gm ->
+        val groupsData = effectiveGroups?.let { gm ->
             mapOf(
                 "groups" to gm.groups.map { g ->
                     mapOf(
@@ -390,6 +668,7 @@ object SmartBoardHelper {
                         "studentIds" to g.studentIds
                     )
                 },
+                "unassignedStudentIds" to gm.unassignedStudentIds,
                 "isPresenterMode" to gm.isPresenterMode
             )
         }
@@ -398,8 +677,16 @@ object SmartBoardHelper {
             "classId" to classId,
             "activeModule" to currentSubPage,
             "activeModuleTitle" to currentSubPageTitle,
+            "currentSubPage" to currentSubPage,
+            "currentSubPageTitle" to currentSubPageTitle,
             "isPrivacyMode" to isPrivacyMode,
             "selectedDay" to activeDay,
+            "activeScheduleDay" to activeDay,
+            "recentStars" to recentStars,
+            "scheduleConfig" to scheduleConfigData,
+            "luckyData" to luckyData,
+            "libraryData" to libraryData,
+            "tournamentData" to tournamentData,
             "updatedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
@@ -437,6 +724,11 @@ object SmartBoardHelper {
             "activeModuleTitle" to currentSubPageTitle,
             "activeScheduleDay" to activeDay,
             "selectedDay" to activeDay,
+            "recentStars" to recentStars,
+            "scheduleConfig" to scheduleConfigData,
+            "luckyData" to luckyData,
+            "libraryData" to libraryData,
+            "tournamentData" to tournamentData,
             "updatedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
@@ -453,6 +745,7 @@ object SmartBoardHelper {
             liveBoardPayload["groups"] = groupsData
         }
         if (extraData.isNotEmpty()) {
+            liveBoardPayload.putAll(extraData)
             liveBoardPayload["extraData"] = extraData
         }
 
