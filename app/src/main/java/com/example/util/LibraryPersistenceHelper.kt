@@ -395,6 +395,9 @@ object LibraryPersistenceHelper {
     fun saveReadingRecords(context: Context, classId: String, records: List<ReadingRecord>) {
         val sorted = records.distinctBy { it.id }.sortedByDescending { it.endDate }
         saveRecordsToLocalPrefsOnly(context, classId, sorted)
+        try {
+            SmartBoardHelper.notifyDataChanged(context, classId)
+        } catch (_: Exception) {}
 
         syncScope.launch {
             uploadRecordsToFirestore(context, classId, sorted)

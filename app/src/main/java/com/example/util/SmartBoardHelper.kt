@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.widget.Toast
-import com.example.R
 import com.example.data.model.GroupMakerState
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.SeatingPlanState
@@ -18,8 +17,6 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
@@ -27,7 +24,7 @@ import java.io.File
  * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
  *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
  *   belgelerini anlık günceller.
- * - Öğrenci yıldızları, oturma planı, gruplar ve ders programı modül verilerini eksiksiz aktarır.
+ * - Öğrenci yıldızları, okunan kitap sayıları, oturma planı, gruplar ve ders programı modül verilerini eksiksiz aktarır.
  * - Akıllı Tahta web dosyasını (`tahta.html`) cihazda üretir ve indirme/paylaşma imkanı sunar.
  */
 object SmartBoardHelper {
@@ -36,6 +33,24 @@ object SmartBoardHelper {
     private const val KEY_SESSION_CODE = "key_connected_session_code"
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    // Son bilinen durum önbelleği (Yıldız veya kitap eklendiğinde anında senkronizasyon tetiklemek için)
+    @Volatile
+    private var lastClassId: String = ""
+    @Volatile
+    private var lastCurrentSubPage: String = "SINIF_LISTESI"
+    @Volatile
+    private var lastCurrentSubPageTitle: String = "Sınıf Listesi"
+    @Volatile
+    private var lastActiveDay: String = "PZT"
+    @Volatile
+    private var lastStudents: List<Student> = emptyList()
+    @Volatile
+    private var lastSchedule: List<ScheduleLesson> = emptyList()
+    @Volatile
+    private var lastSeatingPlanState: SeatingPlanState? = null
+    @Volatile
+    private var lastGroupMakerState: GroupMakerState? = null
 
     /**
      * 1. KOD NORMALİZASYONU (Tire, boşluk ve yabancı karakter temizliği)
@@ -72,18 +87,60 @@ object SmartBoardHelper {
     }
 
     /**
-     * Öğrencilerin yıldız puanları ve maskelenmiş veli kodları ile sunum verisini hazırlar.
+     * Öğrencilerin yıldız puanları ve okudukları kitap sayıları ile sunum verisini hazırlar.
+     * Veli kodları akıllı tahta projeksiyonuna gönderilmez.
      */
     private fun prepareStudentPresentationData(
         context: Context,
         classId: String,
         students: List<Student>
     ): List<Map<String, Any?>> {
-        val starMap = try {
-            val records = StarRewardPersistenceHelper.loadStarRecords(context, classId)
-            records.groupBy { it.studentId }.mapValues { entry -> entry.value.sumOf { it.starCount } }
+        val starRecords = try {
+            StarRewardPersistenceHelper.loadStarRecords(context, classId)
         } catch (e: Exception) {
-            emptyMap()
+            emptyList()
+        }
+
+        val readingRecords = try {
+            LibraryPersistenceHelper.loadReadingRecords(context, classId)
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val studentById = students.associateBy { it.id }
+        val studentByNo = students.associateBy { it.studentNumber.trim() }
+        val studentByName = students.associateBy { TurkishTextHelper.toTurkishUpperCase(it.fullName.trim()) }
+
+        fun resolveStudentId(rawId: String, rawNo: String, rawName: String): String? {
+            val cleanId = rawId.trim()
+            if (cleanId.isNotEmpty() && studentById.containsKey(cleanId)) return cleanId
+            val strippedNo = cleanId.removePrefix("std_").removePrefix("student_").trim()
+            if (strippedNo.isNotEmpty() && studentByNo.containsKey(strippedNo)) {
+                return studentByNo[strippedNo]?.id
+            }
+            val cleanNo = rawNo.trim()
+            if (cleanNo.isNotEmpty() && studentByNo.containsKey(cleanNo)) {
+                return studentByNo[cleanNo]?.id
+            }
+            val cleanName = TurkishTextHelper.toTurkishUpperCase(rawName.trim())
+            if (cleanName.isNotEmpty() && studentByName.containsKey(cleanName)) {
+                return studentByName[cleanName]?.id
+            }
+            return null
+        }
+
+        val starsPerStudent = mutableMapOf<String, Int>()
+        for (record in starRecords) {
+            val resolvedId = resolveStudentId(record.studentId, record.studentNumber, record.studentName) ?: record.studentId
+            starsPerStudent[resolvedId] = (starsPerStudent[resolvedId] ?: 0) + record.starCount
+        }
+
+        val booksPerStudent = mutableMapOf<String, Int>()
+        val pagesPerStudent = mutableMapOf<String, Int>()
+        for (rec in readingRecords) {
+            val resolvedId = resolveStudentId(rec.studentId, rec.studentNumber, rec.studentName) ?: rec.studentId
+            booksPerStudent[resolvedId] = (booksPerStudent[resolvedId] ?: 0) + 1
+            pagesPerStudent[resolvedId] = (pagesPerStudent[resolvedId] ?: 0) + rec.pageCount
         }
 
         return students.map { s ->
@@ -93,17 +150,42 @@ object SmartBoardHelper {
                 "studentNumber" to s.studentNumber,
                 "fullName" to s.fullName,
                 "gender" to s.gender,
-                "parentCode" to "••••••••", // Veli Katılım Kodu akıllı tahta projeksiyonunda gizlenir
-                "parentInviteCode" to "••••••••",
-                "stars" to (starMap[s.id] ?: 0)
+                "stars" to (starsPerStudent[s.id] ?: 0),
+                "booksRead" to (booksPerStudent[s.id] ?: 0),
+                "pagesRead" to (pagesPerStudent[s.id] ?: 0)
             )
         }
     }
 
     /**
+     * Yıldız, kitap veya öğrenci verisi değiştiğinde bağlı akıllı tahtayı anında günceller.
+     */
+    fun notifyDataChanged(context: Context, classId: String) {
+        val activeCode = getSavedSessionCode(context)
+        if (activeCode.isNullOrBlank()) return
+        val targetClassId = classId.ifBlank { lastClassId }
+        if (targetClassId.isBlank() || targetClassId == "default") return
+        val studentsToUse = lastStudents
+        if (studentsToUse.isEmpty()) return
+
+        updateLiveBoardState(
+            context = context,
+            classId = targetClassId,
+            sessionCode = activeCode,
+            isLiveMirrorActive = isMirrorActive(context),
+            currentSubPage = lastCurrentSubPage,
+            currentSubPageTitle = lastCurrentSubPageTitle,
+            activeDay = lastActiveDay,
+            students = studentsToUse,
+            schedule = lastSchedule,
+            seatingPlanState = lastSeatingPlanState,
+            groupMakerState = lastGroupMakerState
+        )
+    }
+
+    /**
      * Akıllı tahtada görünen 8 haneli kod ile eşleştirme yapar.
      * `board_sessions/{temizKod}` belgesine CONNECTED durumu yazar (SetOptions.merge() ile).
-     * Maksimum 1 saniye timeout ile çalışır, arayüzü asla bekletmez.
      */
     suspend fun connectSession(
         context: Context,
@@ -126,6 +208,15 @@ object SmartBoardHelper {
         if (cleanCode.length < 4) {
             return Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
         }
+
+        lastClassId = classId
+        lastCurrentSubPage = currentSubPage
+        lastCurrentSubPageTitle = currentSubPageTitle
+        lastActiveDay = activeDay
+        if (students.isNotEmpty()) lastStudents = students
+        if (schedule.isNotEmpty()) lastSchedule = schedule
+        if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
+        if (groupMakerState != null) lastGroupMakerState = groupMakerState
 
         val now = System.currentTimeMillis()
         val studentData = prepareStudentPresentationData(context, classId, students)
@@ -228,7 +319,7 @@ object SmartBoardHelper {
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting smart board session", e)
-            Result.success(Unit) // Arayüzü asla kitlemez
+            Result.success(Unit)
         }
     }
 
@@ -251,11 +342,21 @@ object SmartBoardHelper {
         groupMakerState: GroupMakerState? = null,
         extraData: Map<String, Any?> = emptyMap()
     ) {
+        if (classId.isNotBlank() && classId != "default") lastClassId = classId
+        lastCurrentSubPage = currentSubPage
+        lastCurrentSubPageTitle = currentSubPageTitle
+        lastActiveDay = activeDay
+        if (students.isNotEmpty()) lastStudents = students
+        if (schedule.isNotEmpty()) lastSchedule = schedule
+        if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
+        if (groupMakerState != null) lastGroupMakerState = groupMakerState
+
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
         val isPrivacyMode = !isLiveMirrorActive
         val now = System.currentTimeMillis()
 
-        val studentData = prepareStudentPresentationData(context, classId, students)
+        val effectiveStudents = if (students.isNotEmpty()) students else lastStudents
+        val studentData = prepareStudentPresentationData(context, classId, effectiveStudents)
 
         val scheduleData = schedule.map { l ->
             mapOf(
@@ -294,6 +395,7 @@ object SmartBoardHelper {
         }
 
         val boardSessionUpdate = hashMapOf<String, Any?>(
+            "classId" to classId,
             "activeModule" to currentSubPage,
             "activeModuleTitle" to currentSubPageTitle,
             "isPrivacyMode" to isPrivacyMode,
@@ -331,7 +433,10 @@ object SmartBoardHelper {
             "isPrivacyMode" to isPrivacyMode,
             "currentSubPage" to currentSubPage,
             "currentSubPageTitle" to currentSubPageTitle,
+            "activeModule" to currentSubPage,
+            "activeModuleTitle" to currentSubPageTitle,
             "activeScheduleDay" to activeDay,
+            "selectedDay" to activeDay,
             "updatedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
@@ -361,7 +466,7 @@ object SmartBoardHelper {
                         .set(boardSessionUpdate, SetOptions.merge())
                 }
 
-                // 2. classes/{classId}/live_board/state
+                // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
                 if (classId.isNotBlank() && classId != "default") {
                     mainDb.collection("classes")
                         .document(classId)
@@ -369,7 +474,6 @@ object SmartBoardHelper {
                         .document("state")
                         .set(liveBoardPayload, SetOptions.merge())
 
-                    // 3. classrooms/{classId}/live_board/state
                     mainDb.collection("classrooms")
                         .document(classId)
                         .collection("live_board")

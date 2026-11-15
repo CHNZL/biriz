@@ -914,6 +914,7 @@ class BirizViewModel(
                         _uiState.value = _uiState.value.copy(seatingPlanState = reconciledSeating)
                     }
                 }
+                triggerSmartBoardSync()
                 evaluateActivityNotifications()
             }
         }
@@ -1333,6 +1334,7 @@ class BirizViewModel(
         val ctx = appContext ?: return
         val classId = resolveActiveClassId()
         GroupMakerPersistenceHelper.saveState(ctx, classId, state)
+        triggerSmartBoardSync()
     }
 
     fun loadCommunicationFromStorage(classId: String = resolveActiveClassId()) {
@@ -1474,6 +1476,7 @@ class BirizViewModel(
             starsNotificationListener = StarRewardPersistenceHelper.observeFirestoreStars(ctx, classId) { cloudStars ->
                 latestStars = cloudStars
                 hasCloudStars = true
+                triggerSmartBoardSync()
                 evaluateActivityNotifications(classId)
             }
         }
@@ -1483,6 +1486,7 @@ class BirizViewModel(
             libraryBooksNotificationListener = LibraryPersistenceHelper.observeFirestoreBooks(ctx, classId) { cloudBooks ->
                 latestBooks = cloudBooks
                 hasCloudBooks = true
+                triggerSmartBoardSync()
                 evaluateActivityNotifications(classId)
             }
         }
@@ -1492,6 +1496,7 @@ class BirizViewModel(
             libraryRecordsNotificationListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(ctx, classId) { cloudRecords ->
                 latestReadingRecords = cloudRecords
                 hasCloudReadingRecords = true
+                triggerSmartBoardSync()
                 evaluateActivityNotifications(classId)
             }
         }
@@ -3985,6 +3990,7 @@ class BirizViewModel(
             isScheduleSettingsStepActive = false,
             snackbarMessage = "Ders programı zaman çizelgesi ve teneffüs ayarları güncellendi."
         )
+        triggerSmartBoardSync()
     }
 
     fun updateScheduleLesson(lesson: ScheduleLesson) {
@@ -4028,6 +4034,7 @@ class BirizViewModel(
             scheduleLessons = currentLessons,
             snackbarMessage = "${normalizedLesson.lessonIndex}. Ders ($upperSubjectName) ve aynı adlı tüm derslerin rengi eşitlendi."
         )
+        triggerSmartBoardSync()
     }
 
     fun setScheduleSettingsStepActive(active: Boolean) {
@@ -4052,6 +4059,7 @@ class BirizViewModel(
         appContext?.let { ctx ->
             SeatingPlanPersistenceHelper.saveActivePlan(ctx, classId, state)
         }
+        triggerSmartBoardSync()
     }
 
     fun updateSeatingConfig(newConfig: SeatingConfig) {

@@ -6,12 +6,12 @@
   <title>BİRİZ - Akıllı Tahta Canlı Ekranı</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@600;700;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
   
-  <!-- Firebase JS SDK (Modular SDK with named database support) -->
+  <!-- Firebase JS SDK (Modular SDK with named database support & live classroom collection sync) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, doc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
@@ -23,7 +23,8 @@
     try {
       const app = initializeApp(firebaseConfig);
       const db = getFirestore(app, "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e");
-      
+      window.birizFirestoreDb = db;
+
       window.startSdkListener = function(code) {
         if (window.activeSdkUnsubscribe) {
           try { window.activeSdkUnsubscribe(); } catch (e) {}
@@ -34,8 +35,116 @@
             window.handleSessionUpdate(snap.data());
           }
         }, (err) => {
-          console.warn("Firestore SDK dinleme:", err);
+          console.warn("Firestore SDK board_sessions dinleme:", err);
         });
+      };
+
+      window.attachClassroomLiveListeners = function(classId) {
+        if (!classId || classId === "default" || window.activeObservedClassId === classId) return;
+        window.cleanupClassroomLiveListeners();
+        window.activeObservedClassId = classId;
+
+        const unsubs = [];
+
+        // 1. classrooms/{classId}/live_board/state dinleyicisi
+        unsubs.push(onSnapshot(doc(db, "classrooms", classId, "live_board", "state"), (snap) => {
+          if (!snap.exists()) return;
+          const d = snap.data();
+          if (d && window.handleLiveBoardStateSnapshot) {
+            window.handleLiveBoardStateSnapshot(d);
+          }
+        }, () => {}));
+
+        // 2. classes/{classId}/live_board/state dinleyicisi
+        unsubs.push(onSnapshot(doc(db, "classes", classId, "live_board", "state"), (snap) => {
+          if (!snap.exists()) return;
+          const d = snap.data();
+          if (d && window.handleLiveBoardStateSnapshot) {
+            window.handleLiveBoardStateSnapshot(d);
+          }
+        }, () => {}));
+
+        // 3. classrooms/{classId}/students canlı öğrenci listesi dinleyicisi
+        unsubs.push(onSnapshot(collection(db, "classrooms", classId, "students"), (snap) => {
+          if (!snap) return;
+          const docs = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d) {
+              docs.push({
+                id: docSnap.id,
+                studentNo: parseInt(d.studentNumber || d.studentNo || "0", 10) || 0,
+                studentNumber: String(d.studentNumber || d.studentNo || "0"),
+                fullName: d.fullName || "",
+                gender: d.gender || "Erkek"
+              });
+            }
+          });
+          if (docs.length > 0 && window.handleLiveStudentsCollection) {
+            window.handleLiveStudentsCollection(docs);
+          }
+        }, () => {}));
+
+        // 4. classrooms/{classId}/stars canlı yıldız kayıtları dinleyicisi
+        unsubs.push(onSnapshot(collection(db, "classrooms", classId, "stars"), (snap) => {
+          if (!snap) return;
+          const records = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d && (d.starCount || 0) > 0) {
+              records.push({
+                id: docSnap.id,
+                studentId: String(d.studentId || "").trim(),
+                studentNumber: String(d.studentNumber || "").trim(),
+                studentName: String(d.studentName || "").trim(),
+                starCount: Number(d.starCount || 0)
+              });
+            }
+          });
+          if (window.handleLiveStarsCollection) {
+            window.handleLiveStarsCollection(records);
+          }
+        }, () => {}));
+
+        // 5. classrooms/{classId}/reading_records canlı okuma geçmişi dinleyicisi
+        unsubs.push(onSnapshot(collection(db, "classrooms", classId, "reading_records"), (snap) => {
+          if (!snap) return;
+          const records = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (d) {
+              let parsed = d;
+              if (typeof d.json === "string" && d.json.trim().startsWith("{")) {
+                try { parsed = { ...JSON.parse(d.json), ...d }; } catch (e) {}
+              }
+              if (parsed.studentId && parsed.bookName) {
+                records.push({
+                  id: docSnap.id,
+                  studentId: String(parsed.studentId || "").trim(),
+                  studentNumber: String(parsed.studentNumber || "").trim(),
+                  studentName: String(parsed.studentName || "").trim(),
+                  bookName: String(parsed.bookName || "").trim(),
+                  pageCount: Number(parsed.pageCount || 0)
+                });
+              }
+            }
+          });
+          if (window.handleLiveReadingRecordsCollection) {
+            window.handleLiveReadingRecordsCollection(records);
+          }
+        }, () => {}));
+
+        window.classroomLiveUnsubs = unsubs;
+      };
+
+      window.cleanupClassroomLiveListeners = function() {
+        window.activeObservedClassId = null;
+        if (Array.isArray(window.classroomLiveUnsubs)) {
+          window.classroomLiveUnsubs.forEach((u) => {
+            try { u(); } catch (e) {}
+          });
+        }
+        window.classroomLiveUnsubs = [];
       };
 
       if (window.activeSessionCode && window.startSdkListener) {
@@ -51,24 +160,33 @@
       --primary: #1B2A4A;
       --primary-light: #2D4263;
       --turquoise: #00B4D8;
+      --turquoise-dark: #0096C7;
       --turquoise-light: #E0F7FA;
       --amber: #FFB703;
+      --amber-dark: #D97706;
       --amber-light: #FFF8E1;
       --emerald: #10B981;
+      --emerald-dark: #047857;
       --rose: #E11D48;
+      --sky: #0284C7;
       --purple: #8B5CF6;
-      --bg: #F8FAFC;
+      --bg: #F3F7FD;
       --card-bg: #FFFFFF;
-      --text: #0F172A;
+      --text: #1E293B;
       --text-secondary: #475569;
       --border: #E2E8F0;
-      --font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-display: 'Fredoka', 'Nunito', system-ui, -apple-system, sans-serif;
+      --font-body: 'Nunito', 'Fredoka', system-ui, -apple-system, sans-serif;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: var(--font);
-      background: var(--bg);
+      font-family: var(--font-body);
+      background:
+        radial-gradient(circle at 8% 12%, rgba(251, 113, 133, 0.10) 0%, transparent 34%),
+        radial-gradient(circle at 92% 14%, rgba(56, 189, 248, 0.12) 0%, transparent 36%),
+        radial-gradient(circle at 50% 90%, rgba(251, 191, 36, 0.10) 0%, transparent 40%),
+        linear-gradient(180deg, #EEF4FF 0%, #F8FAFC 100%);
       color: var(--text);
       min-height: 100vh;
       display: flex;
@@ -79,45 +197,51 @@
 
     /* ÜST BAR */
     header {
-      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      background: linear-gradient(135deg, #162440 0%, #243B61 55%, #1E3356 100%);
       color: white;
-      padding: 12px 24px;
+      padding: 12px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 4px 20px rgba(27, 42, 74, 0.15);
+      box-shadow: 0 6px 24px rgba(22, 36, 64, 0.22);
       position: sticky;
       top: 0;
       z-index: 100;
+      border-bottom: 3px solid rgba(0, 180, 216, 0.45);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
     .emblem {
-      width: 42px;
-      height: 42px;
+      width: 46px;
+      height: 46px;
       border-radius: 50%;
       background: white;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      border: 2px solid #38BDF8;
     }
     .brand-title {
-      font-size: 1.25rem;
-      font-weight: 800;
-      letter-spacing: -0.5px;
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: 0.2px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .brand-subtitle {
-      font-size: 0.8rem;
-      opacity: 0.85;
-      font-weight: 500;
+      font-family: var(--font-body);
+      font-size: 0.85rem;
+      opacity: 0.92;
+      font-weight: 800;
+      color: #BAE6FD;
+      letter-spacing: 0.3px;
     }
 
     .header-center {
@@ -126,25 +250,29 @@
       gap: 12px;
     }
     .class-badge {
-      background: rgba(255,255,255,0.15);
+      font-family: var(--font-display);
+      background: rgba(255,255,255,0.16);
       backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.25);
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 0.9rem;
-      font-weight: 700;
+      border: 1.5px solid rgba(255,255,255,0.28);
+      padding: 7px 18px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
       display: flex;
       align-items: center;
       gap: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
     .active-module-badge {
-      background: var(--turquoise);
+      font-family: var(--font-display);
+      background: linear-gradient(135deg, #00B4D8, #0096C7);
       color: white;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      font-weight: 700;
+      padding: 7px 18px;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 600;
       letter-spacing: 0.3px;
+      box-shadow: 0 3px 12px rgba(0, 180, 216, 0.38);
     }
 
     .header-right {
@@ -153,22 +281,23 @@
       gap: 14px;
     }
     .connection-status {
+      font-family: var(--font-display);
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      font-weight: 700;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
     }
     .status-connected {
-      background: rgba(16, 185, 129, 0.2);
-      border: 1px solid rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.22);
+      border: 1.5px solid rgba(52, 211, 153, 0.55);
       color: #6EE7B7;
     }
     .status-waiting {
-      background: rgba(255, 183, 3, 0.2);
-      border: 1px solid rgba(255, 183, 3, 0.4);
+      background: rgba(255, 183, 3, 0.22);
+      border: 1.5px solid rgba(251, 191, 36, 0.55);
       color: #FDE68A;
     }
     .pulse-dot {
@@ -177,11 +306,11 @@
       border-radius: 50%;
       background: currentColor;
       box-shadow: 0 0 10px currentColor;
-      animation: pulse 1.8s infinite;
+      animation: pulse 1.6s infinite;
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(0.85); }
+      50% { opacity: 0.45; transform: scale(0.82); }
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     @keyframes bounceIn {
@@ -189,25 +318,34 @@
       70% { transform: scale(1.05); opacity: 1; }
       100% { transform: scale(1); }
     }
+    @keyframes cardPopUpdate {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.04) translateY(-3px); box-shadow: 0 0 28px rgba(251, 191, 36, 0.65); }
+      100% { transform: scale(1); }
+    }
 
     .fullscreen-btn {
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2);
+      font-family: var(--font-display);
+      background: rgba(255,255,255,0.14);
+      border: 1.5px solid rgba(255,255,255,0.28);
       color: white;
-      padding: 8px 14px;
-      border-radius: 10px;
+      padding: 8px 16px;
+      border-radius: 12px;
       cursor: pointer;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       font-weight: 600;
       transition: all 0.2s;
     }
-    .fullscreen-btn:hover { background: rgba(255,255,255,0.25); }
+    .fullscreen-btn:hover {
+      background: rgba(255,255,255,0.26);
+      transform: translateY(-1px);
+    }
 
     /* ANA İÇERİK ALANI */
     main {
       flex: 1;
-      padding: 24px;
-      max-width: 1600px;
+      padding: 20px 26px 28px;
+      max-width: 1680px;
       width: 100%;
       margin: 0 auto;
       position: relative;
@@ -225,49 +363,52 @@
     }
     .pairing-card {
       background: var(--card-bg);
-      border-radius: 28px;
-      border: 1px solid var(--border);
+      border-radius: 30px;
+      border: 2px solid #E2E8F0;
       padding: 40px 48px;
-      max-width: 760px;
+      max-width: 780px;
       width: 100%;
-      box-shadow: 0 20px 40px rgba(27, 42, 74, 0.08);
+      box-shadow: 0 20px 45px rgba(27, 42, 74, 0.09);
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 20px;
     }
-    .pairing-icon { font-size: 56px; }
+    .pairing-icon { font-size: 58px; }
     .pairing-title {
-      font-size: 1.8rem;
-      font-weight: 800;
+      font-family: var(--font-display);
+      font-size: 1.9rem;
+      font-weight: 700;
       color: var(--primary);
     }
     .pairing-desc {
-      font-size: 1rem;
+      font-size: 1.05rem;
       color: var(--text-secondary);
       line-height: 1.6;
       max-width: 580px;
+      font-weight: 700;
     }
     .code-display {
-      background: linear-gradient(135deg, #F1F5F9, #E2E8F0);
-      border: 2px dashed var(--turquoise);
+      background: linear-gradient(135deg, #F0F9FF, #E0F2FE);
+      border: 2.5px dashed var(--turquoise);
       padding: 16px 36px;
-      border-radius: 18px;
+      border-radius: 20px;
       font-family: 'JetBrains Mono', monospace;
       font-size: 2.8rem;
       letter-spacing: 6px;
       font-weight: 700;
       color: var(--primary);
-      box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.04);
     }
     .refresh-code-btn {
+      font-family: var(--font-display);
       background: #EFF6FF;
-      border: 1.5px solid #BFDBFE;
+      border: 2px solid #BFDBFE;
       color: #1D4ED8;
-      padding: 8px 18px;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 0.9rem;
+      padding: 9px 20px;
+      border-radius: 14px;
+      font-weight: 600;
+      font-size: 0.95rem;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -287,29 +428,30 @@
     .step-box {
       flex: 1;
       background: #F8FAFC;
-      border: 1px solid var(--border);
-      border-radius: 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 18px;
       padding: 16px;
       text-align: left;
     }
     .step-num {
-      width: 28px;
-      height: 28px;
+      font-family: var(--font-display);
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       background: var(--turquoise);
       color: white;
-      font-weight: 800;
-      font-size: 0.85rem;
+      font-weight: 700;
+      font-size: 0.95rem;
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 8px;
     }
     .step-text {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: var(--text-secondary);
-      line-height: 1.4;
-      font-weight: 600;
+      line-height: 1.45;
+      font-weight: 700;
     }
 
     /* 2. CANLI MODÜL ALANI */
@@ -321,11 +463,11 @@
     #privacy-overlay {
       display: none;
       position: fixed;
-      top: 66px;
+      top: 70px;
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(15, 23, 42, 0.85);
+      background: rgba(15, 23, 42, 0.88);
       backdrop-filter: blur(16px);
       z-index: 999;
       flex-direction: column;
@@ -337,120 +479,311 @@
     }
     .privacy-box {
       background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 24px;
-      padding: 40px;
-      max-width: 500px;
+      border: 1.5px solid rgba(255, 255, 255, 0.22);
+      border-radius: 28px;
+      padding: 42px;
+      max-width: 520px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 14px;
     }
 
-    /* MODÜL: SINIF LİSTESİ */
+    /* MODÜL: SINIF LİSTESİ / ANA SAYFA ÜST BARI */
     .module-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px;
       margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(10px);
+      padding: 12px 18px;
+      border-radius: 22px;
+      border: 2px solid #E2E8F0;
+      box-shadow: 0 6px 20px rgba(27, 42, 74, 0.05);
     }
     .stats-row {
       display: flex;
-      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     .stat-pill {
-      background: white;
-      border: 1px solid var(--border);
-      padding: 8px 18px;
-      border-radius: 12px;
-      font-size: 0.9rem;
-      font-weight: 700;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      font-family: var(--font-display);
+      background: #FFFFFF;
+      border: 2px solid #E2E8F0;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--primary);
+      box-shadow: 0 3px 0 rgba(226, 232, 240, 0.8);
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
+    }
+    .stat-pill-kiz {
+      background: linear-gradient(135deg, #FFF1F5, #FFE4EC);
+      border-color: #F9A8D4;
+      color: #BE123C;
+      box-shadow: 0 3px 0 rgba(249, 168, 212, 0.55);
+    }
+    .stat-pill-erkek {
+      background: linear-gradient(135deg, #F0F9FF, #E0F2FE);
+      border-color: #7DD3FC;
+      color: #0369A1;
+      box-shadow: 0 3px 0 rgba(125, 211, 252, 0.55);
+    }
+    .stat-pill-stars {
+      background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+      border-color: #FCD34D;
+      color: #B45309;
+      box-shadow: 0 3px 0 rgba(252, 211, 77, 0.55);
+    }
+    .stat-pill-books {
+      background: linear-gradient(135deg, #ECFDF5, #D1FAE5);
+      border-color: #6EE7B7;
+      color: #047857;
+      box-shadow: 0 3px 0 rgba(110, 231, 183, 0.55);
     }
 
+    /* SAĞ TARAF SIRALAMA TUŞLARI: LİSTE | YILDIZ | KİTAP */
+    .sort-buttons-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+    .sort-btn {
+      font-family: var(--font-display);
+      background: #F8FAFC;
+      border: 2px solid #CBD5E1;
+      color: #334155;
+      padding: 9px 18px;
+      border-radius: 16px;
+      font-size: 0.96rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 4px 0 #CBD5E1;
+    }
+    .sort-btn:hover {
+      transform: translateY(-2px);
+      background: #FFFFFF;
+    }
+    .sort-btn:active {
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 #CBD5E1;
+    }
+    .sort-btn.active-list {
+      background: linear-gradient(135deg, #1E3A8A, #2563EB);
+      border-color: #1D4ED8;
+      color: #FFFFFF;
+      box-shadow: 0 4px 0 #1E3A8A, 0 6px 16px rgba(37, 99, 235, 0.28);
+    }
+    .sort-btn.active-stars {
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+      border-color: #B45309;
+      color: #FFFFFF;
+      box-shadow: 0 4px 0 #B45309, 0 6px 16px rgba(245, 158, 11, 0.32);
+    }
+    .sort-btn.active-books {
+      background: linear-gradient(135deg, #10B981, #059669);
+      border-color: #047857;
+      color: #FFFFFF;
+      box-shadow: 0 4px 0 #047857, 0 6px 16px rgba(16, 185, 129, 0.32);
+    }
+
+    /* ÖĞRENCİ KARTLARI IZGARASI */
     .students-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
       gap: 16px;
     }
     .student-card {
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 14px 18px;
+      position: relative;
+      border-radius: 22px;
+      padding: 15px 16px;
       display: flex;
       align-items: center;
-      gap: 14px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-      transition: all 0.2s;
+      gap: 13px;
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+      overflow: hidden;
     }
     .student-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+      transform: translateY(-4px) scale(1.01);
     }
+    /* KIZ ÖĞRENCİ KARTI (Cinsiyete Göre Pembe/Gül Arka Fon) */
+    .student-card.kiz-card {
+      background: linear-gradient(135deg, #FFF0F5 0%, #FFE3EE 55%, #FFD5E5 100%);
+      border: 2.5px solid #F472B6;
+      box-shadow: 0 5px 0 rgba(236, 72, 153, 0.28), 0 10px 22px rgba(225, 29, 72, 0.08);
+    }
+    /* ERKEK ÖĞRENCİ KARTI (Cinsiyete Göre Mavi/Gökyüzü Arka Fon) */
+    .student-card.erkek-card {
+      background: linear-gradient(135deg, #EFF8FF 0%, #DFF0FE 55%, #CCE6FD 100%);
+      border: 2.5px solid #38BDF8;
+      box-shadow: 0 5px 0 rgba(14, 165, 233, 0.28), 0 10px 22px rgba(2, 132, 199, 0.08);
+    }
+    .student-card.card-updated-pop {
+      animation: cardPopUpdate 0.85s ease;
+    }
+
+    /* Sıralama Madalyası Rozeti (Yıldız veya Kitap sıralamasında ilk 3) */
+    .rank-corner-badge {
+      position: absolute;
+      top: 7px;
+      right: 10px;
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      z-index: 2;
+    }
+    .rank-1 {
+      background: linear-gradient(135deg, #FEF08A, #F59E0B);
+      color: #78350F;
+      border: 1.5px solid #D97706;
+      box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+    }
+    .rank-2 {
+      background: linear-gradient(135deg, #F1F5F9, #CBD5E1);
+      color: #1E293B;
+      border: 1.5px solid #64748B;
+    }
+    .rank-3 {
+      background: linear-gradient(135deg, #FFEDD5, #FB923C);
+      color: #7C2D12;
+      border: 1.5px solid #EA580C;
+    }
+    .rank-other {
+      background: rgba(255, 255, 255, 0.75);
+      color: #475569;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+    }
+
+    /* OKUL NUMARASI ROZETİ */
     .student-avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
+      font-family: var(--font-display);
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      font-size: 0.95rem;
+      font-weight: 700;
+      font-size: 1.05rem;
       flex-shrink: 0;
+      letter-spacing: -0.3px;
     }
     .avatar-kiz {
-      background: #FFF1F2;
-      color: #E11D48;
-      border: 2px solid #FECDD3;
+      background: linear-gradient(135deg, #FB7185 0%, #E11D48 100%);
+      color: #FFFFFF;
+      border: 2.5px solid #FFE4E6;
+      box-shadow: 0 4px 10px rgba(225, 29, 72, 0.28);
     }
     .avatar-erkek {
-      background: #E0F2FE;
-      color: #0284C7;
-      border: 2px solid #BAE6FD;
+      background: linear-gradient(135deg, #38BDF8 0%, #0284C7 100%);
+      color: #FFFFFF;
+      border: 2.5px solid #E0F2FE;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.28);
     }
+
     .student-info {
       flex: 1;
-      overflow: hidden;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
     }
     .student-name {
-      font-weight: 800;
-      font-size: 1rem;
-      color: var(--primary);
-      white-space: nowrap;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.08rem;
+      color: #0F172A;
+      line-height: 1.22;
+      letter-spacing: 0.1px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
     .student-meta {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 4px;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
+      gap: 6px;
     }
-    .masked-code {
-      font-family: monospace;
-      letter-spacing: 2px;
-      background: #F1F5F9;
-      padding: 2px 6px;
-      border-radius: 6px;
-      font-size: 0.75rem;
-    }
-    .student-star-badge {
-      background: var(--amber-light);
-      border: 1px solid var(--amber);
-      color: #B45309;
+    .gender-chip-kiz {
+      font-family: var(--font-body);
+      background: rgba(255, 255, 255, 0.78);
+      color: #BE123C;
+      border: 1.5px solid #F9A8D4;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
       font-weight: 800;
-      font-size: 0.85rem;
-      padding: 4px 8px;
-      border-radius: 8px;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 4px;
+    }
+    .gender-chip-erkek {
+      font-family: var(--font-body);
+      background: rgba(255, 255, 255, 0.78);
+      color: #0369A1;
+      border: 1.5px solid #7DD3FC;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* YILDIZ VE OKUNAN KİTAP ROZETLERİ */
+    .student-metrics {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .metric-pill {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.9rem;
+      padding: 4px 11px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: transform 0.2s ease;
+    }
+    .student-star-badge {
+      background: linear-gradient(135deg, #FFFBEB 0%, #FEF08A 100%);
+      border: 2px solid #F59E0B;
+      color: #B45309;
+      box-shadow: 0 2px 0 rgba(217, 119, 6, 0.28);
+    }
+    .student-book-badge {
+      background: linear-gradient(135deg, #ECFDF5 0%, #A7F3D0 100%);
+      border: 2px solid #10B981;
+      color: #065F46;
+      box-shadow: 0 2px 0 rgba(5, 150, 105, 0.25);
+    }
+    .metric-highlight {
+      transform: scale(1.07);
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
     }
 
     /* MODÜL: DERS PROGRAMI */
@@ -460,14 +793,15 @@
       margin-bottom: 20px;
     }
     .day-tab {
+      font-family: var(--font-display);
       flex: 1;
       text-align: center;
       padding: 12px;
-      border-radius: 14px;
+      border-radius: 16px;
       background: white;
       border: 2px solid var(--border);
-      font-weight: 800;
-      font-size: 1rem;
+      font-weight: 700;
+      font-size: 1.05rem;
       color: var(--primary);
       cursor: pointer;
       transition: all 0.2s;
@@ -485,8 +819,8 @@
     }
     .timeline-card {
       background: white;
-      border-radius: 16px;
-      border: 1px solid var(--border);
+      border-radius: 18px;
+      border: 2px solid var(--border);
       padding: 16px 20px;
       display: flex;
       align-items: center;
@@ -500,13 +834,15 @@
       min-width: 140px;
     }
     .time-badge {
+      font-family: var(--font-display);
       font-size: 0.85rem;
-      font-weight: 800;
+      font-weight: 700;
       color: var(--primary-light);
     }
     .time-slot {
+      font-family: var(--font-display);
       font-size: 1.15rem;
-      font-weight: 800;
+      font-weight: 700;
       color: var(--primary);
     }
     .lesson-details {
@@ -514,17 +850,19 @@
       margin-left: 20px;
     }
     .lesson-title {
+      font-family: var(--font-display);
       font-size: 1.25rem;
-      font-weight: 800;
+      font-weight: 700;
       color: var(--primary);
     }
     .lesson-topic {
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       color: var(--text-secondary);
       margin-top: 2px;
+      font-weight: 700;
     }
     .recess-card {
-      background: #F8FAFC;
+      background: #FFFBEB;
       border-left: 6px solid var(--amber);
       color: #92400E;
     }
@@ -536,13 +874,14 @@
 
     /* MODÜL: OTURMA PLANI */
     .seating-board-header {
+      font-family: var(--font-display);
       background: #1E293B;
       color: white;
       text-align: center;
       padding: 14px;
-      border-radius: 16px;
-      font-weight: 800;
-      font-size: 1.1rem;
+      border-radius: 18px;
+      font-weight: 700;
+      font-size: 1.15rem;
       margin-bottom: 24px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       display: flex;
@@ -565,9 +904,9 @@
     .desk-card {
       background: white;
       border: 2px solid var(--border);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 12px 14px;
-      width: 250px;
+      width: 260px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.04);
       display: flex;
       gap: 10px;
@@ -575,8 +914,8 @@
     .seat-slot {
       flex: 1;
       background: #F8FAFC;
-      border: 1px dashed var(--border);
-      border-radius: 12px;
+      border: 1.5px dashed var(--border);
+      border-radius: 14px;
       padding: 10px 8px;
       text-align: center;
       font-size: 0.85rem;
@@ -584,16 +923,20 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 80px;
+      min-height: 82px;
     }
-    .seat-occupied {
-      background: white;
-      border: 1px solid var(--border);
-      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    .seat-occupied-kiz {
+      background: linear-gradient(135deg, #FFF0F5, #FFE4EC);
+      border: 2px solid #F472B6;
+    }
+    .seat-occupied-erkek {
+      background: linear-gradient(135deg, #F0F9FF, #E0F2FE);
+      border: 2px solid #38BDF8;
     }
     .seat-name {
-      font-weight: 800;
-      font-size: 0.85rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.88rem;
       color: var(--primary);
       margin-top: 4px;
       line-height: 1.2;
@@ -609,26 +952,27 @@
       padding: 20px 0;
     }
     .podium-card {
+      font-family: var(--font-display);
       background: white;
-      border-radius: 20px;
+      border-radius: 24px;
       padding: 24px 20px;
       text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 10px;
-      border: 2px solid var(--border);
+      border: 2.5px solid var(--border);
       box-shadow: 0 8px 24px rgba(0,0,0,0.06);
     }
     .podium-1 { width: 260px; height: 280px; border-color: #F59E0B; background: linear-gradient(180deg, #FEF3C7, white); }
     .podium-2 { width: 230px; height: 240px; border-color: #94A3B8; background: linear-gradient(180deg, #F1F5F9, white); }
     .podium-3 { width: 230px; height: 210px; border-color: #B45309; background: linear-gradient(180deg, #FFEDD5, white); }
-    .podium-badge { font-size: 2.2rem; }
-    .podium-name { font-weight: 800; font-size: 1.15rem; color: var(--primary); }
+    .podium-badge { font-size: 2.4rem; }
+    .podium-name { font-weight: 700; font-size: 1.15rem; color: var(--primary); }
     .podium-stars {
       background: var(--amber);
       color: white;
-      font-weight: 800;
+      font-weight: 700;
       padding: 6px 16px;
       border-radius: 20px;
       font-size: 1.1rem;
@@ -656,16 +1000,11 @@
       gap: 16px;
       animation: bounceIn 0.8s;
     }
-    @keyframes bounceIn {
-      0% { transform: scale(0.6); opacity: 0; }
-      70% { transform: scale(1.08); }
-      100% { transform: scale(1); opacity: 1; }
-    }
     .lucky-winner-name {
+      font-family: var(--font-display);
       font-size: 2.8rem;
-      font-weight: 900;
+      font-weight: 700;
       color: var(--primary);
-      letter-spacing: -0.5px;
     }
 
     /* MODÜL: ZAMANLAYICI */
@@ -695,26 +1034,6 @@
       font-weight: 800;
       color: var(--primary);
     }
-    .timer-presets {
-      display: flex;
-      gap: 12px;
-    }
-    .preset-btn {
-      background: white;
-      border: 2px solid var(--border);
-      padding: 10px 20px;
-      border-radius: 12px;
-      font-weight: 800;
-      font-size: 1rem;
-      color: var(--primary);
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .preset-btn:hover {
-      background: var(--primary);
-      color: white;
-      border-color: var(--primary);
-    }
 
     /* MODÜL: GRUP OLUŞTURMA */
     .groups-grid {
@@ -724,16 +1043,17 @@
     }
     .group-card {
       background: white;
-      border-radius: 18px;
+      border-radius: 20px;
       border: 2px solid var(--border);
       overflow: hidden;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.03);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.04);
     }
     .group-header {
+      font-family: var(--font-display);
       padding: 14px 18px;
       background: var(--primary);
       color: white;
-      font-weight: 800;
+      font-weight: 700;
       font-size: 1.1rem;
       display: flex;
       align-items: center;
@@ -750,9 +1070,11 @@
       align-items: center;
       gap: 10px;
       padding: 8px 12px;
-      border-radius: 10px;
+      border-radius: 12px;
       background: #F8FAFC;
       font-weight: 700;
+    }
+
     /* MODÜL: KİTAPLIK */
     .library-grid {
       display: grid;
@@ -780,8 +1102,8 @@
       justify-content: center;
     }
     .book-info { flex: 1; }
-    .book-title { font-weight: 800; font-size: 1rem; color: var(--primary); }
-    .book-author { font-size: 0.85rem; color: var(--text-sec); margin-top: 2px; }
+    .book-title { font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--primary); }
+    .book-author { font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px; }
     .book-status {
       display: inline-block;
       margin-top: 6px;
@@ -812,7 +1134,8 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }
     .match-team {
-      font-weight: 800;
+      font-family: var(--font-display);
+      font-weight: 700;
       font-size: 1.1rem;
       color: var(--primary);
       display: flex;
@@ -820,7 +1143,8 @@
       gap: 8px;
     }
     .match-vs {
-      font-weight: 900;
+      font-family: var(--font-display);
+      font-weight: 700;
       font-size: 1.1rem;
       color: var(--turquoise);
       background: #E0F2FE;
@@ -842,7 +1166,7 @@
         </svg>
       </div>
       <div>
-        <div class="brand-title">BİRİZ <span style="font-weight: 500; font-size: 0.9rem; opacity: 0.85;">Akıllı Tahta</span></div>
+        <div class="brand-title">BİRİZ <span style="font-weight: 500; font-size: 0.92rem; opacity: 0.88;">Akıllı Tahta</span></div>
         <div class="brand-subtitle" id="school-title">Akıllı Sınıf Ekranı</div>
       </div>
     </div>
@@ -867,9 +1191,9 @@
   <!-- GİZLİLİK KALKANI OVERLAY -->
   <div id="privacy-overlay">
     <div class="privacy-box">
-      <div style="font-size: 48px;">🔒</div>
-      <h2 style="font-size: 1.8rem; font-weight: 800;">Gizlilik Modu Aktif</h2>
-      <p style="font-size: 1rem; opacity: 0.85; line-height: 1.5;">
+      <div style="font-size: 52px;">🔒</div>
+      <h2 style="font-family: var(--font-display); font-size: 1.85rem; font-weight: 700;">Gizlilik Modu Aktif</h2>
+      <p style="font-size: 1.02rem; opacity: 0.9; line-height: 1.55;">
         Öğretmen telefonunda gizlilik modunu açtı.<br>
         Öğrenci ve sınıf bilgileri geçici olarak gizlendi.
       </p>
@@ -883,26 +1207,26 @@
         <div class="pairing-icon">🖥️</div>
         <h1 class="pairing-title">Akıllı Tahtayı Telefona Bağlayın</h1>
         <p class="pairing-desc">
-          Telefonunuzdaki BİRİZ uygulamasından karekodu kamerayla okutarak saniyeler içinde bağlanabilirsiniz.
+          Telefonunuzdaki BİRİZ uygulamasından karekodu kamerayla okutarak saniyeler içinde canlı bağlantıyı başlatabilirsiniz.
         </p>
 
         <div style="display: flex; flex-wrap: wrap; gap: 36px; align-items: center; justify-content: center; width: 100%; margin: 16px 0;">
-          <!-- KAREKOD ALANI (KAMERA İLE ANINDA BAĞLANMA) -->
+          <!-- KAREKOD ALANI -->
           <div style="background: #F8FAFC; border: 2px dashed var(--turquoise); border-radius: 24px; padding: 22px 28px; display: flex; flex-direction: column; align-items: center; gap: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.03);">
-            <div style="font-weight: 800; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+            <div style="font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--primary); display: flex; align-items: center; gap: 8px;">
               <span style="font-size: 1.2rem;">📷</span> <span>Karekod ile Bağlan</span>
             </div>
             <div style="background: white; padding: 12px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border: 1px solid var(--border);">
               <img id="qr-code-img" src="" alt="Karekod" style="width: 170px; height: 170px; display: block; border-radius: 8px;" />
             </div>
-            <div style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 700;">
+            <div style="font-size: 0.88rem; color: var(--text-secondary); font-weight: 800;">
               Telefonda <span style="color: var(--turquoise);">"📷 Karekod Tara"</span>ya dokunun
             </div>
           </div>
 
           <!-- 8 HANELİ KOD ALANI -->
           <div style="display: flex; flex-direction: column; align-items: center; gap: 14px;">
-            <div style="font-weight: 800; font-size: 1rem; color: var(--primary);">
+            <div style="font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--primary);">
               veya 8 Haneli Kodu Girin:
             </div>
             <div class="code-display" id="session-code-display">--------</div>
@@ -912,7 +1236,7 @@
           </div>
         </div>
 
-        <div id="pairing-status-indicator" style="font-size: 0.95rem; font-weight: 700; color: #0284C7; margin-top: 4px;">
+        <div id="pairing-status-indicator" style="font-size: 0.98rem; font-weight: 800; color: #0284C7; margin-top: 4px;">
           ⏳ Telefondan karekodu okutun veya 8 haneli kodu girin...
         </div>
 
@@ -935,7 +1259,6 @@
 
     <!-- 2. CANLI SUNUM EKRANI (BAĞLANDIKTAN SONRA) -->
     <section id="dashboard-screen">
-      <!-- Dinamik Modül Konteyneri -->
       <div id="module-container"></div>
     </section>
   </main>
@@ -944,6 +1267,21 @@
     const PROJECT_ID = "gen-lang-client-0343498023";
     const DB_ID = "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e";
     const API_KEY = "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw";
+
+    // Türkçe büyük harf normalizasyonu (Öğrenci eşleştirme için)
+    function toTurkishUpper(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/i/g, "İ")
+        .replace(/ı/g, "I")
+        .replace(/ğ/g, "Ğ")
+        .replace(/ü/g, "Ü")
+        .replace(/ş/g, "Ş")
+        .replace(/ö/g, "Ö")
+        .replace(/ç/g, "Ç")
+        .toUpperCase()
+        .trim();
+    }
 
     // Firestore REST alanlarını doğrudan JS formatına dönüştürücü
     function parseFirestoreRestFields(fields) {
@@ -972,7 +1310,7 @@
       return res;
     }
 
-    // --- 1. OTURUM KODU OLUŞTURMA (BRZ öneki olmadan, saf 8 karakter) ---
+    // --- 1. OTURUM KODU OLUŞTURMA ---
     function generateSessionCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       let code = "";
@@ -985,15 +1323,170 @@
     let sessionCode = generateSessionCode();
     window.activeSessionCode = sessionCode;
 
-    // --- 2. DURUM YÖNETİMİ ---
+    // --- 2. DURUM YÖNETİMİ & CANLI KOLEKSİYON DEPOLARI ---
     let currentModule = null;
     let latestData = null;
     let selectedDay = "PZT";
-    let timerSeconds = 300;
-    let timerInterval = null;
     let restPollInterval = null;
 
-    // --- 3. ÇİFT MOTORLU CANLI DİNLEME (SDK + REST POLLING) ---
+    // İlk sayfa sıralama modu: 'list' (Varsayılan: Okul Numarasına Göre), 'stars' (Yıldız Sayısına Göre), 'books' (Okunan Kitap Sayısına Göre)
+    let studentSortMode = "list";
+
+    // Canlı Firestore koleksiyonlarından gelen anlık veriler
+    let liveCollectionStudents = null;
+    let liveCollectionStars = null;
+    let liveCollectionReadingRecords = null;
+    let previousStudentSnapshotMap = {};
+    let recentlyUpdatedStudentIds = new Set();
+
+    // --- 3. CANLI VERİ BİRLEŞTİRİCİ (TELEFON + FIRESTORE KOLEKSİYONLARI ANLIK UYUM) ---
+    function getMergedLiveStudents(baseData) {
+      const sessionStudents = (baseData && Array.isArray(baseData.students)) ? baseData.students : [];
+      const sourceStudents = (Array.isArray(liveCollectionStudents) && liveCollectionStudents.length > 0)
+        ? liveCollectionStudents.map(cs => {
+            const matchInSession = sessionStudents.find(ss =>
+              ss.id === cs.id ||
+              String(ss.studentNumber || ss.studentNo) === String(cs.studentNumber || cs.studentNo)
+            );
+            return {
+              ...matchInSession,
+              ...cs,
+              stars: matchInSession ? (matchInSession.stars || 0) : 0,
+              booksRead: matchInSession ? (matchInSession.booksRead || 0) : 0
+            };
+          })
+        : sessionStudents.map(s => ({ ...s }));
+
+      if (sourceStudents.length === 0) return [];
+
+      const byId = {};
+      const byNo = {};
+      const byName = {};
+      sourceStudents.forEach(s => {
+        if (s.id) byId[String(s.id).trim()] = s.id;
+        const noStr = String(s.studentNumber || s.studentNo || "").trim();
+        if (noStr) byNo[noStr] = s.id;
+        const normName = toTurkishUpper(s.fullName);
+        if (normName) byName[normName] = s.id;
+      });
+
+      function resolveTargetStudentId(rawId, rawNo, rawName) {
+        const cid = String(rawId || "").trim();
+        if (cid && byId[cid]) return byId[cid];
+        const stripped = cid.replace(/^std_/, "").replace(/^student_/, "").trim();
+        if (stripped && byNo[stripped]) return byNo[stripped];
+        const cno = String(rawNo || "").trim();
+        if (cno && byNo[cno]) return byNo[cno];
+        const cname = toTurkishUpper(rawName);
+        if (cname && byName[cname]) return byName[cname];
+        return null;
+      }
+
+      // Eğer doğrudan classrooms/{classId}/stars koleksiyonu yüklendiyse ve kayıt varsa anlık hesapla
+      let computedStarsMap = null;
+      if (Array.isArray(liveCollectionStars) && liveCollectionStars.length > 0) {
+        computedStarsMap = {};
+        liveCollectionStars.forEach(r => {
+          const targetId = resolveTargetStudentId(r.studentId, r.studentNumber, r.studentName);
+          if (targetId) {
+            computedStarsMap[targetId] = (computedStarsMap[targetId] || 0) + (Number(r.starCount) || 0);
+          }
+        });
+      }
+
+      // Eğer doğrudan classrooms/{classId}/reading_records koleksiyonu yüklendiyse ve kayıt varsa anlık hesapla
+      let computedBooksMap = null;
+      if (Array.isArray(liveCollectionReadingRecords) && liveCollectionReadingRecords.length > 0) {
+        computedBooksMap = {};
+        liveCollectionReadingRecords.forEach(rec => {
+          const targetId = resolveTargetStudentId(rec.studentId, rec.studentNumber, rec.studentName);
+          if (targetId) {
+            computedBooksMap[targetId] = (computedBooksMap[targetId] || 0) + 1;
+          }
+        });
+      }
+
+      return sourceStudents.map(s => {
+        const sessionStarVal = Number(s.stars || 0);
+        const sessionBookVal = Number(s.booksRead || 0);
+        const liveStarVal = computedStarsMap !== null ? (computedStarsMap[s.id] || 0) : sessionStarVal;
+        const liveBookVal = computedBooksMap !== null ? (computedBooksMap[s.id] || 0) : sessionBookVal;
+
+        const finalStars = computedStarsMap !== null ? liveStarVal : sessionStarVal;
+        const finalBooks = computedBooksMap !== null ? liveBookVal : sessionBookVal;
+
+        const prev = previousStudentSnapshotMap[s.id];
+        if (prev && (prev.stars !== finalStars || prev.booksRead !== finalBooks || prev.fullName !== s.fullName)) {
+          recentlyUpdatedStudentIds.add(s.id);
+          setTimeout(() => {
+            recentlyUpdatedStudentIds.delete(s.id);
+          }, 1200);
+        }
+        previousStudentSnapshotMap[s.id] = {
+          stars: finalStars,
+          booksRead: finalBooks,
+          fullName: s.fullName
+        };
+
+        return {
+          ...s,
+          studentNo: parseInt(s.studentNo || s.studentNumber || "0", 10) || 0,
+          studentNumber: String(s.studentNumber || s.studentNo || "0"),
+          stars: finalStars,
+          booksRead: finalBooks
+        };
+      });
+    }
+
+    // Doğrudan Firestore sınıf koleksiyonu güncellemelerini karşıla
+    window.handleLiveBoardStateSnapshot = function(stateDoc) {
+      if (!stateDoc || !latestData) return;
+      if (stateDoc.status === "DISCONNECTED") return;
+      const merged = {
+        ...latestData,
+        ...stateDoc,
+        activeModule: stateDoc.activeModule || stateDoc.currentSubPage || latestData.activeModule,
+        activeModuleTitle: stateDoc.activeModuleTitle || stateDoc.currentSubPageTitle || latestData.activeModuleTitle,
+        selectedDay: stateDoc.selectedDay || stateDoc.activeScheduleDay || latestData.selectedDay
+      };
+      window.handleSessionUpdate(merged);
+    };
+
+    window.handleLiveStudentsCollection = function(studentsDocs) {
+      liveCollectionStudents = studentsDocs;
+      if (latestData) {
+        refreshCurrentViewInPlace();
+      }
+    };
+
+    window.handleLiveStarsCollection = function(starDocs) {
+      liveCollectionStars = starDocs;
+      if (latestData) {
+        refreshCurrentViewInPlace();
+      }
+    };
+
+    window.handleLiveReadingRecordsCollection = function(readingDocs) {
+      liveCollectionReadingRecords = readingDocs;
+      if (latestData) {
+        refreshCurrentViewInPlace();
+      }
+    };
+
+    function refreshCurrentViewInPlace() {
+      if (!latestData) return;
+      const activeMod = currentModule || "SINIF_LISTESI";
+      if (activeMod === "SINIF_LISTESI" || activeMod === "ANA_SAYFA") {
+        const gridEl = document.getElementById("students-grid-container");
+        if (gridEl) {
+          updateStudentListViewInPlace(latestData);
+          return;
+        }
+      }
+      renderActiveModule(activeMod, latestData);
+    }
+
+    // --- 4. ÇİFT MOTORLU CANLI DİNLEME (SDK + REST POLLING) ---
     function attachListeners(code) {
       window.activeSessionCode = code;
       const codeEl = document.getElementById("session-code-display");
@@ -1004,18 +1497,16 @@
         qrEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${code}`;
       }
 
-      // SDK Dinleyicisi
       if (window.startSdkListener) {
         window.startSdkListener(code);
       }
 
-      // REST Polling Dinleyicisi (Her 1 saniyede bir kontrol - Garanti Anlık Bağlantı)
       if (restPollInterval) clearInterval(restPollInterval);
       const restUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DB_ID}/documents/board_sessions/${code}?key=${API_KEY}`;
 
       const poll = async () => {
         try {
-          const resp = await fetch(restUrl);
+          const resp = await fetch(`${restUrl}&_t=${Date.now()}`, { cache: "no-store" });
           if (resp.ok) {
             const json = await resp.json();
             if (json && json.fields) {
@@ -1023,9 +1514,7 @@
               window.handleSessionUpdate(data);
             }
           }
-        } catch (e) {
-          // Ağ geçişlerinde sessizce devam et
-        }
+        } catch (e) {}
       };
 
       poll();
@@ -1033,6 +1522,12 @@
     }
 
     window.generateNewCodeAndListen = function() {
+      if (window.cleanupClassroomLiveListeners) {
+        window.cleanupClassroomLiveListeners();
+      }
+      liveCollectionStudents = null;
+      liveCollectionStars = null;
+      liveCollectionReadingRecords = null;
       sessionCode = generateSessionCode();
       const statusEl = document.getElementById("pairing-status-indicator");
       if (statusEl) statusEl.innerText = "⏳ Yeni kod aktif. Telefondan karekodu okutun veya 8 haneli kodu giriniz...";
@@ -1049,10 +1544,18 @@
         if (currentModule !== null) {
           currentModule = null;
           latestData = null;
+          if (window.cleanupClassroomLiveListeners) {
+            window.cleanupClassroomLiveListeners();
+          }
           updateConnectionUI(false, null);
           window.generateNewCodeAndListen();
         }
         return;
+      }
+
+      // Sınıf ID'si geldiğinde doğrudan sınıfın canlı koleksiyonlarına da bağlan
+      if (data.classId && window.attachClassroomLiveListeners) {
+        window.attachClassroomLiveListeners(data.classId);
       }
 
       updateConnectionUI(true, data);
@@ -1070,9 +1573,20 @@
         if (classEl) classEl.innerText = `${data.grade}/${data.branch} Sınıfı`;
       }
 
-      const newModule = data.activeModule || "SINIF_LISTESI";
-      currentModule = newModule;
-      renderActiveModule(newModule, data);
+      const rawModule = data.activeModule || "SINIF_LISTESI";
+      const normalizedModule = (rawModule === "ANA_SAYFA") ? "SINIF_LISTESI" : rawModule;
+
+      const badge = document.getElementById("active-module-badge");
+      if (badge && rawModule === "ANA_SAYFA") {
+        badge.innerText = "Ana Sayfa";
+      }
+
+      if (currentModule === normalizedModule && normalizedModule === "SINIF_LISTESI" && document.getElementById("students-grid-container")) {
+        updateStudentListViewInPlace(data);
+      } else {
+        currentModule = normalizedModule;
+        renderActiveModule(normalizedModule, data);
+      }
     };
 
     // Sayfa açıldığında dinlemeyi başlat
@@ -1097,14 +1611,15 @@
       }
     }
 
-    // --- 4. MODÜL GÖRÜNÜM ÜRETİCİLERİ ---
+    // --- 5. MODÜL GÖRÜNÜM ÜRETİCİLERİ ---
     function renderActiveModule(moduleName, data) {
       const container = document.getElementById("module-container");
       const badge = document.getElementById("active-module-badge");
 
       switch (moduleName) {
+        case "ANA_SAYFA":
         case "SINIF_LISTESI":
-          badge.innerText = "Sınıf Listesi";
+          badge.innerText = (data.activeModule === "ANA_SAYFA") ? "Ana Sayfa" : "Sınıf Listesi";
           container.innerHTML = generateStudentListHtml(data);
           break;
         case "DERS_PROGRAMI":
@@ -1131,7 +1646,6 @@
         case "ZAMANLAYICI":
           badge.innerText = "Zamanlayıcı";
           container.innerHTML = generateTimerHtml(data);
-          startTimer();
           break;
         case "KITAPLIK":
         case "KITAPLIK_YONETIMI":
@@ -1150,63 +1664,153 @@
       }
     }
 
-    function updateActiveModuleData(moduleName, data) {
-      // Sayfa tipi değişmediğinde sadece verileri güncelle
-      if (moduleName === "SINIF_LISTESI") {
-        const grid = document.getElementById("students-grid-container");
-        if (grid) grid.innerHTML = generateStudentCardsOnly(data.students || []);
-      } else if (moduleName === "DERS_PROGRAMI") {
-        if (data.selectedDay && data.selectedDay !== selectedDay) {
-          selectedDay = data.selectedDay;
-          renderActiveModule("DERS_PROGRAMI", data);
-        }
-      } else if (moduleName === "YILDIZLAR_SINIFI") {
-        const container = document.getElementById("module-container");
-        if (container) container.innerHTML = generateStarsHtml(data);
+    // --- 6. İLK SAYFA / SINIF LİSTESİ SIRALAMA VE CANLI GÜNCELLEME ---
+    window.setStudentSortMode = function(mode) {
+      studentSortMode = mode;
+      if (latestData) {
+        updateStudentListViewInPlace(latestData);
       }
+    };
+
+    function getSortedStudentsForBoard(students) {
+      const copy = [...students];
+      if (studentSortMode === "stars") {
+        copy.sort((a, b) => {
+          const diff = (Number(b.stars) || 0) - (Number(a.stars) || 0);
+          if (diff !== 0) return diff;
+          const bookDiff = (Number(b.booksRead) || 0) - (Number(a.booksRead) || 0);
+          if (bookDiff !== 0) return bookDiff;
+          return (Number(a.studentNo) || 0) - (Number(b.studentNo) || 0);
+        });
+      } else if (studentSortMode === "books") {
+        copy.sort((a, b) => {
+          const diff = (Number(b.booksRead) || 0) - (Number(a.booksRead) || 0);
+          if (diff !== 0) return diff;
+          const starDiff = (Number(b.stars) || 0) - (Number(a.stars) || 0);
+          if (starDiff !== 0) return starDiff;
+          return (Number(a.studentNo) || 0) - (Number(b.studentNo) || 0);
+        });
+      } else {
+        // Varsayılan: 'list' -> Okul numarasına göre küçükten büyüğe sıralı
+        copy.sort((a, b) => {
+          const noA = parseInt(a.studentNo || a.studentNumber || "999999", 10) || 999999;
+          const noB = parseInt(b.studentNo || b.studentNumber || "999999", 10) || 999999;
+          return noA - noB;
+        });
+      }
+      return copy;
     }
 
-    // 1. SINIF LİSTESİ ŞABLONU
-    function generateStudentListHtml(data) {
-      const students = data.students || [];
+    function generateStudentHeaderBarHtml(students) {
       const girlCount = students.filter(s => s.gender === "Kız" || s.gender === "KIZ").length;
       const boyCount = students.filter(s => s.gender === "Erkek" || s.gender === "ERKEK").length;
+      const totalStars = students.reduce((acc, s) => acc + (Number(s.stars) || 0), 0);
+      const totalBooks = students.reduce((acc, s) => acc + (Number(s.booksRead) || 0), 0);
 
       return `
-        <div class="module-header">
-          <div class="stats-row">
-            <div class="stat-pill">👥 Toplam: <strong>${students.length} Öğrenci</strong></div>
-            <div class="stat-pill" style="color: #E11D48;">🌸 Kız: <strong>${girlCount}</strong></div>
-            <div class="stat-pill" style="color: #0284C7;">⚡ Erkek: <strong>${boyCount}</strong></div>
-          </div>
+        <div class="stats-row">
+          <div class="stat-pill">👥 Toplam: <strong>${students.length} Öğrenci</strong></div>
+          <div class="stat-pill stat-pill-kiz">👧 Kız: <strong>${girlCount}</strong></div>
+          <div class="stat-pill stat-pill-erkek">👦 Erkek: <strong>${boyCount}</strong></div>
+          <div class="stat-pill stat-pill-stars">⭐ Toplam Yıldız: <strong>${totalStars}</strong></div>
+          <div class="stat-pill stat-pill-books">📚 Okunan Kitap: <strong>${totalBooks}</strong></div>
         </div>
-        <div class="students-grid" id="students-grid-container">
-          ${generateStudentCardsOnly(students)}
+        <div class="sort-buttons-group">
+          <button class="sort-btn ${studentSortMode === 'list' ? 'active-list' : ''}" onclick="setStudentSortMode('list')">
+            📋 Liste
+          </button>
+          <button class="sort-btn ${studentSortMode === 'stars' ? 'active-stars' : ''}" onclick="setStudentSortMode('stars')">
+            ⭐ Yıldız
+          </button>
+          <button class="sort-btn ${studentSortMode === 'books' ? 'active-books' : ''}" onclick="setStudentSortMode('books')">
+            📚 Kitap
+          </button>
         </div>
       `;
     }
 
+    function generateStudentListHtml(data) {
+      const students = getMergedLiveStudents(data);
+      const sorted = getSortedStudentsForBoard(students);
+
+      return `
+        <div class="module-header" id="student-module-header">
+          ${generateStudentHeaderBarHtml(students)}
+        </div>
+        <div class="students-grid" id="students-grid-container">
+          ${generateStudentCardsOnly(sorted)}
+        </div>
+      `;
+    }
+
+    function updateStudentListViewInPlace(data) {
+      const students = getMergedLiveStudents(data);
+      const sorted = getSortedStudentsForBoard(students);
+      const headerEl = document.getElementById("student-module-header");
+      if (headerEl) {
+        headerEl.innerHTML = generateStudentHeaderBarHtml(students);
+      }
+      const gridEl = document.getElementById("students-grid-container");
+      if (gridEl) {
+        gridEl.innerHTML = generateStudentCardsOnly(sorted);
+      }
+    }
+
     function generateStudentCardsOnly(students) {
       if (!students || students.length === 0) {
-        return `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-secondary);">Henüz öğrenci kaydı bulunmuyor.</div>`;
+        return `<div style="grid-column: 1/-1; text-align: center; padding: 48px; color: var(--text-secondary); font-family: var(--font-display); font-size: 1.2rem;">Henüz öğrenci kaydı bulunmuyor.</div>`;
       }
-      return students.map(s => {
+
+      const showRank = (studentSortMode === "stars" || studentSortMode === "books");
+
+      return students.map((s, idx) => {
         const isKiz = s.gender === "Kız" || s.gender === "KIZ";
+        const cardGenderClass = isKiz ? "kiz-card" : "erkek-card";
         const avatarClass = isKiz ? "avatar-kiz" : "avatar-erkek";
+        const genderChipClass = isKiz ? "gender-chip-kiz" : "gender-chip-erkek";
+        const genderText = isKiz ? "👧 Kız" : "👦 Erkek";
         const no = s.studentNo || s.studentNumber || "0";
-        const stars = s.stars || 0;
+        const stars = Number(s.stars || 0);
+        const booksRead = Number(s.booksRead || 0);
+        const popClass = recentlyUpdatedStudentIds.has(s.id) ? "card-updated-pop" : "";
+
+        let rankBadgeHtml = "";
+        if (showRank) {
+          const rankNum = idx + 1;
+          if (rankNum === 1) {
+            rankBadgeHtml = `<div class="rank-corner-badge rank-1">🥇 1.</div>`;
+          } else if (rankNum === 2) {
+            rankBadgeHtml = `<div class="rank-corner-badge rank-2">🥈 2.</div>`;
+          } else if (rankNum === 3) {
+            rankBadgeHtml = `<div class="rank-corner-badge rank-3">🥉 3.</div>`;
+          } else {
+            rankBadgeHtml = `<div class="rank-corner-badge rank-other">#${rankNum}. Sıra</div>`;
+          }
+        }
+
+        const starHighlight = studentSortMode === "stars" ? "metric-highlight" : "";
+        const bookHighlight = studentSortMode === "books" ? "metric-highlight" : "";
+
         return `
-          <div class="student-card">
+          <div class="student-card ${cardGenderClass} ${popClass}" style="${showRank ? 'padding-top: 24px;' : ''}">
+            ${rankBadgeHtml}
             <div class="student-avatar ${avatarClass}">#${no}</div>
             <div class="student-info">
               <div class="student-name">${s.fullName}</div>
               <div class="student-meta">
-                <span>${isKiz ? "Kız" : "Erkek"}</span>
-                <span>•</span>
-                <span class="masked-code">Veli Kodu: ••••••••</span>
+                <span class="${genderChipClass}">${genderText}</span>
               </div>
             </div>
-            ${stars > 0 ? `<div class="student-star-badge">⭐ ${stars}</div>` : ''}
+            <div class="student-metrics">
+              <div class="metric-pill student-star-badge ${starHighlight}" title="Toplam Yıldız">
+                <span>⭐</span>
+                <span>${stars}</span>
+              </div>
+              <div class="metric-pill student-book-badge ${bookHighlight}" title="Okunan Kitap Sayısı">
+                <span>📚</span>
+                <span>${booksRead} Kitap</span>
+              </div>
+            </div>
           </div>
         `;
       }).join('');
@@ -1298,37 +1902,51 @@
       }
     };
 
-    // 3. OTURMA PLANI ŞABLONU
+    // 3. OTURMA PLANI ŞABLONU (CANLI ATAMALARLA TAM UYUMLU)
     function generateSeatingPlanHtml(data) {
-      const students = data.students || [];
+      const students = getMergedLiveStudents(data);
       const studentMap = {};
       students.forEach(s => { studentMap[s.id] = s; });
 
-      // 3 grup x 4 sıra x 2 koltuk
-      let groupsHtml = '';
-      for (let g = 1; g <= 3; g++) {
-        let rowsHtml = '';
-        for (let r = 1; r <= 4; r++) {
-          const s1 = students[(g - 1) * 8 + (r - 1) * 2];
-          const s2 = students[(g - 1) * 8 + (r - 1) * 2 + 1];
+      const plan = data.seatingPlan || {};
+      const groupCount = Number(plan.groupCount) || 3;
+      const rowsPerGroup = Number(plan.rowsPerGroup) || 4;
+      const peoplePerRow = Number(plan.peoplePerRow) || 2;
+      const assignments = plan.assignments || {};
 
-          rowsHtml += `
-            <div class="desk-card">
-              <div class="seat-slot ${s1 ? 'seat-occupied' : ''}">
-                ${s1 ? `<div style="font-weight: 800; font-size: 0.75rem; color: #00B4D8;">#${s1.studentNo || s1.studentNumber}</div><div class="seat-name">${s1.fullName}</div>` : '<span style="color:#94A3B8;">Boş Sıra</span>'}
+      let groupsHtml = '';
+      for (let g = 0; g < groupCount; g++) {
+        let rowsHtml = '';
+        for (let r = 0; r < rowsPerGroup; r++) {
+          let seatsHtml = '';
+          for (let sIdx = 0; sIdx < peoplePerRow; sIdx++) {
+            const seatId = `G${g}_R${r}_S${sIdx}`;
+            const assignedId = assignments[seatId];
+            let occupant = assignedId ? studentMap[assignedId] : null;
+            if (!occupant && Object.keys(assignments).length === 0) {
+              const fallbackIndex = g * (rowsPerGroup * peoplePerRow) + r * peoplePerRow + sIdx;
+              occupant = students[fallbackIndex] || null;
+            }
+            const isKiz = occupant && (occupant.gender === "Kız" || occupant.gender === "KIZ");
+            const occupiedClass = occupant ? (isKiz ? "seat-occupied-kiz" : "seat-occupied-erkek") : "";
+
+            seatsHtml += `
+              <div class="seat-slot ${occupiedClass}">
+                ${occupant
+                  ? `<div style="font-family: var(--font-display); font-weight: 700; font-size: 0.78rem; color: ${isKiz ? '#E11D48' : '#0284C7'};">#${occupant.studentNo || occupant.studentNumber}</div>
+                     <div class="seat-name">${occupant.fullName}</div>`
+                  : '<span style="color:#94A3B8; font-weight:700;">Boş Koltuk</span>'}
               </div>
-              <div class="seat-slot ${s2 ? 'seat-occupied' : ''}">
-                ${s2 ? `<div style="font-weight: 800; font-size: 0.75rem; color: #00B4D8;">#${s2.studentNo || s2.studentNumber}</div><div class="seat-name">${s2.fullName}</div>` : '<span style="color:#94A3B8;">Boş Sıra</span>'}
-              </div>
-            </div>
-          `;
+            `;
+          }
+          rowsHtml += `<div class="desk-card">${seatsHtml}</div>`;
         }
         groupsHtml += `<div class="seating-column">${rowsHtml}</div>`;
       }
 
       return `
         <div class="seating-board-header">
-          <span>⬛ YAZI TAHTASI</span>
+          <span>⬛ AKILLI TAHTA</span>
           <span>•</span>
           <span>👨‍🏫 ÖĞRETMEN KÜRSÜSÜ</span>
         </div>
@@ -1338,7 +1956,7 @@
 
     // 4. YILDIZLAR SINIFI ŞABLONU
     function generateStarsHtml(data) {
-      const students = [...(data.students || [])];
+      const students = getMergedLiveStudents(data);
       students.sort((a, b) => (b.stars || 0) - (a.stars || 0));
 
       const first = students[0];
@@ -1371,38 +1989,57 @@
         </div>
       `;
 
-      const listHtml = students.map((s, idx) => `
-        <div class="student-card" style="margin-bottom: 10px;">
-          <div style="font-weight: 900; font-size: 1.1rem; width: 30px; color: var(--primary);">${idx + 1}.</div>
-          <div class="student-avatar ${s.gender === 'Kız' ? 'avatar-kiz' : 'avatar-erkek'}">#${s.studentNo || s.studentNumber}</div>
-          <div class="student-info">
-            <div class="student-name">${s.fullName}</div>
+      const listHtml = students.map((s, idx) => {
+        const isKiz = s.gender === 'Kız' || s.gender === 'KIZ';
+        return `
+          <div class="student-card ${isKiz ? 'kiz-card' : 'erkek-card'}" style="margin-bottom: 12px;">
+            <div style="font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; width: 34px; color: var(--primary);">${idx + 1}.</div>
+            <div class="student-avatar ${isKiz ? 'avatar-kiz' : 'avatar-erkek'}">#${s.studentNo || s.studentNumber}</div>
+            <div class="student-info">
+              <div class="student-name">${s.fullName}</div>
+            </div>
+            <div class="metric-pill student-book-badge">📚 ${s.booksRead || 0} Kitap</div>
+            <div class="metric-pill student-star-badge" style="font-size: 1rem; padding: 6px 14px;">⭐ ${s.stars || 0} Yıldız</div>
           </div>
-          <div class="student-star-badge" style="font-size: 1rem; padding: 6px 12px;">⭐ ${s.stars || 0} Yıldız</div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
 
       return `
         ${podiumHtml}
-        <div style="max-width: 800px; margin: 0 auto;">
-          <h3 style="margin-bottom: 16px; font-weight: 800; color: var(--primary);">Tüm Sınıf Yıldız Sıralaması</h3>
+        <div style="max-width: 860px; margin: 0 auto;">
+          <h3 style="font-family: var(--font-display); margin-bottom: 16px; font-weight: 700; font-size: 1.3rem; color: var(--primary);">Tüm Sınıf Yıldız Sıralaması</h3>
           ${listHtml}
         </div>
       `;
     }
 
     // 5. ŞANSLI ÖĞRENCİ ŞABLONU
-    // 5. ŞANSLI ÖĞRENCİ ŞABLONU (TAM YANSITMA - TUŞSUZ CANLI EKRAN)
+    function playSmartBoardAudioTone(freq = 440, durationMs = 100) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.value = 0.15;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        setTimeout(() => { osc.stop(); ctx.close(); }, durationMs);
+      } catch (e) {}
+    }
+
     function generateLuckyStudentHtml(data) {
       const winner = data.luckyStudent;
       const isRolling = data.isRolling === true;
 
       if (isRolling) {
+        playSmartBoardAudioTone(600, 40);
         return `
           <div class="lucky-container">
-            <div style="font-size: 72px; animation: spin 0.8s linear infinite;">🎲</div>
-            <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Şanslı Öğrenci Seçiliyor...</h2>
-            <div style="font-size: 1.15rem; color: var(--text-secondary); font-weight: 600; max-width: 500px; line-height: 1.5;">
+            <div style="font-size: 72px; animation: spin 0.6s linear infinite;">🎲</div>
+            <h2 style="font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; color: var(--primary);">Şanslı Öğrenci Seçiliyor...</h2>
+            <div style="font-size: 1.15rem; color: var(--text-secondary); font-weight: 700; max-width: 500px; line-height: 1.5;">
               Öğretmen telefonundan çekilişi başlattı! Kazanan öğrenci birazdan burada görünecek...
             </div>
             <div class="pulse-dot" style="width: 16px; height: 16px; background: var(--turquoise); margin-top: 14px;"></div>
@@ -1411,16 +2048,17 @@
       }
 
       if (winner) {
+        playSmartBoardAudioTone(880, 250);
         return `
           <div class="lucky-container">
-            <div style="font-size: 72px;">🎉</div>
-            <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
-            <div class="lucky-winner-box" style="animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); width: 100%; max-width: 620px;">
-              <div style="font-size: 1.3rem; font-weight: 800; color: var(--turquoise);">OKUL NO: #${winner.studentNo || winner.studentNumber || ''}</div>
-              <div class="lucky-winner-name" style="font-size: 2.8rem; margin: 12px 0;">${winner.fullName}</div>
-              <div style="font-size: 1.3rem; color: var(--amber); font-weight: 800;">⭐ Tebrikler! Söz Hakkı Sende! ⭐</div>
+            <div style="font-size: 32px; letter-spacing: 8px; margin-bottom: 8px;">🎉 ✨ ⭐ 🎊 🌟 🎈 🏆</div>
+            <h2 style="font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; color: var(--primary);">Günün Şanslı Öğrencisi</h2>
+            <div class="lucky-winner-box" style="animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); width: 100%; max-width: 620px; background: radial-gradient(circle, #FFFBEB 0%, #FFFFFF 100%); border: 3px solid var(--amber); box-shadow: 0 0 30px rgba(245,158,11,0.3);">
+              <div style="font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--turquoise);">OKUL NO: #${winner.studentNo || winner.studentNumber || ''}</div>
+              <div class="lucky-winner-name" style="font-size: 2.8rem; margin: 12px 0; color: #1E1B4B; text-shadow: 0 0 10px rgba(245,158,11,0.2);">${winner.fullName}</div>
+              <div style="font-family: var(--font-display); font-size: 1.3rem; color: var(--amber-dark); font-weight: 700;">⭐ Tebrikler! Söz Hakkı Sende! ⭐</div>
             </div>
-            <div style="font-size: 1rem; color: var(--text-secondary); font-weight: 600; margin-top: 12px;">
+            <div style="font-size: 1rem; color: var(--text-secondary); font-weight: 700; margin-top: 12px;">
               📱 Öğretmen telefonundan yeni bir çekiliş yapabilir.
             </div>
           </div>
@@ -1430,12 +2068,12 @@
       return `
         <div class="lucky-container">
           <div style="font-size: 72px;">🎯</div>
-          <h2 style="font-size: 2.2rem; font-weight: 800; color: var(--primary);">Şanslı Öğrenci Çarkı</h2>
+          <h2 style="font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; color: var(--primary);">Şanslı Öğrenci Çarkı</h2>
           <div style="background: white; border: 2px dashed var(--turquoise); border-radius: 24px; padding: 36px 48px; max-width: 580px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
-            <div style="font-size: 1.25rem; font-weight: 800; color: var(--primary);">
+            <div style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: var(--primary);">
               Çekiliş İçin Hazır
             </div>
-            <div style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.5; font-weight: 600;">
+            <div style="font-size: 0.95rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.5; font-weight: 700;">
               Öğretmen telefonundan çekilişi başlattığında kazanan öğrenci canlı olarak burada görünecektir.
             </div>
           </div>
@@ -1445,73 +2083,93 @@
 
     // 6. ZAMANLAYICI ŞABLONU
     function generateTimerHtml(data) {
+      const mode = data.timerMode || "Hızlı Sayaç";
+      const emoji = data.timerModeEmoji || "⏱️";
+      const remaining = data.timerRemainingSeconds !== undefined ? data.timerRemainingSeconds : 300;
+      const isRunning = data.timerIsRunning || false;
+      const isFinished = data.timerIsFinished || false;
+
+      const m = Math.floor(remaining / 60).toString().padStart(2, '0');
+      const s = (remaining % 60).toString().padStart(2, '0');
+      const displayTime = `${m}:${s}`;
+      const statusText = isFinished ? "SÜRE TAMAMLANDI! 🔔" : (isRunning ? "Geri Sayılıyor 🟢" : "Hazır / Duraklatıldı ⏸️");
+      const borderColor = isFinished ? "#EF4444" : (remaining <= 30 ? "#F59E0B" : "var(--turquoise)");
+      const digitColor = isFinished ? "#EF4444" : "var(--primary)";
+
       return `
         <div class="timer-container">
-          <div class="timer-circle">
-            <div class="timer-digits" id="timer-display">05:00</div>
-            <div style="font-weight: 700; color: var(--text-secondary); margin-top: 8px;" id="timer-status">Süre Başlatıldı</div>
+          <div style="font-family: var(--font-display); display: inline-flex; align-items: center; gap: 8px; background: rgba(0, 180, 216, 0.12); padding: 8px 20px; border-radius: 20px; font-weight: 700; color: var(--turquoise); font-size: 1.15rem;">
+            <span>${emoji}</span>
+            <span>${mode}</span>
           </div>
-          <div class="timer-presets">
-            <button class="preset-btn" onclick="setTimer(60)">1 Dk</button>
-            <button class="preset-btn" onclick="setTimer(180)">3 Dk</button>
-            <button class="preset-btn" onclick="setTimer(300)">5 Dk</button>
-            <button class="preset-btn" onclick="setTimer(600)">10 Dk</button>
-            <button class="preset-btn" onclick="setTimer(900)">15 Dk</button>
+          <div class="timer-circle" style="border-color: ${borderColor};">
+            <div class="timer-digits" id="timer-display" style="color: ${digitColor};">${displayTime}</div>
+            <div style="font-family: var(--font-display); font-weight: 700; color: ${isFinished ? '#EF4444' : 'var(--text-secondary)'}; margin-top: 10px; font-size: 1.1rem;" id="timer-status">${statusText}</div>
+          </div>
+          <div style="font-size: 0.95rem; color: var(--text-secondary); font-weight: 700; text-align: center;">
+            📱 Öğretmen telefonundan kontrol edilmektedir.
           </div>
         </div>
       `;
     }
 
-    function startTimer() {
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        if (timerSeconds > 0) {
-          timerSeconds--;
-          updateTimerDisplay();
-        } else {
-          clearInterval(timerInterval);
-          const status = document.getElementById("timer-status");
-          if (status) status.innerText = "SÜRE BİTTİ! 🔔";
-        }
-      }, 1000);
-    }
-
-    window.setTimer = function(seconds) {
-      timerSeconds = seconds;
-      updateTimerDisplay();
-      startTimer();
-    };
-
-    function updateTimerDisplay() {
-      const display = document.getElementById("timer-display");
-      if (!display) return;
-      const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
-      const s = (timerSeconds % 60).toString().padStart(2, '0');
-      display.innerText = `${m}:${s}`;
-    }
-
     // 7. GRUPLAR ŞABLONU
     function generateGroupsHtml(data) {
-      const students = data.students || [];
-      const groups = [
-        { name: "1. GRUP - KARTALLAR", color: "#4F46E5", members: students.slice(0, 6) },
-        { name: "2. GRUP - ŞAHİNLER", color: "#10B981", members: students.slice(6, 12) },
-        { name: "3. GRUP - ASLANLAR", color: "#0284C7", members: students.slice(12, 18) },
-        { name: "4. GRUP - KAPLANLAR", color: "#D97706", members: students.slice(18, 24) }
-      ];
+      const students = getMergedLiveStudents(data);
+      const studentMap = {};
+      students.forEach(s => { studentMap[s.id] = s; });
+
+      const rawGroups = (data.groups && data.groups.groups) ? data.groups.groups : (data.groups || []);
+      const themeColors = {
+        indigo: "#4F46E5", emerald: "#10B981", sky: "#0284C7", purple: "#9333EA",
+        amber: "#D97706", rose: "#E11D48", teal: "#0D9488", orange: "#EA580C"
+      };
+
+      let groups = [];
+      if (Array.isArray(rawGroups) && rawGroups.length > 0) {
+        groups = rawGroups.map(g => {
+          const color = themeColors[(g.colorTheme || "").toLowerCase()] || g.colorHex || "#4F46E5";
+          const members = (g.members || (g.studentIds || []).map(id => studentMap[id])).filter(Boolean);
+          return {
+            id: g.id,
+            name: g.name || "Grup",
+            color: color,
+            leaderStudentId: g.leaderStudentId,
+            members: members
+          };
+        });
+      }
+
+      window.currentGroupsData = groups;
 
       return `
-        <div class="groups-grid">
-          ${groups.map(g => `
-            <div class="group-card">
+        <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; background: white; padding: 14px 20px; border-radius: 16px; border: 2px solid var(--border);">
+          <div>
+            <h3 style="font-family: var(--font-display); margin: 0; color: var(--primary); font-size: 1.2rem; font-weight: 700;">👥 Sınıf Grup Listeleri</h3>
+            <p style="margin: 4px 0 0 0; color: var(--text-secondary); font-size: 0.88rem; font-weight: 700;">Toplam ${groups.length} Grup • ${groups.reduce((a,b) => a + b.members.length, 0)} Öğrenci</p>
+          </div>
+          <button onclick="startSmartBoardLiveDraw()" style="font-family: var(--font-display); background: linear-gradient(135deg, #6366F1, #8B5CF6); color: white; border: none; padding: 10px 18px; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(99,102,241,0.35);">
+            🎡 CANLI KURA ÇEK
+          </button>
+        </div>
+
+        <div id="live-draw-ticker-stage" style="display: none; background: linear-gradient(135deg, #0F172A, #1E1B4B); border-radius: 20px; padding: 24px; text-align: center; border: 3px solid #818CF8; margin-bottom: 20px; color: white; box-shadow: 0 10px 30px rgba(15,23,42,0.5);">
+          <div style="font-size: 0.9rem; font-weight: 700; color: #A5B4FC; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;">🎲 HEYECANLI CANLI KURA ÇEKİLİYOR</div>
+          <div id="live-draw-current-target" style="font-size: 1.1rem; font-weight: 800; color: #FDE047; margin-bottom: 12px;">Sıradaki öğrenci belirleniyor...</div>
+          <div id="live-draw-name-slot" style="font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; background: rgba(255,255,255,0.1); padding: 16px 28px; border-radius: 16px; border: 2px dashed #818CF8; display: inline-block; min-width: 280px;">⚡ ??? ⚡</div>
+        </div>
+
+        <div class="groups-grid" id="groups-container-grid">
+          ${groups.map((g, gIdx) => `
+            <div class="group-card" id="group-card-${gIdx}">
               <div class="group-header" style="background: ${g.color};">
                 <span>${g.name}</span>
                 <span>👥 ${g.members.length} Kişi</span>
               </div>
-              <div class="group-members">
-                ${g.members.map((m, idx) => `
+              <div class="group-members" id="group-members-${gIdx}">
+                ${g.members.map((m) => `
                   <div class="group-member-item">
-                    ${idx === 0 ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
+                    ${g.leaderStudentId && g.leaderStudentId === m.id ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#94A3B8;">•</span>'}
                     <span>${m.fullName}</span>
                   </div>
                 `).join('')}
@@ -1522,47 +2180,89 @@
       `;
     }
 
+    function startSmartBoardLiveDraw() {
+      const groups = window.currentGroupsData;
+      if (!groups || groups.length === 0) return;
+
+      const stage = document.getElementById('live-draw-ticker-stage');
+      const targetLabel = document.getElementById('live-draw-current-target');
+      const slotName = document.getElementById('live-draw-name-slot');
+      if (!stage || !slotName) return;
+
+      stage.style.display = 'block';
+
+      groups.forEach((g, gIdx) => {
+        const memEl = document.getElementById(`group-members-${gIdx}`);
+        if (memEl) memEl.innerHTML = '<div style="color:#94A3B8; font-size:0.85rem; padding:8px; text-align:center;">⏳ Çekiliş bekleniyor...</div>';
+      });
+
+      let queue = [];
+      groups.forEach((g, gIdx) => {
+        g.members.forEach(m => {
+          queue.push({ student: m, groupIdx: gIdx, group: g });
+        });
+      });
+
+      queue.sort(() => Math.random() - 0.5);
+
+      let step = 0;
+      let totalSteps = queue.length;
+
+      let interval = setInterval(() => {
+        if (step >= totalSteps) {
+          clearInterval(interval);
+          targetLabel.innerHTML = "🎉 TÜM GRUPLAR ÇEKİLDİ VE YERLEŞTİRİLDİ! 🎉";
+          slotName.innerHTML = "✨ TEBRİKLER! ✨";
+          slotName.style.background = "#22C55E";
+          slotName.style.color = "#FFFFFF";
+          setTimeout(() => { stage.style.display = 'none'; }, 4000);
+          return;
+        }
+
+        const currentItem = queue[step];
+        targetLabel.innerHTML = `🎲 ${currentItem.group.name} İçin Öğrenci Çekiliyor...`;
+        slotName.innerHTML = `⚡ ${currentItem.student.fullName} ⚡`;
+
+        const memEl = document.getElementById(`group-members-${currentItem.groupIdx}`);
+        if (memEl) {
+          if (memEl.innerHTML.includes('Çekiliş bekleniyor')) {
+            memEl.innerHTML = '';
+          }
+          const isLeader = currentItem.group.leaderStudentId && currentItem.group.leaderStudentId === currentItem.student.id;
+          const newItem = document.createElement('div');
+          newItem.className = 'group-member-item';
+          newItem.innerHTML = `${isLeader ? '<span title="Grup Lideri">👑</span>' : '<span style="color:#22C55E;">✓</span>'} <strong>${currentItem.student.fullName}</strong>`;
+          memEl.appendChild(newItem);
+        }
+
+        step++;
+      }, 700);
+    }
+
     // 8. KİTAPLIK YÖNETİMİ ŞABLONU
     function generateLibraryHtml(data) {
-      const sampleBooks = [
-        { title: "Küçük Prens", author: "Antoine de Saint-Exupéry", icon: "📖", status: "Rafta" },
-        { title: "Şeker Portakalı", author: "José Mauro de Vasconcelos", icon: "📙", status: "Okunuyor" },
-        { title: "Sol Ayağım", author: "Christy Brown", icon: "📘", status: "Rafta" },
-        { title: "Beyaz Diş", author: "Jack London", icon: "📗", status: "Rafta" },
-        { title: "Karatavuk Masalları", author: "Kemalettin Tuğcu", icon: "📕", status: "Okunuyor" },
-        { title: "Alice Harikalar Diyarında", author: "Lewis Carroll", icon: "📖", status: "Rafta" }
-      ];
+      const students = getMergedLiveStudents(data);
+      const sortedReaders = [...students].sort((a, b) => (b.booksRead || 0) - (a.booksRead || 0));
 
       return `
-        <div style="background: white; border-radius: 18px; padding: 20px; border: 2px solid var(--border); margin-bottom: 24px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="background: white; border-radius: 20px; padding: 20px 24px; border: 2px solid var(--border); margin-bottom: 20px; display:flex; justify-content:space-between; align-items:center;">
           <div>
-            <div style="font-weight: 800; font-size: 1.2rem; color: var(--primary);">📚 Sınıf Kitaplığı & Okuma Takibi</div>
-            <div style="font-size: 0.9rem; color: var(--text-sec); margin-top: 4px;">Öğrencilerimizin okuma yolculuğu ve sınıf kütüphanesi</div>
+            <div style="font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; color: var(--primary);">📚 Sınıf Kitaplığı & Okuma Liderleri</div>
+            <div style="font-size: 0.92rem; color: var(--text-secondary); margin-top: 4px; font-weight: 700;">Öğrencilerimizin okuduğu kitap sayıları ve yıldız kazanımları</div>
           </div>
-          <div style="background: #EFF6FF; padding: 8px 18px; border-radius: 20px; font-weight: 800; color: #1D4ED8;">
-            Toplam: ${sampleBooks.length} Kitap
+          <div style="font-family: var(--font-display); background: #ECFDF5; border: 2px solid #10B981; padding: 8px 18px; border-radius: 20px; font-weight: 700; color: #047857;">
+            Toplam Okunan: ${students.reduce((acc, s) => acc + (Number(s.booksRead) || 0), 0)} Kitap
           </div>
         </div>
-        <div class="library-grid">
-          ${sampleBooks.map(b => `
-            <div class="book-card">
-              <div class="book-icon">${b.icon}</div>
-              <div class="book-info">
-                <div class="book-title">${b.title}</div>
-                <div class="book-author">${b.author}</div>
-                <span class="book-status" style="background: ${b.status === 'Okunuyor' ? '#FEF3C7' : '#DCFCE7'}; color: ${b.status === 'Okunuyor' ? '#D97706' : '#15803D'};">
-                  ${b.status}
-                </span>
-              </div>
-            </div>
-          `).join('')}
+        <div class="students-grid">
+          ${generateStudentCardsOnly(sortedReaders)}
         </div>
       `;
     }
 
     // 9. TURNUVA YÖNETİMİ ŞABLONU
     function generateTournamentHtml(data) {
-      const students = data.students || [];
+      const students = getMergedLiveStudents(data);
       const p1 = students[0] ? students[0].fullName : "1. Yarışmacı";
       const p2 = students[1] ? students[1].fullName : "2. Yarışmacı";
       const p3 = students[2] ? students[2].fullName : "3. Yarışmacı";
@@ -1570,8 +2270,8 @@
 
       return `
         <div style="background: white; border-radius: 18px; padding: 20px; border: 2px solid var(--border); margin-bottom: 24px; text-align: center;">
-          <div style="font-weight: 900; font-size: 1.3rem; color: var(--primary);">🏆 Sınıf İçi Turnuva Fikstürü</div>
-          <div style="font-size: 0.9rem; color: var(--text-sec); margin-top: 4px;">Akıl Oyunları, Münazara ve Bilgi Yarışması Eşleşmeleri</div>
+          <div style="font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--primary);">🏆 Sınıf İçi Turnuva Fikstürü</div>
+          <div style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 4px; font-weight: 700;">Akıl Oyunları, Münazara ve Bilgi Yarışması Eşleşmeleri</div>
         </div>
         <div class="tournament-grid">
           <div class="match-card">
@@ -1593,10 +2293,10 @@
       `;
     }
 
-    // --- 5. TAM EKRAN MODU ---
+    // --- 7. TAM EKRAN MODU ---
     window.toggleFullScreen = function() {
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(err => alert("Tam ekran desteklenmiyor"));
+        document.documentElement.requestFullscreen().catch(() => {});
         document.getElementById("fs-btn").innerText = "✕ Çıkış";
       } else {
         if (document.exitFullscreen) {

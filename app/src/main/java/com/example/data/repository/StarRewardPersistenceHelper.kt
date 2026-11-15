@@ -104,6 +104,9 @@ object StarRewardPersistenceHelper {
             jsonArray.put(obj)
         }
         prefs.edit().putString("$KEY_RECORDS_PREFIX$classId", jsonArray.toString()).apply()
+        try {
+            com.example.util.SmartBoardHelper.notifyDataChanged(context, classId)
+        } catch (_: Exception) {}
     }
 
     fun addStarRecord(context: Context, classId: String, record: StarRewardRecord): List<StarRewardRecord> {
