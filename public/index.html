@@ -411,34 +411,59 @@
   </main>
 
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
-      authDomain: "gen-lang-client-0343498023.firebaseapp.com",
-      projectId: "gen-lang-client-0343498023",
-      storageBucket: "gen-lang-client-0343498023.firebasestorage.app",
-      appId: "1:1053897004873:android:a5488f645553ac684a6c98"
-    };
-    const FIRESTORE_DATABASE_ID = "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e";
-
-    let app = null, dbNamed = null, dbDefault = null;
-    try {
-      if (!firebase.apps || !firebase.apps.length) {
-        app = firebase.initializeApp(firebaseConfig);
-      } else {
-        app = firebase.app();
+    const firebaseConfigs = [
+      {
+        name: "biriz_studio",
+        config: {
+          projectId: "studio-9063322972-e83a1",
+          appId: "1:365180619874:android:5cc7fb28922f6f052c8733",
+          storageBucket: "studio-9063322972-e83a1.firebasestorage.app"
+        },
+        dbId: "ai-studio-20c5c7bd-7922-49b7-882a-36f02ef3fb60"
+      },
+      {
+        name: "biriz_genlang",
+        config: {
+          apiKey: "AIzaSyB0ROPrr0nA0ll9KnNyDu-m0NCELgoMsnw",
+          authDomain: "gen-lang-client-0343498023.firebaseapp.com",
+          projectId: "gen-lang-client-0343498023",
+          storageBucket: "gen-lang-client-0343498023.firebasestorage.app",
+          appId: "1:1053897004873:android:a5488f645553ac684a6c98"
+        },
+        dbId: "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e"
       }
-      try { dbNamed = firebase.app().firestore(FIRESTORE_DATABASE_ID); } catch (e) { console.warn("Named DB init warning:", e); }
-      try { dbDefault = firebase.firestore(); } catch (e) { console.warn("Default DB init warning:", e); }
-    } catch (err) { console.error("Firebase init error:", err); }
+    ];
 
-    function getActiveDbs() {
-      const list = [];
-      if (dbNamed) list.push(dbNamed);
-      if (dbDefault && dbDefault !== dbNamed) list.push(dbDefault);
-      return list;
+    const activeDbs = [];
+    let preferredDb = null;
+
+    try {
+      firebaseConfigs.forEach((entry, idx) => {
+        try {
+          const appInstance = idx === 0
+            ? firebase.initializeApp(entry.config)
+            : firebase.initializeApp(entry.config, entry.name);
+          try {
+            const namedDb = appInstance.firestore(entry.dbId);
+            if (namedDb && !activeDbs.includes(namedDb)) activeDbs.push(namedDb);
+          } catch (e) {}
+          try {
+            const defDb = appInstance.firestore();
+            if (defDb && !activeDbs.includes(defDb)) activeDbs.push(defDb);
+          } catch (e) {}
+        } catch (innerErr) {
+          console.warn("Firebase app init warning:", innerErr);
+        }
+      });
+    } catch (err) {
+      console.error("Firebase init error:", err);
     }
 
-    const STORAGE_KEY_CODE = "biriz_board_session_code";
+    function getActiveDbs() {
+      return activeDbs;
+    }
+
+    const STORAGE_KEY_CODE = "biriz_tahta_session_code_v3";
     let currentSessionCode = "";
     let activeUnsubscribers = [];
     let classLiveUnsubscribers = [];
@@ -472,17 +497,17 @@
       } else {
         let saved = null;
         try {
-          saved = localStorage.getItem(STORAGE_KEY_CODE) || localStorage.getItem("biriz_tahta_session_code_v3");
+          saved = localStorage.getItem(STORAGE_KEY_CODE) || localStorage.getItem("biriz_board_session_code");
         } catch (_) {}
-        if (saved && saved.replace(/[^A-Za-z0-9]/g, "").length >= 6) {
+        if (saved && saved.replace(/[^A-Za-z0-9]/g, "").length === 8) {
           currentSessionCode = saved.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-          try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
         } else {
           currentSessionCode = generateCleanSessionCode();
           try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
         }
       }
       renderCodeDisplay();
+      ensureInitialSessionDoc();
       listenToSession();
     }
 
@@ -496,7 +521,8 @@
       const qrEl = document.getElementById("qr-code-container");
       if (qrEl && currentSessionCode) {
         qrEl.innerHTML = "";
-        const qrPayload = "BIRIZ:" + currentSessionCode;
+        // ÖNEMLİ: Karekod içinde SADECE 8 haneli saf eşleştirme kodu bulunur (Örn: BRZ94K7P)
+        const qrPayload = currentSessionCode;
         try {
           if (typeof QRCode !== "undefined") {
             new QRCode(qrEl, {
@@ -505,7 +531,7 @@
               height: 176,
               colorDark: "#1B2A4A",
               colorLight: "#FFFFFF",
-              correctLevel: QRCode.CorrectLevel.M
+              correctLevel: QRCode.CorrectLevel.H
             });
           } else {
             throw new Error("QRCode lib not loaded");
@@ -519,6 +545,22 @@
       }
     }
 
+    function ensureInitialSessionDoc() {
+      getActiveDbs().forEach(db => {
+        const docRef = db.collection("board_sessions").doc(currentSessionCode);
+        docRef.get().then(snap => {
+          if (!snap.exists) {
+            docRef.set({
+              sessionCode: currentSessionCode,
+              status: "WAITING",
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            }, { merge: true }).catch(() => {});
+          }
+        }).catch(() => {});
+      });
+    }
+
     function regenerateCode() {
       currentSessionCode = generateCleanSessionCode();
       try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (_) {}
@@ -529,6 +571,7 @@
       clearClassLiveListeners();
       renderCodeDisplay();
       showWaitingScreen();
+      ensureInitialSessionDoc();
       listenToSession();
     }
 
@@ -564,84 +607,92 @@
       liveBooksMap = {};
     }
 
-    function attachClassroomLiveListeners(classId) {
+    function attachClassroomLiveListeners(classId, sourceDb) {
       if (!classId || classId === "default" || attachedClassId === classId) return;
       clearClassLiveListeners();
       attachedClassId = classId;
 
-      const db = dbNamed || dbDefault;
-      if (!db) return;
+      const dbsToWatch = sourceDb ? [sourceDb, ...getActiveDbs().filter(d => d !== sourceDb)] : getActiveDbs();
 
-      const unsubLiveState = db.collection("classrooms").doc(classId)
-        .collection("live_board").doc("state")
-        .onSnapshot(snap => {
-          if (snap.exists) handleSessionSnapshot(snap.data() || {}, "live_board");
-        }, () => {});
-      classLiveUnsubscribers.push(unsubLiveState);
+      dbsToWatch.forEach(db => {
+        const unsubLiveState = db.collection("classrooms").doc(classId)
+          .collection("live_board").doc("state")
+          .onSnapshot(snap => {
+            if (snap.exists) handleSessionSnapshot(snap.data() || {}, "live_board", db);
+          }, () => {});
+        classLiveUnsubscribers.push(unsubLiveState);
 
-      const unsubStudents = db.collection("classrooms").doc(classId)
-        .collection("students")
-        .onSnapshot(snap => {
-          const map = {};
-          snap.forEach(doc => {
-            const d = doc.data() || {};
-            const sNo = d.studentNumber || String(d.studentNo || "");
-            map[doc.id] = {
-              id: doc.id,
-              studentNo: Number(d.studentNo || sNo) || 0,
-              studentNumber: String(sNo),
-              fullName: d.fullName || d.name || "",
-              gender: d.gender || "Erkek"
-            };
-          });
-          if (Object.keys(map).length > 0) {
-            liveStudentsMap = map;
-            refreshLiveViews();
-          }
-        }, () => {});
-      classLiveUnsubscribers.push(unsubStudents);
-
-      const unsubStars = db.collection("classrooms").doc(classId)
-        .collection("star_records")
-        .onSnapshot(snap => {
-          const map = {};
-          const recentList = [];
-          snap.forEach(doc => {
-            const d = doc.data() || {};
-            const sid = d.studentId || "";
-            const cnt = Number(d.starCount);
-            const validCnt = isNaN(cnt) ? 1 : cnt;
-            if (sid) map[sid] = (map[sid] || 0) + validCnt;
-            recentList.push({
-              id: doc.id,
-              studentId: sid,
-              studentName: d.studentName || "",
-              studentNumber: String(d.studentNumber || ""),
-              categoryName: d.categoryName || "Başarı Yıldızı",
-              starCount: validCnt,
-              timestamp: Number(d.timestamp || 0)
+        const unsubStudents = db.collection("classrooms").doc(classId)
+          .collection("students")
+          .onSnapshot(snap => {
+            if (snap.empty) return;
+            const map = {};
+            snap.forEach(doc => {
+              const d = doc.data() || {};
+              const sNo = d.studentNumber || String(d.studentNo || "");
+              map[doc.id] = {
+                id: doc.id,
+                studentNo: Number(d.studentNo || sNo) || 0,
+                studentNumber: String(sNo),
+                fullName: d.fullName || d.name || "",
+                gender: d.gender || "Erkek"
+              };
             });
-          });
-          recentList.sort((a, b) => b.timestamp - a.timestamp);
-          liveStarsMap = map;
-          if (recentList.length > 0) latestStateData.recentStars = recentList.slice(0, 15);
-          refreshLiveViews();
-        }, () => {});
-      classLiveUnsubscribers.push(unsubStars);
+            if (Object.keys(map).length > 0) {
+              liveStudentsMap = map;
+              refreshLiveViews();
+            }
+          }, () => {});
+        classLiveUnsubscribers.push(unsubStudents);
 
-      const unsubBooks = db.collection("classrooms").doc(classId)
-        .collection("reading_records")
-        .onSnapshot(snap => {
-          const map = {};
-          snap.forEach(doc => {
-            const d = doc.data() || {};
-            const sid = d.studentId || "";
-            if (sid) map[sid] = (map[sid] || 0) + 1;
-          });
-          liveBooksMap = map;
-          refreshLiveViews();
-        }, () => {});
-      classLiveUnsubscribers.push(unsubBooks);
+        const unsubStars = db.collection("classrooms").doc(classId)
+          .collection("star_records")
+          .onSnapshot(snap => {
+            if (snap.empty && Object.keys(liveStarsMap).length > 0) return;
+            const map = {};
+            const recentList = [];
+            snap.forEach(doc => {
+              const d = doc.data() || {};
+              const sid = d.studentId || "";
+              const cnt = Number(d.starCount);
+              const validCnt = isNaN(cnt) ? 1 : cnt;
+              if (sid) map[sid] = (map[sid] || 0) + validCnt;
+              recentList.push({
+                id: doc.id,
+                studentId: sid,
+                studentName: d.studentName || "",
+                studentNumber: String(d.studentNumber || ""),
+                categoryName: d.categoryName || "Başarı Yıldızı",
+                starCount: validCnt,
+                timestamp: Number(d.timestamp || 0)
+              });
+            });
+            if (Object.keys(map).length > 0 || recentList.length > 0) {
+              recentList.sort((a, b) => b.timestamp - a.timestamp);
+              liveStarsMap = map;
+              if (recentList.length > 0) latestStateData.recentStars = recentList.slice(0, 15);
+              refreshLiveViews();
+            }
+          }, () => {});
+        classLiveUnsubscribers.push(unsubStars);
+
+        const unsubBooks = db.collection("classrooms").doc(classId)
+          .collection("reading_records")
+          .onSnapshot(snap => {
+            if (snap.empty && Object.keys(liveBooksMap).length > 0) return;
+            const map = {};
+            snap.forEach(doc => {
+              const d = doc.data() || {};
+              const sid = d.studentId || "";
+              if (sid) map[sid] = (map[sid] || 0) + 1;
+            });
+            if (Object.keys(map).length > 0) {
+              liveBooksMap = map;
+              refreshLiveViews();
+            }
+          }, () => {});
+        classLiveUnsubscribers.push(unsubBooks);
+      });
     }
 
     function getMergedStudentsList() {
@@ -681,13 +732,17 @@
       activeUnsubscribers.forEach(unsub => { try { unsub(); } catch (_) {} });
       activeUnsubscribers = [];
 
+      const candidateCodes = [currentSessionCode, "BIRIZ" + currentSessionCode];
+
       getActiveDbs().forEach(db => {
-        const unsub = db.collection("board_sessions").doc(currentSessionCode)
-          .onSnapshot(doc => {
-            if (!doc.exists) return;
-            handleSessionSnapshot(doc.data() || {}, "board_session");
-          }, err => console.warn("Session listener warning:", err));
-        activeUnsubscribers.push(unsub);
+        candidateCodes.forEach(codeKey => {
+          const unsub = db.collection("board_sessions").doc(codeKey)
+            .onSnapshot(doc => {
+              if (!doc.exists) return;
+              handleSessionSnapshot(doc.data() || {}, "board_session", db);
+            }, err => console.warn("Session listener warning:", err));
+          activeUnsubscribers.push(unsub);
+        });
       });
     }
 
@@ -708,7 +763,7 @@
       return m;
     }
 
-    function handleSessionSnapshot(data, source) {
+    function handleSessionSnapshot(data, source, sourceDb) {
       if (!data) return;
       const rawStatus = (data.status || "").toUpperCase();
       if (rawStatus === "DISCONNECTED" && source === "board_session") {
@@ -729,6 +784,7 @@
       }
 
       isBoardConnected = true;
+      if (sourceDb) preferredDb = sourceDb;
 
       const incomingTs = Number(data.updatedAt || 0);
       if (incomingTs > 0 && incomingTs < lastAppliedModuleAt) {
@@ -738,7 +794,7 @@
         latestStateData = { ...latestStateData, ...data };
       }
 
-      if (latestStateData.classId) attachClassroomLiveListeners(latestStateData.classId);
+      if (latestStateData.classId) attachClassroomLiveListeners(latestStateData.classId, preferredDb);
 
       const pill = document.getElementById("conn-status-pill");
       const pillText = document.getElementById("conn-status-text");
