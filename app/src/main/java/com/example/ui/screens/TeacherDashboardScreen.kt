@@ -1082,12 +1082,13 @@ fun TeacherDashboardScreen(
             )
         }
 
-        // 5. Kullanıcı Profil & Hesap Ayarları Diyaloğu
+        // 5. Kullanıcı Profil & Hesap Ayarları Açılır Menüsü
         if (showProfileMenuDialog) {
             UserProfileMenuDialog(
                 currentUser = currentUser,
                 currentRole = UserRole.TEACHER,
                 classRoom = classRoom,
+                linkedStudents = students,
                 isDarkTheme = isDarkTheme,
                 notificationPreferences = notificationPreferences,
                 onToggleNotificationCategory = onToggleNotificationCategory,

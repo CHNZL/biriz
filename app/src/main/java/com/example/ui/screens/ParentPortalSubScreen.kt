@@ -1089,7 +1089,17 @@ fun ParentPortalSubScreen(
             onDeleteEntireAccount = onDeleteEntireAccount,
             onCheckUpdate = onOpenUpdateDialog,
             onLogout = onLogout,
-            onDismissRequest = { showProfileMenuDialog = false }
+            onDismissRequest = { showProfileMenuDialog = false },
+            activeParentStudentId = activeStudent?.id,
+            onSelectParentStudent = onSelectActiveStudent,
+            onAddParentStudentClick = {
+                showProfileMenuDialog = false
+                showLinkCodeDialog = true
+            },
+            onUnlinkParentStudentClick = { student ->
+                showProfileMenuDialog = false
+                studentToUnlink = student
+            }
         )
     }
 }
