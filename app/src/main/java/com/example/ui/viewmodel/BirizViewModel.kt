@@ -224,6 +224,7 @@ class BirizViewModel(
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
     private var groupMakerListenerRegistration: ListenerRegistration? = null
     private var parentPresenceJob: Job? = null
+    private var teacherPresenceJob: Job? = null
     private val knownMessageIds = mutableSetOf<String>()
     private val processedNotifMessageIds = mutableSetOf<String>()
     private var loadedNotifiedClassId: String? = null
@@ -632,6 +633,17 @@ class BirizViewModel(
             }
         }
 
+        // Aktif sınıftaki öğretmen canlı bağlantı durumunu anlık olarak yansıt
+        viewModelScope.launch {
+            repository.registeredClasses.collect { classes ->
+                val currentActive = _uiState.value.activeClassRoom ?: return@collect
+                val updated = classes.firstOrNull { it.id == currentActive.id } ?: return@collect
+                if (updated != currentActive) {
+                    _uiState.value = _uiState.value.copy(activeClassRoom = updated)
+                }
+            }
+        }
+
         refreshCurrentUser()
         startPeriodicUpdateChecker()
     }
@@ -645,18 +657,56 @@ class BirizViewModel(
             if (isParentCommunicationTabActive && isParentChatSubTabActive && !state.activeParentStudentId.isNullOrBlank()) {
                 markChatMessagesAsRead(state.activeParentStudentId, viewerIsTeacher = false)
             }
-        } else if (state.currentRole == UserRole.TEACHER &&
-            state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
-            state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
-            !state.activeChatStudentId.isNullOrBlank()
-        ) {
-            markChatMessagesAsRead(state.activeChatStudentId, viewerIsTeacher = true)
+        } else if (state.currentRole == UserRole.TEACHER) {
+            updateTeacherPresence(isOnline = true)
+            if (state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
+                state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
+                !state.activeChatStudentId.isNullOrBlank()
+            ) {
+                markChatMessagesAsRead(state.activeChatStudentId, viewerIsTeacher = true)
+            }
         }
     }
 
     fun onAppBackgrounded() {
         isAppInForeground = false
         updateParentPresence(isOnline = false)
+        updateTeacherPresence(isOnline = false)
+    }
+
+    fun updateTeacherPresence(isOnline: Boolean) {
+        if (isOnline && !isAppInForeground) return
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER && isOnline) return
+        val activeClass = state.activeClassRoom ?: return
+        val classId = activeClass.id
+        if (classId.isBlank()) return
+
+        val nowMillis = System.currentTimeMillis()
+        _uiState.value = state.copy(
+            activeClassRoom = activeClass.copy(
+                teacherIsOnline = isOnline,
+                teacherLastActiveMillis = nowMillis
+            )
+        )
+
+        teacherPresenceJob?.cancel()
+        teacherPresenceJob = viewModelScope.launch {
+            if (!isOnline) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    repository.updateTeacherPresence(
+                        classroomId = classId,
+                        isOnline = false
+                    )
+                }
+            } else {
+                if (!isAppInForeground) return@launch
+                repository.updateTeacherPresence(
+                    classroomId = classId,
+                    isOnline = true
+                )
+            }
+        }
     }
 
     fun updateParentPresence(isOnline: Boolean) {
@@ -3937,6 +3987,17 @@ class BirizViewModel(
                         studentIds = prevState.linkedParentStudentIds,
                         parentEmail = email,
                         parentName = name,
+                        isOnline = false
+                    )
+                } catch (_: Exception) {}
+                Firebase.auth.signOut()
+            }
+        } else if (prevState.currentRole == UserRole.TEACHER && prevState.activeClassRoom != null) {
+            val cid = prevState.activeClassRoom.id
+            viewModelScope.launch {
+                try {
+                    repository.updateTeacherPresence(
+                        classroomId = cid,
                         isOnline = false
                     )
                 } catch (_: Exception) {}

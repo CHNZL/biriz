@@ -109,6 +109,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1687,7 +1688,7 @@ private fun AnnouncementReadReportDialog(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (isRead && readTimestamp != null) {
-                                        CommunicationPersistenceHelper.formatTime(readTimestamp)
+                                        CommunicationPersistenceHelper.formatCompactDateTime(readTimestamp)
                                     } else {
                                         "İletildi"
                                     },
@@ -3104,6 +3105,18 @@ private fun ParentQuickChatIcon(
             }
         }
 
+        // Sol alt köşede anlık bağlantı durumu noktası (Bağlı / Bağlı değil)
+        val isParentOnline = parentAccount.isCurrentlyActive()
+        Surface(
+            shape = CircleShape,
+            color = if (isParentOnline) Color(0xFF10B981) else Color(0xFF94A3B8),
+            border = BorderStroke(1.5.dp, if (isDarkTheme) BirizNavyDark else Color.White),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 4.dp, bottom = 4.dp)
+                .size(11.dp)
+        ) {}
+
         // Sağ alt köşede sohbet simgesi
         Surface(
             shape = CircleShape,
@@ -3203,7 +3216,8 @@ private fun ParentHoverInfoBubble(
             .testTag("parent_hover_bubble_${emailTrimmed}")
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            // 1. Veli Adı Soyadı ve Yakınlık Rozeti
+            // 1. Veli Adı Soyadı, Yakınlık Rozeti ve Anlık Bağlantı Durumu
+            val isParentOnline = parentAccount.isCurrentlyActive()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -3226,8 +3240,32 @@ private fun ParentHoverInfoBubble(
                     fontWeight = FontWeight.ExtraBold,
                     color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isParentOnline) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0x2064748B)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (isParentOnline) Color(0xFF10B981) else Color(0xFF64748B))
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isParentOnline) "Bağlı" else "Bağlı değil",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isParentOnline) Color(0xFF059669) else Color(0xFF64748B)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -3471,7 +3509,14 @@ private fun OneOnOneChatView(
     var messageInput by remember { mutableStateOf(TextFieldValue("")) }
     val listState = rememberLazyListState()
     val isKiz = student.gender.equals("Kız", ignoreCase = true)
-    val isParentOnline = student.isParentCurrentlyActive()
+    var presenceClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(10_000L)
+            presenceClockMs = System.currentTimeMillis()
+        }
+    }
+    val isParentOnline = student.isParentAccountCurrentlyActive(parentAccount.email, presenceClockMs)
 
     var isSearchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -3690,7 +3735,10 @@ private fun OneOnOneChatView(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
                                 Text(
                                     text = "${parentAccount.name} (${parentAccount.relationship})",
                                     fontSize = 13.5.sp,
@@ -3700,23 +3748,38 @@ private fun OneOnOneChatView(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Doğrulanmış Veli",
-                                    tint = BirizTurquoise,
-                                    modifier = Modifier.size(13.dp)
-                                )
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isParentOnline) Color(0x3010B981) else Color(0x30FFFFFF),
+                                    modifier = Modifier.testTag("badge_teacher_parent_presence")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isParentOnline) Color(0xFF34D399) else Color(0xFFCBD5E1))
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isParentOnline) "Bağlı" else "Bağlı değil",
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isParentOnline) Color(0xFF6EE7B7) else Color.White.copy(alpha = 0.85f),
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
                             }
                             Text(
-                                text = if (isParentOnline) {
-                                    "● Çevrimiçi • ${student.studentNumber} ${student.fullName}"
-                                } else {
-                                    "${parentAccount.email} • ${student.studentNumber} ${student.fullName}"
-                                },
+                                text = "${parentAccount.email} • ${student.studentNumber} ${student.fullName}",
                                 fontSize = 10.sp,
-                                fontFamily = if (isParentOnline) FontFamily.SansSerif else FontFamily.Monospace,
-                                color = if (isParentOnline) Color(0xFF6EE7B7) else Color.White.copy(alpha = 0.85f),
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White.copy(alpha = 0.85f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )

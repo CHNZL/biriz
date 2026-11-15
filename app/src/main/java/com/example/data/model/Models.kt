@@ -41,8 +41,20 @@ data class ClassRoom(
     val teacherEmail: String = "",
     val inviteCode: String = "",
     val studentCount: Int = 0,
-    val isOccupied: Boolean = true
-)
+    val isOccupied: Boolean = true,
+    val teacherIsOnline: Boolean = false,
+    val teacherLastActiveMillis: Long? = null
+) {
+    /**
+     * Öğretmenin şu an sistemde gerçekten bağlı olup olmadığını döndürür.
+     * Öğretmen ekranı açıkken 15 sn'de bir kalp atışı gönderir; arka plana alındığında anında false olur.
+     */
+    fun isTeacherCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        return teacherIsOnline &&
+            teacherLastActiveMillis != null &&
+            (nowMillis - teacherLastActiveMillis) in -60_000L..35_000L
+    }
+}
 
 data class LinkedParentAccount(
     val email: String,
@@ -53,7 +65,13 @@ data class LinkedParentAccount(
     val lastLoginAt: String? = null,
     val isOnline: Boolean = false,
     val lastActiveMillis: Long? = null
-)
+) {
+    fun isCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        return isOnline &&
+            lastActiveMillis != null &&
+            (nowMillis - lastActiveMillis) in -60_000L..35_000L
+    }
+}
 
 data class Student(
     val id: String,
@@ -100,10 +118,34 @@ data class Student(
      */
     fun isParentCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
         if (!isParentLinked) return false
+        val anyLinkedActive = allLinkedParents.any { it.isCurrentlyActive(nowMillis) }
+        if (anyLinkedActive) return true
         val primary = allLinkedParents.firstOrNull()
         val onlineFlag = if (!parentIsOnline) false else (primary?.isOnline ?: parentIsOnline)
         val activeTs = parentLastActiveMillis ?: primary?.lastActiveMillis
         return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..35_000L
+    }
+
+    /**
+     * Belirli bir veli hesabının anlık olarak bağlı olup olmadığını döndürür.
+     */
+    fun isParentAccountCurrentlyActive(
+        parentEmail: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!isParentLinked) return false
+        val cleanEmail = parentEmail.trim()
+        val matched = if (cleanEmail.isNotBlank()) {
+            allLinkedParents.firstOrNull { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+        } else null
+        if (matched != null) {
+            if (matched.isCurrentlyActive(nowMillis)) return true
+            if (allLinkedParents.size <= 1 && parentIsOnline && parentLastActiveMillis != null) {
+                return (nowMillis - parentLastActiveMillis) in -60_000L..35_000L
+            }
+            return false
+        }
+        return isParentCurrentlyActive(nowMillis)
     }
 
     /**

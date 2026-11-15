@@ -97,6 +97,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -515,7 +516,7 @@ fun ParentPortalSubScreen(
                                             color = BirizTurquoise.copy(alpha = 0.25f)
                                         ) {
                                             Text(
-                                                text = "Veli Bilgilendirme Portalı",
+                                                text = "Veli Portalı",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White,
@@ -2039,7 +2040,18 @@ private fun ParentScheduleDetailView(
         }
     }
     var selectedDay by remember { mutableStateOf(defaultDayCode) }
-    val dayNames = listOf("PZT" to "Pazartesi", "SAL" to "Salı", "ÇAR" to "Çarşamba", "PER" to "Perşembe", "CUM" to "Cuma")
+    val dayItems = remember {
+        listOf(
+            Triple("PZT", "Pzt", "Pazartesi"),
+            Triple("SAL", "Sal", "Salı"),
+            Triple("ÇAR", "Çar", "Çarşamba"),
+            Triple("PER", "Per", "Perşembe"),
+            Triple("CUM", "Cum", "Cuma")
+        )
+    }
+    val selectedFullDayName = remember(selectedDay, dayItems) {
+        dayItems.firstOrNull { it.first == selectedDay }?.third ?: "Pazartesi"
+    }
     val dayLessons = remember(scheduleLessons, selectedDay) {
         scheduleLessons.filter {
             it.dayOfWeek == selectedDay ||
@@ -2072,36 +2084,51 @@ private fun ParentScheduleDetailView(
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Gün Seçici Çipleri
+            // Gün Seçici Sekmeleri — tüm günler kaydırmadan ekrana sığar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isDarkTheme) Color(0x350A162B) else Color(0xFFF1F5F9))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                dayNames.forEach { (code, name) ->
+                dayItems.forEach { (code, shortName, fullName) ->
                     val isSel = selectedDay == code
                     Surface(
                         onClick = { selectedDay = code },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                        border = BorderStroke(
-                            1.5.dp,
-                            if (isSel) BirizNavyPrimary else if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                        ),
-                        modifier = Modifier.height(38.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSel) BirizNavyPrimary else Color.Transparent,
+                        shadowElevation = if (isSel) 2.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 44.dp)
+                            .testTag("parent_schedule_day_$code")
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
                             Text(
-                                text = name,
-                                fontSize = 13.sp,
+                                text = shortName,
+                                fontSize = 12.5.sp,
                                 fontWeight = if (isSel) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                color = if (isSel) Color.White else primaryText
+                                color = if (isSel) Color.White else primaryText,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "📌 $selectedFullDayName Ders Programı",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+            )
         }
 
         if (dayLessons.isEmpty()) {
@@ -2953,9 +2980,31 @@ private fun ParentCommunicationDetailView(
                                 maxLines = 2
                             )
                         }
+                        var presenceClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                delay(10_000L)
+                                presenceClockMs = System.currentTimeMillis()
+                            }
+                        }
+                        val isTeacherConnected = classRoom?.isTeacherCurrentlyActive(presenceClockMs) == true
+                        val statusColor = if (isTeacherConnected) {
+                            Color(0xFF10B981)
+                        } else if (isDarkTheme) {
+                            Color(0xFF94A3B8)
+                        } else {
+                            Color(0xFF64748B)
+                        }
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF10B981).copy(alpha = 0.14f)
+                            color = if (isTeacherConnected) {
+                                Color(0xFF10B981).copy(alpha = 0.14f)
+                            } else if (isDarkTheme) {
+                                Color(0xFF1E293B)
+                            } else {
+                                Color(0xFFF1F5F9)
+                            },
+                            modifier = Modifier.testTag("badge_parent_teacher_presence")
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -2965,14 +3014,14 @@ private fun ParentCommunicationDetailView(
                                     modifier = Modifier
                                         .size(7.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF10B981))
+                                        .background(statusColor)
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = "Anlık Hat",
+                                    text = if (isTeacherConnected) "Bağlı" else "Bağlı değil",
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF10B981)
+                                    color = statusColor
                                 )
                             }
                         }

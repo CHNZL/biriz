@@ -357,6 +357,41 @@ fun BirizApp(viewModel: BirizViewModel) {
                     val classRoom = uiState.activeClassRoom
                     val students by viewModel.students.collectAsStateWithLifecycle()
                     if (classRoom != null) {
+                        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                        DisposableEffect(lifecycleOwner, classRoom.id) {
+                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                                viewModel.onAppForegrounded()
+                            }
+                            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                                when (event) {
+                                    androidx.lifecycle.Lifecycle.Event.ON_START,
+                                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                                        viewModel.onAppForegrounded()
+                                    }
+                                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                                    androidx.lifecycle.Lifecycle.Event.ON_STOP,
+                                    androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
+                                        viewModel.onAppBackgrounded()
+                                    }
+                                    else -> {}
+                                }
+                            }
+                            lifecycleOwner.lifecycle.addObserver(observer)
+                            onDispose {
+                                lifecycleOwner.lifecycle.removeObserver(observer)
+                                viewModel.updateTeacherPresence(isOnline = false)
+                            }
+                        }
+
+                        LaunchedEffect(lifecycleOwner, classRoom.id) {
+                            lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                                while (true) {
+                                    viewModel.updateTeacherPresence(isOnline = true)
+                                    kotlinx.coroutines.delay(15_000L)
+                                }
+                            }
+                        }
+
                         TeacherDashboardScreen(
                             classRoom = classRoom,
                             students = students,

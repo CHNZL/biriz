@@ -55,6 +55,9 @@ object CommunicationPersistenceHelper {
     private val dateFormat = object : ThreadLocal<SimpleDateFormat>() {
         override fun initialValue(): SimpleDateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))
     }
+    private val compactDateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr", "TR"))
+    }
 
     fun loadFontOffset(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -68,6 +71,7 @@ object CommunicationPersistenceHelper {
 
     fun formatTime(timestamp: Long): String = (timeFormat.get() ?: SimpleDateFormat("HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
     fun formatDateTime(timestamp: Long): String = (dateFormat.get() ?: SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
+    fun formatCompactDateTime(timestamp: Long): String = (compactDateTimeFormat.get() ?: SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
 
     private fun getDeletedIdsForClass(context: Context, classId: String): Set<String> {
         val key = classId.ifBlank { "default" }

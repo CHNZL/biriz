@@ -89,6 +89,8 @@ class ClassRegistryRepository(
                         val teacherName = doc.getString("teacherName") ?: ""
                         val teacherEmail = doc.getString("teacherEmail") ?: ""
                         val inviteCode = doc.getString("inviteCode") ?: ""
+                        val teacherIsOnline = doc.getBoolean("teacherIsOnline") ?: false
+                        val teacherLastActiveMillis = doc.getLong("teacherLastActiveMillis")
 
                         ClassRoom(
                             id = doc.id,
@@ -101,7 +103,9 @@ class ClassRegistryRepository(
                             teacherName = teacherName,
                             teacherEmail = teacherEmail,
                             inviteCode = inviteCode,
-                            isOccupied = true
+                            isOccupied = true,
+                            teacherIsOnline = teacherIsOnline,
+                            teacherLastActiveMillis = teacherLastActiveMillis
                         )
                     }
                     _registeredClasses.value = list
@@ -768,9 +772,13 @@ class ClassRegistryRepository(
                             val e = map["email"] as? String
                             val n = map["name"] as? String
                             if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
-                                val pOnline = if (hasTopOnlineField) parentIsOnline else ((map["isOnline"] as? Boolean) ?: false)
-                                val pActiveMillis = parentLastActiveMillis ?: (map["lastActiveMillis"] as? Number)?.toLong()
-                                val pLastLogin = parentLastLoginAt ?: (map["lastLoginAt"] as? String)
+                                val singleParent = rawLinkedParents.size <= 1
+                                val pOnline = (map["isOnline"] as? Boolean)
+                                    ?: if (hasTopOnlineField && singleParent) parentIsOnline else false
+                                val pActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong()
+                                    ?: if (singleParent) parentLastActiveMillis else null
+                                val pLastLogin = (map["lastLoginAt"] as? String)
+                                    ?: if (singleParent) parentLastLoginAt else null
                                 LinkedParentAccount(
                                     email = e,
                                     name = n,
@@ -1097,11 +1105,11 @@ class ClassRegistryRepository(
             .format(java.util.Date(nowMillis))
         val cleanEmail = parentEmail.trim().ifBlank { "veli@biriz.app" }
 
-        // 1. Update local _students StateFlow immediately
+        // 1. Update local _students StateFlow immediately (per-parent isolation)
         _students.value = _students.value.map { current ->
             if (current.id in studentIds && current.isParentLinked) {
                 val updatedLinked = current.allLinkedParents.map { p ->
-                    if (p.email.equals(cleanEmail, ignoreCase = true) || current.allLinkedParents.size == 1) {
+                    if (p.email.trim().equals(cleanEmail, ignoreCase = true) || current.allLinkedParents.size == 1) {
                         p.copy(
                             lastLoginAt = nowFormatted,
                             isOnline = isOnline,
@@ -1109,9 +1117,10 @@ class ClassRegistryRepository(
                         )
                     } else p
                 }
+                val anyOnline = updatedLinked.any { it.isCurrentlyActive(nowMillis) }
                 current.copy(
                     parentLastLoginAt = nowFormatted,
-                    parentIsOnline = isOnline,
+                    parentIsOnline = anyOnline,
                     parentLastActiveMillis = nowMillis,
                     linkedParents = updatedLinked
                 )
@@ -1130,9 +1139,10 @@ class ClassRegistryRepository(
                     }
 
                     val sRef = db.collection("classrooms").document(classroomId).collection("students").document(sId)
+                    val anyOnline = localStudent?.allLinkedParents?.any { it.isCurrentlyActive(nowMillis) } ?: isOnline
                     val updates = mutableMapOf<String, Any?>(
                         "parentLastLoginAt" to nowFormatted,
-                        "parentIsOnline" to isOnline,
+                        "parentIsOnline" to anyOnline,
                         "parentLastActiveMillis" to nowMillis,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
@@ -1145,9 +1155,9 @@ class ClassRegistryRepository(
                                 "phone" to p.phone,
                                 "relationship" to p.relationship,
                                 "linkedAt" to p.linkedAt,
-                                "lastLoginAt" to nowFormatted,
-                                "isOnline" to isOnline,
-                                "lastActiveMillis" to nowMillis
+                                "lastLoginAt" to (p.lastLoginAt ?: nowFormatted),
+                                "isOnline" to p.isOnline,
+                                "lastActiveMillis" to (p.lastActiveMillis ?: nowMillis)
                             )
                         }
                     }
@@ -1155,6 +1165,39 @@ class ClassRegistryRepository(
                     sRef.update(updates).await()
                 } catch (_: Exception) {}
             }
+        }
+    }
+
+    suspend fun updateTeacherPresence(
+        classroomId: String?,
+        isOnline: Boolean
+    ) {
+        val cid = classroomId?.trim().orEmpty()
+        if (cid.isEmpty()) return
+        val nowMillis = System.currentTimeMillis()
+
+        // 1. Update local _registeredClasses immediately
+        _registeredClasses.value = _registeredClasses.value.map { current ->
+            if (current.id == cid) {
+                current.copy(
+                    teacherIsOnline = isOnline,
+                    teacherLastActiveMillis = nowMillis
+                )
+            } else current
+        }
+
+        // 2. Sync to Firestore classrooms/{cid} so Parents see live teacher connectivity
+        if (isFirebaseAuthAvailable && cid != "default") {
+            try {
+                db.collection("classrooms").document(cid)
+                    .update(
+                        mapOf(
+                            "teacherIsOnline" to isOnline,
+                            "teacherLastActiveMillis" to nowMillis,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+            } catch (_: Exception) {}
         }
     }
 

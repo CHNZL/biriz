@@ -3105,4 +3105,68 @@ class ExampleUnitTest {
     )
     assertEquals("Sayın Değerli Velimiz, Öğrencimiz hakkında", fallbackPersonalized)
   }
+
+  @Test
+  fun testLivePresenceHelpersAndCompactDateTimeReadFormat() {
+    val now = 1_763_200_000_000L
+
+    val offlineClass = com.example.data.model.ClassRoom(
+      id = "c1",
+      cityName = "SİVAS",
+      districtName = "MERKEZ",
+      schoolName = "TEST",
+      gradeLevel = 4,
+      section = "D",
+      teacherName = "Cihan Özel",
+      teacherIsOnline = false,
+      teacherLastActiveMillis = now - 5_000L
+    )
+    assertFalse(offlineClass.isTeacherCurrentlyActive(now))
+
+    val staleClass = offlineClass.copy(
+      teacherIsOnline = true,
+      teacherLastActiveMillis = now - 40_000L
+    )
+    assertFalse(staleClass.isTeacherCurrentlyActive(now))
+
+    val connectedClass = offlineClass.copy(
+      teacherIsOnline = true,
+      teacherLastActiveMillis = now - 10_000L
+    )
+    assertTrue(connectedClass.isTeacherCurrentlyActive(now))
+
+    val anneOnline = com.example.data.model.LinkedParentAccount(
+      email = "anne@example.com",
+      name = "Ayşe",
+      relationship = "Anne",
+      isOnline = true,
+      lastActiveMillis = now - 5_000L
+    )
+    val babaOffline = com.example.data.model.LinkedParentAccount(
+      email = "baba@example.com",
+      name = "Mehmet",
+      relationship = "Baba",
+      isOnline = false,
+      lastActiveMillis = now - 5_000L
+    )
+    val multiParentStudent = com.example.data.model.Student(
+      id = "s1",
+      studentNumber = "45",
+      fullName = "Semih",
+      gender = "Erkek",
+      linkedParents = listOf(anneOnline, babaOffline),
+      parentEmail = anneOnline.email,
+      parentName = anneOnline.name,
+      parentIsOnline = true,
+      parentLastActiveMillis = now - 5_000L
+    )
+    assertTrue(multiParentStudent.isParentAccountCurrentlyActive("ANNE@example.com", now))
+    assertFalse(multiParentStudent.isParentAccountCurrentlyActive("baba@example.com", now))
+
+    val formatted = com.example.util.CommunicationPersistenceHelper.formatCompactDateTime(now)
+    assertTrue(
+      "Compact read format must contain date (dd.MM.yyyy) and time (HH:mm), got: $formatted",
+      Regex("""\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}""").matches(formatted)
+    )
+  }
 }
