@@ -1661,6 +1661,7 @@
       function restEnsureWaitingDoc(dbId, code) {
         var url = firestoreRestBaseUrl(dbId) + "/board_sessions/" + encodeURIComponent(code) + "?key=" + encodeURIComponent(FIREBASE_CONFIG.apiKey);
         fetch(url, { cache: "no-store" }).then(function(res) {
+          if (isBoardConnected) return;
           if (res.status === 404) {
             var now = Date.now();
             return fetch(url, {
@@ -1704,10 +1705,12 @@
             if (namedDb) sdkDbs.push(namedDb);
           } catch (e1) {}
 
-          try {
-            var defaultDb = fsMod.getFirestore(app);
-            if (defaultDb) sdkDbs.push(defaultDb);
-          } catch (e2) {}
+          if (sdkDbs.length === 0) {
+            try {
+              var defaultDb = fsMod.getFirestore(app);
+              if (defaultDb) sdkDbs.push(defaultDb);
+            } catch (e2) {}
+          }
 
           if (sdkDbs.length > 0) {
             transportMode = "SDK";
@@ -1726,14 +1729,14 @@
       }
 
       function ensureInitialSessionDoc() {
-        if (!currentSessionCode) return;
+        if (!currentSessionCode || isBoardConnected) return;
         if (transportMode === "SDK" && fbApi && sdkDbs.length > 0) {
           for (var i = 0; i < sdkDbs.length; i++) {
             (function(db) {
               try {
                 var ref = fbApi.doc(db, "board_sessions", currentSessionCode);
                 fbApi.getDoc(ref).then(function(snap) {
-                  if (!snap.exists()) {
+                  if (!snap.exists() && !isBoardConnected) {
                     fbApi.setDoc(ref, {
                       sessionCode: currentSessionCode,
                       status: "WAITING",
@@ -1764,14 +1767,6 @@
           if (res && res.ok && res.data) {
             missingDocMissCount = 0;
             handleSessionSnapshot(res.data, "board_session", 0);
-          } else if (res && res.missing) {
-            restGetDocumentDetailed("(default)", "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(defRes) {
-              if (isBoardConnected || !currentSessionCode) return;
-              if (defRes && defRes.ok && defRes.data) {
-                missingDocMissCount = 0;
-                handleSessionSnapshot(defRes.data, "board_session", 1);
-              }
-            });
           }
         });
       }
@@ -1820,10 +1815,11 @@
               var data = res.data;
               var st = String(data.status || "").toUpperCase();
               var incomingTs = Number(data.updatedAt || data.disconnectedAt || 0);
+              var castTs = Number((data.boardCast && data.boardCast.updatedAt) || 0);
               var isConnSwap = Boolean(currentConnectionId && data.connectionId && data.connectionId !== currentConnectionId);
               if (st === "DISCONNECTED" || (data.isConnected === false && st !== "CONNECTED") || st === "WAITING" || isConnSwap) {
                 handleSessionSnapshot(data, "board_session", preferredDbIndex);
-              } else if (st === "CONNECTED" && incomingTs > lastAppliedModuleAt) {
+              } else if (st === "CONNECTED" && (incomingTs > lastAppliedModuleAt || castTs > lastAppliedModuleAt)) {
                 handleSessionSnapshot(data, "board_session", preferredDbIndex);
               }
             }
@@ -1893,18 +1889,11 @@
               if (res && res.ok && res.data) {
                 missingDocMissCount = 0;
                 handleSessionSnapshot(res.data, "board_session", 0);
-              } else if (res && res.missing) {
-                restGetDocumentDetailed("(default)", "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(defRes) {
-                  if (defRes && defRes.ok && defRes.data) {
-                    missingDocMissCount = 0;
-                    handleSessionSnapshot(defRes.data, "board_session", 1);
-                  } else if (defRes && defRes.missing && isBoardConnected) {
-                    missingDocMissCount++;
-                    if (missingDocMissCount >= 2) {
-                      forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
-                    }
-                  }
-                });
+              } else if (res && res.missing && isBoardConnected) {
+                missingDocMissCount++;
+                if (missingDocMissCount >= 2) {
+                  forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
+                }
               }
             });
             if (isBoardConnected && attachedClassId && attachedClassId !== "default") {

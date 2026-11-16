@@ -1,8 +1,23 @@
 {
-  "versionCode": 1085,
-  "versionName": "1.0.85",
-  "tag": "v1.0.85",
+  "versionCode": 1134,
+  "versionName": "1.01.34",
+  "tag": "v1.01.34",
   "apkUrl": "https://github.com/CHNZL/biriz/releases/latest/download/Biriz.apk",
   "appName": "BİRİZ",
-  "releaseNotes": "BİRİZ yeni sürüm güncellemeleri kullanıma hazır."
+  "releaseTitle": "Akıllı Tahta Bağlantısı ve Dinamik Sürüm Notları",
+  "releaseItems": [
+    {
+      "title": "Hızlı Akıllı Tahta Bağlantısı",
+      "summary": "Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi."
+    },
+    {
+      "title": "Bağlantı Kesme Senkronizasyonu",
+      "summary": "Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı."
+    },
+    {
+      "title": "Dinamik Sürüm Notları",
+      "summary": "Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
+    }
+  ],
+  "releaseNotes": "• Hızlı Akıllı Tahta Bağlantısı: Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi.\n• Bağlantı Kesme Senkronizasyonu: Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı.\n• Dinamik Sürüm Notları: Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
 }

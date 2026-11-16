@@ -120,8 +120,27 @@ object AppUpdateManager {
             }
         }
 
-        // Bulunan adaylar arasından en güncel (en yüksek versionCode'lu) olanı seç
-        return@withContext candidates.maxByOrNull { it.latestVersionCode }
+        // Bulunan adaylar arasından en güncel (aynı sürümdeyse zengin sürüm notu olan) adayı seç
+        var best = candidates.maxWithOrNull(
+            compareBy<UpdateInfo> { it.latestVersionCode }
+                .thenBy { it.releaseItems.size }
+                .thenBy { it.releaseTitle.length }
+        )
+
+        // Yönlendirme (redirect) adayı seçildiyse ve sürüm notu boşsa Releases API ile zenginleştir
+        if (best != null && best.releaseItems.isEmpty()) {
+            fetchFromReleasesApi(repo, currentVersionName, currentVersionCode)?.let { apiInfo ->
+                if (apiInfo.latestVersionCode >= best!!.latestVersionCode && apiInfo.releaseItems.isNotEmpty()) {
+                    best = best!!.copy(
+                        releaseNotes = apiInfo.releaseNotes,
+                        releaseTitle = best!!.releaseTitle.ifBlank { apiInfo.releaseTitle },
+                        releaseItems = apiInfo.releaseItems
+                    )
+                }
+            }
+        }
+
+        return@withContext best
     }
 
     /**

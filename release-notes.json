@@ -1,17 +1,17 @@
 {
-  "title": "Tek Tıkla Güncelleme ve Sürüm Özeti",
+  "title": "Akıllı Tahta Bağlantısı ve Dinamik Sürüm Notları",
   "items": [
     {
-      "title": "Tek Tıkla Güncelleme",
-      "summary": "Güncelleme pencere ve bildirim karmaşası kaldırıldı; Yükle butonu doğrudan indirip kurar."
+      "title": "Hızlı Akıllı Tahta Bağlantısı",
+      "summary": "Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi."
     },
     {
-      "title": "Türkçe Yenilik Başlıkları",
-      "summary": "Her yeni sürümde yapılan değişiklikler kısa başlıklarla madde madde gösterilir."
+      "title": "Bağlantı Kesme Senkronizasyonu",
+      "summary": "Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı."
     },
     {
-      "title": "Akıllı Tahta Canlı Paylaşım",
-      "summary": "Seçilen uygulama tahtada canlı yansıtılır; ekrandan çıkıldığında son görüntü sabitlenir."
+      "title": "Dinamik Sürüm Notları",
+      "summary": "Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
     }
   ]
 }

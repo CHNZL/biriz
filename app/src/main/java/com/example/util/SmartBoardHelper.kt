@@ -12,19 +12,20 @@ import android.util.Base64
 import android.util.Log
 import android.webkit.MimeTypeMap
 import android.widget.Toast
+import com.example.R
 import com.example.data.model.GroupMakerState
 import com.example.data.model.ScheduleConfig
 import com.example.data.model.ScheduleLesson
 import com.example.data.model.SeatingPlanState
 import com.example.data.model.Student
 import com.example.data.repository.StarRewardPersistenceHelper
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -33,10 +34,18 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
@@ -101,6 +110,211 @@ object SmartBoardHelper {
      */
     fun getMainFirestore(context: Context): FirebaseFirestore {
         return FirestoreProvider.get(context)
+    }
+
+    private val restHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(7, TimeUnit.SECONDS)
+            .writeTimeout(7, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    private sealed class RestWriteResult {
+        object Success : RestWriteResult()
+        data class HttpError(val code: Int, val message: String) : RestWriteResult()
+        data class NetworkError(val exception: IOException) : RestWriteResult()
+    }
+
+    private sealed class RestGetResult {
+        data class Found(val fields: JSONObject) : RestGetResult()
+        object Missing : RestGetResult()
+        data class Error(val detail: String) : RestGetResult()
+    }
+
+    private fun resolveFirestoreRestConfig(context: Context): Triple<String, String, String> {
+        val options = try {
+            FirebaseApp.getInstance().options
+        } catch (_: Exception) {
+            null
+        }
+        val projectId = options?.projectId?.takeIf { it.isNotBlank() } ?: "gen-lang-client-0343498023"
+        val apiKey = options?.apiKey?.takeIf { it.isNotBlank() } ?: ""
+        val dbId = try {
+            context.applicationContext.getString(R.string.firestore_database_id).trim()
+                .ifBlank { "(default)" }
+        } catch (_: Exception) {
+            "(default)"
+        }
+        return Triple(projectId, apiKey, dbId)
+    }
+
+    private fun buildRestDocumentUrl(
+        context: Context,
+        docPathSegments: List<String>,
+        mergeFieldPaths: Collection<String>? = null
+    ): String {
+        val (projectId, apiKey, dbId) = resolveFirestoreRestConfig(context)
+        val encodedPath = docPathSegments.joinToString("/") { Uri.encode(it) }
+        val base = "https://firestore.googleapis.com/v1/projects/${Uri.encode(projectId)}/databases/${Uri.encode(dbId)}/documents/$encodedPath"
+        val sb = StringBuilder(base).append("?key=").append(Uri.encode(apiKey))
+        mergeFieldPaths?.forEach { field ->
+            val cleanField = field.trim()
+            if (cleanField.isNotEmpty()) {
+                sb.append("&updateMask.fieldPaths=").append(Uri.encode(cleanField))
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun encodeFirestoreValue(value: Any?): JSONObject {
+        return when (value) {
+            null -> JSONObject().put("nullValue", JSONObject.NULL)
+            is Boolean -> JSONObject().put("booleanValue", value)
+            is Int -> JSONObject().put("integerValue", value.toString())
+            is Long -> JSONObject().put("integerValue", value.toString())
+            is Short -> JSONObject().put("integerValue", value.toString())
+            is Byte -> JSONObject().put("integerValue", value.toString())
+            is Float -> {
+                val d = if (value.isFinite()) value.toDouble() else 0.0
+                JSONObject().put("doubleValue", d)
+            }
+            is Double -> {
+                val d = if (value.isFinite()) value else 0.0
+                JSONObject().put("doubleValue", d)
+            }
+            is Number -> JSONObject().put("doubleValue", value.toDouble())
+            is CharSequence -> JSONObject().put("stringValue", value.toString())
+            is Enum<*> -> JSONObject().put("stringValue", value.name)
+            is Map<*, *> -> {
+                val fields = encodeFirestoreFields(value)
+                JSONObject().put("mapValue", JSONObject().put("fields", fields))
+            }
+            is Iterable<*> -> {
+                val arr = JSONArray()
+                value.forEach { elem -> arr.put(encodeFirestoreValue(elem)) }
+                JSONObject().put("arrayValue", JSONObject().put("values", arr))
+            }
+            is Array<*> -> {
+                val arr = JSONArray()
+                value.forEach { elem -> arr.put(encodeFirestoreValue(elem)) }
+                JSONObject().put("arrayValue", JSONObject().put("values", arr))
+            }
+            else -> JSONObject().put("stringValue", value.toString())
+        }
+    }
+
+    private fun encodeFirestoreFields(map: Map<*, *>): JSONObject {
+        val fields = JSONObject()
+        for ((k, v) in map) {
+            val key = k?.toString()?.takeIf { it.isNotEmpty() } ?: continue
+            if (v is FieldValue) continue
+            fields.put(key, encodeFirestoreValue(v))
+        }
+        return fields
+    }
+
+    private fun restPatchDocument(
+        context: Context,
+        docPathSegments: List<String>,
+        payload: Map<String, Any?>,
+        merge: Boolean
+    ): RestWriteResult {
+        val mergeKeys = if (merge) {
+            payload.entries
+                .filter { it.key.isNotBlank() && it.value !is FieldValue }
+                .map { it.key }
+        } else {
+            null
+        }
+        val url = buildRestDocumentUrl(context, docPathSegments, mergeKeys)
+        val bodyObj = JSONObject().put("fields", encodeFirestoreFields(payload))
+        val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .patch(requestBody)
+            .header("Accept", "application/json")
+            .build()
+        return try {
+            restHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    RestWriteResult.Success
+                } else {
+                    val errText = try {
+                        resp.body?.string()?.take(240).orEmpty()
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    Log.w(TAG, "REST PATCH HTTP ${resp.code} on ${docPathSegments.joinToString("/")}: $errText")
+                    RestWriteResult.HttpError(resp.code, errText)
+                }
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "REST PATCH IO error on ${docPathSegments.joinToString("/")}: ${e.message}")
+            RestWriteResult.NetworkError(e)
+        } catch (e: Exception) {
+            Log.w(TAG, "REST PATCH unexpected error on ${docPathSegments.joinToString("/")}: ${e.message}")
+            RestWriteResult.NetworkError(IOException(e.message ?: "Ağ hatası", e))
+        }
+    }
+
+    private fun restGetDocument(context: Context, docPathSegments: List<String>): RestGetResult {
+        val url = buildRestDocumentUrl(context, docPathSegments, null)
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Accept", "application/json")
+            .header("Cache-Control", "no-store")
+            .build()
+        return try {
+            restHttpClient.newCall(request).execute().use { resp ->
+                if (resp.code == 404) return RestGetResult.Missing
+                if (!resp.isSuccessful) {
+                    return RestGetResult.Error("HTTP ${resp.code}")
+                }
+                val bodyStr = resp.body?.string().orEmpty()
+                val json = JSONObject(bodyStr)
+                val fields = json.optJSONObject("fields") ?: return RestGetResult.Missing
+                RestGetResult.Found(fields)
+            }
+        } catch (e: Exception) {
+            RestGetResult.Error(e.message ?: "network")
+        }
+    }
+
+    private suspend fun writeDocumentRestFirst(
+        context: Context,
+        docPathSegments: List<String>,
+        payload: Map<String, Any?>,
+        merge: Boolean,
+        sdkTimeoutMs: Long = 3000L
+    ): RestWriteResult {
+        val restRes = restPatchDocument(context, docPathSegments, payload, merge)
+        if (restRes is RestWriteResult.Success || restRes is RestWriteResult.HttpError) {
+            return restRes
+        }
+        // Ağ hatası durumunda yerel Firestore SDK ile bir kez hızlıca dene
+        return try {
+            val mainDb = getMainFirestore(context)
+            var ref = mainDb.collection(docPathSegments[0]).document(docPathSegments[1])
+            var idx = 2
+            while (idx + 1 < docPathSegments.size) {
+                ref = ref.collection(docPathSegments[idx]).document(docPathSegments[idx + 1])
+                idx += 2
+            }
+            withTimeout(sdkTimeoutMs) {
+                if (merge) {
+                    ref.set(payload, SetOptions.merge()).await()
+                } else {
+                    ref.set(payload).await()
+                }
+            }
+            RestWriteResult.Success
+        } catch (e: Exception) {
+            Log.w(TAG, "SDK fallback write failed on ${docPathSegments.joinToString("/")}: ${e.message}")
+            restRes
+        }
     }
 
     fun getSavedSessionCode(context: Context): String? {
@@ -389,39 +603,18 @@ object SmartBoardHelper {
             "timerRemainingSeconds" to remainingSeconds,
             "timerIsRunning" to isRunning,
             "timerIsFinished" to isFinished,
-            "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
         scope.launch {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                val mainDb = getMainFirestore(context)
                 try {
-                    withTimeoutOrNull(3500L) {
-                        mainDb.collection("board_sessions")
-                            .document(activeCode)
-                            .set(payload, SetOptions.merge())
-                            .await()
-                    }
+                    restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
                     if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
                     if (targetClassId.isNotBlank() && targetClassId != "default") {
-                        withTimeoutOrNull(2500L) {
-                            mainDb.collection("classrooms")
-                                .document(targetClassId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(payload, SetOptions.merge())
-                                .await()
-                        }
+                        restPatchDocument(context, listOf("classrooms", targetClassId, "live_board", "state"), payload, merge = true)
                         if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                        withTimeoutOrNull(2500L) {
-                            mainDb.collection("classes")
-                                .document(targetClassId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(payload, SetOptions.merge())
-                                .await()
-                        }
+                        restPatchDocument(context, listOf("classes", targetClassId, "live_board", "state"), payload, merge = true)
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error syncing timer state: ${e.message}")
@@ -457,24 +650,11 @@ object SmartBoardHelper {
         scope.launch {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                val mainDb = getMainFirestore(context)
                 try {
-                    withTimeoutOrNull(2500L) {
-                        mainDb.collection("board_sessions")
-                            .document(activeCode)
-                            .set(payload, SetOptions.merge())
-                            .await()
-                    }
+                    restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
                     if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
                     if (targetClassId.isNotBlank() && targetClassId != "default") {
-                        withTimeoutOrNull(2500L) {
-                            mainDb.collection("classrooms")
-                                .document(targetClassId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(payload, SetOptions.merge())
-                                .await()
-                        }
+                        restPatchDocument(context, listOf("classrooms", targetClassId, "live_board", "state"), payload, merge = true)
                     }
                 } catch (_: Exception) {}
             }
@@ -546,71 +726,78 @@ object SmartBoardHelper {
             "selectedDay" to activeDay,
             "activeScheduleDay" to activeDay,
             "connectedAt" to now,
-            "updatedAt" to now,
-            "disconnectedAt" to FieldValue.delete(),
-            "disconnectedSessionCode" to FieldValue.delete(),
-            "disconnectedConnectionId" to FieldValue.delete(),
-            "boardCast" to FieldValue.delete(),
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
-
-        val mainDb = try {
-            getMainFirestore(context)
-        } catch (e: Exception) {
-            connectionEpoch += 1L
-            activeSessionCode = null
-            activeConnectionId = null
-            saveConnectionState(context, null, false)
-            return@withContext Result.failure(Exception("Veritabanı başlatılamadı: ${e.message}"))
-        }
 
         val handshakeResult = sessionWriteMutex.withLock {
             if (!isEpochStillActive(cleanCode, myEpoch)) {
                 return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
             }
-            try {
-                withTimeout(10_000L) {
-                    mainDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(handshakePayload, SetOptions.merge())
-                        .await()
+
+            // REST PATCH (updateMask yok -> tüm belgeyi temizler ve ~200-400ms içinde tamamlanır)
+            var writeResult = restPatchDocument(
+                context = context,
+                docPathSegments = listOf("board_sessions", cleanCode),
+                payload = handshakePayload,
+                merge = false
+            )
+
+            if (writeResult is RestWriteResult.NetworkError && isEpochStillActive(cleanCode, myEpoch)) {
+                delay(300L)
+                if (isEpochStillActive(cleanCode, myEpoch)) {
+                    writeResult = restPatchDocument(
+                        context = context,
+                        docPathSegments = listOf("board_sessions", cleanCode),
+                        payload = handshakePayload,
+                        merge = false
+                    )
                 }
+            }
 
-                if (!isEpochStillActive(cleanCode, myEpoch)) {
-                    return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
-                }
-
-                saveConnectionState(context, cleanCode, true)
-
-                if (classId.isNotBlank() && classId != "default") {
-                    withTimeoutOrNull(3500L) {
-                        mainDb.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(handshakePayload, SetOptions.merge())
+            if (writeResult is RestWriteResult.NetworkError && isEpochStillActive(cleanCode, myEpoch)) {
+                // Ağ geçidi REST'i engellerse Firestore SDK ile kısa yedek deneme
+                try {
+                    val mainDb = getMainFirestore(context)
+                    val sdkHandshake = HashMap(handshakePayload).apply {
+                        put("disconnectedAt", FieldValue.delete())
+                        put("disconnectedSessionCode", FieldValue.delete())
+                        put("disconnectedConnectionId", FieldValue.delete())
+                        put("boardCast", FieldValue.delete())
+                    }
+                    withTimeout(4000L) {
+                        mainDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(sdkHandshake, SetOptions.merge())
                             .await()
                     }
-                    if (!isEpochStillActive(cleanCode, myEpoch)) {
-                        return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
-                    }
-                    withTimeoutOrNull(3500L) {
-                        mainDb.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(handshakePayload, SetOptions.merge())
-                            .await()
-                    }
+                    writeResult = RestWriteResult.Success
+                } catch (e: Exception) {
+                    Log.w(TAG, "SDK handshake fallback failed for $cleanCode: ${e.message}")
                 }
+            }
 
-                Result.success(Unit)
-            } catch (e: TimeoutCancellationException) {
-                Log.w(TAG, "Handshake timed out for $cleanCode")
-                Result.failure(Exception("Tahta sunucusuna bağlanılamadı (zaman aşımı). İnternet bağlantınızı kontrol edip tekrar deneyin."))
-            } catch (e: Exception) {
-                Log.e(TAG, "Handshake failed for $cleanCode", e)
-                Result.failure(Exception("Tahta bağlantısı sunucuya kaydedilemedi: ${e.localizedMessage ?: "Ağ hatası"}"))
+            if (!isEpochStillActive(cleanCode, myEpoch)) {
+                return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
+            }
+
+            when (writeResult) {
+                is RestWriteResult.Success -> {
+                    saveConnectionState(context, cleanCode, true)
+                    Result.success(Unit)
+                }
+                is RestWriteResult.HttpError -> {
+                    val detail = when (writeResult.code) {
+                        403 -> "Tahta sunucusu yazma izni vermedi (HTTP 403)."
+                        400 -> "Tahta isteği geçersiz biçimde reddedildi (HTTP 400)."
+                        else -> "Tahta sunucusu yanıt vermedi (HTTP ${writeResult.code})."
+                    }
+                    Result.failure(Exception(detail))
+                }
+                is RestWriteResult.NetworkError -> {
+                    Result.failure(
+                        Exception("Tahta sunucusuna ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.")
+                    )
+                }
             }
         }
 
@@ -698,78 +885,50 @@ object SmartBoardHelper {
                 "luckyData" to luckyData,
                 "libraryData" to libraryData,
                 "tournamentData" to tournamentData,
-                "updatedAt" to dataNow,
-                "serverTimestamp" to FieldValue.serverTimestamp()
+                "updatedAt" to dataNow
             )
             if (seatingData != null) fullPayload["seatingPlan"] = seatingData
             if (groupsData != null) fullPayload["groups"] = groupsData
 
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                try {
-                    withTimeoutOrNull(8000L) {
-                        mainDb.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(fullPayload, SetOptions.merge())
-                            .await()
+                val fullRes = restPatchDocument(
+                    context = context,
+                    docPathSegments = listOf("board_sessions", cleanCode),
+                    payload = fullPayload,
+                    merge = true
+                )
+                if (fullRes !is RestWriteResult.Success && isEpochStillActive(cleanCode, myEpoch)) {
+                    val slimPayload = HashMap(fullPayload).apply {
+                        remove("libraryData")
+                        remove("tournamentData")
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Full payload write warning, retrying slim payload: ${e.message}")
-                    if (isEpochStillActive(cleanCode, myEpoch)) {
-                        val slimPayload = HashMap(fullPayload).apply {
-                            remove("libraryData")
-                            remove("tournamentData")
-                        }
-                        try {
-                            withTimeoutOrNull(6000L) {
-                                mainDb.collection("board_sessions")
-                                    .document(cleanCode)
-                                    .set(slimPayload, SetOptions.merge())
-                                    .await()
-                            }
-                        } catch (_: Exception) {}
-                    }
+                    writeDocumentRestFirst(
+                        context = context,
+                        docPathSegments = listOf("board_sessions", cleanCode),
+                        payload = slimPayload,
+                        merge = true
+                    )
                 }
 
                 if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
 
                 if (classId.isNotBlank() && classId != "default") {
-                    try {
-                        withTimeoutOrNull(4500L) {
-                            mainDb.collection("classes")
-                                .document(classId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(fullPayload, SetOptions.merge())
-                                .await()
-                        }
-                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                        withTimeoutOrNull(4500L) {
-                            mainDb.collection("classrooms")
-                                .document(classId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(fullPayload, SetOptions.merge())
-                                .await()
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                try {
+                    val livePayload = HashMap(handshakePayload).apply { putAll(fullPayload) }
+                    restPatchDocument(
+                        context = context,
+                        docPathSegments = listOf("classes", classId, "live_board", "state"),
+                        payload = livePayload,
+                        merge = true
+                    )
                     if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                    val defaultDb = FirebaseFirestore.getInstance()
-                    if (defaultDb != mainDb) {
-                        val mergedBackup = HashMap(handshakePayload).apply {
-                            putAll(fullPayload)
-                        }
-                        withTimeoutOrNull(4000L) {
-                            defaultDb.collection("board_sessions")
-                                .document(cleanCode)
-                                .set(mergedBackup, SetOptions.merge())
-                                .await()
-                        }
-                    }
-                } catch (_: Exception) {}
+                    restPatchDocument(
+                        context = context,
+                        docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                        payload = livePayload,
+                        merge = true
+                    )
+                }
             }
         }
 
@@ -901,7 +1060,6 @@ object SmartBoardHelper {
             "libraryData" to libraryData,
             "tournamentData" to tournamentData,
             "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp(),
             "sessionCode" to cleanCode,
             "status" to "CONNECTED",
             "isConnected" to true
@@ -944,8 +1102,7 @@ object SmartBoardHelper {
             "luckyData" to luckyData,
             "libraryData" to libraryData,
             "tournamentData" to tournamentData,
-            "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
         if (studentData.isNotEmpty()) {
             liveBoardPayload["students"] = studentData
@@ -970,59 +1127,40 @@ object SmartBoardHelper {
         scope.launch {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                val mainDb = getMainFirestore(context)
                 try {
                     activeConnectionId?.let { cid ->
                         boardSessionUpdate["connectionId"] = cid
                         liveBoardPayload["connectionId"] = cid
                     }
                     // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
-                    withTimeoutOrNull(5000L) {
-                        mainDb.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(boardSessionUpdate, SetOptions.merge())
-                            .await()
-                    }
+                    writeDocumentRestFirst(
+                        context = context,
+                        docPathSegments = listOf("board_sessions", cleanCode),
+                        payload = boardSessionUpdate,
+                        merge = true
+                    )
 
                     if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
 
                     // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
                     if (classId.isNotBlank() && classId != "default") {
-                        withTimeoutOrNull(4000L) {
-                            mainDb.collection("classes")
-                                .document(classId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(liveBoardPayload, SetOptions.merge())
-                                .await()
-                        }
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classes", classId, "live_board", "state"),
+                            payload = liveBoardPayload,
+                            merge = true
+                        )
                         if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                        withTimeoutOrNull(4000L) {
-                            mainDb.collection("classrooms")
-                                .document(classId)
-                                .collection("live_board")
-                                .document("state")
-                                .set(liveBoardPayload, SetOptions.merge())
-                                .await()
-                        }
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                            payload = liveBoardPayload,
+                            merge = true
+                        )
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error updating live board state on main db: ${e.message}")
+                    Log.w(TAG, "Error updating live board state: ${e.message}")
                 }
-
-                // Yedek varsayılan veritabanına sessizce yaz
-                try {
-                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                    val defaultDb = FirebaseFirestore.getInstance()
-                    if (defaultDb != mainDb) {
-                        withTimeoutOrNull(3500L) {
-                            defaultDb.collection("board_sessions")
-                                .document(cleanCode)
-                                .set(boardSessionUpdate, SetOptions.merge())
-                                .await()
-                        }
-                    }
-                } catch (_: Exception) {}
             }
         }
     }
@@ -1059,8 +1197,7 @@ object SmartBoardHelper {
                 "updatedAt" to now
             ),
             "disconnectedAt" to now,
-            "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
         val disconnectLivePayload = hashMapOf<String, Any?>(
             "classId" to classId,
@@ -1080,75 +1217,46 @@ object SmartBoardHelper {
                 "updatedAt" to now
             ),
             "disconnectedAt" to now,
-            "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
 
         scope.launch {
             withContext(NonCancellable) {
                 sessionWriteMutex.withLock {
-                    val mainDb = getMainFirestore(context)
                     if (!targetCode.isNullOrBlank()) {
-                        var mainWritten = false
-                        for (attempt in 1..2) {
-                            try {
-                                withTimeout(8000L) {
-                                    mainDb.collection("board_sessions")
-                                        .document(targetCode)
-                                        .set(disconnectSessionPayload, SetOptions.merge())
-                                        .await()
-                                }
-                                mainWritten = true
-                                break
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Disconnect attempt $attempt failed for $targetCode: ${e.message}")
-                                if (attempt == 1) delay(450L)
-                            }
-                        }
-                        if (!mainWritten) {
-                            try {
-                                mainDb.collection("board_sessions")
-                                    .document(targetCode)
-                                    .set(disconnectSessionPayload, SetOptions.merge())
-                            } catch (_: Exception) {}
+                        var res = writeDocumentRestFirst(
+                            context = context,
+                            docPathSegments = listOf("board_sessions", targetCode),
+                            payload = disconnectSessionPayload,
+                            merge = true,
+                            sdkTimeoutMs = 3000L
+                        )
+                        if (res !is RestWriteResult.Success) {
+                            delay(350L)
+                            res = writeDocumentRestFirst(
+                                context = context,
+                                docPathSegments = listOf("board_sessions", targetCode),
+                                payload = disconnectSessionPayload,
+                                merge = true,
+                                sdkTimeoutMs = 3000L
+                            )
                         }
                     }
 
                     if (classId.isNotBlank() && classId != "default") {
-                        try {
-                            withTimeoutOrNull(4500L) {
-                                mainDb.collection("classes")
-                                    .document(classId)
-                                    .collection("live_board")
-                                    .document("state")
-                                    .set(disconnectLivePayload, SetOptions.merge())
-                                    .await()
-                            }
-                            withTimeoutOrNull(4500L) {
-                                mainDb.collection("classrooms")
-                                    .document(classId)
-                                    .collection("live_board")
-                                    .document("state")
-                                    .set(disconnectLivePayload, SetOptions.merge())
-                                    .await()
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Error disconnecting live_board: ${e.message}")
-                        }
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classes", classId, "live_board", "state"),
+                            payload = disconnectLivePayload,
+                            merge = true
+                        )
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                            payload = disconnectLivePayload,
+                            merge = true
+                        )
                     }
-
-                    // Yedek varsayılan veritabanı
-                    try {
-                        val defaultDb = FirebaseFirestore.getInstance()
-                        if (defaultDb != mainDb && !targetCode.isNullOrBlank()) {
-                            withTimeoutOrNull(4500L) {
-                                defaultDb.collection("board_sessions")
-                                    .document(targetCode)
-                                    .set(disconnectSessionPayload, SetOptions.merge())
-                                    .await()
-                            }
-                        }
-                    } catch (_: Exception) {}
                 }
             }
         }
@@ -1160,17 +1268,19 @@ object SmartBoardHelper {
     suspend fun verifySessionStillConnected(context: Context, sessionCode: String): Boolean = withContext(Dispatchers.IO) {
         val clean = normalizeCode(sessionCode)
         if (clean.length < 4) return@withContext false
-        return@withContext try {
-            val mainDb = getMainFirestore(context)
-            val snap = withTimeoutOrNull(5000L) {
-                mainDb.collection("board_sessions").document(clean).get().await()
-            } ?: return@withContext true // Zaman aşımı/çevrimdışıysa yerel oturumu koru
-            if (!snap.exists()) return@withContext false
-            val st = snap.getString("status")?.uppercase(Locale.ROOT) ?: ""
-            val isConn = snap.getBoolean("isConnected")
-            !(st == "DISCONNECTED" || st == "WAITING" || (isConn == false && st != "CONNECTED"))
-        } catch (_: Exception) {
-            true
+        return@withContext when (val res = restGetDocument(context, listOf("board_sessions", clean))) {
+            is RestGetResult.Missing -> false
+            is RestGetResult.Error -> true // Çevrimdışıysa yerel oturumu koru
+            is RestGetResult.Found -> {
+                val st = res.fields.optJSONObject("status")?.optString("stringValue", "").orEmpty().uppercase(Locale.ROOT)
+                val isConnObj = res.fields.optJSONObject("isConnected")
+                val isConn = if (isConnObj != null && isConnObj.has("booleanValue")) {
+                    isConnObj.optBoolean("booleanValue", true)
+                } else {
+                    null
+                }
+                !(st == "DISCONNECTED" || st == "WAITING" || (isConn == false && st != "CONNECTED"))
+            }
         }
     }
 
@@ -1257,8 +1367,8 @@ object SmartBoardHelper {
         classId: String,
         cleanCode: String,
         castMap: Map<String, Any?>
-    ) {
-        if (activeSessionCode != cleanCode) return
+    ) = withContext(Dispatchers.IO) {
+        if (activeSessionCode != cleanCode) return@withContext
         val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         lastBoardCast = castMap
@@ -1274,42 +1384,34 @@ object SmartBoardHelper {
             "currentSubPage" to "PAYLASIM",
             "currentSubPageTitle" to "📡 Paylaşım",
             "boardCast" to castMap,
-            "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "updatedAt" to now
         )
         sessionWriteMutex.withLock {
             if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-            val mainDb = getMainFirestore(context)
-            mainDb.collection("board_sessions")
-                .document(cleanCode)
-                .set(payload, SetOptions.merge())
-                .await()
+            writeDocumentRestFirst(
+                context = context,
+                docPathSegments = listOf("board_sessions", cleanCode),
+                payload = payload,
+                merge = true
+            )
 
             if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
 
             if (classId.isNotBlank() && classId != "default") {
-                mainDb.collection("classes")
-                    .document(classId)
-                    .collection("live_board")
-                    .document("state")
-                    .set(payload, SetOptions.merge())
-
-                mainDb.collection("classrooms")
-                    .document(classId)
-                    .collection("live_board")
-                    .document("state")
-                    .set(payload, SetOptions.merge())
-            }
-
-            try {
+                restPatchDocument(
+                    context = context,
+                    docPathSegments = listOf("classes", classId, "live_board", "state"),
+                    payload = payload,
+                    merge = true
+                )
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                val defaultDb = FirebaseFirestore.getInstance()
-                if (defaultDb != mainDb) {
-                    defaultDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(payload, SetOptions.merge())
-                }
-            } catch (_: Exception) {}
+                restPatchDocument(
+                    context = context,
+                    docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                    payload = payload,
+                    merge = true
+                )
+            }
         }
     }
 
@@ -1357,9 +1459,9 @@ object SmartBoardHelper {
         packageName: String,
         isPaused: Boolean,
         pauseReason: String
-    ) {
+    ) = withContext(Dispatchers.IO) {
         val cleanCode = normalizeCode(sessionCode)
-        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return
+        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return@withContext
         val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
 
@@ -1401,26 +1503,29 @@ object SmartBoardHelper {
         try {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                val mainDb = getMainFirestore(context)
-                mainDb.collection("board_sessions")
-                    .document(cleanCode)
-                    .set(payload, SetOptions.merge())
-                    .await()
+                writeDocumentRestFirst(
+                    context = context,
+                    docPathSegments = listOf("board_sessions", cleanCode),
+                    payload = payload,
+                    merge = true
+                )
 
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
 
                 if (classId.isNotBlank() && classId != "default") {
-                    mainDb.collection("classes")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-
-                    mainDb.collection("classrooms")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
+                    restPatchDocument(
+                        context = context,
+                        docPathSegments = listOf("classes", classId, "live_board", "state"),
+                        payload = payload,
+                        merge = true
+                    )
+                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                    restPatchDocument(
+                        context = context,
+                        docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                        payload = payload,
+                        merge = true
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -1438,11 +1543,11 @@ object SmartBoardHelper {
         sessionCode: String,
         uri: Uri,
         onProgress: (Float) -> Unit = {}
-    ): Result<String> {
-        return try {
+    ): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
             val cleanCode = normalizeCode(sessionCode)
             if (cleanCode.length < 4) {
-                return Result.failure(IllegalStateException("Önce Akıllı Tahta bağlantısı kurun."))
+                return@withContext Result.failure(IllegalStateException("Önce Akıllı Tahta bağlantısı kurun."))
             }
 
             val fileName = resolveFileName(context, uri)
@@ -1458,19 +1563,19 @@ object SmartBoardHelper {
                     if (read <= 0) break
                     total += read
                     if (total > maxPreReadBytes) {
-                        return Result.failure(
+                        return@withContext Result.failure(
                             IllegalArgumentException("Seçilen dosya çok büyük (en fazla 12 MB desteklenir). Büyük videoları URL ile yayınlayabilirsiniz.")
                         )
                     }
                     out.write(buffer, 0, read)
                 }
                 out.toByteArray()
-            } ?: return Result.failure(IllegalStateException("Seçilen dosya okunamadı."))
+            } ?: return@withContext Result.failure(IllegalStateException("Seçilen dosya okunamadı."))
 
             val (finalBytes, finalMime) = optimizeLargeImageIfPossible(rawRead, initialMime)
             val maxFinalBytes = 12 * 1024 * 1024
             if (finalBytes.size > maxFinalBytes) {
-                return Result.failure(
+                return@withContext Result.failure(
                     IllegalArgumentException("Dosya boyutu (${finalBytes.size / (1024 * 1024)} MB) 12 MB sınırını aşıyor. Büyük dosyalar için URL sekmesini kullanın.")
                 )
             }
@@ -1499,27 +1604,29 @@ object SmartBoardHelper {
             } else {
                 val chunkSize = 300 * 1024
                 val totalChunks = (finalBytes.size + chunkSize - 1) / chunkSize
-                val mainDb = getMainFirestore(context)
-                val chunksCol = mainDb.collection("board_sessions")
-                    .document(cleanCode)
-                    .collection("cast_chunks")
 
                 for (i in 0 until totalChunks) {
                     val start = i * chunkSize
                     val end = minOf(finalBytes.size, start + chunkSize)
                     val slice = finalBytes.copyOfRange(start, end)
                     val b64Chunk = Base64.encodeToString(slice, Base64.NO_WRAP)
-                    chunksCol.document("${castId}_$i")
-                        .set(
-                            mapOf(
-                                "castId" to castId,
-                                "chunkIndex" to i,
-                                "totalChunks" to totalChunks,
-                                "data" to b64Chunk,
-                                "updatedAt" to now
-                            )
-                        )
-                        .await()
+                    val chunkPayload = mapOf(
+                        "castId" to castId,
+                        "chunkIndex" to i,
+                        "totalChunks" to totalChunks,
+                        "data" to b64Chunk,
+                        "updatedAt" to now
+                    )
+                    val chunkRes = writeDocumentRestFirst(
+                        context = context,
+                        docPathSegments = listOf("board_sessions", cleanCode, "cast_chunks", "${castId}_$i"),
+                        payload = chunkPayload,
+                        merge = false,
+                        sdkTimeoutMs = 6000L
+                    )
+                    if (chunkRes !is RestWriteResult.Success) {
+                        throw IllegalStateException("Dosya parçası yüklenemedi ($i/$totalChunks).")
+                    }
                     onProgress((i + 1).toFloat() / (totalChunks + 1).toFloat())
                 }
 
@@ -1617,42 +1724,38 @@ object SmartBoardHelper {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
                 try {
-                    val mainDb = getMainFirestore(context)
                     val payload = mapOf(
                         "boardCast" to stopMap,
                         "activeModule" to restoreSubPage,
                         "activeModuleTitle" to restoreSubPageTitle,
                         "currentSubPage" to restoreSubPage,
                         "currentSubPageTitle" to restoreSubPageTitle,
-                        "updatedAt" to now,
-                        "serverTimestamp" to FieldValue.serverTimestamp()
+                        "updatedAt" to now
                     )
-                    mainDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(payload, SetOptions.merge())
+                    writeDocumentRestFirst(
+                        context = context,
+                        docPathSegments = listOf("board_sessions", cleanCode),
+                        payload = payload,
+                        merge = true
+                    )
+
+                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
 
                     if (classId.isNotBlank() && classId != "default") {
-                        mainDb.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(payload, SetOptions.merge())
-
-                        mainDb.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(payload, SetOptions.merge())
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classes", classId, "live_board", "state"),
+                            payload = payload,
+                            merge = true
+                        )
+                        if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                        restPatchDocument(
+                            context = context,
+                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
+                            payload = payload,
+                            merge = true
+                        )
                     }
-
-                    try {
-                        val defaultDb = FirebaseFirestore.getInstance()
-                        if (defaultDb != mainDb) {
-                            defaultDb.collection("board_sessions")
-                                .document(cleanCode)
-                                .set(payload, SetOptions.merge())
-                        }
-                    } catch (_: Exception) {}
                 } catch (e: Exception) {
                     Log.w(TAG, "Error stopping board cast: ${e.message}")
                 }
