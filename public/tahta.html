@@ -62,30 +62,30 @@
 
     /* HEADER */
     header {
-      height: clamp(48px, 6.2vh, 62px);
+      height: clamp(54px, 6.8vh, 68px);
       flex-shrink: 0;
       background: linear-gradient(90deg, #13213D 0%, #1B2A4A 45%, #243B67 100%);
       color: #FFF;
-      padding: 0 clamp(12px, 1.5vw, 24px);
+      padding: 0 clamp(14px, 1.6vw, 26px);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      box-shadow: 0 4px 18px rgba(15, 30, 54, 0.22);
+      gap: 12px;
+      box-shadow: 0 5px 20px rgba(15, 30, 54, 0.24);
       z-index: 30;
-      border-bottom: 3px solid rgba(0, 188, 212, 0.55);
+      border-bottom: 3.5px solid #00BCD4;
     }
 
     .brand-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       min-width: 0;
     }
 
     .logo-circle {
-      width: clamp(32px, 4.2vh, 42px);
-      height: clamp(32px, 4.2vh, 42px);
+      width: clamp(36px, 4.6vh, 46px);
+      height: clamp(36px, 4.6vh, 46px);
       border-radius: 50%;
       background: #FFF;
       display: flex;
@@ -96,8 +96,8 @@
     }
 
     .logo-circle svg {
-      width: 72%;
-      height: 72%;
+      width: 74%;
+      height: 74%;
     }
 
     .brand-titles {
@@ -105,18 +105,18 @@
     }
 
     .brand-titles h1 {
-      font-size: clamp(0.98rem, 2.05vh, 1.32rem);
+      font-size: clamp(1.08rem, 2.25vh, 1.48rem);
       font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       white-space: nowrap;
     }
 
     .brand-titles p {
-      font-size: clamp(0.66rem, 1.25vh, 0.8rem);
+      font-size: clamp(0.74rem, 1.38vh, 0.9rem);
       color: #BAE6FD;
-      font-weight: 700;
+      font-weight: 800;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -126,37 +126,37 @@
     .header-center-badges {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       min-width: 0;
     }
 
     .class-badge {
-      background: rgba(255, 255, 255, 0.14);
-      border: 1.5px solid rgba(255, 255, 255, 0.28);
-      padding: clamp(3px, 0.6vh, 6px) clamp(10px, 1.1vw, 16px);
+      background: rgba(255, 255, 255, 0.16);
+      border: 2px solid rgba(255, 255, 255, 0.32);
+      padding: clamp(4px, 0.65vh, 7px) clamp(12px, 1.25vw, 18px);
       border-radius: 999px;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.8rem, 1.6vh, 0.96rem);
+      font-size: clamp(0.88rem, 1.75vh, 1.08rem);
       font-weight: 600;
       color: #FFF;
       display: none;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
       white-space: nowrap;
     }
 
     .module-badge {
       background: linear-gradient(135deg, #00BCD4 0%, #0284C7 100%);
       color: #FFF;
-      padding: clamp(3px, 0.6vh, 6px) clamp(10px, 1.1vw, 16px);
+      padding: clamp(4px, 0.65vh, 7px) clamp(12px, 1.25vw, 18px);
       border-radius: 999px;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.8rem, 1.6vh, 0.96rem);
+      font-size: clamp(0.88rem, 1.75vh, 1.08rem);
       font-weight: 600;
       display: none;
       align-items: center;
-      gap: 5px;
-      box-shadow: 0 3px 10px rgba(0, 188, 212, 0.35);
+      gap: 6px;
+      box-shadow: 0 3px 12px rgba(0, 188, 212, 0.38);
       white-space: nowrap;
     }
 
@@ -168,13 +168,13 @@
     }
 
     .clock-pill {
-      background: rgba(255, 255, 255, 0.10);
-      border: 1.5px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
+      border: 1.5px solid rgba(255, 255, 255, 0.24);
       color: #E0F2FE;
-      padding: clamp(3px, 0.6vh, 6px) clamp(8px, 0.9vw, 12px);
+      padding: clamp(4px, 0.65vh, 7px) clamp(10px, 1vw, 14px);
       border-radius: 999px;
       font-family: 'Fredoka', monospace;
-      font-size: clamp(0.76rem, 1.45vh, 0.9rem);
+      font-size: clamp(0.84rem, 1.6vh, 1rem);
       font-weight: 600;
       white-space: nowrap;
     }
@@ -183,9 +183,9 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: clamp(3px, 0.6vh, 6px) clamp(10px, 1vw, 14px);
+      padding: clamp(4px, 0.65vh, 7px) clamp(11px, 1.1vw, 15px);
       border-radius: 999px;
-      font-size: clamp(0.72rem, 1.4vh, 0.86rem);
+      font-size: clamp(0.78rem, 1.5vh, 0.94rem);
       font-weight: 800;
       background: rgba(245, 158, 11, 0.22);
       border: 1.5px solid #F59E0B;
@@ -206,8 +206,8 @@
     }
 
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
       background: #F59E0B;
       animation: pulseDot 1.5s infinite;
@@ -227,13 +227,13 @@
     }
 
     .header-icon-btn {
-      background: rgba(255, 255, 255, 0.12);
-      border: 1.5px solid rgba(255, 255, 255, 0.26);
+      background: rgba(255, 255, 255, 0.14);
+      border: 1.5px solid rgba(255, 255, 255, 0.28);
       color: #FFF;
-      padding: clamp(3px, 0.6vh, 6px) clamp(9px, 0.9vw, 13px);
-      border-radius: 10px;
+      padding: clamp(4px, 0.65vh, 7px) clamp(10px, 1vw, 14px);
+      border-radius: 12px;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.72rem, 1.4vh, 0.86rem);
+      font-size: clamp(0.78rem, 1.5vh, 0.94rem);
       font-weight: 600;
       cursor: pointer;
       transition: background 0.18s ease, transform 0.12s ease;
@@ -241,7 +241,7 @@
     }
 
     .header-icon-btn:hover {
-      background: rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.24);
     }
 
     .header-icon-btn:active {
@@ -252,8 +252,8 @@
     main {
       flex: 1;
       min-height: 0;
-      height: calc(100vh - clamp(48px, 6.2vh, 62px));
-      padding: clamp(6px, 0.95vh, 14px) clamp(8px, 1.2vw, 18px);
+      height: calc(100vh - clamp(54px, 6.8vh, 68px));
+      padding: clamp(8px, 1vh, 14px) clamp(10px, 1.3vw, 20px);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -503,19 +503,20 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       flex-shrink: 0;
-      background: rgba(255, 255, 255, 0.92);
-      padding: clamp(5px, 0.75vh, 9px) clamp(10px, 1.1vw, 15px);
-      border-radius: 15px;
-      border: 2px solid #E2E8F0;
-      box-shadow: 0 3px 10px rgba(15, 30, 54, 0.04);
+      background: rgba(255, 255, 255, 0.95);
+      padding: clamp(6px, 0.85vh, 10px) clamp(12px, 1.2vw, 18px);
+      border-radius: 18px;
+      border: 2px solid #DBEAFE;
+      border-bottom: 4px solid #CBD5E1;
+      box-shadow: 0 4px 14px rgba(15, 30, 54, 0.05);
     }
 
     .stats-bar {
       display: flex;
       align-items: center;
-      gap: clamp(4px, 0.6vw, 8px);
+      gap: clamp(6px, 0.7vw, 10px);
       flex-wrap: nowrap;
       overflow-x: auto;
       scrollbar-width: none;
@@ -527,106 +528,178 @@
 
     .stat-pill {
       background: #FFF;
-      border: 2px solid #E2E8F0;
+      border: 2px solid #CBD5E1;
+      border-bottom: 3.5px solid #94A3B8;
       border-radius: 999px;
-      padding: clamp(2px, 0.45vh, 5px) clamp(8px, 0.9vw, 13px);
+      padding: clamp(3px, 0.55vh, 7px) clamp(10px, 1vw, 15px);
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.72rem, 1.38vh, 0.9rem);
+      font-size: clamp(0.8rem, 1.55vh, 1.02rem);
       font-weight: 600;
       color: var(--navy-primary);
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       white-space: nowrap;
     }
 
-    .stat-pill.girl-stat { background: #FFF0F6; border-color: #FBCFE8; color: #BE185D; }
-    .stat-pill.boy-stat { background: #F0F9FF; border-color: #BAE6FD; color: #0369A1; }
-    .stat-pill.star-stat { background: #FFFBEB; border-color: #FDE68A; color: #B45309; }
-    .stat-pill.book-stat { background: #ECFDF5; border-color: #A7F3D0; color: #047857; }
+    .stat-pill strong { font-weight: 700; }
+    .stat-pill.girl-stat { background: #FFF0F6; border-color: #F9A8D4; border-bottom-color: #F472B6; color: #9D174D; }
+    .stat-pill.boy-stat { background: #F0F9FF; border-color: #7DD3FC; border-bottom-color: #38BDF8; color: #0369A1; }
+    .stat-pill.star-stat { background: #FFFBEB; border-color: #FCD34D; border-bottom-color: #F59E0B; color: #B45309; }
+    .stat-pill.book-stat { background: #ECFDF5; border-color: #6EE7B7; border-bottom-color: #10B981; color: #047857; }
 
     .sort-controls {
       display: flex;
       align-items: center;
-      gap: 4px;
-      background: #F1F5F9;
-      padding: 3px;
-      border-radius: 11px;
-      border: 1.5px solid #CBD5E1;
+      gap: 5px;
+      background: #EFF6FF;
+      padding: 4px;
+      border-radius: 14px;
+      border: 2px solid #BFDBFE;
       flex-shrink: 0;
     }
 
     .sort-label {
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.7rem, 1.25vh, 0.82rem);
+      font-size: clamp(0.78rem, 1.4vh, 0.94rem);
       font-weight: 600;
-      color: #64748B;
-      padding: 0 5px;
+      color: #475569;
+      padding: 0 6px;
     }
 
     .sort-btn {
       border: none;
       background: transparent;
-      color: #475569;
+      color: #334155;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.7rem, 1.32vh, 0.85rem);
+      font-size: clamp(0.78rem, 1.48vh, 0.98rem);
       font-weight: 600;
-      padding: clamp(3px, 0.5vh, 6px) clamp(8px, 0.9vw, 12px);
-      border-radius: 9px;
+      padding: clamp(4px, 0.55vh, 7px) clamp(10px, 1vw, 15px);
+      border-radius: 10px;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       white-space: nowrap;
       transition: all 0.15s ease;
     }
 
-    .sort-btn:hover { background: rgba(255, 255, 255, 0.7); }
-    .sort-btn.active { background: var(--navy-primary); color: #FFF; }
+    .sort-btn:hover { background: rgba(255, 255, 255, 0.85); }
+    .sort-btn.active { background: var(--navy-primary); color: #FFF; box-shadow: 0 2px 6px rgba(27, 42, 74, 0.25); }
     .sort-btn.active.sort-star { background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #FFF; }
     .sort-btn.active.sort-book { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFF; }
 
-    /* STUDENTS GRID */
+    /* STUDENTS GRID - PLAYFUL 3D CLASSROOM CARDS */
     .students-grid {
+      --card-pad-y: clamp(6px, 0.95vh, 13px);
+      --card-pad-x: clamp(8px, 1vw, 16px);
+      --name-size: clamp(1rem, 2.2vh, 1.5rem);
+      --no-size: clamp(0.84rem, 1.75vh, 1.16rem);
+      --metric-size: clamp(0.86rem, 1.85vh, 1.22rem);
+      --meta-size: clamp(0.7rem, 1.35vh, 0.9rem);
       flex: 1;
       min-height: 0;
       width: 100%;
       height: 100%;
       display: grid;
-      gap: clamp(4px, 0.75vh, 9px) clamp(5px, 0.75vw, 11px);
+      gap: clamp(6px, 1vh, 13px) clamp(7px, 0.95vw, 14px);
       align-items: stretch;
       overflow: hidden;
+      padding-bottom: 2px;
+    }
+
+    .students-grid[data-density="spacious"] {
+      --card-pad-y: clamp(9px, 1.35vh, 18px);
+      --card-pad-x: clamp(12px, 1.3vw, 20px);
+      --name-size: clamp(1.22rem, 2.85vh, 1.95rem);
+      --no-size: clamp(0.95rem, 2vh, 1.35rem);
+      --metric-size: clamp(1rem, 2.15vh, 1.45rem);
+      --meta-size: clamp(0.8rem, 1.55vh, 1.04rem);
+    }
+
+    .students-grid[data-density="normal"] {
+      --card-pad-y: clamp(6px, 0.9vh, 12px);
+      --card-pad-x: clamp(9px, 1vw, 15px);
+      --name-size: clamp(1.04rem, 2.28vh, 1.54rem);
+      --no-size: clamp(0.84rem, 1.78vh, 1.18rem);
+      --metric-size: clamp(0.88rem, 1.85vh, 1.24rem);
+      --meta-size: clamp(0.72rem, 1.35vh, 0.92rem);
+    }
+
+    .students-grid[data-density="compact"] {
+      --card-pad-y: clamp(4px, 0.6vh, 9px);
+      --card-pad-x: clamp(7px, 0.8vw, 12px);
+      --name-size: clamp(0.88rem, 1.85vh, 1.24rem);
+      --no-size: clamp(0.74rem, 1.5vh, 1rem);
+      --metric-size: clamp(0.78rem, 1.58vh, 1.05rem);
+      --meta-size: clamp(0.65rem, 1.18vh, 0.8rem);
+    }
+
+    .students-grid[data-density="dense"] {
+      --card-pad-y: clamp(3px, 0.45vh, 7px);
+      --card-pad-x: clamp(6px, 0.65vw, 10px);
+      --name-size: clamp(0.78rem, 1.55vh, 1.06rem);
+      --no-size: clamp(0.68rem, 1.32vh, 0.88rem);
+      --metric-size: clamp(0.7rem, 1.38vh, 0.92rem);
+      --meta-size: clamp(0.6rem, 1.05vh, 0.72rem);
     }
 
     .student-card {
-      border-radius: clamp(10px, 1.4vh, 16px);
-      padding: clamp(4px, 0.6vh, 9px) clamp(6px, 0.75vw, 12px);
+      border-radius: clamp(14px, 1.9vh, 22px);
+      padding: var(--card-pad-y) var(--card-pad-x);
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: space-between;
-      gap: clamp(4px, 0.5vw, 8px);
+      gap: clamp(3px, 0.55vh, 7px);
       position: relative;
       overflow: hidden;
       min-height: 0;
       min-width: 0;
-      transition: transform 0.15s ease;
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .student-card::after {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 36%;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 100%);
+      pointer-events: none;
     }
 
     .student-card.kiz-card {
-      background: var(--girl-bg);
-      border: 2px solid var(--girl-border);
-      box-shadow: 0 3px 0 rgba(244, 114, 182, 0.25);
+      background: linear-gradient(155deg, #FFF5F9 0%, #FFE4F0 100%);
+      border: 2.5px solid #F9A8D4;
+      border-bottom: 5px solid #F472B6;
+      box-shadow: 0 5px 12px rgba(244, 114, 182, 0.14);
     }
 
     .student-card.erkek-card {
-      background: var(--boy-bg);
-      border: 2px solid var(--boy-border);
-      box-shadow: 0 3px 0 rgba(56, 189, 248, 0.25);
+      background: linear-gradient(155deg, #F3FAFF 0%, #DFF1FE 100%);
+      border: 2.5px solid #7DD3FC;
+      border-bottom: 5px solid #38BDF8;
+      box-shadow: 0 5px 12px rgba(56, 189, 248, 0.14);
+    }
+
+    .student-card.rank-top-1 {
+      border-color: #F59E0B !important;
+      border-bottom: 5px solid #D97706 !important;
+      box-shadow: 0 6px 18px rgba(245, 158, 11, 0.25) !important;
+    }
+
+    .student-card.rank-top-2 {
+      border-color: #94A3B8 !important;
+      border-bottom: 5px solid #64748B !important;
+    }
+
+    .student-card.rank-top-3 {
+      border-color: #FB923C !important;
+      border-bottom: 5px solid #EA580C !important;
     }
 
     @keyframes cardPopPulse {
       0% { transform: scale(1); }
-      45% { transform: scale(1.035); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.45); }
+      45% { transform: scale(1.035); box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.45); }
       100% { transform: scale(1); }
     }
 
@@ -634,145 +707,173 @@
       animation: cardPopPulse 0.85s ease;
     }
 
-    .student-left {
+    .card-top-bar {
       display: flex;
       align-items: center;
-      gap: clamp(4px, 0.5vw, 8px);
+      justify-content: space-between;
+      gap: 6px;
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+    }
+
+    .card-id-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
       min-width: 0;
-      flex: 1;
     }
 
     .student-no-badge {
-      min-width: clamp(30px, 2.9vw, 42px);
-      height: clamp(28px, 4vh, 40px);
-      padding: 0 4px;
-      border-radius: clamp(7px, 1vh, 12px);
+      padding: clamp(2px, 0.35vh, 4px) clamp(7px, 0.7vw, 11px);
+      border-radius: clamp(8px, 1.1vh, 12px);
       font-family: 'Fredoka', sans-serif;
       font-weight: 700;
-      font-size: clamp(0.72rem, 1.55vh, 0.98rem);
-      display: flex;
-      flex-direction: column;
+      font-size: var(--no-size);
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
+      gap: 4px;
       flex-shrink: 0;
-      line-height: 1.02;
+      line-height: 1.1;
+      box-shadow: 0 2px 0 rgba(15, 30, 54, 0.06);
     }
 
-    .kiz-card .student-no-badge { background: #FFF; color: var(--girl-badge-text); border: 1.6px solid #F9A8D4; }
-    .erkek-card .student-no-badge { background: #FFF; color: var(--boy-badge-text); border: 1.6px solid #7DD3FC; }
+    .kiz-card .student-no-badge { background: #FFF; color: #BE185D; border: 2px solid #F9A8D4; }
+    .erkek-card .student-no-badge { background: #FFF; color: #0369A1; border: 2px solid #7DD3FC; }
 
-    .rank-mini {
-      font-size: clamp(0.54rem, 0.95vh, 0.66rem);
-      font-weight: 900;
+    .rank-pill {
+      padding: clamp(2px, 0.35vh, 4px) clamp(6px, 0.6vw, 9px);
+      border-radius: 999px;
+      font-family: 'Fredoka', sans-serif;
+      font-size: var(--meta-size);
+      font-weight: 700;
+      background: #FFF;
+      color: var(--navy-primary);
+      border: 1.5px solid #CBD5E1;
+      white-space: nowrap;
+      line-height: 1.1;
     }
 
-    .student-info {
-      min-width: 0;
+    .rank-pill.gold { background: #FEF3C7; color: #B45309; border-color: #F59E0B; }
+    .rank-pill.silver { background: #F1F5F9; color: #334155; border-color: #94A3B8; }
+    .rank-pill.bronze { background: #FFEDD5; color: #C2410C; border-color: #FB923C; }
+
+    .card-hero-name {
       flex: 1;
+      min-height: 0;
       display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 1px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
     }
 
-    .student-info h4 {
+    .card-hero-name h4 {
       font-family: 'Fredoka', 'Nunito', sans-serif;
-      font-size: clamp(0.74rem, 1.58vh, 1rem);
+      font-size: var(--name-size);
       font-weight: 700;
       color: #0F172A;
-      line-height: 1.1;
+      line-height: 1.12;
+      letter-spacing: 0.15px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
       text-overflow: ellipsis;
+      word-break: break-word;
+      width: 100%;
     }
 
-    .gender-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      font-size: clamp(0.58rem, 1.05vh, 0.7rem);
+    .card-sub-meta {
+      font-family: 'Nunito', sans-serif;
+      font-size: var(--meta-size);
       font-weight: 800;
-      padding: 1px 6px;
-      border-radius: 999px;
-      width: fit-content;
-      max-width: 100%;
+      color: #475569;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      position: relative;
+      z-index: 1;
     }
-
-    .kiz-card .gender-tag { background: rgba(244, 114, 182, 0.18); color: #9D174D; }
-    .erkek-card .gender-tag { background: rgba(14, 165, 233, 0.16); color: #075985; }
 
     .student-metrics {
       display: flex;
       align-items: center;
-      gap: clamp(3px, 0.35vw, 5px);
+      gap: clamp(4px, 0.45vw, 7px);
       flex-shrink: 0;
     }
 
     .metric-pill {
-      display: flex;
-      flex-direction: column;
+      display: inline-flex;
+      flex-direction: row;
       align-items: center;
       justify-content: center;
-      min-width: clamp(30px, 2.6vw, 42px);
-      height: clamp(28px, 4vh, 40px);
-      padding: 1px 4px;
-      border-radius: clamp(7px, 1vh, 11px);
+      gap: 4px;
+      padding: clamp(2px, 0.35vh, 5px) clamp(7px, 0.7vw, 11px);
+      border-radius: clamp(9px, 1.2vh, 13px);
       background: #FFF;
-      line-height: 1.02;
+      line-height: 1.05;
+      box-shadow: 0 2px 0 rgba(15, 30, 54, 0.06);
     }
 
-    .metric-pill.star-pill { border: 1.6px solid #FCD34D; background: linear-gradient(180deg, #FFF 0%, #FFFBEB 100%); color: #B45309; }
-    .metric-pill.book-pill { border: 1.6px solid #6EE7B7; background: linear-gradient(180deg, #FFF 0%, #ECFDF5 100%); color: #047857; }
+    .metric-pill.star-pill {
+      border: 2px solid #FCD34D;
+      border-bottom: 3px solid #F59E0B;
+      background: linear-gradient(180deg, #FFFFFF 0%, #FEF3C7 100%);
+      color: #92400E;
+    }
+    .metric-pill.book-pill {
+      border: 2px solid #6EE7B7;
+      border-bottom: 3px solid #10B981;
+      background: linear-gradient(180deg, #FFFFFF 0%, #D1FAE5 100%);
+      color: #065F46;
+    }
 
-    .metric-icon { font-size: clamp(0.64rem, 1.18vh, 0.8rem); line-height: 1; }
-    .metric-val { font-family: 'Fredoka', sans-serif; font-size: clamp(0.7rem, 1.38vh, 0.9rem); font-weight: 700; }
+    .metric-icon { font-size: calc(var(--metric-size) * 0.92); line-height: 1; }
+    .metric-val { font-family: 'Fredoka', sans-serif; font-size: var(--metric-size); font-weight: 700; }
 
     /* SCHEDULE */
     .schedule-grid {
       flex: 1;
       min-height: 0;
       display: grid;
-      gap: clamp(6px, 1vh, 12px);
+      gap: clamp(8px, 1.2vh, 14px);
       overflow: hidden;
     }
 
     .lesson-card {
       background: linear-gradient(135deg, #FFF 0%, #F8FAFC 100%);
-      border-radius: 18px;
-      padding: clamp(8px, 1.4vh, 16px) clamp(10px, 1.2vw, 18px);
-      border: 2px solid #BAE6FD;
-      box-shadow: 0 3px 0 rgba(56, 189, 248, 0.22);
+      border-radius: 22px;
+      padding: clamp(10px, 1.5vh, 18px) clamp(14px, 1.4vw, 22px);
+      border: 2.5px solid #BAE6FD;
+      border-bottom: 5px solid #38BDF8;
+      box-shadow: 0 6px 14px rgba(56, 189, 248, 0.14);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 12px;
       min-height: 0;
       position: relative;
     }
 
-    .lesson-card.theme-AMBER { background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color: #FCD34D; }
-    .lesson-card.theme-TURQUOISE { background: linear-gradient(135deg, #ECFEFF 0%, #CFFAFE 100%); border-color: #67E8F9; }
-    .lesson-card.theme-PURPLE { background: linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%); border-color: #D8B4FE; }
-    .lesson-card.theme-EMERALD { background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); border-color: #6EE7B7; }
-    .lesson-card.theme-ROSE { background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%); border-color: #FDA4AF; }
+    .lesson-card.theme-AMBER { background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color: #FCD34D; border-bottom-color: #F59E0B; }
+    .lesson-card.theme-TURQUOISE { background: linear-gradient(135deg, #ECFEFF 0%, #CFFAFE 100%); border-color: #67E8F9; border-bottom-color: #06B6D4; }
+    .lesson-card.theme-PURPLE { background: linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%); border-color: #D8B4FE; border-bottom-color: #A855F7; }
+    .lesson-card.theme-EMERALD { background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); border-color: #6EE7B7; border-bottom-color: #10B981; }
+    .lesson-card.theme-ROSE { background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%); border-color: #FDA4AF; border-bottom-color: #F43F5E; }
     .lesson-card.current-lesson {
       border-color: #10B981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.28), 0 6px 18px rgba(16, 185, 129, 0.16);
+      border-bottom: 6px solid #059669;
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.28), 0 8px 22px rgba(16, 185, 129, 0.22);
     }
 
     .lesson-num-circle {
-      width: clamp(40px, 5.6vh, 54px);
-      height: clamp(40px, 5.6vh, 54px);
-      border-radius: 14px;
+      width: clamp(48px, 6.8vh, 66px);
+      height: clamp(48px, 6.8vh, 66px);
+      border-radius: 18px;
       background: var(--navy-primary);
       color: #FFF;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.95rem, 2vh, 1.25rem);
+      font-size: clamp(1.15rem, 2.4vh, 1.55rem);
       font-weight: 700;
       display: flex;
       flex-direction: column;
@@ -780,6 +881,7 @@
       justify-content: center;
       flex-shrink: 0;
       line-height: 1.02;
+      box-shadow: 0 3px 0 #0F172A;
     }
 
     /* SEATING PLAN */
@@ -788,7 +890,7 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: clamp(5px, 0.8vh, 10px);
+      gap: clamp(6px, 0.9vh, 11px);
       overflow: hidden;
     }
 
@@ -801,35 +903,36 @@
     }
 
     .front-fixture {
-      border-radius: 12px;
-      padding: clamp(4px, 0.7vh, 8px) 12px;
+      border-radius: 14px;
+      padding: clamp(5px, 0.8vh, 10px) 14px;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.72rem, 1.35vh, 0.88rem);
+      font-size: clamp(0.82rem, 1.55vh, 1.04rem);
       font-weight: 600;
       text-align: center;
     }
 
-    .front-fixture.board-fixture { background: linear-gradient(90deg, #1B2A4A, #2A4365); color: #FFF; border: 2px solid #38BDF8; }
-    .front-fixture.desk-fixture { background: #FEF3C7; color: #92400E; border: 2px solid #FCD34D; }
-    .front-fixture.empty-fixture { background: rgba(255, 255, 255, 0.65); color: #64748B; border: 1.5px dashed #CBD5E1; }
+    .front-fixture.board-fixture { background: linear-gradient(90deg, #1B2A4A, #2A4365); color: #FFF; border: 2px solid #38BDF8; border-bottom: 4px solid #0284C7; }
+    .front-fixture.desk-fixture { background: #FEF3C7; color: #92400E; border: 2px solid #FCD34D; border-bottom: 4px solid #F59E0B; }
+    .front-fixture.empty-fixture { background: rgba(255, 255, 255, 0.78); color: #475569; border: 2px dashed #CBD5E1; }
 
     .seating-columns-wrap {
       flex: 1;
       min-height: 0;
       display: grid;
-      gap: clamp(6px, 1vw, 14px);
+      gap: clamp(7px, 1vw, 14px);
       align-items: stretch;
       overflow: hidden;
     }
 
     .seating-group-col {
-      background: rgba(255, 255, 255, 0.78);
+      background: rgba(255, 255, 255, 0.86);
       border: 2px solid #CBD5E1;
-      border-radius: 16px;
-      padding: clamp(5px, 0.8vh, 9px);
+      border-bottom: 4px solid #94A3B8;
+      border-radius: 18px;
+      padding: clamp(6px, 0.85vh, 10px);
       display: flex;
       flex-direction: column;
-      gap: clamp(3px, 0.55vh, 6px);
+      gap: clamp(4px, 0.6vh, 7px);
       min-height: 0;
       overflow: hidden;
     }
@@ -837,12 +940,13 @@
     .seating-group-header {
       text-align: center;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.72rem, 1.32vh, 0.86rem);
+      font-size: clamp(0.82rem, 1.5vh, 1rem);
       font-weight: 700;
       color: var(--navy-primary);
-      background: #E2E8F0;
-      padding: 2px 8px;
-      border-radius: 8px;
+      background: #E0F2FE;
+      border: 1.5px solid #BAE6FD;
+      padding: 3px 10px;
+      border-radius: 10px;
       flex-shrink: 0;
     }
 
@@ -850,58 +954,59 @@
       flex: 1;
       min-height: 0;
       display: grid;
-      gap: clamp(3px, 0.55vh, 6px);
+      gap: clamp(4px, 0.65vh, 8px);
     }
 
     .desk-row {
       background: #F8FAFC;
-      border: 1.8px solid #CBD5E1;
-      border-radius: 11px;
-      padding: clamp(2px, 0.4vh, 5px);
+      border: 2px solid #CBD5E1;
+      border-bottom: 3px solid #94A3B8;
+      border-radius: 13px;
+      padding: clamp(3px, 0.45vh, 6px);
       display: grid;
-      gap: clamp(3px, 0.4vw, 6px);
+      gap: clamp(4px, 0.45vw, 7px);
       min-height: 0;
       align-items: stretch;
     }
 
     .seat-slot {
-      border-radius: 8px;
-      padding: clamp(2px, 0.4vh, 5px) clamp(4px, 0.45vw, 7px);
+      border-radius: 10px;
+      padding: clamp(3px, 0.45vh, 6px) clamp(6px, 0.6vw, 10px);
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
       min-width: 0;
       min-height: 0;
       overflow: hidden;
     }
 
-    .seat-slot.kiz-seat { background: var(--girl-bg); border: 1.6px solid var(--girl-border); }
-    .seat-slot.erkek-seat { background: var(--boy-bg); border: 1.6px solid var(--boy-border); }
+    .seat-slot.kiz-seat { background: linear-gradient(135deg, #FFF5F9 0%, #FFE4F0 100%); border: 2px solid #F9A8D4; }
+    .seat-slot.erkek-seat { background: linear-gradient(135deg, #F3FAFF 0%, #DFF1FE 100%); border: 2px solid #7DD3FC; }
     .seat-slot.empty-seat {
       background: #F1F5F9;
-      border: 1.4px dashed #CBD5E1;
+      border: 1.5px dashed #CBD5E1;
       color: #94A3B8;
       justify-content: center;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.64rem, 1.15vh, 0.76rem);
+      font-size: clamp(0.76rem, 1.35vh, 0.92rem);
     }
 
     .seat-no {
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.64rem, 1.18vh, 0.78rem);
+      font-size: clamp(0.76rem, 1.45vh, 0.98rem);
       font-weight: 700;
-      padding: 1px 4px;
-      border-radius: 5px;
+      padding: 2px 6px;
+      border-radius: 7px;
       background: #FFF;
       flex-shrink: 0;
     }
 
-    .kiz-seat .seat-no { color: var(--girl-badge-text); border: 1px solid #F9A8D4; }
-    .erkek-seat .seat-no { color: var(--boy-badge-text); border: 1px solid #7DD3FC; }
+    .kiz-seat .seat-no { color: var(--girl-badge-text); border: 1.5px solid #F9A8D4; }
+    .erkek-seat .seat-no { color: var(--boy-badge-text); border: 1.5px solid #7DD3FC; }
 
     .seat-name {
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.66rem, 1.25vh, 0.82rem);
+      font-size: clamp(0.84rem, 1.72vh, 1.14rem);
       font-weight: 700;
       color: #0F172A;
       white-space: nowrap;
@@ -916,19 +1021,20 @@
       flex: 1;
       min-height: 0;
       display: grid;
-      gap: clamp(6px, 1vh, 12px);
+      gap: clamp(8px, 1.1vh, 14px);
       overflow: hidden;
     }
 
     .group-card {
       background: #FFF;
-      border-radius: 16px;
-      border: 2px solid #E2E8F0;
-      box-shadow: 0 3px 0 rgba(15, 30, 54, 0.08);
-      padding: clamp(6px, 1vh, 12px);
+      border-radius: 20px;
+      border: 2.5px solid #E2E8F0;
+      border-bottom: 5px solid #CBD5E1;
+      box-shadow: 0 5px 12px rgba(15, 30, 54, 0.08);
+      padding: clamp(8px, 1.15vh, 14px);
       display: flex;
       flex-direction: column;
-      gap: clamp(4px, 0.65vh, 7px);
+      gap: clamp(5px, 0.75vh, 9px);
       min-height: 0;
       overflow: hidden;
     }
@@ -937,13 +1043,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-bottom: 4px;
+      padding-bottom: 6px;
       border-bottom: 2px solid #F1F5F9;
       flex-shrink: 0;
     }
 
     .group-header h3 {
-      font-size: clamp(0.86rem, 1.65vh, 1.06rem);
+      font-size: clamp(1rem, 1.95vh, 1.32rem);
       color: var(--navy-primary);
     }
 
@@ -952,7 +1058,7 @@
       min-height: 0;
       display: grid;
       grid-auto-rows: minmax(0, 1fr);
-      gap: clamp(3px, 0.5vh, 5px);
+      gap: clamp(4px, 0.6vh, 7px);
       overflow: hidden;
     }
 
@@ -960,16 +1066,16 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: clamp(2px, 0.4vh, 5px) 7px;
-      border-radius: 9px;
+      padding: clamp(3px, 0.5vh, 7px) 10px;
+      border-radius: 12px;
       font-family: 'Fredoka', sans-serif;
-      font-size: clamp(0.7rem, 1.32vh, 0.86rem);
+      font-size: clamp(0.82rem, 1.62vh, 1.08rem);
       font-weight: 600;
       min-height: 0;
     }
 
-    .group-member-row.kiz-member { background: var(--girl-bg); border: 1.5px solid var(--girl-border); color: #831843; }
-    .group-member-row.erkek-member { background: var(--boy-bg); border: 1.5px solid var(--boy-border); color: #0C4A6E; }
+    .group-member-row.kiz-member { background: linear-gradient(135deg, #FFF5F9 0%, #FFE4F0 100%); border: 2px solid #F9A8D4; color: #831843; }
+    .group-member-row.erkek-member { background: linear-gradient(135deg, #F3FAFF 0%, #DFF1FE 100%); border: 2px solid #7DD3FC; color: #0C4A6E; }
 
     /* SPLIT STAGE & PODIUM */
     .split-stage {
@@ -977,15 +1083,16 @@
       min-height: 0;
       display: grid;
       grid-template-columns: 1.32fr 1fr;
-      gap: clamp(8px, 1.2vw, 16px);
+      gap: clamp(10px, 1.3vw, 18px);
       overflow: hidden;
     }
 
     .stage-panel {
-      background: rgba(255, 255, 255, 0.92);
-      border: 2px solid #E2E8F0;
-      border-radius: 22px;
-      padding: clamp(10px, 1.5vh, 18px);
+      background: rgba(255, 255, 255, 0.94);
+      border: 2.5px solid #E2E8F0;
+      border-bottom: 5px solid #CBD5E1;
+      border-radius: 24px;
+      padding: clamp(12px, 1.6vh, 20px);
       display: flex;
       flex-direction: column;
       min-height: 0;
@@ -996,23 +1103,23 @@
     .podium-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: clamp(6px, 1vw, 12px);
+      gap: clamp(8px, 1.1vw, 14px);
       flex-shrink: 0;
     }
 
     .podium-card {
-      border-radius: 16px;
-      padding: clamp(6px, 0.9vh, 12px) clamp(8px, 0.9vw, 12px);
+      border-radius: 18px;
+      padding: clamp(8px, 1vh, 13px) clamp(10px, 1vw, 15px);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      border: 2px solid #E2E8F0;
+      gap: 8px;
+      border: 2.5px solid #E2E8F0;
     }
 
-    .podium-card.gold { background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color: #F59E0B; }
-    .podium-card.silver { background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%); border-color: #94A3B8; }
-    .podium-card.bronze { background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%); border-color: #F97316; }
+    .podium-card.gold { background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border-color: #F59E0B; border-bottom: 5px solid #D97706; }
+    .podium-card.silver { background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%); border-color: #94A3B8; border-bottom: 5px solid #64748B; }
+    .podium-card.bronze { background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%); border-color: #F97316; border-bottom: 5px solid #EA580C; }
 
     @keyframes spinWheelGlow {
       0%, 100% { transform: scale(1) rotate(0deg); }
@@ -2019,6 +2126,13 @@
         return { cols: 8, rows: Math.ceil(total / 8) };
       }
 
+      function getDensityTier(total) {
+        if (total <= 16) return "spacious";
+        if (total <= 25) return "normal";
+        if (total <= 36) return "compact";
+        return "dense";
+      }
+
       /* 1. SINIF LİSTESİ */
       function renderStudents(students) {
         var statsBar = document.getElementById("student-stats-bar");
@@ -2045,13 +2159,14 @@
           '<div class="stat-pill book-stat">📚 Okunan Kitap: <strong>' + totalBooks + '</strong></div>';
 
         if (total === 0) {
+          grid.removeAttribute("data-density");
           grid.style.gridTemplateColumns = "1fr";
           grid.style.gridTemplateRows = "1fr";
           grid.innerHTML =
             '<div class="stage-panel" style="align-items:center; justify-content:center; text-align:center;">' +
-              '<div style="font-size:3rem;">👨‍🎓</div>' +
-              '<h3 style="margin-top:8px;">Sınıf Listesi Henüz Boş</h3>' +
-              '<p style="color:#64748B; font-weight:700; margin-top:4px;">Telefondan öğrenci eklediğinizde burada anında listelenecektir.</p>' +
+              '<div style="font-size:3.4rem;">👨‍🎓</div>' +
+              '<h3 style="margin-top:8px; font-size:1.5rem;">Sınıf Listesi Henüz Boş</h3>' +
+              '<p style="color:#64748B; font-weight:700; margin-top:4px; font-size:1.05rem;">Telefondan öğrenci eklediğinizde burada anında listelenecektir.</p>' +
             '</div>';
           return;
         }
@@ -2078,6 +2193,7 @@
         });
 
         var dims = computeOptimalGrid(total);
+        grid.setAttribute("data-density", getDensityTier(total));
         grid.style.gridTemplateColumns = "repeat(" + dims.cols + ", minmax(0, 1fr))";
         grid.style.gridTemplateRows = "repeat(" + dims.rows + ", minmax(0, 1fr))";
 
@@ -2095,29 +2211,34 @@
           previousTotalsMap[sid] = prevKey;
 
           var isRankMode = currentSortMode === "stars" || currentSortMode === "books";
-          var medal = isRankMode ? (idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : (idx + 1) + ".") : "";
+          var rankClass = isRankMode ? (idx === 0 ? " rank-top-1" : idx === 1 ? " rank-top-2" : idx === 2 ? " rank-top-3" : "") : "";
+          var rankPillHtml = "";
+          if (isRankMode) {
+            var rCls = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "bronze" : "";
+            var rTxt = idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : (idx + 1) + ".";
+            rankPillHtml = '<span class="rank-pill ' + rCls + '">' + rTxt + '</span>';
+          }
 
           htmlParts.push(
-            '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + (hadChange ? ' just-updated' : '') + '">' +
-              '<div class="student-left">' +
-                '<div class="student-no-badge">' +
-                  (medal ? '<span class="rank-mini">' + medal + '</span>' : '') +
-                  '<span>#' + escapeHtml(sNo) + '</span>' +
+            '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + rankClass + (hadChange ? ' just-updated' : '') + '">' +
+              '<div class="card-top-bar">' +
+                '<div class="card-id-group">' +
+                  rankPillHtml +
+                  '<span class="student-no-badge">' + (isKiz ? '🌸' : '⚡') + ' #' + escapeHtml(sNo) + '</span>' +
                 '</div>' +
-                '<div class="student-info">' +
-                  '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
-                  '<span class="gender-tag">' + (isKiz ? '🌸 Kız' : '⚡ Erkek') + '</span>' +
+                '<div class="student-metrics">' +
+                  '<div class="metric-pill star-pill" title="Toplam Yıldız">' +
+                    '<span class="metric-icon">⭐</span>' +
+                    '<span class="metric-val">' + stars + '</span>' +
+                  '</div>' +
+                  '<div class="metric-pill book-pill" title="Okunan Kitap">' +
+                    '<span class="metric-icon">📚</span>' +
+                    '<span class="metric-val">' + books + '</span>' +
+                  '</div>' +
                 '</div>' +
               '</div>' +
-              '<div class="student-metrics">' +
-                '<div class="metric-pill star-pill" title="Toplam Yıldız">' +
-                  '<span class="metric-icon">⭐</span>' +
-                  '<span class="metric-val">' + stars + '</span>' +
-                '</div>' +
-                '<div class="metric-pill book-pill" title="Okunan Kitap">' +
-                  '<span class="metric-icon">📚</span>' +
-                  '<span class="metric-val">' + books + '</span>' +
-                '</div>' +
+              '<div class="card-hero-name">' +
+                '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
               '</div>' +
             '</div>'
           );
@@ -2243,24 +2364,24 @@
           var item = slots[sIdx];
           slotHtml.push(
             '<div class="lesson-card theme-' + escapeHtml(item.colorTheme) + (item.isCurrent ? ' current-lesson' : '') + '">' +
-              '<div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">' +
+              '<div style="display:flex; align-items:center; gap:14px; min-width:0; flex:1;">' +
                 '<div class="lesson-num-circle">' +
                   '<span>' + item.lessonIndex + '.</span>' +
-                  '<span style="font-size:0.55em; opacity:0.85;">DERS</span>' +
+                  '<span style="font-size:0.55em; opacity:0.88;">DERS</span>' +
                 '</div>' +
                 '<div style="min-width:0; flex:1;">' +
-                  '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
-                    '<span style="font-size:clamp(0.72rem, 1.35vh, 0.88rem); font-weight:800; color:#0284C7;">⏰ ' + escapeHtml(item.startTime) + ' - ' + escapeHtml(item.endTime) + '</span>' +
-                    (item.isCurrent ? '<span style="background:#10B981; color:#FFF; font-size:0.68rem; font-weight:800; padding:1px 7px; border-radius:999px;">🟢 ŞU AN</span>' : '') +
+                  '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">' +
+                    '<span style="font-family:Fredoka,sans-serif; font-size:clamp(0.86rem, 1.68vh, 1.12rem); font-weight:600; color:#0369A1;">⏰ ' + escapeHtml(item.startTime) + ' - ' + escapeHtml(item.endTime) + '</span>' +
+                    (item.isCurrent ? '<span style="background:#10B981; color:#FFF; font-family:Fredoka,sans-serif; font-size:clamp(0.76rem, 1.4vh, 0.92rem); font-weight:700; padding:2px 10px; border-radius:999px;">🟢 ŞU AN İŞLENİYOR</span>' : '') +
                   '</div>' +
-                  '<h4 class="font-display" style="font-size:clamp(1rem, 2.1vh, 1.35rem); color:var(--navy-primary); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' +
+                  '<h4 class="font-display" style="font-size:clamp(1.2rem, 2.6vh, 1.75rem); color:var(--navy-primary); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' +
                     escapeHtml(item.subjectName) +
                   '</h4>' +
-                  (item.topicOrNotes ? '<p style="font-size:clamp(0.74rem, 1.3vh, 0.88rem); color:#475569; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.topicOrNotes) + '</p>' : '') +
-                  (item.isAfterLunch ? '<span style="display:inline-block; margin-top:3px; background:#FEF3C7; color:#B45309; font-size:0.7rem; font-weight:800; padding:1px 7px; border-radius:999px;">🍽️ Öğle Arası (' + lunchMins + ' dk)</span>' : '') +
+                  (item.topicOrNotes ? '<p style="font-size:clamp(0.84rem, 1.55vh, 1.04rem); color:#475569; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(item.topicOrNotes) + '</p>' : '') +
+                  (item.isAfterLunch ? '<span style="display:inline-block; margin-top:4px; background:#FEF3C7; color:#B45309; font-family:Fredoka,sans-serif; font-size:0.82rem; font-weight:700; padding:2px 9px; border-radius:999px;">🍽️ Öğle Arası (' + lunchMins + ' dk)</span>' : '') +
                 '</div>' +
               '</div>' +
-              '<div style="font-size:clamp(1.4rem, 2.8vh, 2rem); flex-shrink:0;">📘</div>' +
+              '<div style="font-size:clamp(1.7rem, 3.4vh, 2.5rem); flex-shrink:0;">📘</div>' +
             '</div>'
           );
         }
@@ -2634,33 +2755,39 @@
           podiumParts.push(
             '<div class="podium-card ' + medals[pIdx].cls + '">' +
               '<div style="min-width:0;">' +
-                '<div style="font-family:Fredoka,sans-serif; font-size:clamp(0.7rem, 1.25vh, 0.84rem); font-weight:700; color:#B45309;">' + medals[pIdx].icon + ' • #' + escapeHtml(ps.studentNo || ps.studentNumber || '') + '</div>' +
-                '<div class="font-display" style="font-size:clamp(0.9rem, 1.75vh, 1.15rem); font-weight:700; color:var(--navy-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(ps.fullName || '') + '</div>' +
+                '<div style="font-family:Fredoka,sans-serif; font-size:clamp(0.8rem, 1.48vh, 0.98rem); font-weight:700; color:#B45309;">' + medals[pIdx].icon + ' • #' + escapeHtml(ps.studentNo || ps.studentNumber || '') + '</div>' +
+                '<div class="font-display" style="font-size:clamp(1.04rem, 2.1vh, 1.4rem); font-weight:700; color:var(--navy-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(ps.fullName || '') + '</div>' +
               '</div>' +
-              '<div class="metric-pill star-pill" style="min-width:52px; height:36px; flex-direction:row; gap:4px; padding:0 8px;">' +
-                '<span>⭐</span><span class="metric-val" style="font-size:1rem;">' + (ps.stars || 0) + '</span>' +
+              '<div class="metric-pill star-pill" style="padding:5px 12px;">' +
+                '<span style="font-size:1.15rem;">⭐</span><span class="metric-val" style="font-size:clamp(1rem, 2vh, 1.32rem);">' + (ps.stars || 0) + '</span>' +
               '</div>' +
             '</div>'
           );
         }
 
         var dims = computeOptimalGrid(list.length);
+        var density = getDensityTier(list.length + 6);
         var gridCards = [];
         for (var idx = 0; idx < list.length; idx++) {
           var s = list[idx];
           var isKiz = isGirlStudent(s.gender);
           var sNo = s.studentNo || s.studentNumber || "";
+          var rankCls = idx === 0 ? " rank-top-1" : idx === 1 ? " rank-top-2" : idx === 2 ? " rank-top-3" : "";
+          var rPillCls = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "bronze" : "";
+          var rLabel = idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : (idx + 1) + ".";
           gridCards.push(
-            '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + '">' +
-              '<div class="student-left">' +
-                '<div class="student-no-badge"><span class="rank-mini">' + (idx + 1) + '.</span><span>#' + escapeHtml(sNo) + '</span></div>' +
-                '<div class="student-info">' +
-                  '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
-                  '<span class="gender-tag">' + (isKiz ? '🌸 Kız' : '⚡ Erkek') + '</span>' +
+            '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + rankCls + '">' +
+              '<div class="card-top-bar">' +
+                '<div class="card-id-group">' +
+                  '<span class="rank-pill ' + rPillCls + '">' + rLabel + '</span>' +
+                  '<span class="student-no-badge">' + (isKiz ? '🌸' : '⚡') + ' #' + escapeHtml(sNo) + '</span>' +
+                '</div>' +
+                '<div class="student-metrics">' +
+                  '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">' + (s.stars || 0) + '</span></div>' +
                 '</div>' +
               '</div>' +
-              '<div class="student-metrics">' +
-                '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">' + (s.stars || 0) + '</span></div>' +
+              '<div class="card-hero-name">' +
+                '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
               '</div>' +
             '</div>'
           );
@@ -2668,7 +2795,7 @@
 
         stage.innerHTML =
           '<div class="podium-row">' + podiumParts.join("") + '</div>' +
-          '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + gridCards.join("") + '</div>';
+          '<div class="students-grid" data-density="' + density + '" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + gridCards.join("") + '</div>';
       }
 
       /* 7. ZAMANLAYICI (SMOOTH INTERPOLATION) */
@@ -2813,27 +2940,33 @@
             return;
           }
           var dims = computeOptimalGrid(list.length);
+          var density = getDensityTier(list.length);
           var evalCards = [];
           for (var idx = 0; idx < list.length; idx++) {
             var s = list[idx];
             var isKiz = isGirlStudent(s.gender);
             var sNo = s.studentNo || s.studentNumber || "";
+            var rCls = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "bronze" : "";
+            var rTxt = idx === 0 ? "🥇 1." : idx === 1 ? "🥈 2." : idx === 2 ? "🥉 3." : (idx + 1) + ".";
             evalCards.push(
               '<div class="student-card ' + (isKiz ? 'kiz-card' : 'erkek-card') + '">' +
-                '<div class="student-left">' +
-                  '<div class="student-no-badge"><span class="rank-mini">' + (idx + 1) + '.</span><span>#' + escapeHtml(sNo) + '</span></div>' +
-                  '<div class="student-info">' +
-                    '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
-                    '<span class="gender-tag">' + (s.pagesRead || 0) + ' Sayfa</span>' +
+                '<div class="card-top-bar">' +
+                  '<div class="card-id-group">' +
+                    '<span class="rank-pill ' + rCls + '">' + rTxt + '</span>' +
+                    '<span class="student-no-badge">' + (isKiz ? '🌸' : '⚡') + ' #' + escapeHtml(sNo) + '</span>' +
+                  '</div>' +
+                  '<div class="student-metrics">' +
+                    '<div class="metric-pill book-pill"><span class="metric-icon">📚</span><span class="metric-val">' + (s.booksRead || 0) + '</span></div>' +
                   '</div>' +
                 '</div>' +
-                '<div class="student-metrics">' +
-                  '<div class="metric-pill book-pill"><span class="metric-icon">📚</span><span class="metric-val">' + (s.booksRead || 0) + '</span></div>' +
+                '<div class="card-hero-name">' +
+                  '<h4>' + escapeHtml(s.fullName || '') + '</h4>' +
                 '</div>' +
+                '<div class="card-sub-meta">📄 ' + (s.pagesRead || 0) + ' Sayfa Okudu</div>' +
               '</div>'
             );
           }
-          stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + evalCards.join("") + '</div>';
+          stage.innerHTML = '<div class="students-grid" data-density="' + density + '" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' + evalCards.join("") + '</div>';
           return;
         }
 
@@ -2847,25 +2980,26 @@
             return;
           }
           var rDims = computeOptimalGrid(displayRecs.length);
+          var rDensity = getDensityTier(displayRecs.length);
           var recCards = [];
           for (var rIdx = 0; rIdx < displayRecs.length; rIdx++) {
             var r = displayRecs[rIdx];
             recCards.push(
               '<div class="student-card erkek-card">' +
-                '<div class="student-left">' +
-                  '<div class="student-no-badge">#' + escapeHtml(r.studentNumber || '📖') + '</div>' +
-                  '<div class="student-info">' +
-                    '<h4>' + escapeHtml(r.studentName || '') + '</h4>' +
-                    '<span class="gender-tag">📘 ' + escapeHtml(r.bookName || '') + ' (' + (r.pageCount || 0) + ' syf)</span>' +
+                '<div class="card-top-bar">' +
+                  '<span class="student-no-badge">#' + escapeHtml(r.studentNumber || '📖') + '</span>' +
+                  '<div class="student-metrics">' +
+                    '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">+' + (r.earnedStars || 1) + '</span></div>' +
                   '</div>' +
                 '</div>' +
-                '<div class="student-metrics">' +
-                  '<div class="metric-pill star-pill"><span class="metric-icon">⭐</span><span class="metric-val">+' + (r.earnedStars || 1) + '</span></div>' +
+                '<div class="card-hero-name">' +
+                  '<h4>' + escapeHtml(r.studentName || '') + '</h4>' +
                 '</div>' +
+                '<div class="card-sub-meta">📘 ' + escapeHtml(r.bookName || '') + ' (' + (r.pageCount || 0) + ' syf)</div>' +
               '</div>'
             );
           }
-          stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + rDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + rDims.rows + ', minmax(0, 1fr));">' + recCards.join("") + '</div>';
+          stage.innerHTML = '<div class="students-grid" data-density="' + rDensity + '" style="grid-template-columns:repeat(' + rDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + rDims.rows + ', minmax(0, 1fr));">' + recCards.join("") + '</div>';
           return;
         }
 
@@ -2879,6 +3013,7 @@
         }
 
         var bDims = computeOptimalGrid(displayBooks.length);
+        var bDensity = getDensityTier(displayBooks.length);
         var bookCards = [];
         for (var k = 0; k < displayBooks.length; k++) {
           var b = displayBooks[k];
@@ -2889,23 +3024,23 @@
           var isLoaned = String(b.status || "").toLowerCase() === "okunuyor" || Boolean(readerName);
           bookCards.push(
             '<div class="student-card ' + (isLoaned ? 'kiz-card' : 'erkek-card') + '">' +
-              '<div class="student-left">' +
-                '<div class="student-no-badge">#' + escapeHtml(b.registrationNo || (k + 1)) + '</div>' +
-                '<div class="student-info">' +
-                  '<h4>' + escapeHtml(b.name || '') + '</h4>' +
-                  '<span class="gender-tag">' + (isLoaned ? ('📖 Okuyan: ' + escapeHtml(readerName)) : ('🟢 Rafta (' + (b.pageCount || 0) + ' syf)')) + '</span>' +
+              '<div class="card-top-bar">' +
+                '<span class="student-no-badge">#' + escapeHtml(b.registrationNo || (k + 1)) + '</span>' +
+                '<div class="student-metrics">' +
+                  '<div class="metric-pill ' + (isLoaned ? 'star-pill' : 'book-pill') + '">' +
+                    '<span class="metric-icon">' + (isLoaned ? '📖' : '📗') + '</span>' +
+                    '<span class="metric-val" style="font-size:0.82em;">' + (isLoaned ? 'Ödünç' : 'Rafta') + '</span>' +
+                  '</div>' +
                 '</div>' +
               '</div>' +
-              '<div class="student-metrics">' +
-                '<div class="metric-pill ' + (isLoaned ? 'star-pill' : 'book-pill') + '">' +
-                  '<span class="metric-icon">' + (isLoaned ? '📖' : '📗') + '</span>' +
-                  '<span class="metric-val" style="font-size:0.68rem;">' + (isLoaned ? 'Ödünç' : 'Rafta') + '</span>' +
-                '</div>' +
+              '<div class="card-hero-name">' +
+                '<h4>' + escapeHtml(b.name || '') + '</h4>' +
               '</div>' +
+              '<div class="card-sub-meta">' + (isLoaned ? ('📖 Okuyan: ' + escapeHtml(readerName)) : ('🟢 ' + (b.pageCount || 0) + ' Sayfa')) + '</div>' +
             '</div>'
           );
         }
-        stage.innerHTML = '<div class="students-grid" style="grid-template-columns:repeat(' + bDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + bDims.rows + ', minmax(0, 1fr));">' + bookCards.join("") + '</div>';
+        stage.innerHTML = '<div class="students-grid" data-density="' + bDensity + '" style="grid-template-columns:repeat(' + bDims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + bDims.rows + ', minmax(0, 1fr));">' + bookCards.join("") + '</div>';
       }
 
       /* 9. SINIF TURNUVASI */
@@ -2979,13 +3114,14 @@
         if (activeT.winnerName) {
           podiumHtml =
             '<div class="podium-row">' +
-              '<div class="podium-card gold"><div><div style="font-size:0.75rem; font-weight:800; color:#B45309;">🥇 ŞAMPİYON</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + escapeHtml(activeT.winnerName) + '</div></div><span style="font-size:1.5rem;">🏆</span></div>' +
-              '<div class="podium-card silver"><div><div style="font-size:0.75rem; font-weight:800; color:#475569;">🥈 İKİNCİ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + escapeHtml(activeT.runnerUpName || '-') + '</div></div><span style="font-size:1.5rem;">🥈</span></div>' +
-              '<div class="podium-card bronze"><div><div style="font-size:0.75rem; font-weight:800; color:#C2410C;">🥉 ÜÇÜNCÜ</div><div class="font-display" style="font-size:1.05rem; font-weight:700;">' + escapeHtml(activeT.thirdPlaceName || '-') + '</div></div><span style="font-size:1.5rem;">🥉</span></div>' +
+              '<div class="podium-card gold"><div><div style="font-size:0.86rem; font-weight:800; color:#B45309;">🥇 ŞAMPİYON</div><div class="font-display" style="font-size:clamp(1.05rem, 2vh, 1.35rem); font-weight:700;">' + escapeHtml(activeT.winnerName) + '</div></div><span style="font-size:1.7rem;">🏆</span></div>' +
+              '<div class="podium-card silver"><div><div style="font-size:0.86rem; font-weight:800; color:#475569;">🥈 İKİNCİ</div><div class="font-display" style="font-size:clamp(1.05rem, 2vh, 1.35rem); font-weight:700;">' + escapeHtml(activeT.runnerUpName || '-') + '</div></div><span style="font-size:1.7rem;">🥈</span></div>' +
+              '<div class="podium-card bronze"><div><div style="font-size:0.86rem; font-weight:800; color:#C2410C;">🥉 ÜÇÜNCÜ</div><div class="font-display" style="font-size:clamp(1.05rem, 2vh, 1.35rem); font-weight:700;">' + escapeHtml(activeT.thirdPlaceName || '-') + '</div></div><span style="font-size:1.7rem;">🥉</span></div>' +
             '</div>';
         }
 
         var dims = computeOptimalGrid(Math.max(1, displayMatches.length));
+        var tDensity = getDensityTier(displayMatches.length + (activeT.winnerName ? 6 : 0));
         var matchesParts = [];
         for (var idx = 0; idx < displayMatches.length; idx++) {
           var m = displayMatches[idx];
@@ -2994,15 +3130,15 @@
           var hasScore = m.score1 !== null && m.score1 !== undefined && m.score2 !== null && m.score2 !== undefined;
           matchesParts.push(
             '<div class="student-card ' + (m.winnerId ? 'kiz-card' : 'erkek-card') + '">' +
-              '<div class="student-left" style="width:100%; justify-content:space-between;">' +
-                '<div style="min-width:0; flex:1;">' +
-                  '<div style="font-size:0.68rem; font-weight:800; color:#0284C7;">' + (m.groupName ? escapeHtml(m.groupName) + ' • ' : '') + (m.round || 1) + '. Tur • Maç #' + (idx + 1) + '</div>' +
-                  '<div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:' + (p1Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p1Won ? '👑 ' : '') + escapeHtml(m.player1Name || 'Bekleniyor') + '</div>' +
-                  '<div class="font-display" style="font-size:clamp(0.76rem, 1.5vh, 0.94rem); font-weight:700; color:' + (p2Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p2Won ? '👑 ' : '') + escapeHtml(m.player2Name || 'BAY (Tur Atladı)') + '</div>' +
+              '<div class="card-top-bar">' +
+                '<span class="student-no-badge">' + (m.groupName ? escapeHtml(m.groupName) + ' • ' : '') + (m.round || 1) + '. Tur • #' + (idx + 1) + '</span>' +
+                '<div class="student-metrics">' +
+                  '<div class="metric-pill star-pill"><span class="metric-val">' + (hasScore ? (m.score1 + ' - ' + m.score2) : (m.winnerId ? '✅' : 'VS')) + '</span></div>' +
                 '</div>' +
-                '<div class="metric-pill star-pill" style="min-width:48px; padding:0 6px;">' +
-                  '<span class="metric-val">' + (hasScore ? (m.score1 + ' - ' + m.score2) : (m.winnerId ? '✅' : 'VS')) + '</span>' +
-                '</div>' +
+              '</div>' +
+              '<div style="display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; z-index:1;">' +
+                '<div class="font-display" style="font-size:clamp(0.92rem, 1.8vh, 1.24rem); font-weight:700; color:' + (p1Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p1Won ? '👑 ' : '🔹 ') + escapeHtml(m.player1Name || 'Bekleniyor') + '</div>' +
+                '<div class="font-display" style="font-size:clamp(0.92rem, 1.8vh, 1.24rem); font-weight:700; color:' + (p2Won ? '#047857' : '#0F172A') + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (p2Won ? '👑 ' : '🔸 ') + escapeHtml(m.player2Name || 'BAY (Tur Atladı)') + '</div>' +
               '</div>' +
             '</div>'
           );
@@ -3010,7 +3146,7 @@
 
         stage.innerHTML =
           podiumHtml +
-          '<div class="students-grid" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' +
+          '<div class="students-grid" data-density="' + tDensity + '" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' +
             (matchesParts.join("") || '<div class="stage-panel" style="align-items:center; justify-content:center;">Fikstür eşleşmesi bekleniyor...</div>') +
           '</div>';
       }
