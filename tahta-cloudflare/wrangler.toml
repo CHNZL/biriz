@@ -1,0 +1,10 @@
+name = "biriz-tahta"
+main = "worker.js"
+compatibility_date = "2026-11-13"
+
+[assets]
+directory = "./public"
+
+[[routes]]
+pattern = "cihanogretmen.com/tahta*"
+zone_name = "cihanogretmen.com"
