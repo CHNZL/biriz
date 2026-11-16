@@ -75,31 +75,52 @@ class SmartBoardScreenCastService : Service() {
         const val EXTRA_CLASS_ID = "extra_class_id"
         const val EXTRA_TARGET_PACKAGE = "extra_target_package"
         const val EXTRA_TARGET_APP_NAME = "extra_target_app_name"
+        const val EXTRA_SKIP_FIRESTORE_STOP = "extra_skip_firestore_stop"
+
+        @Volatile
+        private var forceAbortRequested: Boolean = false
 
         private val _status = MutableStateFlow(ScreenMirrorStatus())
         val status: StateFlow<ScreenMirrorStatus> = _status.asStateFlow()
 
-        fun stopCast(context: Context, classId: String, sessionCode: String?) {
+        fun stopCast(
+            context: Context,
+            classId: String,
+            sessionCode: String?,
+            skipFirestoreStop: Boolean = false
+        ) {
+            if (skipFirestoreStop) {
+                forceAbortRequested = true
+            }
             val current = _status.value
             if (current.isRunning) {
                 val stopIntent = Intent(context, SmartBoardScreenCastService::class.java).apply {
                     action = ACTION_STOP
                     putExtra(EXTRA_CLASS_ID, classId)
                     putExtra(EXTRA_SESSION_CODE, sessionCode ?: "")
+                    putExtra(EXTRA_SKIP_FIRESTORE_STOP, skipFirestoreStop)
                 }
                 try {
                     context.startService(stopIntent)
                 } catch (_: Exception) {
                     _status.value = ScreenMirrorStatus()
-                    SmartBoardHelper.stopBoardCast(context, classId, sessionCode)
+                    if (!skipFirestoreStop) {
+                        SmartBoardHelper.stopBoardCast(context, classId, sessionCode)
+                    }
+                }
+                if (skipFirestoreStop) {
+                    _status.value = ScreenMirrorStatus()
                 }
             } else {
                 _status.value = ScreenMirrorStatus()
-                SmartBoardHelper.stopBoardCast(context, classId, sessionCode)
+                if (!skipFirestoreStop) {
+                    SmartBoardHelper.stopBoardCast(context, classId, sessionCode)
+                }
             }
         }
 
         fun stopServiceOnly(context: Context) {
+            forceAbortRequested = true
             try {
                 context.stopService(Intent(context, SmartBoardScreenCastService::class.java))
             } catch (_: Exception) {}
@@ -165,8 +186,8 @@ class SmartBoardScreenCastService : Service() {
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
-            Log.d(TAG, "MediaProjection onStop triggered (explicit=$isExplicitStopping)")
-            if (!isExplicitStopping) {
+            Log.d(TAG, "MediaProjection onStop triggered (explicit=$isExplicitStopping, forceAbort=$forceAbortRequested)")
+            if (!isExplicitStopping && !forceAbortRequested) {
                 val activeClass = classId
                 val activeCode = sessionCode
                 val activeCastId = castId
@@ -181,16 +202,18 @@ class SmartBoardScreenCastService : Service() {
                     pauseReason = "Ekran kapandı veya sistem yansıtmayı durdurdu — son görüntü tahtada sabit"
                 )
                 serviceScope.launch {
-                    SmartBoardHelper.updateScreenMirrorPauseState(
-                        context = applicationContext,
-                        classId = activeClass,
-                        sessionCode = activeCode,
-                        castId = activeCastId,
-                        appName = activeAppName,
-                        packageName = activePkg,
-                        isPaused = true,
-                        pauseReason = "Ekran kapatıldığı için $activeAppName son görüntüsü tahtada sabitlendi"
-                    )
+                    if (!isExplicitStopping && !forceAbortRequested) {
+                        SmartBoardHelper.updateScreenMirrorPauseState(
+                            context = applicationContext,
+                            classId = activeClass,
+                            sessionCode = activeCode,
+                            castId = activeCastId,
+                            appName = activeAppName,
+                            packageName = activePkg,
+                            isPaused = true,
+                            pauseReason = "Ekran kapatıldığı için $activeAppName son görüntüsü tahtada sabitlendi"
+                        )
+                    }
                 }
                 stopForegroundCompat()
                 stopSelf()
@@ -230,10 +253,11 @@ class SmartBoardScreenCastService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 isExplicitStopping = true
+                val skipFirestore = intent.getBooleanExtra(EXTRA_SKIP_FIRESTORE_STOP, false) || forceAbortRequested
                 val stopClassId = intent.getStringExtra(EXTRA_CLASS_ID).orEmpty().ifBlank { classId }
                 val stopCode = intent.getStringExtra(EXTRA_SESSION_CODE).orEmpty().ifBlank { sessionCode }
                 releaseAllAndResetStatus()
-                if (stopCode.isNotBlank()) {
+                if (!skipFirestore && stopCode.isNotBlank()) {
                     SmartBoardHelper.stopBoardCast(applicationContext, stopClassId, stopCode)
                 }
                 stopForegroundCompat()
@@ -242,6 +266,7 @@ class SmartBoardScreenCastService : Service() {
             }
 
             ACTION_START -> {
+                forceAbortRequested = false
                 val resCode = intent.getIntExtra(EXTRA_RESULT_CODE, Int.MIN_VALUE)
                 val resData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
@@ -371,7 +396,7 @@ class SmartBoardScreenCastService : Service() {
             // İlk açılışta seçilen uygulamanın ekrana gelmesi için kısa bekleme
             delay(950L)
 
-            while (isActive && mediaProjection != null && !isExplicitStopping) {
+            while (isActive && mediaProjection != null && !isExplicitStopping && !forceAbortRequested) {
                 try {
                     checkDisplayOrientationChange()
                     val eval = evaluateShouldMirrorNow()
@@ -397,9 +422,11 @@ class SmartBoardScreenCastService : Service() {
                     // Sızıntı Önleme Penceresi: Kareden 160ms sonra hala izinli uygulamada mıyız doğrula
                     delay(160L)
                     val recheck = evaluateShouldMirrorNow()
-                    if (!recheck.allowed || !isActive || isExplicitStopping) {
+                    if (!recheck.allowed || !isActive || isExplicitStopping || forceAbortRequested) {
                         candidateBitmap.recycle()
-                        syncFreezeState(paused = true, reason = recheck.reason)
+                        if (!isExplicitStopping && !forceAbortRequested) {
+                            syncFreezeState(paused = true, reason = recheck.reason)
+                        }
                         delay(300L)
                         continue
                     }
@@ -407,7 +434,7 @@ class SmartBoardScreenCastService : Service() {
                     val encoded = encodeBitmapToBase64Jpeg(candidateBitmap)
                     candidateBitmap.recycle()
 
-                    if (!encoded.isNullOrBlank()) {
+                    if (!encoded.isNullOrBlank() && !isExplicitStopping && !forceAbortRequested) {
                         lastFramePixelHash = pixelHash
                         framesSentCount += 1L
                         lastPublishedPaused = false
@@ -485,7 +512,7 @@ class SmartBoardScreenCastService : Service() {
     }
 
     private fun syncFreezeState(paused: Boolean, reason: String) {
-        if (!paused) return
+        if (!paused || isExplicitStopping || forceAbortRequested) return
         if (lastPublishedPaused == true && _status.value.pauseReason == reason) return
         lastPublishedPaused = true
 
@@ -501,6 +528,7 @@ class SmartBoardScreenCastService : Service() {
         val curAppName = targetAppName
         val curPkg = targetPackageName
         serviceScope.launch {
+            if (isExplicitStopping || forceAbortRequested) return@launch
             SmartBoardHelper.updateScreenMirrorPauseState(
                 context = applicationContext,
                 classId = curClass,

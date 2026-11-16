@@ -23,8 +23,13 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
@@ -43,6 +48,12 @@ object SmartBoardHelper {
     private const val KEY_SESSION_CODE = "key_connected_session_code"
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val sessionWriteMutex = Mutex()
+
+    @Volatile
+    private var activeSessionCode: String? = null
+    @Volatile
+    private var connectionEpoch: Long = 0L
 
     // Son bilinen durum önbelleği (Yıldız, kitap, turnuva veya öğrenci verisi değiştiğinde anında senkronizasyon tetiklemek için)
     @Volatile
@@ -74,6 +85,10 @@ object SmartBoardHelper {
         return code.replace(Regex("[^A-Za-z0-9]"), "").uppercase()
     }
 
+    private fun isEpochStillActive(cleanCode: String, expectedEpoch: Long): Boolean {
+        return connectionEpoch == expectedEpoch && activeSessionCode == cleanCode
+    }
+
     /**
      * 2. ANA VERİTABANI ERİŞİMİ
      * Öncelikle projenin özel veritabanını (R.string.firestore_database_id) döndürür.
@@ -93,9 +108,18 @@ object SmartBoardHelper {
     }
 
     fun saveConnectionState(context: Context, sessionCode: String?, isMirrorActive: Boolean) {
+        val clean = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+        if (clean == null) {
+            if (activeSessionCode != null) {
+                connectionEpoch += 1L
+            }
+            activeSessionCode = null
+        } else {
+            activeSessionCode = clean
+        }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
-            .putString(KEY_SESSION_CODE, sessionCode)
+            .putString(KEY_SESSION_CODE, clean)
             .putBoolean(KEY_MIRROR_ACTIVE, isMirrorActive)
             .apply()
     }
@@ -451,6 +475,10 @@ object SmartBoardHelper {
             return Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
         }
 
+        val myEpoch = ++connectionEpoch
+        activeSessionCode = cleanCode
+        saveConnectionState(context, cleanCode, true)
+
         lastClassId = classId
         lastCurrentSubPage = currentSubPage
         lastCurrentSubPageTitle = currentSubPageTitle
@@ -522,6 +550,7 @@ object SmartBoardHelper {
             "sessionCode" to cleanCode,
             "status" to "CONNECTED",
             "isConnected" to true,
+            "isLiveMirrorActive" to true,
             "teacherUid" to teacherUid,
             "teacherName" to teacherName,
             "classId" to classId,
@@ -557,45 +586,50 @@ object SmartBoardHelper {
             val mainDb = getMainFirestore(context)
 
             scope.launch {
-                try {
-                    mainDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(sessionPayload, SetOptions.merge())
-                        .addOnSuccessListener {
-                            Log.d(TAG, "Successfully wrote to board_sessions/$cleanCode on mainDb")
-                        }
-                        .addOnFailureListener { e ->
-                            Log.w(TAG, "Failed writing to board_sessions/$cleanCode on mainDb: ${e.message}")
+                sessionWriteMutex.withLock {
+                    if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                    try {
+                        withTimeoutOrNull(4500L) {
+                            mainDb.collection("board_sessions")
+                                .document(cleanCode)
+                                .set(sessionPayload, SetOptions.merge())
+                                .await()
                         }
 
-                    if (classId.isNotBlank() && classId != "default") {
-                        mainDb.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveStatePayload, SetOptions.merge())
+                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
 
-                        mainDb.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveStatePayload, SetOptions.merge())
+                        if (classId.isNotBlank() && classId != "default") {
+                            mainDb.collection("classes")
+                                .document(classId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(liveStatePayload, SetOptions.merge())
+
+                            mainDb.collection("classrooms")
+                                .document(classId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(liveStatePayload, SetOptions.merge())
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Exception writing connectSession to mainDb: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Exception writing connectSession to mainDb: ${e.message}")
+
+                    try {
+                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                        val defaultDb = FirebaseFirestore.getInstance()
+                        if (defaultDb != mainDb) {
+                            withTimeoutOrNull(3000L) {
+                                defaultDb.collection("board_sessions")
+                                    .document(cleanCode)
+                                    .set(sessionPayload, SetOptions.merge())
+                                    .await()
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
-
-                try {
-                    val defaultDb = FirebaseFirestore.getInstance()
-                    if (defaultDb != mainDb) {
-                        defaultDb.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(sessionPayload, SetOptions.merge())
-                    }
-                } catch (_: Exception) {}
             }
 
-            saveConnectionState(context, cleanCode, true)
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting smart board session", e)
@@ -633,7 +667,16 @@ object SmartBoardHelper {
         if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
         if (groupMakerState != null) lastGroupMakerState = groupMakerState
 
-        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        if (activeSessionCode == null) {
+            val saved = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
+            if (saved == cleanCode) {
+                activeSessionCode = saved
+            }
+        }
+        if (activeSessionCode != cleanCode) return
+        val expectedEpoch = connectionEpoch
+
         val isPrivacyMode = !isLiveMirrorActive
         val now = System.currentTimeMillis()
 
@@ -709,6 +752,7 @@ object SmartBoardHelper {
             "activeModuleTitle" to effectiveBoardSubPageTitle,
             "currentSubPage" to effectiveBoardSubPage,
             "currentSubPageTitle" to effectiveBoardSubPageTitle,
+            "isLiveMirrorActive" to isLiveMirrorActive,
             "isPrivacyMode" to isPrivacyMode,
             "selectedDay" to activeDay,
             "activeScheduleDay" to activeDay,
@@ -718,7 +762,10 @@ object SmartBoardHelper {
             "libraryData" to libraryData,
             "tournamentData" to tournamentData,
             "updatedAt" to now,
-            "serverTimestamp" to FieldValue.serverTimestamp()
+            "serverTimestamp" to FieldValue.serverTimestamp(),
+            "sessionCode" to cleanCode,
+            "status" to "CONNECTED",
+            "isConnected" to true
         )
         if (studentData.isNotEmpty()) {
             boardSessionUpdate["students"] = studentData
@@ -739,16 +786,12 @@ object SmartBoardHelper {
             boardSessionUpdate.putAll(extraData)
             boardSessionUpdate["extraData"] = extraData
         }
-        if (cleanCode != null) {
-            boardSessionUpdate["sessionCode"] = cleanCode
-            boardSessionUpdate["status"] = "CONNECTED"
-            boardSessionUpdate["isConnected"] = true
-        }
 
         val liveBoardPayload = hashMapOf<String, Any?>(
             "classId" to classId,
-            "sessionCode" to (cleanCode ?: ""),
-            "status" to if (cleanCode != null) "CONNECTED" else "DISCONNECTED",
+            "sessionCode" to cleanCode,
+            "status" to "CONNECTED",
+            "isConnected" to true,
             "isLiveMirrorActive" to isLiveMirrorActive,
             "isPrivacyMode" to isPrivacyMode,
             "currentSubPage" to effectiveBoardSubPage,
@@ -786,42 +829,49 @@ object SmartBoardHelper {
         }
 
         scope.launch {
-            val mainDb = getMainFirestore(context)
-            try {
-                // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
-                if (!cleanCode.isNullOrBlank()) {
-                    mainDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(boardSessionUpdate, SetOptions.merge())
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                val mainDb = getMainFirestore(context)
+                try {
+                    // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
+                    withTimeoutOrNull(4000L) {
+                        mainDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(boardSessionUpdate, SetOptions.merge())
+                            .await()
+                    }
+
+                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+
+                    // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
+                    if (classId.isNotBlank() && classId != "default") {
+                        mainDb.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveBoardPayload, SetOptions.merge())
+
+                        mainDb.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveBoardPayload, SetOptions.merge())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error updating live board state on main db: ${e.message}")
                 }
 
-                // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
-                if (classId.isNotBlank() && classId != "default") {
-                    mainDb.collection("classes")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(liveBoardPayload, SetOptions.merge())
-
-                    mainDb.collection("classrooms")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(liveBoardPayload, SetOptions.merge())
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error updating live board state on main db: ${e.message}")
+                // Yedek varsayılan veritabanına sessizce yaz
+                try {
+                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                    val defaultDb = FirebaseFirestore.getInstance()
+                    if (defaultDb != mainDb) {
+                        defaultDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(boardSessionUpdate, SetOptions.merge())
+                    }
+                } catch (_: Exception) {}
             }
-
-            // Yedek varsayılan veritabanına sessizce yaz
-            try {
-                val defaultDb = FirebaseFirestore.getInstance()
-                if (defaultDb != mainDb && !cleanCode.isNullOrBlank()) {
-                    defaultDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(boardSessionUpdate, SetOptions.merge())
-                }
-            } catch (ignored: Exception) {}
         }
     }
 
@@ -829,71 +879,103 @@ object SmartBoardHelper {
      * Akıllı Tahta Bağlantısını Kes
      */
     fun disconnectSession(context: Context, sessionCode: String?, classId: String) {
-        saveConnectionState(context, null, false)
+        val targetCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+            ?: activeSessionCode
+            ?: getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
+        connectionEpoch += 1L
+        activeSessionCode = null
         lastBoardCast = null
-        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
+        saveConnectionState(context, null, false)
+
         val now = System.currentTimeMillis()
+        val disconnectSessionPayload = hashMapOf<String, Any?>(
+            "sessionCode" to (targetCode ?: ""),
+            "status" to "DISCONNECTED",
+            "isConnected" to false,
+            "isLiveMirrorActive" to false,
+            "isPrivacyMode" to true,
+            "classId" to "",
+            "boardCast" to mapOf(
+                "active" to false,
+                "castId" to "",
+                "isPaused" to false,
+                "inlineBase64" to "",
+                "updatedAt" to now
+            ),
+            "disconnectedAt" to now,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
+        val disconnectLivePayload = hashMapOf<String, Any?>(
+            "classId" to classId,
+            "sessionCode" to "",
+            "disconnectedSessionCode" to (targetCode ?: ""),
+            "status" to "DISCONNECTED",
+            "isConnected" to false,
+            "isLiveMirrorActive" to false,
+            "isPrivacyMode" to true,
+            "boardCast" to mapOf(
+                "active" to false,
+                "castId" to "",
+                "isPaused" to false,
+                "inlineBase64" to "",
+                "updatedAt" to now
+            ),
+            "disconnectedAt" to now,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
 
         scope.launch {
-            val mainDb = getMainFirestore(context)
-            try {
-                if (!cleanCode.isNullOrBlank()) {
-                    val disconnectSessionPayload = mapOf(
-                        "status" to "DISCONNECTED",
-                        "isConnected" to false,
-                        "isPrivacyMode" to true,
-                        "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
-                        "updatedAt" to now
-                    )
-                    mainDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(disconnectSessionPayload, SetOptions.merge())
-                }
+            withContext(NonCancellable) {
+                sessionWriteMutex.withLock {
+                    val mainDb = getMainFirestore(context)
+                    try {
+                        if (!targetCode.isNullOrBlank()) {
+                            withTimeoutOrNull(4500L) {
+                                mainDb.collection("board_sessions")
+                                    .document(targetCode)
+                                    .set(disconnectSessionPayload, SetOptions.merge())
+                                    .await()
+                            }
+                        }
 
-                if (classId.isNotBlank() && classId != "default") {
-                    val disconnectPayload = mapOf(
-                        "classId" to classId,
-                        "sessionCode" to "",
-                        "status" to "DISCONNECTED",
-                        "isLiveMirrorActive" to false,
-                        "isPrivacyMode" to true,
-                        "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
-                        "updatedAt" to now
-                    )
-                    mainDb.collection("classes")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(disconnectPayload, SetOptions.merge())
+                        if (classId.isNotBlank() && classId != "default") {
+                            withTimeoutOrNull(3500L) {
+                                mainDb.collection("classes")
+                                    .document(classId)
+                                    .collection("live_board")
+                                    .document("state")
+                                    .set(disconnectLivePayload, SetOptions.merge())
+                                    .await()
+                            }
+                            withTimeoutOrNull(3500L) {
+                                mainDb.collection("classrooms")
+                                    .document(classId)
+                                    .collection("live_board")
+                                    .document("state")
+                                    .set(disconnectLivePayload, SetOptions.merge())
+                                    .await()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error disconnecting smart board: ${e.message}")
+                    }
 
-                    mainDb.collection("classrooms")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(disconnectPayload, SetOptions.merge())
+                    // Yedek varsayılan veritabanı
+                    try {
+                        val defaultDb = FirebaseFirestore.getInstance()
+                        if (defaultDb != mainDb && !targetCode.isNullOrBlank()) {
+                            withTimeoutOrNull(3500L) {
+                                defaultDb.collection("board_sessions")
+                                    .document(targetCode)
+                                    .set(disconnectSessionPayload, SetOptions.merge())
+                                    .await()
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error disconnecting smart board: ${e.message}")
             }
-
-            // Yedek varsayılan veritabanı
-            try {
-                val defaultDb = FirebaseFirestore.getInstance()
-                if (defaultDb != mainDb && !cleanCode.isNullOrBlank()) {
-                    defaultDb.collection("board_sessions")
-                        .document(cleanCode)
-                        .set(
-                            mapOf(
-                                "status" to "DISCONNECTED",
-                                "isConnected" to false,
-                                "isPrivacyMode" to true,
-                                "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
-                                "updatedAt" to now
-                            ),
-                            SetOptions.merge()
-                        )
-                }
-            } catch (ignored: Exception) {}
         }
     }
 
@@ -981,6 +1063,8 @@ object SmartBoardHelper {
         cleanCode: String,
         castMap: Map<String, Any?>
     ) {
+        if (activeSessionCode != cleanCode) return
+        val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         lastBoardCast = castMap
         val payload = hashMapOf<String, Any?>(
@@ -998,34 +1082,40 @@ object SmartBoardHelper {
             "updatedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
-        val mainDb = getMainFirestore(context)
-        mainDb.collection("board_sessions")
-            .document(cleanCode)
-            .set(payload, SetOptions.merge())
-            .await()
-
-        if (classId.isNotBlank() && classId != "default") {
-            mainDb.collection("classes")
-                .document(classId)
-                .collection("live_board")
-                .document("state")
+        sessionWriteMutex.withLock {
+            if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+            val mainDb = getMainFirestore(context)
+            mainDb.collection("board_sessions")
+                .document(cleanCode)
                 .set(payload, SetOptions.merge())
+                .await()
 
-            mainDb.collection("classrooms")
-                .document(classId)
-                .collection("live_board")
-                .document("state")
-                .set(payload, SetOptions.merge())
-        }
+            if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
 
-        try {
-            val defaultDb = FirebaseFirestore.getInstance()
-            if (defaultDb != mainDb) {
-                defaultDb.collection("board_sessions")
-                    .document(cleanCode)
+            if (classId.isNotBlank() && classId != "default") {
+                mainDb.collection("classes")
+                    .document(classId)
+                    .collection("live_board")
+                    .document("state")
+                    .set(payload, SetOptions.merge())
+
+                mainDb.collection("classrooms")
+                    .document(classId)
+                    .collection("live_board")
+                    .document("state")
                     .set(payload, SetOptions.merge())
             }
-        } catch (_: Exception) {}
+
+            try {
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                val defaultDb = FirebaseFirestore.getInstance()
+                if (defaultDb != mainDb) {
+                    defaultDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(payload, SetOptions.merge())
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -1042,7 +1132,7 @@ object SmartBoardHelper {
         base64Jpeg: String
     ) {
         val cleanCode = normalizeCode(sessionCode)
-        if (cleanCode.length < 4) return
+        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return
         val now = System.currentTimeMillis()
         val castMap = hashMapOf<String, Any?>(
             "active" to true,
@@ -1074,7 +1164,8 @@ object SmartBoardHelper {
         pauseReason: String
     ) {
         val cleanCode = normalizeCode(sessionCode)
-        if (cleanCode.length < 4) return
+        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return
+        val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
 
         val updatedCached = HashMap(lastBoardCast ?: emptyMap()).apply {
@@ -1113,24 +1204,29 @@ object SmartBoardHelper {
         )
 
         try {
-            val mainDb = getMainFirestore(context)
-            mainDb.collection("board_sessions")
-                .document(cleanCode)
-                .set(payload, SetOptions.merge())
-                .await()
-
-            if (classId.isNotBlank() && classId != "default") {
-                mainDb.collection("classes")
-                    .document(classId)
-                    .collection("live_board")
-                    .document("state")
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                val mainDb = getMainFirestore(context)
+                mainDb.collection("board_sessions")
+                    .document(cleanCode)
                     .set(payload, SetOptions.merge())
+                    .await()
 
-                mainDb.collection("classrooms")
-                    .document(classId)
-                    .collection("live_board")
-                    .document("state")
-                    .set(payload, SetOptions.merge())
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+
+                if (classId.isNotBlank() && classId != "default") {
+                    mainDb.collection("classes")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+
+                    mainDb.collection("classrooms")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error updating screen mirror pause state: ${e.message}")
@@ -1309,6 +1405,8 @@ object SmartBoardHelper {
     fun stopBoardCast(context: Context, classId: String, sessionCode: String?) {
         lastBoardCast = null
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        if (activeSessionCode != cleanCode) return
+        val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         val restoreSubPage = lastCurrentSubPage.ifBlank { "SINIF_LISTESI" }
         val restoreSubPageTitle = lastCurrentSubPageTitle.ifBlank { "Sınıf Listesi" }
@@ -1321,45 +1419,48 @@ object SmartBoardHelper {
         )
 
         scope.launch {
-            try {
-                val mainDb = getMainFirestore(context)
-                val payload = mapOf(
-                    "boardCast" to stopMap,
-                    "activeModule" to restoreSubPage,
-                    "activeModuleTitle" to restoreSubPageTitle,
-                    "currentSubPage" to restoreSubPage,
-                    "currentSubPageTitle" to restoreSubPageTitle,
-                    "updatedAt" to now,
-                    "serverTimestamp" to FieldValue.serverTimestamp()
-                )
-                mainDb.collection("board_sessions")
-                    .document(cleanCode)
-                    .set(payload, SetOptions.merge())
-
-                if (classId.isNotBlank() && classId != "default") {
-                    mainDb.collection("classes")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-
-                    mainDb.collection("classrooms")
-                        .document(classId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-                }
-
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
                 try {
-                    val defaultDb = FirebaseFirestore.getInstance()
-                    if (defaultDb != mainDb) {
-                        defaultDb.collection("board_sessions")
-                            .document(cleanCode)
+                    val mainDb = getMainFirestore(context)
+                    val payload = mapOf(
+                        "boardCast" to stopMap,
+                        "activeModule" to restoreSubPage,
+                        "activeModuleTitle" to restoreSubPageTitle,
+                        "currentSubPage" to restoreSubPage,
+                        "currentSubPageTitle" to restoreSubPageTitle,
+                        "updatedAt" to now,
+                        "serverTimestamp" to FieldValue.serverTimestamp()
+                    )
+                    mainDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(payload, SetOptions.merge())
+
+                    if (classId.isNotBlank() && classId != "default") {
+                        mainDb.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(payload, SetOptions.merge())
+
+                        mainDb.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
                             .set(payload, SetOptions.merge())
                     }
-                } catch (_: Exception) {}
-            } catch (e: Exception) {
-                Log.w(TAG, "Error stopping board cast: ${e.message}")
+
+                    try {
+                        val defaultDb = FirebaseFirestore.getInstance()
+                        if (defaultDb != mainDb) {
+                            defaultDb.collection("board_sessions")
+                                .document(cleanCode)
+                                .set(payload, SetOptions.merge())
+                        }
+                    } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping board cast: ${e.message}")
+                }
             }
         }
     }
@@ -1368,6 +1469,8 @@ object SmartBoardHelper {
      * Çıkış yapıldığında veya hesap silindiğinde bellek içi tahta önbelleğini temizler.
      */
     fun resetLocalState(context: Context? = null) {
+        connectionEpoch += 1L
+        activeSessionCode = null
         lastClassId = ""
         lastCurrentSubPage = "SINIF_LISTESI"
         lastCurrentSubPageTitle = "Sınıf Listesi"
@@ -1380,7 +1483,7 @@ object SmartBoardHelper {
         lastBoardCast = null
         if (context != null) {
             try {
-                saveConnectionState(context, null, true)
+                saveConnectionState(context, null, false)
             } catch (_: Exception) {}
         }
     }

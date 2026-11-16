@@ -931,6 +931,9 @@ class BirizViewModel(
                 _uiState.value.currentScreen
             }
 
+            if (!savedSession.isNullOrBlank()) {
+                SmartBoardHelper.saveConnectionState(appContext, savedSession, savedMirror)
+            }
             _uiState.value = _uiState.value.copy(
                 isDarkTheme = savedDark,
                 connectedBoardSessionCode = savedSession,
@@ -4051,11 +4054,15 @@ class BirizViewModel(
     fun disconnectSmartBoard() {
         val ctx = appContext ?: return
         val activeClass = _uiState.value.activeClassRoom
-        val code = _uiState.value.connectedBoardSessionCode
-        if (activeClass != null) {
-            SmartBoardScreenCastService.stopCast(ctx, activeClass.id, code)
-            SmartBoardHelper.disconnectSession(ctx, code, activeClass.id)
-        }
+        val classId = activeClass?.id ?: ""
+        val code = _uiState.value.connectedBoardSessionCode ?: SmartBoardHelper.getSavedSessionCode(ctx)
+        SmartBoardScreenCastService.stopCast(
+            context = ctx,
+            classId = classId,
+            sessionCode = code,
+            skipFirestoreStop = true
+        )
+        SmartBoardHelper.disconnectSession(ctx, code, classId)
         _uiState.value = _uiState.value.copy(
             connectedBoardSessionCode = null,
             isLiveBoardMirrorActive = false,
