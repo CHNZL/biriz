@@ -49,11 +49,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
- * - Öğretmen telefonda işlem yaptığında doğrudan `board_sessions/{temizKod}` belgesini
- *   ve `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state`
- *   belgelerini anlık günceller.
+ * - Öğretmen telefonda işlem yaptığında yalnızca tek belgeyi (`board_sessions/{temizKod}`)
+ *   delta (değişen alanlar) mantığıyla güncelleyerek Firestore yazma kotasını korur.
  * - Öğrenci yıldızları, okunan kitap sayıları, oturma planı, gruplar, ders programı,
- *   şanslı öğrenci, zamanlayıcı, kitaplık ve turnuva verilerini eksiksiz aktarır.
+ *   şanslı öğrenci, zamanlayıcı, kitaplık ve turnuva verilerini aktarır.
  */
 object SmartBoardHelper {
     private const val TAG = "SmartBoardHelper"
@@ -91,6 +90,50 @@ object SmartBoardHelper {
     private var lastGroupMakerState: GroupMakerState? = null
     @Volatile
     private var lastBoardCast: Map<String, Any?>? = null
+    @Volatile
+    private var quotaCooldownUntilMs: Long = 0L
+
+    // Delta senkronizasyon önbelleği: Aynı ağır verilerin her sekme değişiminde tekrar yazılmasını önler
+    @Volatile
+    private var syncedConnectionId: String? = null
+    @Volatile
+    private var sentStudentsHash: Int = 0
+    @Volatile
+    private var sentRecentStarsHash: Int = 0
+    @Volatile
+    private var sentScheduleHash: Int = 0
+    @Volatile
+    private var sentScheduleConfigHash: Int = 0
+    @Volatile
+    private var sentSeatingHash: Int = 0
+    @Volatile
+    private var sentGroupsHash: Int = 0
+    @Volatile
+    private var sentLuckyHash: Int = 0
+    @Volatile
+    private var sentLibraryHash: Int = 0
+    @Volatile
+    private var sentTournamentHash: Int = 0
+    @Volatile
+    private var sentBoardCastHash: Int = 0
+
+    fun isQuotaCooldownActive(): Boolean {
+        return System.currentTimeMillis() < quotaCooldownUntilMs
+    }
+
+    private fun clearDeltaSyncCache() {
+        syncedConnectionId = null
+        sentStudentsHash = 0
+        sentRecentStarsHash = 0
+        sentScheduleHash = 0
+        sentScheduleConfigHash = 0
+        sentSeatingHash = 0
+        sentGroupsHash = 0
+        sentLuckyHash = 0
+        sentLibraryHash = 0
+        sentTournamentHash = 0
+        sentBoardCastHash = 0
+    }
 
     /**
      * 1. KOD NORMALİZASYONU (Tire, boşluk ve yabancı karakter temizliği)
@@ -239,8 +282,12 @@ object SmartBoardHelper {
         return try {
             restHttpClient.newCall(request).execute().use { resp ->
                 if (resp.isSuccessful) {
+                    quotaCooldownUntilMs = 0L
                     RestWriteResult.Success
                 } else {
+                    if (resp.code == 429) {
+                        quotaCooldownUntilMs = System.currentTimeMillis() + 15_000L
+                    }
                     val errText = try {
                         resp.body?.string()?.take(240).orEmpty()
                     } catch (_: Exception) {
@@ -335,6 +382,7 @@ object SmartBoardHelper {
             }
             activeSessionCode = null
             activeConnectionId = null
+            clearDeltaSyncCache()
         } else {
             activeSessionCode = clean
         }
@@ -577,7 +625,7 @@ object SmartBoardHelper {
     }
 
     /**
-     * Zamanlayıcı (Timer) durumunu doğrudan bağlı akıllı tahtaya ve canlı sınıf durumuna senkronize eder.
+     * Zamanlayıcı (Timer) durumunu doğrudan bağlı akıllı tahtaya senkronize eder.
      */
     fun syncTimerState(
         context: Context,
@@ -590,10 +638,10 @@ object SmartBoardHelper {
         isRunning: Boolean,
         isFinished: Boolean
     ) {
+        if (isQuotaCooldownActive()) return
         val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         if (activeSessionCode != activeCode) return
         val expectedEpoch = connectionEpoch
-        val targetClassId = classId.ifBlank { lastClassId }
         val now = System.currentTimeMillis()
         val payload = hashMapOf<String, Any?>(
             "timerMode" to modeTitle,
@@ -607,15 +655,9 @@ object SmartBoardHelper {
         )
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                if (!isEpochStillActive(activeCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
                 try {
                     restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
-                    if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                    if (targetClassId.isNotBlank() && targetClassId != "default") {
-                        restPatchDocument(context, listOf("classrooms", targetClassId, "live_board", "state"), payload, merge = true)
-                        if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                        restPatchDocument(context, listOf("classes", targetClassId, "live_board", "state"), payload, merge = true)
-                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error syncing timer state: ${e.message}")
                 }
@@ -633,10 +675,10 @@ object SmartBoardHelper {
         rollingNo: String,
         rollingGender: String
     ) {
+        if (isQuotaCooldownActive()) return
         val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         if (activeSessionCode != activeCode) return
         val expectedEpoch = connectionEpoch
-        val targetClassId = classId.ifBlank { lastClassId }
         val now = System.currentTimeMillis()
         val payload = mapOf(
             "isRolling" to true,
@@ -649,13 +691,9 @@ object SmartBoardHelper {
         )
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                if (!isEpochStillActive(activeCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
                 try {
                     restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
-                    if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
-                    if (targetClassId.isNotBlank() && targetClassId != "default") {
-                        restPatchDocument(context, listOf("classrooms", targetClassId, "live_board", "state"), payload, merge = true)
-                    }
                 } catch (_: Exception) {}
             }
         }
@@ -695,6 +733,8 @@ object SmartBoardHelper {
         activeSessionCode = cleanCode
         activeConnectionId = newConnectionId
         lastBoardCast = null
+        quotaCooldownUntilMs = 0L
+        clearDeltaSyncCache()
 
         lastClassId = classId
         lastCurrentSubPage = currentSubPage
@@ -787,6 +827,7 @@ object SmartBoardHelper {
                 }
                 is RestWriteResult.HttpError -> {
                     val detail = when (writeResult.code) {
+                        429 -> "Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında otomatik devam eder."
                         403 -> "Tahta sunucusu yazma izni vermedi (HTTP 403)."
                         400 -> "Tahta isteği geçersiz biçimde reddedildi (HTTP 400)."
                         else -> "Tahta sunucusu yanıt vermedi (HTTP ${writeResult.code})."
@@ -892,42 +933,43 @@ object SmartBoardHelper {
 
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                val fullRes = restPatchDocument(
+                var finalWriteRes = restPatchDocument(
                     context = context,
                     docPathSegments = listOf("board_sessions", cleanCode),
                     payload = fullPayload,
                     merge = true
                 )
-                if (fullRes !is RestWriteResult.Success && isEpochStillActive(cleanCode, myEpoch)) {
+                var syncedLibraryAndTournament = (finalWriteRes is RestWriteResult.Success)
+                if (finalWriteRes !is RestWriteResult.Success &&
+                    !(finalWriteRes is RestWriteResult.HttpError && finalWriteRes.code == 429) &&
+                    isEpochStillActive(cleanCode, myEpoch)
+                ) {
                     val slimPayload = HashMap(fullPayload).apply {
                         remove("libraryData")
                         remove("tournamentData")
                     }
-                    writeDocumentRestFirst(
+                    finalWriteRes = writeDocumentRestFirst(
                         context = context,
                         docPathSegments = listOf("board_sessions", cleanCode),
                         payload = slimPayload,
                         merge = true
                     )
+                    syncedLibraryAndTournament = false
                 }
 
-                if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-
-                if (classId.isNotBlank() && classId != "default") {
-                    val livePayload = HashMap(handshakePayload).apply { putAll(fullPayload) }
-                    restPatchDocument(
-                        context = context,
-                        docPathSegments = listOf("classes", classId, "live_board", "state"),
-                        payload = livePayload,
-                        merge = true
-                    )
-                    if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                    restPatchDocument(
-                        context = context,
-                        docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                        payload = livePayload,
-                        merge = true
-                    )
+                if (finalWriteRes is RestWriteResult.Success && isEpochStillActive(cleanCode, myEpoch)) {
+                    syncedConnectionId = newConnectionId
+                    sentStudentsHash = studentData.hashCode()
+                    sentRecentStarsHash = recentStars.hashCode()
+                    sentScheduleHash = scheduleData.hashCode()
+                    sentScheduleConfigHash = scheduleConfigData.hashCode()
+                    sentSeatingHash = seatingData?.hashCode() ?: 0
+                    sentGroupsHash = groupsData?.hashCode() ?: 0
+                    sentLuckyHash = luckyData.hashCode()
+                    if (syncedLibraryAndTournament) {
+                        sentLibraryHash = libraryData.hashCode()
+                        sentTournamentHash = tournamentData.hashCode()
+                    }
                 }
             }
         }
@@ -937,8 +979,8 @@ object SmartBoardHelper {
 
     /**
      * Akıllı tahtaya canlı ekran durumunu yansıtır.
-     * DOĞRUDAN `board_sessions/{temizKod}` belgesini ve
-     * `classes/{classId}/live_board/state` ile `classrooms/{classId}/live_board/state` belgelerini günceller.
+     * Yalnızca `board_sessions/{temizKod}` belgesine delta (değişen alanlar) güncellemeleri yazar;
+     * sekme geçişlerinde aynı ağır modül verilerini tekrar göndermeyerek kota kullanımını en aza indirir.
      */
     fun updateLiveBoardState(
         context: Context,
@@ -973,10 +1015,13 @@ object SmartBoardHelper {
             }
         }
         if (activeSessionCode != cleanCode) return
+        if (isQuotaCooldownActive()) return
         val expectedEpoch = connectionEpoch
 
         val isPrivacyMode = !isLiveMirrorActive
         val now = System.currentTimeMillis()
+        val currentConnId = activeConnectionId
+        val forceFullSync = currentConnId.isNullOrBlank() || syncedConnectionId != currentConnId
 
         val effectiveStudents = if (students.isNotEmpty()) students else lastStudents
         val effectiveSchedule = if (schedule.isNotEmpty()) schedule else lastSchedule
@@ -1039,7 +1084,18 @@ object SmartBoardHelper {
             )
         }
 
+        val studentsHash = studentData.hashCode()
+        val recentStarsHash = recentStars.hashCode()
+        val scheduleHash = scheduleData.hashCode()
+        val scheduleConfigHash = scheduleConfigData.hashCode()
+        val seatingHash = seatingData?.hashCode() ?: 0
+        val groupsHash = groupsData?.hashCode() ?: 0
+        val luckyHash = luckyData.hashCode()
+        val libraryHash = libraryData.hashCode()
+        val tournamentHash = tournamentData.hashCode()
+
         val activeCast = lastBoardCast
+        val boardCastHash = activeCast?.hashCode() ?: 0
         val isCastCurrentlyActive = (activeCast?.get("active") as? Boolean) == true
         val effectiveBoardSubPage = if (isCastCurrentlyActive) "PAYLASIM" else currentSubPage
         val effectiveBoardSubPageTitle = if (isCastCurrentlyActive) "📡 Paylaşım" else currentSubPageTitle
@@ -1054,109 +1110,74 @@ object SmartBoardHelper {
             "isPrivacyMode" to isPrivacyMode,
             "selectedDay" to activeDay,
             "activeScheduleDay" to activeDay,
-            "recentStars" to recentStars,
-            "scheduleConfig" to scheduleConfigData,
-            "luckyData" to luckyData,
-            "libraryData" to libraryData,
-            "tournamentData" to tournamentData,
             "updatedAt" to now,
             "sessionCode" to cleanCode,
             "status" to "CONNECTED",
             "isConnected" to true
         )
-        if (studentData.isNotEmpty()) {
-            boardSessionUpdate["students"] = studentData
+        if (!currentConnId.isNullOrBlank()) {
+            boardSessionUpdate["connectionId"] = currentConnId
         }
-        if (scheduleData.isNotEmpty()) {
-            boardSessionUpdate["schedule"] = scheduleData
-        }
-        if (seatingData != null) {
-            boardSessionUpdate["seatingPlan"] = seatingData
-        }
-        if (groupsData != null) {
-            boardSessionUpdate["groups"] = groupsData
-        }
-        if (activeCast != null) {
-            boardSessionUpdate["boardCast"] = activeCast
-        }
+
+        val includedStudents = studentData.isNotEmpty() && (forceFullSync || studentsHash != sentStudentsHash)
+        if (includedStudents) boardSessionUpdate["students"] = studentData
+
+        val includedRecentStars = forceFullSync || recentStarsHash != sentRecentStarsHash
+        if (includedRecentStars) boardSessionUpdate["recentStars"] = recentStars
+
+        val includedSchedule = scheduleData.isNotEmpty() && (forceFullSync || scheduleHash != sentScheduleHash)
+        if (includedSchedule) boardSessionUpdate["schedule"] = scheduleData
+
+        val includedScheduleConfig = forceFullSync || scheduleConfigHash != sentScheduleConfigHash
+        if (includedScheduleConfig) boardSessionUpdate["scheduleConfig"] = scheduleConfigData
+
+        val includedSeating = seatingData != null && (forceFullSync || seatingHash != sentSeatingHash)
+        if (includedSeating) boardSessionUpdate["seatingPlan"] = seatingData
+
+        val includedGroups = groupsData != null && (forceFullSync || groupsHash != sentGroupsHash)
+        if (includedGroups) boardSessionUpdate["groups"] = groupsData
+
+        val includedLucky = forceFullSync || luckyHash != sentLuckyHash
+        if (includedLucky) boardSessionUpdate["luckyData"] = luckyData
+
+        val includedLibrary = forceFullSync || libraryHash != sentLibraryHash
+        if (includedLibrary) boardSessionUpdate["libraryData"] = libraryData
+
+        val includedTournament = forceFullSync || tournamentHash != sentTournamentHash
+        if (includedTournament) boardSessionUpdate["tournamentData"] = tournamentData
+
+        val includedBoardCast = activeCast != null && (forceFullSync || boardCastHash != sentBoardCastHash)
+        if (includedBoardCast) boardSessionUpdate["boardCast"] = activeCast
+
         if (extraData.isNotEmpty()) {
             boardSessionUpdate.putAll(extraData)
             boardSessionUpdate["extraData"] = extraData
         }
 
-        val liveBoardPayload = hashMapOf<String, Any?>(
-            "classId" to classId,
-            "sessionCode" to cleanCode,
-            "status" to "CONNECTED",
-            "isConnected" to true,
-            "isLiveMirrorActive" to isLiveMirrorActive,
-            "isPrivacyMode" to isPrivacyMode,
-            "currentSubPage" to effectiveBoardSubPage,
-            "currentSubPageTitle" to effectiveBoardSubPageTitle,
-            "activeModule" to effectiveBoardSubPage,
-            "activeModuleTitle" to effectiveBoardSubPageTitle,
-            "activeScheduleDay" to activeDay,
-            "selectedDay" to activeDay,
-            "recentStars" to recentStars,
-            "scheduleConfig" to scheduleConfigData,
-            "luckyData" to luckyData,
-            "libraryData" to libraryData,
-            "tournamentData" to tournamentData,
-            "updatedAt" to now
-        )
-        if (studentData.isNotEmpty()) {
-            liveBoardPayload["students"] = studentData
-        }
-        if (scheduleData.isNotEmpty()) {
-            liveBoardPayload["schedule"] = scheduleData
-        }
-        if (seatingData != null) {
-            liveBoardPayload["seatingPlan"] = seatingData
-        }
-        if (groupsData != null) {
-            liveBoardPayload["groups"] = groupsData
-        }
-        if (activeCast != null) {
-            liveBoardPayload["boardCast"] = activeCast
-        }
-        if (extraData.isNotEmpty()) {
-            liveBoardPayload.putAll(extraData)
-            liveBoardPayload["extraData"] = extraData
-        }
-
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                if (!isEpochStillActive(cleanCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
                 try {
-                    activeConnectionId?.let { cid ->
-                        boardSessionUpdate["connectionId"] = cid
-                        liveBoardPayload["connectionId"] = cid
-                    }
-                    // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
-                    writeDocumentRestFirst(
+                    val res = writeDocumentRestFirst(
                         context = context,
                         docPathSegments = listOf("board_sessions", cleanCode),
                         payload = boardSessionUpdate,
                         merge = true
                     )
-
-                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-
-                    // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
-                    if (classId.isNotBlank() && classId != "default") {
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classes", classId, "live_board", "state"),
-                            payload = liveBoardPayload,
-                            merge = true
-                        )
-                        if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                            payload = liveBoardPayload,
-                            merge = true
-                        )
+                    if (res is RestWriteResult.Success && isEpochStillActive(cleanCode, expectedEpoch)) {
+                        if (!currentConnId.isNullOrBlank()) {
+                            syncedConnectionId = currentConnId
+                        }
+                        if (includedStudents) sentStudentsHash = studentsHash
+                        if (includedRecentStars) sentRecentStarsHash = recentStarsHash
+                        if (includedSchedule) sentScheduleHash = scheduleHash
+                        if (includedScheduleConfig) sentScheduleConfigHash = scheduleConfigHash
+                        if (includedSeating) sentSeatingHash = seatingHash
+                        if (includedGroups) sentGroupsHash = groupsHash
+                        if (includedLucky) sentLuckyHash = luckyHash
+                        if (includedLibrary) sentLibraryHash = libraryHash
+                        if (includedTournament) sentTournamentHash = tournamentHash
+                        if (includedBoardCast) sentBoardCastHash = boardCastHash
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error updating live board state: ${e.message}")
@@ -1177,6 +1198,7 @@ object SmartBoardHelper {
         activeSessionCode = null
         activeConnectionId = null
         lastBoardCast = null
+        clearDeltaSyncCache()
         saveConnectionState(context, null, false)
 
         val now = System.currentTimeMillis()
@@ -1199,41 +1221,23 @@ object SmartBoardHelper {
             "disconnectedAt" to now,
             "updatedAt" to now
         )
-        val disconnectLivePayload = hashMapOf<String, Any?>(
-            "classId" to classId,
-            "sessionCode" to "",
-            "connectionId" to "",
-            "disconnectedConnectionId" to prevConnId,
-            "disconnectedSessionCode" to (targetCode ?: ""),
-            "status" to "DISCONNECTED",
-            "isConnected" to false,
-            "isLiveMirrorActive" to false,
-            "isPrivacyMode" to true,
-            "boardCast" to mapOf(
-                "active" to false,
-                "castId" to "",
-                "isPaused" to false,
-                "inlineBase64" to "",
-                "updatedAt" to now
-            ),
-            "disconnectedAt" to now,
-            "updatedAt" to now
-        )
 
         scope.launch {
             withContext(NonCancellable) {
                 sessionWriteMutex.withLock {
                     if (!targetCode.isNullOrBlank()) {
-                        var res = writeDocumentRestFirst(
+                        val res = writeDocumentRestFirst(
                             context = context,
                             docPathSegments = listOf("board_sessions", targetCode),
                             payload = disconnectSessionPayload,
                             merge = true,
                             sdkTimeoutMs = 3000L
                         )
-                        if (res !is RestWriteResult.Success) {
+                        if (res !is RestWriteResult.Success &&
+                            !(res is RestWriteResult.HttpError && res.code == 429)
+                        ) {
                             delay(350L)
-                            res = writeDocumentRestFirst(
+                            writeDocumentRestFirst(
                                 context = context,
                                 docPathSegments = listOf("board_sessions", targetCode),
                                 payload = disconnectSessionPayload,
@@ -1241,21 +1245,6 @@ object SmartBoardHelper {
                                 sdkTimeoutMs = 3000L
                             )
                         }
-                    }
-
-                    if (classId.isNotBlank() && classId != "default") {
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classes", classId, "live_board", "state"),
-                            payload = disconnectLivePayload,
-                            merge = true
-                        )
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                            payload = disconnectLivePayload,
-                            merge = true
-                        )
                     }
                 }
             }
@@ -1367,8 +1356,10 @@ object SmartBoardHelper {
         classId: String,
         cleanCode: String,
         castMap: Map<String, Any?>
-    ) = withContext(Dispatchers.IO) {
-        if (activeSessionCode != cleanCode) return@withContext
+    ): RestWriteResult = withContext(Dispatchers.IO) {
+        if (activeSessionCode != cleanCode) {
+            return@withContext RestWriteResult.HttpError(409, "Oturum değişti")
+        }
         val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         lastBoardCast = castMap
@@ -1387,31 +1378,19 @@ object SmartBoardHelper {
             "updatedAt" to now
         )
         sessionWriteMutex.withLock {
-            if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-            writeDocumentRestFirst(
+            if (!isEpochStillActive(cleanCode, expectedEpoch)) {
+                return@withLock RestWriteResult.HttpError(409, "Oturum değişti")
+            }
+            val res = writeDocumentRestFirst(
                 context = context,
                 docPathSegments = listOf("board_sessions", cleanCode),
                 payload = payload,
                 merge = true
             )
-
-            if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-
-            if (classId.isNotBlank() && classId != "default") {
-                restPatchDocument(
-                    context = context,
-                    docPathSegments = listOf("classes", classId, "live_board", "state"),
-                    payload = payload,
-                    merge = true
-                )
-                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                restPatchDocument(
-                    context = context,
-                    docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                    payload = payload,
-                    merge = true
-                )
+            if (res is RestWriteResult.Success) {
+                sentBoardCastHash = castMap.hashCode()
             }
+            res
         }
     }
 
@@ -1429,7 +1408,7 @@ object SmartBoardHelper {
         base64Jpeg: String
     ) {
         val cleanCode = normalizeCode(sessionCode)
-        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return
+        if (cleanCode.length < 4 || activeSessionCode != cleanCode || isQuotaCooldownActive()) return
         val now = System.currentTimeMillis()
         val castMap = hashMapOf<String, Any?>(
             "active" to true,
@@ -1503,29 +1482,14 @@ object SmartBoardHelper {
         try {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                writeDocumentRestFirst(
+                val res = writeDocumentRestFirst(
                     context = context,
                     docPathSegments = listOf("board_sessions", cleanCode),
                     payload = payload,
                     merge = true
                 )
-
-                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-
-                if (classId.isNotBlank() && classId != "default") {
-                    restPatchDocument(
-                        context = context,
-                        docPathSegments = listOf("classes", classId, "live_board", "state"),
-                        payload = payload,
-                        merge = true
-                    )
-                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                    restPatchDocument(
-                        context = context,
-                        docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                        payload = payload,
-                        merge = true
-                    )
+                if (res is RestWriteResult.Success) {
+                    sentBoardCastHash = updatedCached.hashCode()
                 }
             }
         } catch (e: Exception) {
@@ -1599,7 +1563,10 @@ object SmartBoardHelper {
                     "totalChunks" to 0,
                     "updatedAt" to now
                 )
-                publishBoardCastMap(context, classId, cleanCode, castMap)
+                val pubRes = publishBoardCastMap(context, classId, cleanCode, castMap)
+                if (pubRes is RestWriteResult.HttpError && pubRes.code == 429) {
+                    throw IllegalStateException("Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında tekrar deneyin.")
+                }
                 onProgress(1f)
             } else {
                 val chunkSize = 300 * 1024
@@ -1624,6 +1591,9 @@ object SmartBoardHelper {
                         merge = false,
                         sdkTimeoutMs = 6000L
                     )
+                    if (chunkRes is RestWriteResult.HttpError && chunkRes.code == 429) {
+                        throw IllegalStateException("Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında tekrar deneyin.")
+                    }
                     if (chunkRes !is RestWriteResult.Success) {
                         throw IllegalStateException("Dosya parçası yüklenemedi ($i/$totalChunks).")
                     }
@@ -1642,7 +1612,10 @@ object SmartBoardHelper {
                     "totalChunks" to totalChunks,
                     "updatedAt" to now
                 )
-                publishBoardCastMap(context, classId, cleanCode, castMap)
+                val pubRes = publishBoardCastMap(context, classId, cleanCode, castMap)
+                if (pubRes is RestWriteResult.HttpError && pubRes.code == 429) {
+                    throw IllegalStateException("Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında tekrar deneyin.")
+                }
                 onProgress(1f)
             }
 
@@ -1693,7 +1666,10 @@ object SmartBoardHelper {
                 "url" to normalizedUrl,
                 "updatedAt" to now
             )
-            publishBoardCastMap(context, classId, cleanCode, castMap)
+            val pubRes = publishBoardCastMap(context, classId, cleanCode, castMap)
+            if (pubRes is RestWriteResult.HttpError && pubRes.code == 429) {
+                return Result.failure(IllegalStateException("Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında tekrar deneyin."))
+            }
             Result.success(effectiveTitle)
         } catch (e: Exception) {
             Log.e(TAG, "Error casting URL/Program to smart board", e)
@@ -1706,6 +1682,7 @@ object SmartBoardHelper {
      */
     fun stopBoardCast(context: Context, classId: String, sessionCode: String?) {
         lastBoardCast = null
+        sentBoardCastHash = 0
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         if (activeSessionCode != cleanCode) return
         val expectedEpoch = connectionEpoch
@@ -1738,24 +1715,6 @@ object SmartBoardHelper {
                         payload = payload,
                         merge = true
                     )
-
-                    if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-
-                    if (classId.isNotBlank() && classId != "default") {
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classes", classId, "live_board", "state"),
-                            payload = payload,
-                            merge = true
-                        )
-                        if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                        restPatchDocument(
-                            context = context,
-                            docPathSegments = listOf("classrooms", classId, "live_board", "state"),
-                            payload = payload,
-                            merge = true
-                        )
-                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error stopping board cast: ${e.message}")
                 }
@@ -1770,6 +1729,8 @@ object SmartBoardHelper {
         connectionEpoch += 1L
         activeSessionCode = null
         activeConnectionId = null
+        quotaCooldownUntilMs = 0L
+        clearDeltaSyncCache()
         lastClassId = ""
         lastCurrentSubPage = "SINIF_LISTESI"
         lastCurrentSubPageTitle = "Sınıf Listesi"

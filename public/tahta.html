@@ -1686,7 +1686,6 @@
         if (!canUseEsm) {
           transportMode = "REST";
           updateTransportNote("🟢 Çevrimdışı/Yerel Dosya Modu (REST Canlı Senkron)", false);
-          ensureInitialSessionDoc();
           startSessionListening();
           return;
         }
@@ -1715,7 +1714,6 @@
           if (sdkDbs.length > 0) {
             transportMode = "SDK";
             updateTransportNote("🟢 Canlı Bağlantı Hazır • Eşleştirme bekleniyor", false);
-            ensureInitialSessionDoc();
             startSessionListening();
           } else {
             throw new Error("No Firestore instances");
@@ -1723,7 +1721,6 @@
         }).catch(function() {
           transportMode = "REST";
           updateTransportNote("🟢 Yedek Canlı Bağlantı Aktif (REST)", false);
-          ensureInitialSessionDoc();
           startSessionListening();
         });
       }
@@ -1781,7 +1778,7 @@
             return;
           }
           checkWaitingSessionOnce();
-        }, 1500);
+        }, 3000);
       }
 
       function stopConnectedHeartbeat() {
@@ -1824,7 +1821,7 @@
               }
             }
           });
-        }, 2000);
+        }, 4000);
       }
 
       function clearSessionListeners() {
@@ -1896,14 +1893,9 @@
                 }
               }
             });
-            if (isBoardConnected && attachedClassId && attachedClassId !== "default") {
-              restGetDocument(NAMED_DB_ID, "classrooms/" + encodeURIComponent(attachedClassId) + "/live_board/state").then(function(liveData) {
-                if (liveData) handleSessionSnapshot(liveData, "live_board", 0);
-              });
-            }
           };
           pollFn();
-          restPollTimer = setInterval(pollFn, 1200);
+          restPollTimer = setInterval(pollFn, 2000);
         }
       }
 
@@ -1925,11 +1917,6 @@
             var db = entry.db;
             var dbIdx = entry.idx;
             try {
-              var stateRef = fbApi.doc(db, "classrooms", classId, "live_board", "state");
-              classCleanupCallbacks.push(fbApi.onSnapshot(stateRef, function(snap) {
-                if (snap && snap.exists()) handleSessionSnapshot(snap.data() || {}, "live_board", dbIdx);
-              }, function() {}));
-
               var studentsRef = fbApi.collection(db, "classrooms", classId, "students");
               classCleanupCallbacks.push(fbApi.onSnapshot(studentsRef, function(snap) {
                 if (!snap || snap.empty) return;

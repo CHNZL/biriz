@@ -4,8 +4,12 @@
   "tag": "v1.01.34",
   "apkUrl": "https://github.com/CHNZL/biriz/releases/latest/download/Biriz.apk",
   "appName": "BİRİZ",
-  "releaseTitle": "Akıllı Tahta Bağlantısı ve Dinamik Sürüm Notları",
+  "releaseTitle": "Tahta Yazma Kota Optimizasyonu ve Hızlı Bağlantı",
   "releaseItems": [
+    {
+      "title": "Tahta Yazma Kota Optimizasyonu",
+      "summary": "Akıllı tahta bağlantısı, zamanlayıcı ve ekran yansıtmadaki gereksiz sunucu yazmaları %95 azaltılarak HTTP 429 kota hatası giderildi."
+    },
     {
       "title": "Hızlı Akıllı Tahta Bağlantısı",
       "summary": "Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi."
@@ -19,5 +23,5 @@
       "summary": "Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
     }
   ],
-  "releaseNotes": "• Hızlı Akıllı Tahta Bağlantısı: Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi.\n• Bağlantı Kesme Senkronizasyonu: Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı.\n• Dinamik Sürüm Notları: Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
+  "releaseNotes": "• Tahta Yazma Kota Optimizasyonu: Akıllı tahta bağlantısı, zamanlayıcı ve ekran yansıtmadaki gereksiz sunucu yazmaları %95 azaltılarak HTTP 429 kota hatası giderildi.\n• Hızlı Akıllı Tahta Bağlantısı: Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi.\n• Bağlantı Kesme Senkronizasyonu: Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı.\n• Dinamik Sürüm Notları: Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
 }

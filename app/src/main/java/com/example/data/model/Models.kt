@@ -56,12 +56,12 @@ data class ClassRoom(
 ) {
     /**
      * Öğretmenin şu an sistemde gerçekten bağlı olup olmadığını döndürür.
-     * Öğretmen ekranı açıkken 15 sn'de bir kalp atışı gönderir; arka plana alındığında anında false olur.
+     * Öğretmen ekranı açıkken 60 sn'de bir kalp atışı gönderir; arka plana alındığında anında false olur.
      */
     fun isTeacherCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
         return teacherIsOnline &&
             teacherLastActiveMillis != null &&
-            (nowMillis - teacherLastActiveMillis) in -60_000L..35_000L
+            (nowMillis - teacherLastActiveMillis) in -60_000L..135_000L
     }
 }
 
@@ -78,7 +78,7 @@ data class LinkedParentAccount(
     fun isCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
         return isOnline &&
             lastActiveMillis != null &&
-            (nowMillis - lastActiveMillis) in -60_000L..35_000L
+            (nowMillis - lastActiveMillis) in -60_000L..135_000L
     }
 }
 
@@ -122,7 +122,7 @@ data class Student(
 
     /**
      * Velinin şu an sistemde gerçekten aktif olup olmadığını döndürür.
-     * Veli ekranı açıkken periyodik (15 sn) canlı kalp atışı (heartbeat) gönderir ve
+     * Veli ekranı açıkken periyodik (60 sn) canlı kalp atışı (heartbeat) gönderir ve
      * uygulama penceresi alta alındığı / kapatıldığı anda (onPause/onStop) anında parentIsOnline = false yazar.
      */
     fun isParentCurrentlyActive(nowMillis: Long = System.currentTimeMillis()): Boolean {
@@ -132,7 +132,7 @@ data class Student(
         val primary = allLinkedParents.firstOrNull()
         val onlineFlag = if (!parentIsOnline) false else (primary?.isOnline ?: parentIsOnline)
         val activeTs = parentLastActiveMillis ?: primary?.lastActiveMillis
-        return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..35_000L
+        return onlineFlag && activeTs != null && (nowMillis - activeTs) in -60_000L..135_000L
     }
 
     /**
@@ -150,7 +150,7 @@ data class Student(
         if (matched != null) {
             if (matched.isCurrentlyActive(nowMillis)) return true
             if (allLinkedParents.size <= 1 && parentIsOnline && parentLastActiveMillis != null) {
-                return (nowMillis - parentLastActiveMillis) in -60_000L..35_000L
+                return (nowMillis - parentLastActiveMillis) in -60_000L..135_000L
             }
             return false
         }

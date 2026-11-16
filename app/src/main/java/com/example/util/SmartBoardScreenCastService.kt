@@ -232,7 +232,7 @@ class SmartBoardScreenCastService : Service() {
 
         override fun onCapturedContentResize(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return
-            val (scaledW, scaledH) = scaleDimensions(width, height, 840)
+            val (scaledW, scaledH) = scaleDimensions(width, height, 520)
             if (scaledW != captureWidth || scaledH != captureHeight) {
                 captureWidth = scaledW
                 captureHeight = scaledH
@@ -334,7 +334,7 @@ class SmartBoardScreenCastService : Service() {
         projection.registerCallback(projectionCallback, mainHandler)
 
         val (rawW, rawH, density) = computeDisplaySizeAndDensity()
-        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 840)
+        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 520)
         captureWidth = scaledW
         captureHeight = scaledH
         captureDensity = density
@@ -431,6 +431,11 @@ class SmartBoardScreenCastService : Service() {
                         continue
                     }
 
+                    if (SmartBoardHelper.isQuotaCooldownActive()) {
+                        delay(8000L)
+                        continue
+                    }
+
                     val encoded = encodeBitmapToBase64Jpeg(candidateBitmap)
                     candidateBitmap.recycle()
 
@@ -457,7 +462,7 @@ class SmartBoardScreenCastService : Service() {
                         updateNotificationText(isPaused = false)
                     }
 
-                    delay(650L)
+                    delay(if (SmartBoardHelper.isQuotaCooldownActive()) 8000L else 1500L)
                 } catch (e: Exception) {
                     Log.w(TAG, "Capture loop warning: ${e.message}")
                     delay(500L)
@@ -635,11 +640,11 @@ class SmartBoardScreenCastService : Service() {
     private fun encodeBitmapToBase64Jpeg(bmp: Bitmap): String? {
         return try {
             val out = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 64, out)
+            bmp.compress(Bitmap.CompressFormat.JPEG, 42, out)
             var bytes = out.toByteArray()
-            if (bytes.size > 260 * 1024) {
+            if (bytes.size > 45 * 1024) {
                 out.reset()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 46, out)
+                bmp.compress(Bitmap.CompressFormat.JPEG, 28, out)
                 bytes = out.toByteArray()
             }
             Base64.encodeToString(bytes, Base64.NO_WRAP)
@@ -650,7 +655,7 @@ class SmartBoardScreenCastService : Service() {
 
     private fun checkDisplayOrientationChange() {
         val (rawW, rawH, _) = computeDisplaySizeAndDensity()
-        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 840)
+        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 520)
         // Yalnızca tam ekran modunda yön değişimini kontrol et (tek uygulama modunda onCapturedContentResize çalışır)
         val isSingleAppAspectMismatch = (captureWidth > captureHeight) != (scaledW > scaledH)
         if (isSingleAppAspectMismatch && lastPublishedPaused == false) {

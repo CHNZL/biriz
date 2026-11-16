@@ -437,7 +437,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                             lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
                                 while (true) {
                                     viewModel.updateTeacherPresence(isOnline = true)
-                                    kotlinx.coroutines.delay(15_000L)
+                                    kotlinx.coroutines.delay(60_000L)
                                 }
                             }
                         }
@@ -619,7 +619,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                         lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
                             while (true) {
                                 viewModel.updateParentPresence(isOnline = true)
-                                kotlinx.coroutines.delay(15_000L)
+                                kotlinx.coroutines.delay(60_000L)
                             }
                         }
                     }

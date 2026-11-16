@@ -221,12 +221,14 @@ fun TimerSubScreen(
         syncTimerToSmartBoard(isFinished = false)
     }
 
-    // Zamanlayıcı Motoru (1 saniye aralıklarla çalışır)
+    // Zamanlayıcı Motoru (1 saniye aralıklarla çalışır; akıllı tahta yerel sayaç ile ilerler)
     LaunchedEffect(isRunning, remainingSeconds) {
         if (isRunning && remainingSeconds > 0) {
             delay(1000L)
             remainingSeconds -= 1
-            syncTimerToSmartBoard(isFinished = false)
+            if (remainingSeconds > 0 && remainingSeconds % 25 == 0) {
+                syncTimerToSmartBoard(isFinished = false)
+            }
         } else if (isRunning && remainingSeconds <= 0) {
             isRunning = false
             SoundAlertHelper.playTimerCompleteAlert(context, playSound = isSoundEnabled, vibrate = isVibrationEnabled)

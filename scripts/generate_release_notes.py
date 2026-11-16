@@ -16,6 +16,13 @@ from pathlib import Path
 # (id, dosya_regex, diff_veya_commit_regex_yoksa_None, baslik, aciklama)
 SPECIFIC_DIFF_RULES = [
     (
+        "smartboard_quota_429",
+        re.compile(r"(SmartBoardHelper|SmartBoardScreenCastService|TimerSubScreen|LuckyStudentSubScreen|tahta\.html)", re.I),
+        re.compile(r"(isQuotaCooldownActive|quotaCooldownUntilMs|clearDeltaSyncCache|429)", re.I),
+        "Tahta Yazma Kota Optimizasyonu",
+        "Akıllı tahta bağlantısı ve yansıtma sırasındaki gereksiz sunucu yazmaları azaltılarak HTTP 429 kota hatası önlendi.",
+    ),
+    (
         "smartboard_rest_connect",
         re.compile(r"(SmartBoardHelper|tahta\.html)", re.I),
         re.compile(r"(restPatchDocument|restHttpClient|restGetDocument|writeDocumentRestFirst|startWaitingRestPoll)", re.I),
