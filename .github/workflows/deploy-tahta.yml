@@ -1,0 +1,26 @@
+name: Deploy Tahta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/assets/tahta.html"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tahta.html'i hazirla
+        run: |
+          mkdir -p tahta-cloudflare/public
+          cp app/src/main/assets/tahta.html tahta-cloudflare/public/tahta.html
+
+      - name: Cloudflare'a deploy et
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          workingDirectory: tahta-cloudflare
