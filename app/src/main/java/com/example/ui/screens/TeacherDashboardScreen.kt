@@ -4,6 +4,7 @@ import com.example.data.model.UserRole
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -18,12 +19,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -50,6 +53,7 @@ import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
 import com.example.ui.components.NotificationCenterDialog
+import com.example.ui.components.SmartBoardCastSection
 import com.example.ui.components.UserAvatarCircle
 import com.example.ui.components.UserProfileMenuDialog
 import com.example.ui.viewmodel.AuthenticatedUser
@@ -209,11 +213,18 @@ fun TeacherDashboardScreen(
     isSmartBoardDialogOpen: Boolean = false,
     isConnectingBoard: Boolean = false,
     smartBoardMessage: String? = null,
+    activeBoardCastTitle: String? = null,
+    activeBoardCastType: String? = null,
+    isBroadcastingToBoard: Boolean = false,
+    boardCastProgress: Float = 0f,
     onOpenSmartBoardDialog: () -> Unit = {},
     onDismissSmartBoardDialog: () -> Unit = {},
     onConnectSmartBoard: (String) -> Unit = {},
     onToggleLiveBoardMirror: (Boolean) -> Unit = {},
     onDisconnectSmartBoard: () -> Unit = {},
+    onCastFileToBoard: (Uri) -> Unit = {},
+    onCastUrlOrProgramToBoard: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    onStopBoardCast: () -> Unit = {},
     onDeleteStudent: (Student) -> Unit,
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -1144,11 +1155,18 @@ fun TeacherDashboardScreen(
                 isLiveBoardMirrorActive = isLiveBoardMirrorActive,
                 isConnecting = isConnectingBoard,
                 statusMessage = smartBoardMessage,
+                activeBoardCastTitle = activeBoardCastTitle,
+                activeBoardCastType = activeBoardCastType,
+                isBroadcastingToBoard = isBroadcastingToBoard,
+                boardCastProgress = boardCastProgress,
                 isDarkTheme = isDarkTheme,
                 onDismiss = onDismissSmartBoardDialog,
                 onConnect = onConnectSmartBoard,
                 onToggleMirror = onToggleLiveBoardMirror,
-                onDisconnect = onDisconnectSmartBoard
+                onDisconnect = onDisconnectSmartBoard,
+                onCastFile = onCastFileToBoard,
+                onCastUrlOrProgram = onCastUrlOrProgramToBoard,
+                onStopCast = onStopBoardCast
             )
         }
     }
@@ -1160,11 +1178,18 @@ fun SmartBoardDialog(
     isLiveBoardMirrorActive: Boolean,
     isConnecting: Boolean,
     statusMessage: String?,
+    activeBoardCastTitle: String?,
+    activeBoardCastType: String?,
+    isBroadcastingToBoard: Boolean,
+    boardCastProgress: Float,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
     onConnect: (String) -> Unit,
     onToggleMirror: (Boolean) -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onCastFile: (Uri) -> Unit,
+    onCastUrlOrProgram: (String, String, Boolean) -> Unit,
+    onStopCast: () -> Unit
 ) {
     var codeInput by remember { mutableStateOf("") }
     var isScannerOpen by remember { mutableStateOf(false) }
@@ -1203,7 +1228,10 @@ fun SmartBoardDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 540.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 if (isConnected) {
                     // Bağlı Durum
@@ -1288,7 +1316,21 @@ fun SmartBoardDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    SmartBoardCastSection(
+                        isDarkTheme = isDarkTheme,
+                        activeCastTitle = activeBoardCastTitle,
+                        activeCastType = activeBoardCastType,
+                        isBroadcasting = isBroadcastingToBoard,
+                        uploadProgress = boardCastProgress,
+                        statusMessage = statusMessage,
+                        onCastFile = onCastFile,
+                        onCastUrlOrProgram = onCastUrlOrProgram,
+                        onStopCast = onStopCast
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Bağlantıyı Kes Butonu
                     OutlinedButton(

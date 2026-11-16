@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -207,6 +208,10 @@ data class BirizUiState(
     val isSmartBoardDialogOpen: Boolean = false,
     val isConnectingBoard: Boolean = false,
     val smartBoardMessage: String? = null,
+    val activeBoardCastTitle: String? = null,
+    val activeBoardCastType: String? = null,
+    val isBroadcastingToBoard: Boolean = false,
+    val boardCastProgress: Float = 0f,
 
     // UI Bildirimleri
     val snackbarMessage: String? = null
@@ -3854,7 +3859,126 @@ class BirizViewModel(
             isLiveBoardMirrorActive = false,
             isSmartBoardDialogOpen = false,
             smartBoardMessage = null,
+            activeBoardCastTitle = null,
+            activeBoardCastType = null,
+            isBroadcastingToBoard = false,
+            boardCastProgress = 0f,
             snackbarMessage = "Akıllı Tahta Bağlantısı Kesildi 🔌"
+        )
+    }
+
+    fun castFileToSmartBoard(uri: Uri) {
+        val ctx = appContext ?: return
+        val code = _uiState.value.connectedBoardSessionCode
+        val activeClass = _uiState.value.activeClassRoom
+        if (code.isNullOrBlank() || activeClass == null) {
+            _uiState.value = _uiState.value.copy(
+                smartBoardMessage = "Önce Akıllı Tahta bağlantısı kurun."
+            )
+            return
+        }
+        _uiState.value = _uiState.value.copy(
+            isBroadcastingToBoard = true,
+            boardCastProgress = 0.05f,
+            smartBoardMessage = null
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = SmartBoardHelper.castFileToBoard(
+                context = ctx,
+                classId = activeClass.id,
+                sessionCode = code,
+                uri = uri,
+                onProgress = { prog ->
+                    _uiState.value = _uiState.value.copy(boardCastProgress = prog)
+                }
+            )
+            result.fold(
+                onSuccess = { name ->
+                    _uiState.value = _uiState.value.copy(
+                        isBroadcastingToBoard = false,
+                        boardCastProgress = 1f,
+                        isLiveBoardMirrorActive = true,
+                        activeBoardCastTitle = name,
+                        activeBoardCastType = "FILE",
+                        smartBoardMessage = "✅ Tahtada yayınlandı: $name",
+                        snackbarMessage = "📡 Dosya tahtada yayınlandı: $name"
+                    )
+                    SmartBoardHelper.saveConnectionState(ctx, code, true)
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isBroadcastingToBoard = false,
+                        boardCastProgress = 0f,
+                        smartBoardMessage = err.message ?: "Dosya tahtaya gönderilemedi."
+                    )
+                }
+            )
+        }
+    }
+
+    fun castUrlToSmartBoard(url: String, title: String = "", isProgram: Boolean = false) {
+        val ctx = appContext ?: return
+        val code = _uiState.value.connectedBoardSessionCode
+        val activeClass = _uiState.value.activeClassRoom
+        if (code.isNullOrBlank() || activeClass == null) {
+            _uiState.value = _uiState.value.copy(
+                smartBoardMessage = "Önce Akıllı Tahta bağlantısı kurun."
+            )
+            return
+        }
+        val castType = if (isProgram) "PROGRAM" else "URL"
+        _uiState.value = _uiState.value.copy(
+            isBroadcastingToBoard = true,
+            boardCastProgress = 0.5f,
+            smartBoardMessage = null
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = SmartBoardHelper.castUrlOrProgramToBoard(
+                context = ctx,
+                classId = activeClass.id,
+                sessionCode = code,
+                type = castType,
+                rawUrl = url,
+                title = title
+            )
+            result.fold(
+                onSuccess = { resolvedTitle ->
+                    _uiState.value = _uiState.value.copy(
+                        isBroadcastingToBoard = false,
+                        boardCastProgress = 1f,
+                        isLiveBoardMirrorActive = true,
+                        activeBoardCastTitle = resolvedTitle,
+                        activeBoardCastType = castType,
+                        smartBoardMessage = "✅ Tahtada yayınlandı: $resolvedTitle",
+                        snackbarMessage = "📡 Tahtada açıldı: $resolvedTitle"
+                    )
+                    SmartBoardHelper.saveConnectionState(ctx, code, true)
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isBroadcastingToBoard = false,
+                        boardCastProgress = 0f,
+                        smartBoardMessage = err.message ?: "Yayın başlatılamadı."
+                    )
+                }
+            )
+        }
+    }
+
+    fun stopSmartBoardCast() {
+        val ctx = appContext ?: return
+        val code = _uiState.value.connectedBoardSessionCode
+        val activeClass = _uiState.value.activeClassRoom
+        if (activeClass != null) {
+            SmartBoardHelper.stopBoardCast(ctx, activeClass.id, code)
+        }
+        _uiState.value = _uiState.value.copy(
+            activeBoardCastTitle = null,
+            activeBoardCastType = null,
+            isBroadcastingToBoard = false,
+            boardCastProgress = 0f,
+            smartBoardMessage = null,
+            snackbarMessage = "⏹️ Özel yayın durduruldu, sınıf ekranına dönüldü."
         )
     }
 

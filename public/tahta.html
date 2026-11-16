@@ -1296,6 +1296,12 @@
       <div class="board-toolbar" id="tournament-toolbar"></div>
       <div id="tournament-stage" style="flex:1; min-height:0; display:flex; flex-direction:column; gap:clamp(5px, 0.85vh, 10px); overflow:hidden;"></div>
     </div>
+
+    <!-- MODÜL 10: CANLI DOSYA / URL / PROGRAM YAYINI -->
+    <div id="mod-BOARD_CAST" class="module-screen">
+      <div class="board-toolbar" id="board-cast-toolbar"></div>
+      <div id="board-cast-stage" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:rgba(255,255,255,0.96); border:2.5px solid #CBD5E1; border-bottom:5px solid #94A3B8; border-radius:22px; padding:clamp(8px, 1.2vh, 14px); position:relative;"></div>
+    </div>
   </main>
 
   <script>
@@ -1346,6 +1352,13 @@
       var lastChimedFinishKey = "";
       var lastCelebratedLuckyId = "";
       var soundEnabled = true;
+
+      // Board cast (File / URL / Program) state
+      var activeCastRenderKey = "";
+      var activeCastBlobUrl = "";
+      var dismissedCastId = "";
+      var castImageZoom = 1;
+      var castImageRotate = 0;
 
       // Firebase modular SDK refs
       var fbApi = null;
@@ -2017,15 +2030,31 @@
         var rawTitle = latestStateData.activeModuleTitle || latestStateData.currentSubPageTitle || getModuleTitle(targetKey);
         var isPrivateTeacherModule = String(rawModule).toUpperCase().indexOf("ILETISIM") === 0 || String(rawModule).toUpperCase().indexOf("OGRETMEN_ODASI") === 0;
 
+        var activeCast = latestStateData.boardCast;
+        var isCastShowing = Boolean(activeCast && activeCast.active === true && activeCast.castId && activeCast.castId !== dismissedCastId);
+
         var modBadge = document.getElementById("header-module-badge");
         if (modBadge) {
           modBadge.style.display = "inline-flex";
-          modBadge.textContent = isPrivateTeacherModule
-            ? "📋 Sınıf Listesi (Gizlilik Korumalı)"
-            : (targetKey === "SINIF_LISTESI" ? "📋 Sınıf Listesi" : rawTitle);
+          if (isCastShowing) {
+            modBadge.textContent = "📡 Canlı Yayın: " + String(activeCast.title || "İçerik");
+          } else {
+            modBadge.textContent = isPrivateTeacherModule
+              ? "📋 Sınıf Listesi (Gizlilik Korumalı)"
+              : (targetKey === "SINIF_LISTESI" ? "📋 Sınıf Listesi" : rawTitle);
+          }
         }
 
-        switchActiveModuleScreen(targetKey);
+        if (isCastShowing) {
+          switchActiveModuleScreen("BOARD_CAST");
+          renderBoardCast(activeCast);
+        } else {
+          if (activeCastBlobUrl && (!activeCast || activeCast.active !== true)) {
+            revokeActiveCastBlob();
+            activeCastRenderKey = "";
+          }
+          switchActiveModuleScreen(targetKey);
+        }
 
         var mergedStudents = getMergedStudentsList();
         renderStudents(mergedStudents);
@@ -3149,6 +3178,333 @@
           '<div class="students-grid" data-density="' + tDensity + '" style="grid-template-columns:repeat(' + dims.cols + ', minmax(0, 1fr)); grid-template-rows:repeat(' + dims.rows + ', minmax(0, 1fr));">' +
             (matchesParts.join("") || '<div class="stage-panel" style="align-items:center; justify-content:center;">Fikstür eşleşmesi bekleniyor...</div>') +
           '</div>';
+      }
+
+      /* 10. CANLI DOSYA / URL / PROGRAM YAYINI */
+      function revokeActiveCastBlob() {
+        if (activeCastBlobUrl) {
+          try { URL.revokeObjectURL(activeCastBlobUrl); } catch (e) {}
+          activeCastBlobUrl = "";
+        }
+      }
+
+      function base64ToUint8Array(b64) {
+        var binStr = atob(b64);
+        var len = binStr.length;
+        var bytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) {
+          bytes[i] = binStr.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      function formatBytesHuman(bytes) {
+        var n = Number(bytes) || 0;
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+        return (n / (1024 * 1024)).toFixed(2) + " MB";
+      }
+
+      function extractYouTubeEmbedUrl(rawUrl) {
+        try {
+          var u = new URL(rawUrl);
+          var host = u.hostname.toLowerCase();
+          var vid = "";
+          if (host.indexOf("youtu.be") !== -1) {
+            vid = u.pathname.replace(/^\//, "").split("/")[0];
+          } else if (host.indexOf("youtube.com") !== -1) {
+            if (u.pathname.indexOf("/watch") === 0) {
+              vid = u.searchParams.get("v") || "";
+            } else if (u.pathname.indexOf("/shorts/") === 0) {
+              vid = u.pathname.split("/shorts/")[1].split("/")[0];
+            } else if (u.pathname.indexOf("/embed/") === 0) {
+              vid = u.pathname.split("/embed/")[1].split("/")[0];
+            }
+          }
+          if (vid) {
+            return "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(vid) + "?autoplay=1&rel=0";
+          }
+        } catch (e) {}
+        return "";
+      }
+
+      function applyCastImageTransform() {
+        var img = document.getElementById("cast-preview-image");
+        if (img) {
+          img.style.transform = "scale(" + castImageZoom + ") rotate(" + castImageRotate + "deg)";
+        }
+      }
+
+      window.zoomBoardCastImage = function(delta) {
+        castImageZoom = Math.max(0.4, Math.min(3.5, Math.round((castImageZoom + delta) * 10) / 10));
+        applyCastImageTransform();
+      };
+
+      window.rotateBoardCastImage = function() {
+        castImageRotate = (castImageRotate + 90) % 360;
+        applyCastImageTransform();
+      };
+
+      window.resetBoardCastTransform = function() {
+        castImageZoom = 1;
+        castImageRotate = 0;
+        applyCastImageTransform();
+      };
+
+      window.returnToClassBoardLocally = function() {
+        var c = latestStateData && latestStateData.boardCast;
+        if (c && c.castId) {
+          dismissedCastId = c.castId;
+        }
+        handleSessionSnapshot(latestStateData, "local_dismiss", preferredDbIndex);
+      };
+
+      function fetchChunkDocData(codeKey, docId) {
+        if (transportMode === "SDK" && fbApi && sdkDbs.length > 0) {
+          var db = sdkDbs[preferredDbIndex] || sdkDbs[0];
+          return fbApi.getDoc(fbApi.doc(db, "board_sessions", codeKey, "cast_chunks", docId))
+            .then(function(snap) {
+              return (snap && snap.exists()) ? snap.data() : null;
+            });
+        }
+        return restGetDocument(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(codeKey) + "/cast_chunks/" + encodeURIComponent(docId));
+      }
+
+      function renderFilePreviewIntoStage(stage, toolbar, cast, blobUrl) {
+        var mime = String(cast.mimeType || "").toLowerCase();
+        var fileName = String(cast.fileName || cast.title || "dosya");
+        var lowerName = fileName.toLowerCase();
+        var sizeLabel = formatBytesHuman(cast.fileSize || 0);
+
+        var isImage = mime.indexOf("image/") === 0 || /\.(png|jpe?g|webp|gif|svg)$/i.test(lowerName);
+        var isVideo = mime.indexOf("video/") === 0 || /\.(mp4|webm|mov|m4v)$/i.test(lowerName);
+        var isAudio = mime.indexOf("audio/") === 0 || /\.(mp3|wav|ogg|m4a)$/i.test(lowerName);
+        var isPdf = mime === "application/pdf" || /\.pdf$/i.test(lowerName);
+        var isHtml = mime === "text/html" || /\.html?$/i.test(lowerName);
+        var isText = mime.indexOf("text/plain") === 0 || /\.(txt|csv|log|md|json)$/i.test(lowerName);
+
+        var imageCtrls = isImage
+          ? '<button class="sort-btn" onclick="zoomBoardCastImage(0.25)">🔍+</button>' +
+            '<button class="sort-btn" onclick="zoomBoardCastImage(-0.25)">🔍-</button>' +
+            '<button class="sort-btn" onclick="rotateBoardCastImage()">↻ Döndür</button>' +
+            '<button class="sort-btn" onclick="resetBoardCastTransform()">🔄 Sıfırla</button>'
+          : '';
+
+        toolbar.innerHTML =
+          '<div class="stats-bar">' +
+            '<div class="stat-pill star-stat">📄 Dosya: <strong>' + escapeHtml(fileName) + '</strong></div>' +
+            '<div class="stat-pill boy-stat">💾 Boyut: <strong>' + escapeHtml(sizeLabel) + '</strong></div>' +
+          '</div>' +
+          '<div class="sort-controls">' +
+            imageCtrls +
+            '<a class="sort-btn active" href="' + escapeHtml(blobUrl) + '" download="' + escapeHtml(fileName) + '" style="text-decoration:none;">📥 Tahtaya İndir</a>' +
+            '<a class="sort-btn" href="' + escapeHtml(blobUrl) + '" target="_blank" rel="noopener" style="text-decoration:none;">🔗 Yeni Sekmede Aç</a>' +
+            '<button class="sort-btn sort-star active" onclick="returnToClassBoardLocally()">📋 Sınıf Ekranı</button>' +
+          '</div>';
+
+        if (isImage) {
+          castImageZoom = 1;
+          castImageRotate = 0;
+          stage.innerHTML =
+            '<div style="flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#0F172A; border-radius:16px;">' +
+              '<img id="cast-preview-image" src="' + escapeHtml(blobUrl) + '" alt="' + escapeHtml(fileName) + '" style="max-width:100%; max-height:100%; object-fit:contain; transition:transform 0.2s ease;" />' +
+            '</div>';
+          return;
+        }
+
+        if (isPdf || isHtml) {
+          stage.innerHTML =
+            '<iframe src="' + escapeHtml(blobUrl) + '" style="flex:1; width:100%; height:100%; border:none; border-radius:16px; background:#FFF;" allowfullscreen></iframe>';
+          return;
+        }
+
+        if (isVideo) {
+          stage.innerHTML =
+            '<div style="flex:1; min-height:0; display:flex; align-items:center; justify-content:center; background:#000; border-radius:16px; overflow:hidden;">' +
+              '<video src="' + escapeHtml(blobUrl) + '" controls autoplay playsinline style="width:100%; height:100%; max-height:100%;"></video>' +
+            '</div>';
+          return;
+        }
+
+        if (isAudio) {
+          stage.innerHTML =
+            '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; background:linear-gradient(135deg, #EFF6FF 0%, #FFF0F6 100%); border-radius:18px; padding:24px;">' +
+              '<div style="font-size:4.5rem;">🎵</div>' +
+              '<h2 style="font-size:clamp(1.4rem, 3vh, 2.2rem); color:var(--navy-primary);">' + escapeHtml(fileName) + '</h2>' +
+              '<audio src="' + escapeHtml(blobUrl) + '" controls autoplay style="width:min(540px, 90%); height:54px;"></audio>' +
+            '</div>';
+          return;
+        }
+
+        if (isText) {
+          fetch(blobUrl).then(function(r) { return r.text(); }).then(function(txt) {
+            stage.innerHTML =
+              '<pre style="flex:1; margin:0; padding:18px 22px; overflow:auto; background:#F8FAFC; border:2px solid #E2E8F0; border-radius:16px; font-family:Nunito, monospace; font-size:clamp(1rem, 2vh, 1.35rem); font-weight:700; color:#0F172A; white-space:pre-wrap; word-break:break-word; user-select:text; -webkit-user-select:text;">' +
+                escapeHtml(txt) +
+              '</pre>';
+          }).catch(function() {});
+          return;
+        }
+
+        stage.innerHTML =
+          '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:14px; background:linear-gradient(135deg, #F0F9FF 0%, #EFF6FF 100%); border-radius:18px; padding:28px;">' +
+            '<div style="font-size:4.8rem;">📦</div>' +
+            '<h2 style="font-size:clamp(1.4rem, 3vh, 2.2rem); color:var(--navy-primary);">' + escapeHtml(fileName) + '</h2>' +
+            '<p style="font-size:clamp(0.95rem, 1.8vh, 1.2rem); color:#475569; font-weight:800; max-width:560px;">' +
+              'Bu dosya/program (' + escapeHtml(sizeLabel) + ') Akıllı Tahta tarayıcısına ulaştı. İndirip tahtadaki programla açabilirsiniz.' +
+            '</p>' +
+            '<a href="' + escapeHtml(blobUrl) + '" download="' + escapeHtml(fileName) + '" style="display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg, #00BCD4 0%, #0284C7 100%); color:#FFF; text-decoration:none; font-family:Fredoka,sans-serif; font-size:clamp(1.1rem, 2.2vh, 1.45rem); font-weight:700; padding:14px 30px; border-radius:16px; border-bottom:5px solid #0369A1; box-shadow:0 8px 20px rgba(2,132,199,0.28);">📥 Tahtaya İndir ve Aç</a>' +
+          '</div>';
+      }
+
+      function renderBoardCast(cast) {
+        var toolbar = document.getElementById("board-cast-toolbar");
+        var stage = document.getElementById("board-cast-stage");
+        if (!toolbar || !stage || !cast) return;
+
+        var key = String(cast.castId || "") + "_" + String(cast.updatedAt || "");
+        if (activeCastRenderKey === key) return;
+        activeCastRenderKey = key;
+
+        var castType = String(cast.type || "URL").toUpperCase();
+
+        if (castType === "FILE") {
+          revokeActiveCastBlob();
+          var mime = String(cast.mimeType || "application/octet-stream");
+          var inlineB64 = String(cast.inlineBase64 || "");
+          var totalChunks = Number(cast.totalChunks || 0);
+          var fileName = String(cast.fileName || cast.title || "dosya");
+
+          if (inlineB64) {
+            try {
+              var bytes = base64ToUint8Array(inlineB64);
+              var blob = new Blob([bytes], { type: mime });
+              activeCastBlobUrl = URL.createObjectURL(blob);
+              renderFilePreviewIntoStage(stage, toolbar, cast, activeCastBlobUrl);
+            } catch (e) {
+              stage.innerHTML = '<div style="margin:auto; text-align:center;"><h3>Dosya açılamadı</h3></div>';
+            }
+            return;
+          }
+
+          if (totalChunks > 0 && cast.castId) {
+            toolbar.innerHTML =
+              '<div class="stats-bar"><div class="stat-pill star-stat">📄 Yükleniyor: <strong>' + escapeHtml(fileName) + '</strong></div></div>' +
+              '<div class="sort-controls"><button class="sort-btn sort-star active" onclick="returnToClassBoardLocally()">📋 Sınıf Ekranı</button></div>';
+            stage.innerHTML =
+              '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center;">' +
+                '<div style="font-size:3.6rem;">📡</div>' +
+                '<h3 style="font-size:1.5rem; color:var(--navy-primary);">Dosya Akıllı Tahtaya Aktarılıyor...</h3>' +
+                '<p id="cast-chunk-progress" style="font-size:1.1rem; font-weight:800; color:#0284C7;">0 / ' + totalChunks + ' parça indiriliyor</p>' +
+              '</div>';
+
+            var chunkPromises = [];
+            var completed = 0;
+            for (var ci = 0; ci < totalChunks; ci++) {
+              (function(idx) {
+                chunkPromises.push(
+                  fetchChunkDocData(currentSessionCode, cast.castId + "_" + idx).then(function(docData) {
+                    completed++;
+                    var pEl = document.getElementById("cast-chunk-progress");
+                    if (pEl) pEl.textContent = completed + " / " + totalChunks + " parça indirildi";
+                    return (docData && docData.data) ? base64ToUint8Array(docData.data) : new Uint8Array(0);
+                  })
+                );
+              })(ci);
+            }
+
+            Promise.all(chunkPromises).then(function(arrays) {
+              if (activeCastRenderKey !== key) return;
+              var totalLen = 0;
+              for (var i = 0; i < arrays.length; i++) totalLen += arrays[i].length;
+              var merged = new Uint8Array(totalLen);
+              var offset = 0;
+              for (var j = 0; j < arrays.length; j++) {
+                merged.set(arrays[j], offset);
+                offset += arrays[j].length;
+              }
+              var fullBlob = new Blob([merged], { type: mime });
+              activeCastBlobUrl = URL.createObjectURL(fullBlob);
+              renderFilePreviewIntoStage(stage, toolbar, cast, activeCastBlobUrl);
+            }).catch(function() {
+              stage.innerHTML = '<div style="margin:auto; text-align:center;"><h3>Dosya parçaları indirilirken hata oluştu</h3></div>';
+            });
+            return;
+          }
+        }
+
+        // URL veya PROGRAM modu
+        revokeActiveCastBlob();
+        var targetUrl = String(cast.url || "");
+        var title = String(cast.title || targetUrl);
+        var isProgram = castType === "PROGRAM";
+        var isHttpUrl = /^https?:\/\//i.test(targetUrl);
+        var ytEmbed = isHttpUrl ? extractYouTubeEmbedUrl(targetUrl) : "";
+        var lowerUrl = targetUrl.toLowerCase();
+        var isImgUrl = isHttpUrl && /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(lowerUrl);
+        var isVidUrl = isHttpUrl && /\.(mp4|webm|mov)(\?.*)?$/i.test(lowerUrl);
+        var isAudUrl = isHttpUrl && /\.(mp3|wav|ogg|m4a)(\?.*)?$/i.test(lowerUrl);
+
+        toolbar.innerHTML =
+          '<div class="stats-bar">' +
+            '<div class="stat-pill ' + (isProgram ? 'book-stat' : 'boy-stat') + '">' + (isProgram ? '🧩 Program: ' : '🌐 URL: ') + '<strong>' + escapeHtml(title) + '</strong></div>' +
+          '</div>' +
+          '<div class="sort-controls">' +
+            '<a class="sort-btn active" href="' + escapeHtml(targetUrl) + '" target="_blank" rel="noopener" style="text-decoration:none;">🚀 Yeni Sekmede Tam Aç</a>' +
+            '<button class="sort-btn sort-star active" onclick="returnToClassBoardLocally()">📋 Sınıf Ekranı</button>' +
+          '</div>';
+
+        if (!isHttpUrl) {
+          stage.innerHTML =
+            '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:14px; background:linear-gradient(135deg, #F0F9FF 0%, #ECFDF5 100%); border-radius:18px; padding:28px;">' +
+              '<div style="font-size:4.8rem;">🧩</div>' +
+              '<h2 style="font-size:clamp(1.5rem, 3.2vh, 2.3rem); color:var(--navy-primary);">' + escapeHtml(title) + '</h2>' +
+              '<p style="font-size:clamp(0.95rem, 1.8vh, 1.2rem); color:#475569; font-weight:800; max-width:560px;">' +
+                'Tahta bilgisayarınızda bu programı başlatmak için aşağıdaki düğmeye dokunun:' +
+              '</p>' +
+              '<a href="' + escapeHtml(targetUrl) + '" style="display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg, #10B981 0%, #059669 100%); color:#FFF; text-decoration:none; font-family:Fredoka,sans-serif; font-size:clamp(1.1rem, 2.2vh, 1.45rem); font-weight:700; padding:14px 30px; border-radius:16px; border-bottom:5px solid #047857; box-shadow:0 8px 20px rgba(16,185,129,0.28);">🚀 Programı Başlat</a>' +
+            '</div>';
+          return;
+        }
+
+        if (ytEmbed) {
+          stage.innerHTML =
+            '<iframe src="' + escapeHtml(ytEmbed) + '" style="flex:1; width:100%; height:100%; border:none; border-radius:16px; background:#000;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+          return;
+        }
+
+        if (isImgUrl) {
+          castImageZoom = 1;
+          castImageRotate = 0;
+          stage.innerHTML =
+            '<div style="flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#0F172A; border-radius:16px;">' +
+              '<img id="cast-preview-image" src="' + escapeHtml(targetUrl) + '" alt="' + escapeHtml(title) + '" style="max-width:100%; max-height:100%; object-fit:contain;" />' +
+            '</div>';
+          return;
+        }
+
+        if (isVidUrl) {
+          stage.innerHTML =
+            '<video src="' + escapeHtml(targetUrl) + '" controls autoplay playsinline style="flex:1; width:100%; height:100%; background:#000; border-radius:16px;"></video>';
+          return;
+        }
+
+        if (isAudUrl) {
+          stage.innerHTML =
+            '<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; background:linear-gradient(135deg, #EFF6FF 0%, #FFF0F6 100%); border-radius:18px; padding:24px;">' +
+              '<div style="font-size:4.5rem;">🎵</div>' +
+              '<h2 style="font-size:clamp(1.4rem, 3vh, 2.2rem); color:var(--navy-primary);">' + escapeHtml(title) + '</h2>' +
+              '<audio src="' + escapeHtml(targetUrl) + '" controls autoplay style="width:min(540px, 90%); height:54px;"></audio>' +
+            '</div>';
+          return;
+        }
+
+        stage.innerHTML =
+          '<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#EFF6FF; border:1.5px solid #BAE6FD; border-radius:12px; padding:6px 12px; margin-bottom:8px; flex-shrink:0;">' +
+            '<span style="font-size:0.86rem; font-weight:800; color:#0369A1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">ℹ️ Bazı siteler güvenlik nedeniyle sayfa içinde gömülmeye izin vermez; içerik görünmezse sağ üstteki <strong>Yeni Sekmede Tam Aç</strong> düğmesini kullanın.</span>' +
+            '<a href="' + escapeHtml(targetUrl) + '" target="_blank" rel="noopener" style="background:#0284C7; color:#FFF; text-decoration:none; padding:4px 12px; border-radius:8px; font-family:Fredoka,sans-serif; font-size:0.84rem; font-weight:700; flex-shrink:0;">🔗 Aç</a>' +
+          '</div>' +
+          '<iframe src="' + escapeHtml(targetUrl) + '" style="flex:1; width:100%; height:100%; border:2px solid #E2E8F0; border-radius:16px; background:#FFF;" allow="fullscreen; autoplay; microphone; camera; clipboard-write" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>';
       }
 
       /* BOOTSTRAP */

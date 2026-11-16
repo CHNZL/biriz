@@ -4,7 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Base64
 import android.util.Log
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import com.example.data.model.GroupMakerState
 import com.example.data.model.ScheduleConfig
@@ -18,7 +24,10 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Locale
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
@@ -54,6 +63,8 @@ object SmartBoardHelper {
     private var lastSeatingPlanState: SeatingPlanState? = null
     @Volatile
     private var lastGroupMakerState: GroupMakerState? = null
+    @Volatile
+    private var lastBoardCast: Map<String, Any?>? = null
 
     /**
      * 1. KOD NORMALİZASYONU (Tire, boşluk ve yabancı karakter temizliği)
@@ -716,6 +727,10 @@ object SmartBoardHelper {
         if (groupsData != null) {
             boardSessionUpdate["groups"] = groupsData
         }
+        val activeCast = lastBoardCast
+        if (activeCast != null) {
+            boardSessionUpdate["boardCast"] = activeCast
+        }
         if (extraData.isNotEmpty()) {
             boardSessionUpdate.putAll(extraData)
             boardSessionUpdate["extraData"] = extraData
@@ -757,6 +772,9 @@ object SmartBoardHelper {
         }
         if (groupsData != null) {
             liveBoardPayload["groups"] = groupsData
+        }
+        if (activeCast != null) {
+            liveBoardPayload["boardCast"] = activeCast
         }
         if (extraData.isNotEmpty()) {
             liveBoardPayload.putAll(extraData)
@@ -808,6 +826,7 @@ object SmartBoardHelper {
      */
     fun disconnectSession(context: Context, sessionCode: String?, classId: String) {
         saveConnectionState(context, null, false)
+        lastBoardCast = null
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
         val now = System.currentTimeMillis()
 
@@ -819,6 +838,7 @@ object SmartBoardHelper {
                         "status" to "DISCONNECTED",
                         "isConnected" to false,
                         "isPrivacyMode" to true,
+                        "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
                         "updatedAt" to now
                     )
                     mainDb.collection("board_sessions")
@@ -833,6 +853,7 @@ object SmartBoardHelper {
                         "status" to "DISCONNECTED",
                         "isLiveMirrorActive" to false,
                         "isPrivacyMode" to true,
+                        "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
                         "updatedAt" to now
                     )
                     mainDb.collection("classes")
@@ -862,12 +883,358 @@ object SmartBoardHelper {
                                 "status" to "DISCONNECTED",
                                 "isConnected" to false,
                                 "isPrivacyMode" to true,
+                                "boardCast" to mapOf("active" to false, "castId" to "", "updatedAt" to now),
                                 "updatedAt" to now
                             ),
                             SetOptions.merge()
                         )
                 }
             } catch (ignored: Exception) {}
+        }
+    }
+
+    private fun resolveMimeType(context: Context, uri: Uri, fileName: String): String {
+        val rawMime = context.contentResolver.getType(uri)?.trim()?.lowercase(Locale.ROOT)
+        if (!rawMime.isNullOrBlank() && rawMime != "application/octet-stream") {
+            return rawMime
+        }
+        val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        if (ext.isNotBlank()) {
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)?.let { return it }
+            return when (ext) {
+                "pdf" -> "application/pdf"
+                "png" -> "image/png"
+                "jpg", "jpeg" -> "image/jpeg"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                "svg" -> "image/svg+xml"
+                "mp4" -> "video/mp4"
+                "webm" -> "video/webm"
+                "mp3" -> "audio/mpeg"
+                "wav" -> "audio/wav"
+                "m4a" -> "audio/mp4"
+                "html", "htm" -> "text/html"
+                "txt", "csv" -> "text/plain"
+                "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                "ppt" -> "application/vnd.ms-powerpoint"
+                "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "doc" -> "application/msword"
+                "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                "apk" -> "application/vnd.android.package-archive"
+                "exe" -> "application/x-msdownload"
+                "zip" -> "application/zip"
+                else -> "application/octet-stream"
+            }
+        }
+        return "application/octet-stream"
+    }
+
+    private fun resolveFileName(context: Context, uri: Uri): String {
+        try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        } catch (_: Exception) {}
+        return uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "dosya" } ?: "dosya"
+    }
+
+    private fun optimizeLargeImageIfPossible(rawBytes: ByteArray, mimeType: String): Pair<ByteArray, String> {
+        if (!mimeType.startsWith("image/") || mimeType == "image/gif" || mimeType == "image/svg+xml") {
+            return rawBytes to mimeType
+        }
+        if (rawBytes.size <= 380 * 1024) {
+            return rawBytes to mimeType
+        }
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+            val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
+            var sampleSize = 1
+            while (maxSide / sampleSize > 1920) {
+                sampleSize *= 2
+            }
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
+                ?: return rawBytes to mimeType
+            val out = ByteArrayOutputStream()
+            val quality = if (rawBytes.size > 3 * 1024 * 1024) 80 else 86
+            bmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            bmp.recycle()
+            val compressed = out.toByteArray()
+            if (compressed.size < rawBytes.size) compressed to "image/jpeg" else rawBytes to mimeType
+        } catch (_: Exception) {
+            rawBytes to mimeType
+        }
+    }
+
+    private suspend fun publishBoardCastMap(
+        context: Context,
+        classId: String,
+        cleanCode: String,
+        castMap: Map<String, Any?>
+    ) {
+        val now = System.currentTimeMillis()
+        lastBoardCast = castMap
+        val payload = hashMapOf<String, Any?>(
+            "classId" to classId,
+            "sessionCode" to cleanCode,
+            "status" to "CONNECTED",
+            "isConnected" to true,
+            "isLiveMirrorActive" to true,
+            "isPrivacyMode" to false,
+            "boardCast" to castMap,
+            "updatedAt" to now,
+            "serverTimestamp" to FieldValue.serverTimestamp()
+        )
+        val mainDb = getMainFirestore(context)
+        mainDb.collection("board_sessions")
+            .document(cleanCode)
+            .set(payload, SetOptions.merge())
+            .await()
+
+        if (classId.isNotBlank() && classId != "default") {
+            mainDb.collection("classes")
+                .document(classId)
+                .collection("live_board")
+                .document("state")
+                .set(payload, SetOptions.merge())
+
+            mainDb.collection("classrooms")
+                .document(classId)
+                .collection("live_board")
+                .document("state")
+                .set(payload, SetOptions.merge())
+        }
+
+        try {
+            val defaultDb = FirebaseFirestore.getInstance()
+            if (defaultDb != mainDb) {
+                defaultDb.collection("board_sessions")
+                    .document(cleanCode)
+                    .set(payload, SetOptions.merge())
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Cihazdan seçilen dosyayı (PDF, görsel, video, ses, sunum, program vb.) Akıllı Tahtada yayınlar.
+     * Küçük dosyaları doğrudan, büyük dosyaları 300 KB parçalar halinde Firestore üzerinden iletir.
+     */
+    suspend fun castFileToBoard(
+        context: Context,
+        classId: String,
+        sessionCode: String,
+        uri: Uri,
+        onProgress: (Float) -> Unit = {}
+    ): Result<String> {
+        return try {
+            val cleanCode = normalizeCode(sessionCode)
+            if (cleanCode.length < 4) {
+                return Result.failure(IllegalStateException("Önce Akıllı Tahta bağlantısı kurun."))
+            }
+
+            val fileName = resolveFileName(context, uri)
+            val initialMime = resolveMimeType(context, uri, fileName)
+
+            val rawRead = context.contentResolver.openInputStream(uri)?.use { input ->
+                val maxPreReadBytes = 25 * 1024 * 1024
+                val buffer = ByteArray(16 * 1024)
+                val out = ByteArrayOutputStream()
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    total += read
+                    if (total > maxPreReadBytes) {
+                        return Result.failure(
+                            IllegalArgumentException("Seçilen dosya çok büyük (en fazla 12 MB desteklenir). Büyük videoları URL ile yayınlayabilirsiniz.")
+                        )
+                    }
+                    out.write(buffer, 0, read)
+                }
+                out.toByteArray()
+            } ?: return Result.failure(IllegalStateException("Seçilen dosya okunamadı."))
+
+            val (finalBytes, finalMime) = optimizeLargeImageIfPossible(rawRead, initialMime)
+            val maxFinalBytes = 12 * 1024 * 1024
+            if (finalBytes.size > maxFinalBytes) {
+                return Result.failure(
+                    IllegalArgumentException("Dosya boyutu (${finalBytes.size / (1024 * 1024)} MB) 12 MB sınırını aşıyor. Büyük dosyalar için URL sekmesini kullanın.")
+                )
+            }
+
+            val now = System.currentTimeMillis()
+            val castId = "cast_$now"
+            val inlineThreshold = 320 * 1024
+
+            if (finalBytes.size <= inlineThreshold) {
+                onProgress(0.6f)
+                val b64 = Base64.encodeToString(finalBytes, Base64.NO_WRAP)
+                val castMap = hashMapOf<String, Any?>(
+                    "active" to true,
+                    "castId" to castId,
+                    "type" to "FILE",
+                    "title" to fileName,
+                    "fileName" to fileName,
+                    "mimeType" to finalMime,
+                    "fileSize" to finalBytes.size.toLong(),
+                    "inlineBase64" to b64,
+                    "totalChunks" to 0,
+                    "updatedAt" to now
+                )
+                publishBoardCastMap(context, classId, cleanCode, castMap)
+                onProgress(1f)
+            } else {
+                val chunkSize = 300 * 1024
+                val totalChunks = (finalBytes.size + chunkSize - 1) / chunkSize
+                val mainDb = getMainFirestore(context)
+                val chunksCol = mainDb.collection("board_sessions")
+                    .document(cleanCode)
+                    .collection("cast_chunks")
+
+                for (i in 0 until totalChunks) {
+                    val start = i * chunkSize
+                    val end = minOf(finalBytes.size, start + chunkSize)
+                    val slice = finalBytes.copyOfRange(start, end)
+                    val b64Chunk = Base64.encodeToString(slice, Base64.NO_WRAP)
+                    chunksCol.document("${castId}_$i")
+                        .set(
+                            mapOf(
+                                "castId" to castId,
+                                "chunkIndex" to i,
+                                "totalChunks" to totalChunks,
+                                "data" to b64Chunk,
+                                "updatedAt" to now
+                            )
+                        )
+                        .await()
+                    onProgress((i + 1).toFloat() / (totalChunks + 1).toFloat())
+                }
+
+                val castMap = hashMapOf<String, Any?>(
+                    "active" to true,
+                    "castId" to castId,
+                    "type" to "FILE",
+                    "title" to fileName,
+                    "fileName" to fileName,
+                    "mimeType" to finalMime,
+                    "fileSize" to finalBytes.size.toLong(),
+                    "inlineBase64" to "",
+                    "totalChunks" to totalChunks,
+                    "updatedAt" to now
+                )
+                publishBoardCastMap(context, classId, cleanCode, castMap)
+                onProgress(1f)
+            }
+
+            Result.success(fileName)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error casting file to smart board", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Web adresi (URL / YouTube / PDF linki) veya eğitim programı bağlantısını Akıllı Tahtada yayınlar.
+     */
+    suspend fun castUrlOrProgramToBoard(
+        context: Context,
+        classId: String,
+        sessionCode: String,
+        type: String,
+        rawUrl: String,
+        title: String = ""
+    ): Result<String> {
+        return try {
+            val cleanCode = normalizeCode(sessionCode)
+            if (cleanCode.length < 4) {
+                return Result.failure(IllegalStateException("Önce Akıllı Tahta bağlantısı kurun."))
+            }
+            val trimmed = rawUrl.trim()
+            if (trimmed.isBlank()) {
+                return Result.failure(IllegalArgumentException("Lütfen geçerli bir URL veya program adresi girin."))
+            }
+            val lower = trimmed.lowercase(Locale.ROOT)
+            if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
+                return Result.failure(IllegalArgumentException("Güvenlik nedeniyle bu adres desteklenmiyor."))
+            }
+            val hasScheme = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(trimmed)
+            val normalizedUrl = if (hasScheme) trimmed else "https://$trimmed"
+            val parsedHost = try {
+                Uri.parse(normalizedUrl).host?.removePrefix("www.")
+            } catch (_: Exception) { null }
+            val effectiveTitle = title.trim().ifBlank { parsedHost ?: normalizedUrl }
+            val now = System.currentTimeMillis()
+
+            val castMap = hashMapOf<String, Any?>(
+                "active" to true,
+                "castId" to "cast_$now",
+                "type" to if (type == "PROGRAM") "PROGRAM" else "URL",
+                "title" to effectiveTitle,
+                "url" to normalizedUrl,
+                "updatedAt" to now
+            )
+            publishBoardCastMap(context, classId, cleanCode, castMap)
+            Result.success(effectiveTitle)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error casting URL/Program to smart board", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Tahtadaki dosya/URL/program yayınını durdurur ve tahtayı sınıf ekranına döndürür.
+     */
+    fun stopBoardCast(context: Context, classId: String, sessionCode: String?) {
+        lastBoardCast = null
+        val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        val now = System.currentTimeMillis()
+        val stopMap = mapOf(
+            "active" to false,
+            "castId" to "",
+            "updatedAt" to now
+        )
+
+        scope.launch {
+            try {
+                val mainDb = getMainFirestore(context)
+                val payload = mapOf(
+                    "boardCast" to stopMap,
+                    "updatedAt" to now
+                )
+                mainDb.collection("board_sessions")
+                    .document(cleanCode)
+                    .set(payload, SetOptions.merge())
+
+                if (classId.isNotBlank() && classId != "default") {
+                    mainDb.collection("classes")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+
+                    mainDb.collection("classrooms")
+                        .document(classId)
+                        .collection("live_board")
+                        .document("state")
+                        .set(payload, SetOptions.merge())
+                }
+
+                try {
+                    val defaultDb = FirebaseFirestore.getInstance()
+                    if (defaultDb != mainDb) {
+                        defaultDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(payload, SetOptions.merge())
+                    }
+                } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping board cast: ${e.message}")
+            }
         }
     }
 
