@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app/src/main/assets/tahta.html"
+      - "tahta-cloudflare/**"
   workflow_dispatch:
 
 jobs:

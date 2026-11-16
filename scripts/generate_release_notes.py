@@ -16,6 +16,13 @@ from pathlib import Path
 # (id, dosya_regex, diff_veya_commit_regex_yoksa_None, baslik, aciklama)
 SPECIFIC_DIFF_RULES = [
     (
+        "smartboard_hybrid_cf_webrtc",
+        re.compile(r"(SmartBoardHelper|SmartBoardRtcManager|SmartBoardScreenCastService|worker\.js|wrangler\.toml|tahta\.html)", re.I),
+        re.compile(r"(CLOUDFLARE_API_BASE|BoardRoom|SmartBoardRtcManager|DataChannel|BRZF|cfPatchSession)", re.I),
+        "Hibrit Tahta Altyapısı (Cloudflare + WebRTC)",
+        "Akıllı tahta bağlantısı kotasız Cloudflare sunucusuna taşındı ve aynı Wi-Fi ağında WebRTC P2P doğrudan ekran yansıtma eklendi.",
+    ),
+    (
         "smartboard_quota_429",
         re.compile(r"(SmartBoardHelper|SmartBoardScreenCastService|TimerSubScreen|LuckyStudentSubScreen|tahta\.html)", re.I),
         re.compile(r"(isQuotaCooldownActive|quotaCooldownUntilMs|clearDeltaSyncCache|429)", re.I),

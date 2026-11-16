@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -50,6 +51,7 @@ data class ScreenMirrorStatus(
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
     val isStoppedKeepingFrozenFrame: Boolean = false,
+    val isP2pActive: Boolean = false,
     val pauseReason: String = "",
     val targetPackageName: String = "",
     val targetAppName: String = "",
@@ -167,6 +169,9 @@ class SmartBoardScreenCastService : Service() {
     @Volatile
     private var lastPublishedPaused: Boolean? = null
 
+    @Volatile
+    private var rtcMetaPublished: Boolean = false
+
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -232,7 +237,7 @@ class SmartBoardScreenCastService : Service() {
 
         override fun onCapturedContentResize(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return
-            val (scaledW, scaledH) = scaleDimensions(width, height, 520)
+            val (scaledW, scaledH) = scaleDimensions(width, height, 640)
             if (scaledW != captureWidth || scaledH != captureHeight) {
                 captureWidth = scaledW
                 captureHeight = scaledH
@@ -312,6 +317,7 @@ class SmartBoardScreenCastService : Service() {
         lastFramePixelHash = 0L
         framesSentCount = 0L
         lastPublishedPaused = null
+        rtcMetaPublished = false
         lastDetectedForegroundPkg = null
         lastUsagePollMs = System.currentTimeMillis() - 10_000L
         castId = "mirror_${System.currentTimeMillis()}"
@@ -334,7 +340,7 @@ class SmartBoardScreenCastService : Service() {
         projection.registerCallback(projectionCallback, mainHandler)
 
         val (rawW, rawH, density) = computeDisplaySizeAndDensity()
-        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 520)
+        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 640)
         captureWidth = scaledW
         captureHeight = scaledH
         captureDensity = density
@@ -345,6 +351,7 @@ class SmartBoardScreenCastService : Service() {
             isRunning = true,
             isPaused = false,
             isStoppedKeepingFrozenFrame = false,
+            isP2pActive = false,
             pauseReason = "",
             targetPackageName = targetPackageName,
             targetAppName = targetAppName,
@@ -353,6 +360,16 @@ class SmartBoardScreenCastService : Service() {
             classId = classId,
             framesSent = 0L
         )
+
+        if (SmartBoardHelper.isCloudflareActive(applicationContext)) {
+            val connId = SmartBoardHelper.getActiveConnectionId() ?: castId
+            SmartBoardRtcManager.startSession(
+                context = applicationContext,
+                sessionCode = sessionCode,
+                connectionId = connId,
+                onSignal = { sig -> SmartBoardHelper.sendRtcSignal(sig) }
+            )
+        }
 
         // Seçilen programı ekranda başlat
         if (targetPackageName.isNotBlank()) {
@@ -431,38 +448,83 @@ class SmartBoardScreenCastService : Service() {
                         continue
                     }
 
-                    if (SmartBoardHelper.isQuotaCooldownActive()) {
+                    val p2pReady = SmartBoardRtcManager.isChannelReady()
+                    val cfActive = SmartBoardHelper.isCloudflareActive(applicationContext)
+                    if (!p2pReady && !cfActive && SmartBoardHelper.isQuotaCooldownActive()) {
+                        candidateBitmap.recycle()
                         delay(8000L)
                         continue
                     }
 
-                    val encoded = encodeBitmapToBase64Jpeg(candidateBitmap)
+                    val jpegBytes = encodeBitmapToJpegBytes(
+                        bmp = candidateBitmap,
+                        highQuality = if (p2pReady) 60 else 44,
+                        lowQuality = if (p2pReady) 42 else 28,
+                        maxBytes = if (p2pReady) 75 * 1024 else 45 * 1024
+                    )
                     candidateBitmap.recycle()
 
-                    if (!encoded.isNullOrBlank() && !isExplicitStopping && !forceAbortRequested) {
+                    if (jpegBytes != null && jpegBytes.isNotEmpty() && !isExplicitStopping && !forceAbortRequested) {
                         lastFramePixelHash = pixelHash
                         framesSentCount += 1L
+                        val wasPaused = (lastPublishedPaused == true)
                         lastPublishedPaused = false
-                        SmartBoardHelper.publishScreenMirrorFrame(
-                            context = applicationContext,
-                            classId = classId,
-                            sessionCode = sessionCode,
-                            castId = castId,
-                            packageName = targetPackageName,
-                            appName = targetAppName,
-                            frameSeq = framesSentCount,
-                            base64Jpeg = encoded
-                        )
+
+                        var sentViaP2p = false
+                        if (p2pReady) {
+                            if (!rtcMetaPublished || wasPaused) {
+                                SmartBoardHelper.publishScreenMirrorFrame(
+                                    context = applicationContext,
+                                    classId = classId,
+                                    sessionCode = sessionCode,
+                                    castId = castId,
+                                    packageName = targetPackageName,
+                                    appName = targetAppName,
+                                    frameSeq = framesSentCount,
+                                    base64Jpeg = ""
+                                )
+                                rtcMetaPublished = true
+                                SmartBoardRtcManager.sendControlJson(
+                                    JSONObject()
+                                        .put("type", "mirror_pause")
+                                        .put("isPaused", false)
+                                        .put("reason", "")
+                                )
+                            }
+                            sentViaP2p = SmartBoardRtcManager.sendFrameBytes(framesSentCount, jpegBytes)
+                        }
+
+                        if (!sentViaP2p) {
+                            val encoded = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+                            SmartBoardHelper.publishScreenMirrorFrame(
+                                context = applicationContext,
+                                classId = classId,
+                                sessionCode = sessionCode,
+                                castId = castId,
+                                packageName = targetPackageName,
+                                appName = targetAppName,
+                                frameSeq = framesSentCount,
+                                base64Jpeg = encoded
+                            )
+                        }
+
                         _status.value = _status.value.copy(
                             isRunning = true,
                             isPaused = false,
+                            isP2pActive = sentViaP2p,
                             pauseReason = "",
                             framesSent = framesSentCount
                         )
                         updateNotificationText(isPaused = false)
                     }
 
-                    delay(if (SmartBoardHelper.isQuotaCooldownActive()) 8000L else 1500L)
+                    val nextDelayMs = when {
+                        p2pReady -> 280L
+                        cfActive -> 950L
+                        SmartBoardHelper.isQuotaCooldownActive() -> 8000L
+                        else -> 1500L
+                    }
+                    delay(nextDelayMs)
                 } catch (e: Exception) {
                     Log.w(TAG, "Capture loop warning: ${e.message}")
                     delay(500L)
@@ -526,6 +588,13 @@ class SmartBoardScreenCastService : Service() {
             pauseReason = reason
         )
         updateNotificationText(isPaused = true)
+
+        SmartBoardRtcManager.sendControlJson(
+            JSONObject()
+                .put("type", "mirror_pause")
+                .put("isPaused", true)
+                .put("reason", reason)
+        )
 
         val curClass = classId
         val curCode = sessionCode
@@ -637,17 +706,22 @@ class SmartBoardScreenCastService : Service() {
         return hash
     }
 
-    private fun encodeBitmapToBase64Jpeg(bmp: Bitmap): String? {
+    private fun encodeBitmapToJpegBytes(
+        bmp: Bitmap,
+        highQuality: Int = 44,
+        lowQuality: Int = 28,
+        maxBytes: Int = 45 * 1024
+    ): ByteArray? {
         return try {
             val out = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 42, out)
+            bmp.compress(Bitmap.CompressFormat.JPEG, highQuality, out)
             var bytes = out.toByteArray()
-            if (bytes.size > 45 * 1024) {
+            if (bytes.size > maxBytes) {
                 out.reset()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 28, out)
+                bmp.compress(Bitmap.CompressFormat.JPEG, lowQuality, out)
                 bytes = out.toByteArray()
             }
-            Base64.encodeToString(bytes, Base64.NO_WRAP)
+            bytes
         } catch (_: Exception) {
             null
         }
@@ -655,7 +729,7 @@ class SmartBoardScreenCastService : Service() {
 
     private fun checkDisplayOrientationChange() {
         val (rawW, rawH, _) = computeDisplaySizeAndDensity()
-        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 520)
+        val (scaledW, scaledH) = scaleDimensions(rawW, rawH, 640)
         // Yalnızca tam ekran modunda yön değişimini kontrol et (tek uygulama modunda onCapturedContentResize çalışır)
         val isSingleAppAspectMismatch = (captureWidth > captureHeight) != (scaledW > scaledH)
         if (isSingleAppAspectMismatch && lastPublishedPaused == false) {
@@ -734,6 +808,10 @@ class SmartBoardScreenCastService : Service() {
         }
         val text = if (isPaused) {
             "Uygulama dışındasınız. Tahtada son görüntü donuk tutuluyor."
+        } else if (SmartBoardRtcManager.isChannelReady()) {
+            "⚡ WebRTC P2P doğrudan yayın aktif • Yüksek hız."
+        } else if (SmartBoardHelper.isCloudflareActive(applicationContext)) {
+            "☁️ Cloudflare canlı yayın aktif • Kota harcamaz."
         } else {
             "Yalnızca bu uygulama açıkken tahta canlı güncellenir."
         }
@@ -775,6 +853,8 @@ class SmartBoardScreenCastService : Service() {
     private fun releaseProjectionOnly() {
         captureJob?.cancel()
         captureJob = null
+        SmartBoardRtcManager.stopSession()
+        rtcMetaPublished = false
         try {
             virtualDisplay?.release()
         } catch (_: Exception) {}

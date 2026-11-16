@@ -1,21 +1,17 @@
 {
-  "title": "Tahta Yazma Kota Optimizasyonu ve Hızlı Bağlantı",
+  "title": "Hibrit Tahta Altyapısı (Cloudflare + WebRTC)",
   "items": [
     {
-      "title": "Tahta Yazma Kota Optimizasyonu",
-      "summary": "Akıllı tahta bağlantısı, zamanlayıcı ve ekran yansıtmadaki gereksiz sunucu yazmaları %95 azaltılarak HTTP 429 kota hatası giderildi."
+      "title": "Kotasız Cloudflare Tahta Bağlantısı",
+      "summary": "Akıllı tahta eşleştirme, sınıf modülleri, zamanlayıcı ve dosya paylaşımı Cloudflare altyapısına taşınarak Firebase kotası tüketimi sıfırlandı."
     },
     {
-      "title": "Hızlı Akıllı Tahta Bağlantısı",
-      "summary": "Tahta eşleştirme ve canlı veri senkronizasyonu REST protokolüne geçirilerek zaman aşımı hatası giderildi."
+      "title": "Doğrudan WebRTC P2P Ekran Yansıtma",
+      "summary": "Aynı Wi-Fi ve uyumlu ağlarda canlı uygulama yansıtma doğrudan cihazdan tahtaya daha akıcı ve yüksek çözünürlüklü aktarılır."
     },
     {
-      "title": "Bağlantı Kesme Senkronizasyonu",
-      "summary": "Telefondan tahta bağlantısı kesildiğinde akıllı tahta ekranının anında bekleme moduna dönmesi sağlandı."
-    },
-    {
-      "title": "Dinamik Sürüm Notları",
-      "summary": "Güncelleme penceresi her sürümde yalnızca o pakette yapılan gerçek değişiklikleri gösterecek şekilde yenilendi."
+      "title": "Akıllı Yedekli Otomatik Geçiş",
+      "summary": "Okul ağı P2P bağlantıyı engellediğinde yayın kesilmeden otomatik olarak Cloudflare WebSocket kanalı üzerinden devam eder."
     }
   ]
 }

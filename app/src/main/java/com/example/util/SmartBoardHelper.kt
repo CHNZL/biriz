@@ -38,6 +38,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -59,8 +62,19 @@ object SmartBoardHelper {
     private const val PREFS_NAME = "biriz_smart_board_storage"
     private const val KEY_SESSION_CODE = "key_connected_session_code"
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
+    private const val KEY_TRANSPORT_MODE = "key_smart_board_transport_mode"
+    private const val CLOUDFLARE_API_BASE = "https://cihanogretmen.com/tahta/api"
+    private const val CLOUDFLARE_WS_BASE = "wss://cihanogretmen.com/tahta/api/ws"
+
+    enum class TransportMode {
+        NONE,
+        CLOUDFLARE,
+        FIRESTORE
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO)
     private val sessionWriteMutex = Mutex()
+    private val wsLock = Any()
 
     @Volatile
     private var activeSessionCode: String? = null
@@ -68,8 +82,16 @@ object SmartBoardHelper {
     private var activeConnectionId: String? = null
     @Volatile
     private var connectionEpoch: Long = 0L
+    @Volatile
+    private var activeTransportMode: TransportMode = TransportMode.NONE
+    @Volatile
+    private var phoneWebSocket: WebSocket? = null
+    @Volatile
+    private var phoneWsSessionCode: String? = null
+    @Volatile
+    private var phoneWsEpoch: Long = 0L
 
-    // Son bilinen durum önbelleği (Yıldız, kitap, turnuva veya öğrenci verisi değiştiğinde anında senkronizasyon tetiklemek için)
+    // Son bilinen durum önbelleği (Yıldız, kitap, turnuva, şanslı öğrenci veya öğrenci verisi değiştiğinde anında senkronizasyon tetiklemek için)
     @Volatile
     private var lastClassId: String = ""
     @Volatile
@@ -118,7 +140,14 @@ object SmartBoardHelper {
     private var sentBoardCastHash: Int = 0
 
     fun isQuotaCooldownActive(): Boolean {
+        if (activeTransportMode == TransportMode.CLOUDFLARE) return false
         return System.currentTimeMillis() < quotaCooldownUntilMs
+    }
+
+    fun getActiveConnectionId(): String? = activeConnectionId
+
+    fun isCloudflareActive(context: Context): Boolean {
+        return resolveTransportMode(context) == TransportMode.CLOUDFLARE
     }
 
     private fun clearDeltaSyncCache() {
@@ -330,6 +359,266 @@ object SmartBoardHelper {
         }
     }
 
+    private sealed class CfGetResult {
+        data class Found(val data: JSONObject) : CfGetResult()
+        object Missing : CfGetResult()
+        data class Error(val detail: String) : CfGetResult()
+    }
+
+    private fun anyToJsonValue(value: Any?): Any {
+        return when (value) {
+            null -> JSONObject.NULL
+            is Boolean, is Int, is Long, is Short, is Byte, is String -> value
+            is Float -> if (value.isFinite()) value.toDouble() else 0.0
+            is Double -> if (value.isFinite()) value else 0.0
+            is Number -> value.toDouble()
+            is Enum<*> -> value.name
+            is Map<*, *> -> mapToJsonObject(value)
+            is Iterable<*> -> {
+                val arr = JSONArray()
+                value.forEach { elem -> arr.put(anyToJsonValue(elem)) }
+                arr
+            }
+            is Array<*> -> {
+                val arr = JSONArray()
+                value.forEach { elem -> arr.put(anyToJsonValue(elem)) }
+                arr
+            }
+            else -> value.toString()
+        }
+    }
+
+    private fun mapToJsonObject(map: Map<*, *>): JSONObject {
+        val obj = JSONObject()
+        for ((k, v) in map) {
+            val key = k?.toString()?.takeIf { it.isNotEmpty() } ?: continue
+            if (v is FieldValue) continue
+            obj.put(key, anyToJsonValue(v))
+        }
+        return obj
+    }
+
+    private fun cfPatchSession(
+        cleanCode: String,
+        payload: Map<String, Any?>,
+        replace: Boolean
+    ): RestWriteResult {
+        val encodedCode = Uri.encode(cleanCode)
+        val suffix = if (replace) "?replace=1" else ""
+        val url = "$CLOUDFLARE_API_BASE/session/$encodedCode$suffix"
+        val bodyStr = mapToJsonObject(payload).toString()
+        val requestBody = bodyStr.toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .header("Accept", "application/json")
+            .build()
+        return try {
+            restHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    quotaCooldownUntilMs = 0L
+                    RestWriteResult.Success
+                } else {
+                    val errText = try {
+                        resp.body?.string()?.take(240).orEmpty()
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    Log.w(TAG, "Cloudflare POST HTTP ${resp.code} on $cleanCode: $errText")
+                    RestWriteResult.HttpError(resp.code, errText)
+                }
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "Cloudflare POST IO error on $cleanCode: ${e.message}")
+            RestWriteResult.NetworkError(e)
+        } catch (e: Exception) {
+            Log.w(TAG, "Cloudflare POST unexpected error on $cleanCode: ${e.message}")
+            RestWriteResult.NetworkError(IOException(e.message ?: "Cloudflare ağ hatası", e))
+        }
+    }
+
+    private fun cfGetSession(cleanCode: String): CfGetResult {
+        val url = "$CLOUDFLARE_API_BASE/session/${Uri.encode(cleanCode)}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Accept", "application/json")
+            .header("Cache-Control", "no-store")
+            .build()
+        return try {
+            restHttpClient.newCall(request).execute().use { resp ->
+                if (resp.code == 404) return CfGetResult.Missing
+                if (!resp.isSuccessful) {
+                    return CfGetResult.Error("HTTP ${resp.code}")
+                }
+                val bodyStr = resp.body?.string().orEmpty()
+                val json = JSONObject(bodyStr)
+                if (!json.optBoolean("exists", true)) {
+                    return CfGetResult.Missing
+                }
+                val data = json.optJSONObject("data") ?: return CfGetResult.Missing
+                CfGetResult.Found(data)
+            }
+        } catch (e: Exception) {
+            CfGetResult.Error(e.message ?: "network")
+        }
+    }
+
+    private fun cfUploadChunk(
+        cleanCode: String,
+        chunkId: String,
+        payload: Map<String, Any?>
+    ): RestWriteResult {
+        val url = "$CLOUDFLARE_API_BASE/session/${Uri.encode(cleanCode)}/chunk/${Uri.encode(chunkId)}"
+        val bodyStr = mapToJsonObject(payload).toString()
+        val requestBody = bodyStr.toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .put(requestBody)
+            .header("Accept", "application/json")
+            .build()
+        return try {
+            restHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    RestWriteResult.Success
+                } else {
+                    val errText = try {
+                        resp.body?.string()?.take(240).orEmpty()
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    RestWriteResult.HttpError(resp.code, errText)
+                }
+            }
+        } catch (e: IOException) {
+            RestWriteResult.NetworkError(e)
+        } catch (e: Exception) {
+            RestWriteResult.NetworkError(IOException(e.message ?: "Chunk upload error", e))
+        }
+    }
+
+    private fun closePhoneWebSocket() {
+        synchronized(wsLock) {
+            val existing = phoneWebSocket
+            phoneWebSocket = null
+            phoneWsSessionCode = null
+            phoneWsEpoch = 0L
+            try {
+                existing?.close(1000, "session_closed")
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun ensureCloudflareWebSocket(cleanCode: String, expectedEpoch: Long) {
+        if (!isEpochStillActive(cleanCode, expectedEpoch)) return
+        synchronized(wsLock) {
+            if (phoneWebSocket != null &&
+                phoneWsSessionCode == cleanCode &&
+                phoneWsEpoch == expectedEpoch
+            ) {
+                return
+            }
+            try {
+                phoneWebSocket?.close(1000, "reconnecting")
+            } catch (_: Exception) {}
+            phoneWebSocket = null
+            phoneWsSessionCode = cleanCode
+            phoneWsEpoch = expectedEpoch
+
+            val wsUrl = "$CLOUDFLARE_WS_BASE?code=${Uri.encode(cleanCode)}&role=phone"
+            val request = Request.Builder().url(wsUrl).build()
+            val createdSocket = restHttpClient.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.d(TAG, "Cloudflare phone WebSocket opened for $cleanCode")
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    try {
+                        val json = JSONObject(text)
+                        val msgType = json.optString("type", "")
+                        if (msgType == "rtc_answer" || msgType == "rtc_ice") {
+                            SmartBoardRtcManager.onRemoteSignal(json)
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    synchronized(wsLock) {
+                        if (phoneWebSocket === webSocket) {
+                            phoneWebSocket = null
+                        }
+                    }
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.w(TAG, "Cloudflare phone WebSocket warning: ${t.message}")
+                    synchronized(wsLock) {
+                        if (phoneWebSocket === webSocket) {
+                            phoneWebSocket = null
+                        }
+                    }
+                }
+            })
+            phoneWebSocket = createdSocket
+        }
+    }
+
+    private fun sendOverPhoneWebSocket(envelope: JSONObject, expectedCode: String): Boolean {
+        val ws = synchronized(wsLock) {
+            if (phoneWsSessionCode == expectedCode) phoneWebSocket else null
+        } ?: return false
+        return try {
+            ws.send(envelope.toString())
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun sendRtcSignal(signalJson: JSONObject) {
+        val code = activeSessionCode ?: return
+        if (activeTransportMode != TransportMode.CLOUDFLARE) return
+        ensureCloudflareWebSocket(code, connectionEpoch)
+        if (sendOverPhoneWebSocket(signalJson, code)) {
+            return
+        }
+        scope.launch {
+            try {
+                val url = "$CLOUDFLARE_API_BASE/signal/${Uri.encode(code)}"
+                val reqBody = signalJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(url)
+                    .post(reqBody)
+                    .header("Accept", "application/json")
+                    .build()
+                restHttpClient.newCall(request).execute().close()
+            } catch (e: Exception) {
+                Log.w(TAG, "HTTP signal relay warning: ${e.message}")
+            }
+        }
+    }
+
+    private fun resolveTransportMode(context: Context): TransportMode {
+        val cur = activeTransportMode
+        if (cur != TransportMode.NONE) return cur
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedName = prefs.getString(KEY_TRANSPORT_MODE, null)
+            val parsed = savedName?.let {
+                try {
+                    TransportMode.valueOf(it)
+                } catch (_: Exception) {
+                    TransportMode.NONE
+                }
+            } ?: TransportMode.NONE
+            if (parsed != TransportMode.NONE && !getSavedSessionCode(context).isNullOrBlank()) {
+                activeTransportMode = parsed
+            }
+            parsed
+        } catch (_: Exception) {
+            TransportMode.NONE
+        }
+    }
+
     private suspend fun writeDocumentRestFirst(
         context: Context,
         docPathSegments: List<String>,
@@ -364,6 +653,32 @@ object SmartBoardHelper {
         }
     }
 
+    private suspend fun writeSessionStateUnified(
+        context: Context,
+        cleanCode: String,
+        payload: Map<String, Any?>,
+        merge: Boolean,
+        sdkTimeoutMs: Long = 3000L
+    ): RestWriteResult {
+        return if (resolveTransportMode(context) == TransportMode.CLOUDFLARE) {
+            val cfRes = cfPatchSession(cleanCode, payload, replace = !merge)
+            if (cfRes is RestWriteResult.NetworkError) {
+                delay(200L)
+                cfPatchSession(cleanCode, payload, replace = !merge)
+            } else {
+                cfRes
+            }
+        } else {
+            writeDocumentRestFirst(
+                context = context,
+                docPathSegments = listOf("board_sessions", cleanCode),
+                payload = payload,
+                merge = merge,
+                sdkTimeoutMs = sdkTimeoutMs
+            )
+        }
+    }
+
     fun getSavedSessionCode(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(KEY_SESSION_CODE, null)
@@ -374,7 +689,12 @@ object SmartBoardHelper {
         return prefs.getBoolean(KEY_MIRROR_ACTIVE, true)
     }
 
-    fun saveConnectionState(context: Context, sessionCode: String?, isMirrorActive: Boolean) {
+    fun saveConnectionState(
+        context: Context,
+        sessionCode: String?,
+        isMirrorActive: Boolean,
+        transportMode: TransportMode? = null
+    ) {
         val clean = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
         if (clean == null) {
             if (activeSessionCode != null) {
@@ -382,15 +702,26 @@ object SmartBoardHelper {
             }
             activeSessionCode = null
             activeConnectionId = null
+            activeTransportMode = TransportMode.NONE
+            closePhoneWebSocket()
+            SmartBoardRtcManager.stopSession()
             clearDeltaSyncCache()
         } else {
             activeSessionCode = clean
+            if (transportMode != null) {
+                activeTransportMode = transportMode
+            }
         }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_SESSION_CODE, clean)
             .putBoolean(KEY_MIRROR_ACTIVE, isMirrorActive)
-            .apply()
+        if (clean == null) {
+            editor.remove(KEY_TRANSPORT_MODE)
+        } else if (transportMode != null) {
+            editor.putString(KEY_TRANSPORT_MODE, transportMode.name)
+        }
+        editor.apply()
     }
 
     /**
@@ -638,9 +969,10 @@ object SmartBoardHelper {
         isRunning: Boolean,
         isFinished: Boolean
     ) {
-        if (isQuotaCooldownActive()) return
         val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         if (activeSessionCode != activeCode) return
+        val mode = resolveTransportMode(context)
+        if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return
         val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         val payload = hashMapOf<String, Any?>(
@@ -655,9 +987,21 @@ object SmartBoardHelper {
         )
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(activeCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
+                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return@withLock
                 try {
-                    restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
+                    if (mode == TransportMode.CLOUDFLARE) {
+                        ensureCloudflareWebSocket(activeCode, expectedEpoch)
+                        val wsMsg = JSONObject()
+                            .put("type", "state_patch")
+                            .put("replace", false)
+                            .put("data", mapToJsonObject(payload))
+                        if (!sendOverPhoneWebSocket(wsMsg, activeCode)) {
+                            cfPatchSession(activeCode, payload, replace = false)
+                        }
+                    } else {
+                        restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error syncing timer state: ${e.message}")
                 }
@@ -675,9 +1019,10 @@ object SmartBoardHelper {
         rollingNo: String,
         rollingGender: String
     ) {
-        if (isQuotaCooldownActive()) return
         val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         if (activeSessionCode != activeCode) return
+        val mode = resolveTransportMode(context)
+        if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return
         val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         val payload = mapOf(
@@ -691,9 +1036,21 @@ object SmartBoardHelper {
         )
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(activeCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
+                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return@withLock
                 try {
-                    restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
+                    if (mode == TransportMode.CLOUDFLARE) {
+                        ensureCloudflareWebSocket(activeCode, expectedEpoch)
+                        val wsMsg = JSONObject()
+                            .put("type", "state_patch")
+                            .put("replace", false)
+                            .put("data", mapToJsonObject(payload))
+                        if (!sendOverPhoneWebSocket(wsMsg, activeCode)) {
+                            cfPatchSession(activeCode, payload, replace = false)
+                        }
+                    } else {
+                        restPatchDocument(context, listOf("board_sessions", activeCode), payload, merge = true)
+                    }
                 } catch (_: Exception) {}
             }
         }
@@ -701,7 +1058,8 @@ object SmartBoardHelper {
 
     /**
      * Akıllı tahtada görünen 8 haneli kod ile sunucu onaylı eşleştirme yapar.
-     * 1. Aşama: Hızlı (<1 KB) CONNECTED el sıkışmasını Firestore'a yazar ve sunucu onayını bekler.
+     * 1. Aşama: Öncelikle Cloudflare (`cihanogretmen.com/tahta/api`) üzerinden kotasız el sıkışma yapar.
+     *    Cloudflare geçici olarak erişilemezse şeffaf şekilde Firestore yedek kanalına geçer.
      * 2. Aşama: El sıkışma onaylandıktan hemen sonra sınıf verilerini arka planda aktarır.
      */
     suspend fun connectSession(
@@ -732,6 +1090,9 @@ object SmartBoardHelper {
         val newConnectionId = "conn_${now}_${UUID.randomUUID().toString().replace("-", "").take(8)}"
         activeSessionCode = cleanCode
         activeConnectionId = newConnectionId
+        activeTransportMode = TransportMode.NONE
+        closePhoneWebSocket()
+        SmartBoardRtcManager.stopSession()
         lastBoardCast = null
         quotaCooldownUntilMs = 0L
         clearDeltaSyncCache()
@@ -769,12 +1130,34 @@ object SmartBoardHelper {
             "updatedAt" to now
         )
 
+        var chosenTransport = TransportMode.NONE
         val handshakeResult = sessionWriteMutex.withLock {
             if (!isEpochStillActive(cleanCode, myEpoch)) {
                 return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
             }
 
-            // REST PATCH (updateMask yok -> tüm belgeyi temizler ve ~200-400ms içinde tamamlanır)
+            // 1. ÖNCELİKLİ KANAL: Cloudflare Durable Object (Firebase kotası harcamaz, MEB ağında sorunsuz çalışır)
+            var cfResult = cfPatchSession(cleanCode, handshakePayload, replace = true)
+            if (cfResult is RestWriteResult.NetworkError && isEpochStillActive(cleanCode, myEpoch)) {
+                delay(250L)
+                if (isEpochStillActive(cleanCode, myEpoch)) {
+                    cfResult = cfPatchSession(cleanCode, handshakePayload, replace = true)
+                }
+            }
+
+            if (cfResult is RestWriteResult.Success) {
+                chosenTransport = TransportMode.CLOUDFLARE
+                if (!isEpochStillActive(cleanCode, myEpoch)) {
+                    return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
+                }
+                saveConnectionState(context, cleanCode, true, TransportMode.CLOUDFLARE)
+                ensureCloudflareWebSocket(cleanCode, myEpoch)
+                return@withLock Result.success(Unit)
+            }
+
+            Log.w(TAG, "Cloudflare handshake unavailable for $cleanCode ($cfResult), falling back to Firestore")
+
+            // 2. YEDEK KANAL: Firestore REST PATCH -> SDK fallback
             var writeResult = restPatchDocument(
                 context = context,
                 docPathSegments = listOf("board_sessions", cleanCode),
@@ -795,7 +1178,6 @@ object SmartBoardHelper {
             }
 
             if (writeResult is RestWriteResult.NetworkError && isEpochStillActive(cleanCode, myEpoch)) {
-                // Ağ geçidi REST'i engellerse Firestore SDK ile kısa yedek deneme
                 try {
                     val mainDb = getMainFirestore(context)
                     val sdkHandshake = HashMap(handshakePayload).apply {
@@ -822,12 +1204,13 @@ object SmartBoardHelper {
 
             when (writeResult) {
                 is RestWriteResult.Success -> {
-                    saveConnectionState(context, cleanCode, true)
+                    chosenTransport = TransportMode.FIRESTORE
+                    saveConnectionState(context, cleanCode, true, TransportMode.FIRESTORE)
                     Result.success(Unit)
                 }
                 is RestWriteResult.HttpError -> {
                     val detail = when (writeResult.code) {
-                        429 -> "Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında otomatik devam eder."
+                        429 -> "Tahta sunucusu erişilemiyor ve Firebase günlük yazma kotası dolu (HTTP 429)."
                         403 -> "Tahta sunucusu yazma izni vermedi (HTTP 403)."
                         400 -> "Tahta isteği geçersiz biçimde reddedildi (HTTP 400)."
                         else -> "Tahta sunucusu yanıt vermedi (HTTP ${writeResult.code})."
@@ -847,6 +1230,7 @@ object SmartBoardHelper {
                 connectionEpoch += 1L
                 activeSessionCode = null
                 activeConnectionId = null
+                activeTransportMode = TransportMode.NONE
                 saveConnectionState(context, null, false)
             }
             return@withContext handshakeResult
@@ -933,28 +1317,41 @@ object SmartBoardHelper {
 
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                var finalWriteRes = restPatchDocument(
-                    context = context,
-                    docPathSegments = listOf("board_sessions", cleanCode),
-                    payload = fullPayload,
-                    merge = true
-                )
-                var syncedLibraryAndTournament = (finalWriteRes is RestWriteResult.Success)
-                if (finalWriteRes !is RestWriteResult.Success &&
-                    !(finalWriteRes is RestWriteResult.HttpError && finalWriteRes.code == 429) &&
-                    isEpochStillActive(cleanCode, myEpoch)
-                ) {
-                    val slimPayload = HashMap(fullPayload).apply {
-                        remove("libraryData")
-                        remove("tournamentData")
+                var finalWriteRes: RestWriteResult
+                var syncedLibraryAndTournament: Boolean
+                if (chosenTransport == TransportMode.CLOUDFLARE) {
+                    finalWriteRes = cfPatchSession(cleanCode, fullPayload, replace = false)
+                    if (finalWriteRes is RestWriteResult.NetworkError && isEpochStillActive(cleanCode, myEpoch)) {
+                        delay(250L)
+                        if (isEpochStillActive(cleanCode, myEpoch)) {
+                            finalWriteRes = cfPatchSession(cleanCode, fullPayload, replace = false)
+                        }
                     }
-                    finalWriteRes = writeDocumentRestFirst(
+                    syncedLibraryAndTournament = (finalWriteRes is RestWriteResult.Success)
+                } else {
+                    finalWriteRes = restPatchDocument(
                         context = context,
                         docPathSegments = listOf("board_sessions", cleanCode),
-                        payload = slimPayload,
+                        payload = fullPayload,
                         merge = true
                     )
-                    syncedLibraryAndTournament = false
+                    syncedLibraryAndTournament = (finalWriteRes is RestWriteResult.Success)
+                    if (finalWriteRes !is RestWriteResult.Success &&
+                        !(finalWriteRes is RestWriteResult.HttpError && finalWriteRes.code == 429) &&
+                        isEpochStillActive(cleanCode, myEpoch)
+                    ) {
+                        val slimPayload = HashMap(fullPayload).apply {
+                            remove("libraryData")
+                            remove("tournamentData")
+                        }
+                        finalWriteRes = writeDocumentRestFirst(
+                            context = context,
+                            docPathSegments = listOf("board_sessions", cleanCode),
+                            payload = slimPayload,
+                            merge = true
+                        )
+                        syncedLibraryAndTournament = false
+                    }
                 }
 
                 if (finalWriteRes is RestWriteResult.Success && isEpochStillActive(cleanCode, myEpoch)) {
@@ -1015,7 +1412,8 @@ object SmartBoardHelper {
             }
         }
         if (activeSessionCode != cleanCode) return
-        if (isQuotaCooldownActive()) return
+        val mode = resolveTransportMode(context)
+        if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return
         val expectedEpoch = connectionEpoch
 
         val isPrivacyMode = !isLiveMirrorActive
@@ -1156,11 +1554,15 @@ object SmartBoardHelper {
 
         scope.launch {
             sessionWriteMutex.withLock {
-                if (!isEpochStillActive(cleanCode, expectedEpoch) || isQuotaCooldownActive()) return@withLock
+                if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return@withLock
                 try {
-                    val res = writeDocumentRestFirst(
+                    if (mode == TransportMode.CLOUDFLARE) {
+                        ensureCloudflareWebSocket(cleanCode, expectedEpoch)
+                    }
+                    val res = writeSessionStateUnified(
                         context = context,
-                        docPathSegments = listOf("board_sessions", cleanCode),
+                        cleanCode = cleanCode,
                         payload = boardSessionUpdate,
                         merge = true
                     )
@@ -1194,6 +1596,7 @@ object SmartBoardHelper {
             ?: activeSessionCode
             ?: getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
         val prevConnId = activeConnectionId ?: ""
+        val prevTransportMode = resolveTransportMode(context)
         connectionEpoch += 1L
         activeSessionCode = null
         activeConnectionId = null
@@ -1226,6 +1629,16 @@ object SmartBoardHelper {
             withContext(NonCancellable) {
                 sessionWriteMutex.withLock {
                     if (!targetCode.isNullOrBlank()) {
+                        if (prevTransportMode == TransportMode.CLOUDFLARE || prevTransportMode == TransportMode.NONE) {
+                            var cfRes = cfPatchSession(targetCode, disconnectSessionPayload, replace = false)
+                            if (cfRes !is RestWriteResult.Success) {
+                                delay(300L)
+                                cfRes = cfPatchSession(targetCode, disconnectSessionPayload, replace = false)
+                            }
+                            if (prevTransportMode == TransportMode.CLOUDFLARE || cfRes is RestWriteResult.Success) {
+                                return@withLock
+                            }
+                        }
                         val res = writeDocumentRestFirst(
                             context = context,
                             docPathSegments = listOf("board_sessions", targetCode),
@@ -1257,6 +1670,34 @@ object SmartBoardHelper {
     suspend fun verifySessionStillConnected(context: Context, sessionCode: String): Boolean = withContext(Dispatchers.IO) {
         val clean = normalizeCode(sessionCode)
         if (clean.length < 4) return@withContext false
+        val savedMode = resolveTransportMode(context)
+
+        if (savedMode == TransportMode.CLOUDFLARE || savedMode == TransportMode.NONE) {
+            when (val cfRes = cfGetSession(clean)) {
+                is CfGetResult.Found -> {
+                    val st = cfRes.data.optString("status", "").uppercase(Locale.ROOT)
+                    val isConn = cfRes.data.optBoolean("isConnected", true)
+                    val alive = !(st == "DISCONNECTED" || st == "WAITING" || (!isConn && st != "CONNECTED"))
+                    if (alive) {
+                        activeSessionCode = clean
+                        activeTransportMode = TransportMode.CLOUDFLARE
+                        val existingConnId = cfRes.data.optString("connectionId", "")
+                        if (existingConnId.isNotBlank()) {
+                            activeConnectionId = existingConnId
+                        }
+                        ensureCloudflareWebSocket(clean, connectionEpoch)
+                    }
+                    return@withContext alive
+                }
+                is CfGetResult.Missing -> {
+                    if (savedMode == TransportMode.CLOUDFLARE) return@withContext false
+                }
+                is CfGetResult.Error -> {
+                    if (savedMode == TransportMode.CLOUDFLARE) return@withContext true
+                }
+            }
+        }
+
         return@withContext when (val res = restGetDocument(context, listOf("board_sessions", clean))) {
             is RestGetResult.Missing -> false
             is RestGetResult.Error -> true // Çevrimdışıysa yerel oturumu koru
@@ -1381,9 +1822,9 @@ object SmartBoardHelper {
             if (!isEpochStillActive(cleanCode, expectedEpoch)) {
                 return@withLock RestWriteResult.HttpError(409, "Oturum değişti")
             }
-            val res = writeDocumentRestFirst(
+            val res = writeSessionStateUnified(
                 context = context,
-                docPathSegments = listOf("board_sessions", cleanCode),
+                cleanCode = cleanCode,
                 payload = payload,
                 merge = true
             )
@@ -1408,7 +1849,10 @@ object SmartBoardHelper {
         base64Jpeg: String
     ) {
         val cleanCode = normalizeCode(sessionCode)
-        if (cleanCode.length < 4 || activeSessionCode != cleanCode || isQuotaCooldownActive()) return
+        if (cleanCode.length < 4 || activeSessionCode != cleanCode) return
+        val mode = resolveTransportMode(context)
+        if (mode != TransportMode.CLOUDFLARE && isQuotaCooldownActive()) return
+        val expectedEpoch = connectionEpoch
         val now = System.currentTimeMillis()
         val castMap = hashMapOf<String, Any?>(
             "active" to true,
@@ -1423,6 +1867,17 @@ object SmartBoardHelper {
             "inlineBase64" to base64Jpeg,
             "updatedAt" to now
         )
+        if (mode == TransportMode.CLOUDFLARE && base64Jpeg.isNotEmpty()) {
+            ensureCloudflareWebSocket(cleanCode, expectedEpoch)
+            val wsEnvelope = JSONObject()
+                .put("type", "mirror_frame")
+                .put("data", mapToJsonObject(castMap))
+            if (sendOverPhoneWebSocket(wsEnvelope, cleanCode)) {
+                lastBoardCast = castMap
+                sentBoardCastHash = castMap.hashCode()
+                return
+            }
+        }
         publishBoardCastMap(context, classId, cleanCode, castMap)
     }
 
@@ -1482,9 +1937,9 @@ object SmartBoardHelper {
         try {
             sessionWriteMutex.withLock {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
-                val res = writeDocumentRestFirst(
+                val res = writeSessionStateUnified(
                     context = context,
-                    docPathSegments = listOf("board_sessions", cleanCode),
+                    cleanCode = cleanCode,
                     payload = payload,
                     merge = true
                 )
@@ -1584,13 +2039,17 @@ object SmartBoardHelper {
                         "data" to b64Chunk,
                         "updatedAt" to now
                     )
-                    val chunkRes = writeDocumentRestFirst(
-                        context = context,
-                        docPathSegments = listOf("board_sessions", cleanCode, "cast_chunks", "${castId}_$i"),
-                        payload = chunkPayload,
-                        merge = false,
-                        sdkTimeoutMs = 6000L
-                    )
+                    val chunkRes = if (resolveTransportMode(context) == TransportMode.CLOUDFLARE) {
+                        cfUploadChunk(cleanCode, "${castId}_$i", chunkPayload)
+                    } else {
+                        writeDocumentRestFirst(
+                            context = context,
+                            docPathSegments = listOf("board_sessions", cleanCode, "cast_chunks", "${castId}_$i"),
+                            payload = chunkPayload,
+                            merge = false,
+                            sdkTimeoutMs = 6000L
+                        )
+                    }
                     if (chunkRes is RestWriteResult.HttpError && chunkRes.code == 429) {
                         throw IllegalStateException("Firebase günlük ücretsiz yazma kotası doldu (HTTP 429). Kota gece sıfırlandığında tekrar deneyin.")
                     }
@@ -1709,9 +2168,9 @@ object SmartBoardHelper {
                         "currentSubPageTitle" to restoreSubPageTitle,
                         "updatedAt" to now
                     )
-                    writeDocumentRestFirst(
+                    writeSessionStateUnified(
                         context = context,
-                        docPathSegments = listOf("board_sessions", cleanCode),
+                        cleanCode = cleanCode,
                         payload = payload,
                         merge = true
                     )
@@ -1729,6 +2188,9 @@ object SmartBoardHelper {
         connectionEpoch += 1L
         activeSessionCode = null
         activeConnectionId = null
+        activeTransportMode = TransportMode.NONE
+        closePhoneWebSocket()
+        SmartBoardRtcManager.stopSession()
         quotaCooldownUntilMs = 0L
         clearDeltaSyncCache()
         lastClassId = ""

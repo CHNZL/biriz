@@ -1317,6 +1317,8 @@
       };
       var NAMED_DB_ID = "ai-studio-android-biriz-caa1dae7-0ec2-4613-b717-5606838b083e";
       var STORAGE_KEY_CODE = "biriz_tahta_session_code_v5";
+      var CLOUDFLARE_API_BASE = "https://cihanogretmen.com/tahta/api";
+      var CLOUDFLARE_WS_BASE = "wss://cihanogretmen.com/tahta/api/ws";
 
       var currentSessionCode = "";
       var isBoardConnected = false;
@@ -1349,6 +1351,23 @@
       var waitingRestTimer = null;
       var connectedHeartbeatTimer = null;
       var transportMode = "INIT";
+
+      // Cloudflare + WebRTC Hibrit Aktarım Durumu
+      var cfSocket = null;
+      var cfSocketCode = "";
+      var cfReconnectTimer = null;
+      var cfPingTimer = null;
+      var cfSessionActive = false;
+      var cfWsEpoch = 0;
+
+      var rtcPeer = null;
+      var rtcDataChannel = null;
+      var rtcConnId = "";
+      var rtcPendingIce = [];
+      var rtcRemoteDescSet = false;
+      var rtcBinaryFrames = {};
+      var rtcLastCompletedSeq = 0;
+      var activeP2pBlobUrl = "";
 
       // Timer local smooth interpolation state
       var timerSnapshotRemaining = 300;
@@ -1487,9 +1506,11 @@
         lastDisconnectedAt = 0;
         currentConnectionId = "";
         lastDisconnectedConnectionId = "";
+        cfSessionActive = false;
+        closeRtcPeer();
+        closeCloudflareSocket();
         forceDisconnectToWaiting("🟢 Yeni eşleştirme kodu oluşturuldu • Eşleştirme bekleniyor", 0, "");
         renderCodeDisplay();
-        ensureInitialSessionDoc();
         startSessionListening();
       };
 
@@ -1750,6 +1771,366 @@
         }
       }
 
+      function revokeActiveP2pBlob() {
+        if (activeP2pBlobUrl) {
+          try { URL.revokeObjectURL(activeP2pBlobUrl); } catch (e) {}
+          activeP2pBlobUrl = "";
+        }
+      }
+
+      function closeRtcPeer() {
+        rtcConnId = "";
+        rtcRemoteDescSet = false;
+        rtcPendingIce = [];
+        rtcBinaryFrames = {};
+        rtcLastCompletedSeq = 0;
+        revokeActiveP2pBlob();
+        if (rtcDataChannel) {
+          try { rtcDataChannel.onmessage = null; rtcDataChannel.close(); } catch (e) {}
+          rtcDataChannel = null;
+        }
+        if (rtcPeer) {
+          try { rtcPeer.onicecandidate = null; rtcPeer.ondatachannel = null; rtcPeer.close(); } catch (e) {}
+          rtcPeer = null;
+        }
+      }
+
+      function closeCloudflareSocket() {
+        cfWsEpoch++;
+        cfSocketCode = "";
+        if (cfReconnectTimer) {
+          clearTimeout(cfReconnectTimer);
+          cfReconnectTimer = null;
+        }
+        if (cfPingTimer) {
+          clearInterval(cfPingTimer);
+          cfPingTimer = null;
+        }
+        if (cfSocket) {
+          try {
+            cfSocket.onopen = null;
+            cfSocket.onmessage = null;
+            cfSocket.onerror = null;
+            cfSocket.onclose = null;
+            cfSocket.close();
+          } catch (e) {}
+          cfSocket = null;
+        }
+      }
+
+      function sendBoardSignal(obj) {
+        if (cfSocket && cfSocket.readyState === 1) {
+          try {
+            cfSocket.send(JSON.stringify(obj));
+            return;
+          } catch (e) {}
+        }
+        if (currentSessionCode) {
+          fetch(CLOUDFLARE_API_BASE + "/signal/" + encodeURIComponent(currentSessionCode), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(obj)
+          }).catch(function() {});
+        }
+      }
+
+      function applyMirrorFreezeUi(isPaused, reason) {
+        var existingPill = document.getElementById("mirror-live-pill");
+        var existingOverlay = document.getElementById("mirror-freeze-overlay");
+        var reasonEl = document.getElementById("mirror-freeze-reason");
+        var modBadge = document.getElementById("header-module-badge");
+        if (latestStateData && latestStateData.boardCast) {
+          latestStateData.boardCast.isPaused = Boolean(isPaused);
+          if (reason !== undefined) latestStateData.boardCast.pauseReason = String(reason || "");
+        }
+        if (isPaused) {
+          if (existingPill) {
+            existingPill.className = "stat-pill star-stat";
+            existingPill.innerHTML = "⏸️ <strong>Son Görüntüde Sabitlendi</strong>";
+          }
+          if (existingOverlay) existingOverlay.style.display = "flex";
+          if (reasonEl && reason) reasonEl.textContent = String(reason);
+          if (modBadge && latestStateData && latestStateData.boardCast) {
+            modBadge.textContent = "⏸️ Paylaşım (Sabit) • " + String(latestStateData.boardCast.title || "İçerik");
+          }
+        } else {
+          var isP2p = Boolean(rtcDataChannel && rtcDataChannel.readyState === "open");
+          if (existingPill) {
+            existingPill.className = "stat-pill book-stat";
+            existingPill.innerHTML = isP2p
+              ? "⚡ <strong>WebRTC P2P Canlı</strong>"
+              : (cfSessionActive ? "☁️ <strong>Cloudflare Canlı</strong>" : "🟢 <strong>Canlı Yansıtılıyor</strong>");
+          }
+          if (existingOverlay) existingOverlay.style.display = "none";
+          if (modBadge && latestStateData && latestStateData.boardCast) {
+            modBadge.textContent = "📡 Paylaşım • " + String(latestStateData.boardCast.title || "İçerik");
+          }
+        }
+      }
+
+      function processRtcBinaryBuffer(buf) {
+        if (!buf || buf.byteLength < 12) return;
+        var dv = new DataView(buf);
+        // "BRZF" magic header: 0x42, 0x52, 0x5A, 0x46
+        if (dv.getUint8(0) !== 0x42 || dv.getUint8(1) !== 0x52 || dv.getUint8(2) !== 0x5A || dv.getUint8(3) !== 0x46) {
+          return;
+        }
+        var seq = dv.getInt32(4, false);
+        var chunkIdx = dv.getUint16(8, false);
+        var totalChunks = dv.getUint16(10, false);
+        if (totalChunks <= 0 || chunkIdx >= totalChunks) return;
+
+        var slice = new Uint8Array(buf, 12);
+        var entry = rtcBinaryFrames[seq];
+        if (!entry) {
+          // Eski yarım kalan kareleri temizle
+          var keys = Object.keys(rtcBinaryFrames);
+          for (var k = 0; k < keys.length; k++) {
+            var oldSeq = Number(keys[k]);
+            if (oldSeq < rtcLastCompletedSeq - 4 || keys.length > 6) {
+              delete rtcBinaryFrames[keys[k]];
+            }
+          }
+          entry = { total: totalChunks, received: 0, parts: new Array(totalChunks) };
+          rtcBinaryFrames[seq] = entry;
+        }
+        if (!entry.parts[chunkIdx]) {
+          entry.parts[chunkIdx] = slice;
+          entry.received++;
+        }
+        if (entry.received < entry.total) return;
+
+        delete rtcBinaryFrames[seq];
+        if (seq < rtcLastCompletedSeq) return;
+        rtcLastCompletedSeq = seq;
+
+        var totalLen = 0;
+        for (var i = 0; i < entry.parts.length; i++) {
+          if (!entry.parts[i]) return;
+          totalLen += entry.parts[i].length;
+        }
+        var merged = new Uint8Array(totalLen);
+        var offset = 0;
+        for (var j = 0; j < entry.parts.length; j++) {
+          merged.set(entry.parts[j], offset);
+          offset += entry.parts[j].length;
+        }
+
+        var blob = new Blob([merged], { type: "image/jpeg" });
+        var newUrl = URL.createObjectURL(blob);
+        var imgEl = document.getElementById("live-mirror-img");
+        if (!imgEl && latestStateData && latestStateData.boardCast && latestStateData.boardCast.active) {
+          latestStateData.boardCast.isPaused = false;
+          switchActiveModuleScreen("PAYLASIM");
+          renderBoardCast(latestStateData.boardCast);
+          imgEl = document.getElementById("live-mirror-img");
+        }
+        if (imgEl) {
+          imgEl.src = newUrl;
+          revokeActiveP2pBlob();
+          activeP2pBlobUrl = newUrl;
+          applyMirrorFreezeUi(false, "");
+        } else {
+          try { URL.revokeObjectURL(newUrl); } catch (e) {}
+        }
+      }
+
+      function handleRtcDataChannelMessage(ev) {
+        if (!ev) return;
+        if (typeof ev.data === "string") {
+          try {
+            var ctrl = JSON.parse(ev.data);
+            if (ctrl && ctrl.type === "mirror_pause") {
+              applyMirrorFreezeUi(Boolean(ctrl.isPaused), ctrl.reason || "");
+            }
+          } catch (e) {}
+          return;
+        }
+        if (ev.data instanceof ArrayBuffer) {
+          processRtcBinaryBuffer(ev.data);
+        } else if (ev.data && typeof ev.data.arrayBuffer === "function") {
+          ev.data.arrayBuffer().then(processRtcBinaryBuffer).catch(function() {});
+        }
+      }
+
+      function handleRtcSignalOnBoard(msg) {
+        if (!msg || !msg.type || typeof window.RTCPeerConnection === "undefined") return;
+        if (msg.type === "rtc_offer") {
+          var sdp = String(msg.sdp || "");
+          if (!sdp) return;
+          closeRtcPeer();
+          rtcConnId = String(msg.connectionId || currentConnectionId || "");
+          try {
+            var pc = new window.RTCPeerConnection({
+              iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: "stun:stun1.l.google.com:19302" }
+              ]
+            });
+            rtcPeer = pc;
+            pc.onicecandidate = function(ev) {
+              if (ev && ev.candidate) {
+                sendBoardSignal({
+                  type: "rtc_ice",
+                  role: "board",
+                  connectionId: rtcConnId,
+                  candidate: {
+                    candidate: ev.candidate.candidate,
+                    sdpMid: ev.candidate.sdpMid || "",
+                    sdpMLineIndex: ev.candidate.sdpMLineIndex || 0
+                  }
+                });
+              }
+            };
+            pc.ondatachannel = function(ev) {
+              if (!ev || !ev.channel) return;
+              rtcDataChannel = ev.channel;
+              try { rtcDataChannel.binaryType = "arraybuffer"; } catch (e) {}
+              rtcDataChannel.onmessage = handleRtcDataChannelMessage;
+              rtcDataChannel.onopen = function() {
+                applyMirrorFreezeUi(Boolean(latestStateData && latestStateData.boardCast && latestStateData.boardCast.isPaused), "");
+              };
+            };
+            pc.setRemoteDescription({ type: "offer", sdp: sdp }).then(function() {
+              rtcRemoteDescSet = true;
+              for (var i = 0; i < rtcPendingIce.length; i++) {
+                pc.addIceCandidate(rtcPendingIce[i]).catch(function() {});
+              }
+              rtcPendingIce = [];
+              return pc.createAnswer();
+            }).then(function(answer) {
+              return pc.setLocalDescription(answer).then(function() { return answer; });
+            }).then(function(answer) {
+              sendBoardSignal({
+                type: "rtc_answer",
+                connectionId: rtcConnId,
+                sdp: answer.sdp
+              });
+            }).catch(function() {});
+          } catch (e) {}
+          return;
+        }
+        if (msg.type === "rtc_ice" && String(msg.role || "") === "phone") {
+          var candObj = msg.candidate;
+          if (!candObj || !candObj.candidate || !rtcPeer) return;
+          try {
+            var ice = new window.RTCIceCandidate(candObj);
+            if (rtcRemoteDescSet) {
+              rtcPeer.addIceCandidate(ice).catch(function() {});
+            } else {
+              rtcPendingIce.push(ice);
+            }
+          } catch (e) {}
+        }
+      }
+
+      function handleCloudflareMirrorFrame(frameData) {
+        if (!frameData) return;
+        latestStateData.boardCast = frameData;
+        var imgEl = document.getElementById("live-mirror-img");
+        if (imgEl && frameData.inlineBase64 && String(frameData.castId || "") === activeCastMirrorId) {
+          revokeActiveP2pBlob();
+          imgEl.src = "data:image/jpeg;base64," + frameData.inlineBase64;
+          applyMirrorFreezeUi(frameData.isPaused === true, frameData.pauseReason || "");
+          return;
+        }
+        handleSessionSnapshot({
+          status: "CONNECTED",
+          isConnected: true,
+          isLiveMirrorActive: true,
+          isPrivacyMode: false,
+          activeModule: "PAYLASIM",
+          activeModuleTitle: "📡 Paylaşım",
+          currentSubPage: "PAYLASIM",
+          currentSubPageTitle: "📡 Paylaşım",
+          boardCast: frameData,
+          updatedAt: frameData.updatedAt || Date.now()
+        }, "board_session", 0);
+      }
+
+      function startCloudflareConnection(code) {
+        if (!code || code.length < 4) return;
+        if (cfSocket && cfSocketCode === code && (cfSocket.readyState === 0 || cfSocket.readyState === 1)) {
+          return;
+        }
+        closeCloudflareSocket();
+        var myEpoch = cfWsEpoch;
+        cfSocketCode = code;
+
+        // 1. Anlık HTTP durum kontrolü (WebSocket açılırken zaten bağlıysa anında yakala)
+        fetch(CLOUDFLARE_API_BASE + "/session/" + encodeURIComponent(code), { cache: "no-store" })
+          .then(function(res) { return res.ok ? res.json() : null; })
+          .then(function(json) {
+            if (myEpoch !== cfWsEpoch || currentSessionCode !== code) return;
+            if (json && json.exists && json.data) {
+              cfSessionActive = true;
+              stopWaitingRestPoll();
+              stopConnectedHeartbeat();
+              handleSessionSnapshot(json.data, "board_session", 0);
+            }
+          })
+          .catch(function() {});
+
+        // 2. WebSocket Hibernation canlı kanalı
+        try {
+          var wsUrl = CLOUDFLARE_WS_BASE + "?code=" + encodeURIComponent(code) + "&role=board";
+          var ws = new WebSocket(wsUrl);
+          cfSocket = ws;
+
+          ws.onopen = function() {
+            if (myEpoch !== cfWsEpoch || currentSessionCode !== code) return;
+            if (!isBoardConnected) {
+              updateTransportNote("🟢 Cloudflare Canlı Kanal Hazır • Eşleştirme bekleniyor", false);
+            }
+            if (cfPingTimer) clearInterval(cfPingTimer);
+            cfPingTimer = setInterval(function() {
+              if (ws.readyState === 1) {
+                try { ws.send(JSON.stringify({ type: "ping" })); } catch (e) {}
+              }
+            }, 25000);
+          };
+
+          ws.onmessage = function(ev) {
+            if (myEpoch !== cfWsEpoch || currentSessionCode !== code) return;
+            if (!ev || typeof ev.data !== "string") return;
+            var msg;
+            try { msg = JSON.parse(ev.data); } catch (e) { return; }
+            if (!msg || !msg.type) return;
+
+            if (msg.type === "session_state" && msg.data) {
+              cfSessionActive = true;
+              stopWaitingRestPoll();
+              stopConnectedHeartbeat();
+              handleSessionSnapshot(msg.data, "board_session", 0);
+            } else if (msg.type === "mirror_frame" && msg.data) {
+              cfSessionActive = true;
+              handleCloudflareMirrorFrame(msg.data);
+            } else if (msg.type === "rtc_offer" || msg.type === "rtc_ice") {
+              handleRtcSignalOnBoard(msg);
+            }
+          };
+
+          ws.onclose = function() {
+            if (cfPingTimer) {
+              clearInterval(cfPingTimer);
+              cfPingTimer = null;
+            }
+            if (myEpoch !== cfWsEpoch || currentSessionCode !== code) return;
+            cfSocket = null;
+            if (cfReconnectTimer) clearTimeout(cfReconnectTimer);
+            cfReconnectTimer = setTimeout(function() {
+              if (myEpoch === cfWsEpoch && currentSessionCode === code) {
+                startCloudflareConnection(code);
+              }
+            }, 2500);
+          };
+
+          ws.onerror = function() {
+            // Hata durumunda onclose yeniden bağlanmayı veya Firestore yedeğini devrede tutar
+          };
+        } catch (e) {}
+      }
+
       function stopWaitingRestPoll() {
         if (waitingRestTimer) {
           clearInterval(waitingRestTimer);
@@ -1758,9 +2139,9 @@
       }
 
       function checkWaitingSessionOnce() {
-        if (isBoardConnected || !currentSessionCode) return;
+        if (isBoardConnected || cfSessionActive || !currentSessionCode) return;
         restGetDocumentDetailed(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
-          if (isBoardConnected || !currentSessionCode) return;
+          if (isBoardConnected || cfSessionActive || !currentSessionCode) return;
           if (res && res.ok && res.data) {
             missingDocMissCount = 0;
             handleSessionSnapshot(res.data, "board_session", 0);
@@ -1769,11 +2150,11 @@
       }
 
       function startWaitingRestPoll() {
-        if (isBoardConnected || !currentSessionCode) return;
+        if (isBoardConnected || cfSessionActive || !currentSessionCode) return;
         checkWaitingSessionOnce();
         if (waitingRestTimer) return;
         waitingRestTimer = setInterval(function() {
-          if (isBoardConnected || !currentSessionCode) {
+          if (isBoardConnected || cfSessionActive || !currentSessionCode) {
             stopWaitingRestPoll();
             return;
           }
@@ -1790,15 +2171,19 @@
 
       function startConnectedHeartbeat() {
         stopWaitingRestPoll();
+        if (cfSessionActive) {
+          stopConnectedHeartbeat();
+          return;
+        }
         if (connectedHeartbeatTimer) return;
         connectedHeartbeatTimer = setInterval(function() {
-          if (!isBoardConnected || !currentSessionCode) {
+          if (!isBoardConnected || cfSessionActive || !currentSessionCode) {
             stopConnectedHeartbeat();
             return;
           }
           var targetDbId = preferredDbIndex === 1 ? "(default)" : NAMED_DB_ID;
           restGetDocumentDetailed(targetDbId, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
-            if (!isBoardConnected) return;
+            if (!isBoardConnected || cfSessionActive) return;
             if (!res || res.networkError) return;
             if (res.missing) {
               missingDocMissCount++;
@@ -1851,6 +2236,10 @@
         clearSessionListeners();
         if (!currentSessionCode) return;
 
+        // Birincil yüksek hızlı kanal: Cloudflare WebSocket + DO
+        startCloudflareConnection(currentSessionCode);
+
+        // Yedek uyumluluk kanalı (Eski APK veya geçici Cloudflare erişim sorunu için)
         var candidateCodes = [currentSessionCode];
         if (currentSessionCode.indexOf("BRZ") !== 0) {
           candidateCodes.push("BIRIZ" + currentSessionCode);
@@ -1863,6 +2252,7 @@
                 try {
                   var docRef = fbApi.doc(db, "board_sessions", codeKey);
                   var unsub = fbApi.onSnapshot(docRef, function(snap) {
+                    if (cfSessionActive) return;
                     if (snap && snap.exists()) {
                       missingDocMissCount = 0;
                       handleSessionSnapshot(snap.data() || {}, "board_session", dbIndex);
@@ -1870,19 +2260,21 @@
                       forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
                     }
                   }, function() {
-                    if (!isBoardConnected) startWaitingRestPoll();
+                    if (!isBoardConnected && !cfSessionActive) startWaitingRestPoll();
                   });
                   activeCleanupCallbacks.push(unsub);
                 } catch (e) {}
               })(sdkDbs[dIdx], dIdx, candidateCodes[cIdx]);
             }
           }
-          if (!isBoardConnected) {
+          if (!isBoardConnected && !cfSessionActive) {
             startWaitingRestPoll();
           }
         } else {
           var pollFn = function() {
+            if (cfSessionActive) return;
             restGetDocumentDetailed(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
+              if (cfSessionActive) return;
               if (res && res.ok && res.data) {
                 missingDocMissCount = 0;
                 handleSessionSnapshot(res.data, "board_session", 0);
@@ -1895,13 +2287,17 @@
             });
           };
           pollFn();
-          restPollTimer = setInterval(pollFn, 2000);
+          restPollTimer = setInterval(pollFn, 2500);
         }
       }
 
       function attachClassroomLiveListeners(classId, dbIdxHint) {
         if (!classId || classId === "default" || attachedClassId === classId) return;
         clearClassListeners();
+        if (cfSessionActive || (latestStateData && latestStateData._transport === "cloudflare")) {
+          attachedClassId = classId;
+          return;
+        }
         attachedClassId = classId;
 
         if (transportMode !== "SDK" || !fbApi || sdkDbs.length === 0) return;
@@ -2062,6 +2458,8 @@
         activeCastRenderKey = "";
         activeCastMirrorId = "";
         dismissedCastId = "";
+        cfSessionActive = false;
+        closeRtcPeer();
         revokeActiveCastBlob();
 
         var castToolbar = document.getElementById("board-cast-toolbar");
@@ -2073,7 +2471,7 @@
         clearClassListeners();
         stopTimerTicker();
         showWaitingScreen();
-        if (transportMode === "SDK") {
+        if (transportMode === "SDK" && !cfSessionActive) {
           startWaitingRestPoll();
         }
         if (noteMsg) {
@@ -3465,6 +3863,11 @@
       };
 
       function fetchChunkDocData(codeKey, docId) {
+        if (cfSessionActive || (latestStateData && latestStateData._transport === "cloudflare")) {
+          return fetch(CLOUDFLARE_API_BASE + "/session/" + encodeURIComponent(codeKey) + "/chunk/" + encodeURIComponent(docId), { cache: "no-store" })
+            .then(function(res) { return res.ok ? res.json() : null; })
+            .catch(function() { return null; });
+        }
         if (transportMode === "SDK" && fbApi && sdkDbs.length > 0) {
           var db = sdkDbs[preferredDbIndex] || sdkDbs[0];
           return fbApi.getDoc(fbApi.doc(db, "board_sessions", codeKey, "cast_chunks", docId))
@@ -3616,7 +4019,9 @@
               '<button class="sort-btn sort-star active" onclick="returnToClassBoardLocally()">📋 BİRİZ Menüsü</button>' +
             '</div>';
 
-          var imgSrcAttr = mirrorB64 ? ('data:image/jpeg;base64,' + escapeHtml(mirrorB64)) : '';
+          var imgSrcAttr = mirrorB64
+            ? ('data:image/jpeg;base64,' + escapeHtml(mirrorB64))
+            : (activeP2pBlobUrl ? escapeHtml(activeP2pBlobUrl) : '');
           stage.innerHTML =
             '<div style="flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#0F172A; border-radius:16px; position:relative;">' +
               '<img id="live-mirror-img" src="' + imgSrcAttr + '" alt="' + escapeHtml(mirrorTitle) + '" style="width:100%; height:100%; max-width:100%; max-height:100%; object-fit:contain;" />' +
@@ -3803,6 +4208,7 @@
         }
 
         renderCodeDisplay();
+        startCloudflareConnection(currentSessionCode);
         initFirebaseTransport();
       }
 
