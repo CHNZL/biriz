@@ -986,6 +986,7 @@ class BirizViewModel(
         viewModelScope.launch {
             repository.students.collect { currentStudents ->
                 val state = _uiState.value
+                if (state.isDeleting || repository.isAccountDeleting) return@collect
                 if (state.currentRole == UserRole.PARENT && state.linkedParentStudentIds.isNotEmpty() && currentStudents.isNotEmpty()) {
                     val userEmail = state.currentUser.email.trim()
                     val stillValidIds = state.linkedParentStudentIds.filter { linkedId ->
@@ -1031,6 +1032,7 @@ class BirizViewModel(
         // Aktif sınıftaki öğretmen canlı bağlantı durumunu anlık olarak yansıt
         viewModelScope.launch {
             repository.registeredClasses.collect { classes ->
+                if (_uiState.value.isDeleting || repository.isAccountDeleting) return@collect
                 val currentActive = _uiState.value.activeClassRoom ?: return@collect
                 val updated = classes.firstOrNull { it.id == currentActive.id } ?: return@collect
                 if (updated != currentActive) {
@@ -1046,6 +1048,7 @@ class BirizViewModel(
     fun onAppForegrounded() {
         isAppInForeground = true
         val state = _uiState.value
+        if (state.isDeleting || repository.isAccountDeleting) return
         appContext?.let { ctx ->
             flushPendingMorningDigest(ctx, currentViewerKey(state), forceEvenIfWithinWindow = false)
         }
@@ -1068,13 +1071,14 @@ class BirizViewModel(
 
     fun onAppBackgrounded() {
         isAppInForeground = false
+        if (_uiState.value.isDeleting || repository.isAccountDeleting) return
         updateParentPresence(isOnline = false)
         updateTeacherPresence(isOnline = false)
     }
 
     fun updateTeacherPresence(isOnline: Boolean) {
         val state = _uiState.value
-        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting) return
+        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting || repository.isAccountDeleting) return
         if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.TEACHER && isOnline) return
         val activeClass = state.activeClassRoom ?: return
@@ -1091,12 +1095,15 @@ class BirizViewModel(
 
         teacherPresenceJob?.cancel()
         teacherPresenceJob = viewModelScope.launch {
+            if (_uiState.value.isDeleting || repository.isAccountDeleting) return@launch
             if (!isOnline) {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    repository.updateTeacherPresence(
-                        classroomId = classId,
-                        isOnline = false
-                    )
+                    if (!_uiState.value.isDeleting && !repository.isAccountDeleting) {
+                        repository.updateTeacherPresence(
+                            classroomId = classId,
+                            isOnline = false
+                        )
+                    }
                 }
             } else {
                 if (!isAppInForeground) return@launch
@@ -1110,7 +1117,7 @@ class BirizViewModel(
 
     fun updateParentPresence(isOnline: Boolean) {
         val state = _uiState.value
-        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting) return
+        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting || repository.isAccountDeleting) return
         if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.PARENT && isOnline) return
         val linkedIds = state.linkedParentStudentIds
@@ -1121,15 +1128,18 @@ class BirizViewModel(
 
         parentPresenceJob?.cancel()
         parentPresenceJob = viewModelScope.launch {
+            if (_uiState.value.isDeleting || repository.isAccountDeleting) return@launch
             if (!isOnline) {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    repository.updateParentPresence(
-                        classroomId = classId,
-                        studentIds = linkedIds,
-                        parentEmail = email,
-                        parentName = name,
-                        isOnline = false
-                    )
+                    if (!_uiState.value.isDeleting && !repository.isAccountDeleting) {
+                        repository.updateParentPresence(
+                            classroomId = classId,
+                            studentIds = linkedIds,
+                            parentEmail = email,
+                            parentName = name,
+                            isOnline = false
+                        )
+                    }
                 }
             } else {
                 if (!isAppInForeground) return@launch
@@ -1146,8 +1156,9 @@ class BirizViewModel(
 
     private fun saveParentSessionState() {
         if (appContext == null) return
-        val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
         val state = _uiState.value
+        if (state.isDeleting || repository.isAccountDeleting) return
+        val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
         val activeClass = state.activeClassRoom
         val editor = prefs.edit()
             .putString("key_saved_role", state.currentRole.code)
@@ -3228,6 +3239,28 @@ class BirizViewModel(
                         val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
                         if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
 
+                        // Eğer kullanıcı ilk kez kayıt oluyorsa veya hesabını sildikten sonra tekrar üye olduysa,
+                        // eski hiçbir sınıf/veli bilgisini geri getirme; doğrudan Rol ve KVKK ekranından sıfır başlat!
+                        if (profile.isFreshRegistration) {
+                            appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)?.edit()
+                                ?.remove("key_saved_role")
+                                ?.remove("key_linked_classroom_id")
+                                ?.remove("key_linked_student_ids")
+                                ?.remove("key_active_parent_student_id")
+                                ?.apply()
+                            lastResolvedUid = fbUser.uid
+                            _uiState.value = _uiState.value.copy(
+                                activeClassRoom = null,
+                                currentRole = UserRole.MEMBER,
+                                isKvkkAccepted = false,
+                                linkedParentStudentIds = emptyList(),
+                                activeParentStudentId = null,
+                                isAuthResolving = false,
+                                currentScreen = ScreenState.ROLE_AND_KVKK
+                            )
+                            return@withTimeoutOrNull true
+                        }
+
                         val isTeacher = profile.role == "TEACHER" || profile.role == "OGRETMEN"
                         val assignedClassId = profile.assignedClassId
 
@@ -3237,13 +3270,12 @@ class BirizViewModel(
                             resolvedClass = repository.fetchClassroomById(assignedClassId)
                         }
 
-                        if (resolvedClass == null) {
-                            resolvedClass = repository.findTeacherClassroom(fbUser.uid, userEmail)
-                        }
-
-                        // Önceden silinmişse örnek sınıfı otomatik yeniden oluşturma; yalnızca mevcutsa bağla.
-                        if (resolvedClass == null && com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(userEmail)) {
-                            resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
+                        if (resolvedClass == null && isTeacher) {
+                            resolvedClass = repository.findTeacherClassroom(
+                                uid = fbUser.uid,
+                                teacherEmail = userEmail,
+                                allowEmailFallbackForDifferentUid = false
+                            )
                         }
 
                         if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
@@ -3261,11 +3293,6 @@ class BirizViewModel(
                             saveParentSessionState()
 
                             repository.observeStudents(resolvedClass.id)
-                            ensureWebDataMigrationIfNeeded(
-                                classId = resolvedClass.id,
-                                teacherUid = fbUser.uid,
-                                teacherEmail = userEmail
-                            )
                             loadScheduleFromStorage(resolvedClass.id)
                             loadSeatingPlanFromStorage(resolvedClass.id)
                             loadCommunicationFromStorage(resolvedClass.id)
@@ -3282,12 +3309,17 @@ class BirizViewModel(
                             savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
                         } else emptyList()
 
-                        val hasLocalParentRole = savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT
-                        val hasLocalLinkedStudents = _uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty()
                         val isProfileParent = profile.role.uppercase() in listOf("PARENT", "VELI")
+                        val isExplicitlyMember = profile.role.uppercase() in listOf("UYE", "MEMBER")
+                        val hasLocalParentRole = !isExplicitlyMember && (savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT)
+                        val hasLocalLinkedStudents = !isExplicitlyMember && (_uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty())
 
-                        // Firestore ve hafızadan e-postaya bağlı öğrenci sorgusu (paralel & zaman sınırlı)
-                        val parentLinkedMatches = repository.findStudentsLinkedToParent(userEmail)
+                        // Yalnızca profil veli ise veya açıkça UYE değilse bağlı öğrencileri ara
+                        val parentLinkedMatches = if (isProfileParent || !isExplicitlyMember) {
+                            repository.findStudentsLinkedToParent(userEmail)
+                        } else {
+                            emptyList()
+                        }
                         if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
 
                         val hasParentLinkedStudents = parentLinkedMatches.isNotEmpty()
@@ -3354,7 +3386,7 @@ class BirizViewModel(
                         }
 
                         // 3. Öğretmen olarak kayıtlı olup henüz sınıf oluşturmamış olanlar
-                        if (isTeacher || savedRole == UserRole.TEACHER.code) {
+                        if (isTeacher) {
                             lastResolvedUid = fbUser.uid
                             _uiState.value = _uiState.value.copy(
                                 currentRole = UserRole.TEACHER,
@@ -3510,8 +3542,10 @@ class BirizViewModel(
             return
         }
         val uid = Firebase.auth.currentUser?.uid
+        val email = _uiState.value.currentUser.email
         if (uid != null) {
             viewModelScope.launch {
+                repository.clearAccountDeletionTombstone(uid, email)
                 repository.updateUserRole(uid, "TEACHER")
             }
         }
@@ -3537,8 +3571,10 @@ class BirizViewModel(
 
     fun switchToParentRole() {
         val uid = Firebase.auth.currentUser?.uid
+        val email = _uiState.value.currentUser.email
         if (uid != null) {
             viewModelScope.launch {
+                repository.clearAccountDeletionTombstone(uid, email)
                 repository.updateUserRole(uid, "PARENT")
             }
         }
@@ -3847,11 +3883,9 @@ class BirizViewModel(
 
                 repository.observeStudents(createdClass.id)
                 val currentUid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null } ?: ""
-                ensureWebDataMigrationIfNeeded(
-                    classId = createdClass.id,
-                    teacherUid = currentUid,
-                    teacherEmail = teacherEmail
-                )
+                if (currentUid.isNotBlank()) {
+                    repository.clearAccountDeletionTombstone(currentUid, teacherEmail)
+                }
 
                 _uiState.value = _uiState.value.copy(
                     activeClassRoom = createdClass,
@@ -5014,13 +5048,23 @@ class BirizViewModel(
 
     fun deleteTeacherRoleAndClassroom() {
         val classRoom = _uiState.value.activeClassRoom ?: return
-        _uiState.value = _uiState.value.copy(isDeleting = true)
+        val classId = classRoom.id
+        clearAllListenersAndSessionCaches()
+        disconnectSmartBoard()
+        _uiState.value = _uiState.value.copy(
+            isDeleting = true,
+            deletingStatusMessage = "Öğretmen rolünüz ve tüm sınıf verileriniz veritabanından siliniyor..."
+        )
         viewModelScope.launch {
             try {
-                repository.deleteTeacherRoleAndClassroom(classRoom.id)
+                repository.deleteTeacherRoleAndClassroom(classId, appContext)
+                appContext?.let { ctx ->
+                    com.example.util.AppDataWipeHelper.wipeAllLocalAppData(ctx)
+                }
                 _uiState.value = _uiState.value.copy(
                     activeClassRoom = null,
                     currentRole = UserRole.MEMBER,
+                    isKvkkAccepted = false,
                     currentScreen = ScreenState.ROLE_AND_KVKK,
                     currentSubPage = DashboardSubPage.SINIF_LISTESI,
                     isDeleting = false,
@@ -5031,9 +5075,11 @@ class BirizViewModel(
                     selectedSchool = null,
                     selectedGradeLevel = null,
                     selectedSection = null,
+                    announcements = emptyList(),
+                    chatMessages = emptyList(),
+                    notifications = emptyList(),
                     snackbarMessage = "Öğretmen rolünüz ve sınıf verileriniz veritabanından kalıcı olarak silindi. Rol Seçimine dönüldü."
                 )
-                saveParentSessionState()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isDeleting = false,
@@ -5044,20 +5090,32 @@ class BirizViewModel(
     }
 
     fun deleteParentRole() {
-        val uid = Firebase.auth.currentUser?.uid
-        if (uid != null) {
-            viewModelScope.launch {
-                repository.updateUserRole(uid, "UYE")
-            }
-        }
+        val uid = Firebase.auth.currentUser?.uid ?: ""
+        val email = _uiState.value.currentUser.email
+        clearAllListenersAndSessionCaches()
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.MEMBER,
+            isKvkkAccepted = false,
             currentScreen = ScreenState.ROLE_AND_KVKK,
             linkedParentStudentIds = emptyList(),
             activeParentStudentId = null,
+            activeClassRoom = null,
+            announcements = emptyList(),
+            chatMessages = emptyList(),
+            notifications = emptyList(),
             snackbarMessage = "Veli rolünüz ve bağlı tüm öğrenciler başarıyla silindi. Rol Seçimine dönüldü."
         )
-        saveParentSessionState()
+        appContext?.let { ctx ->
+            ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE).edit()
+                .remove("key_saved_role")
+                .remove("key_linked_classroom_id")
+                .remove("key_linked_student_ids")
+                .remove("key_active_parent_student_id")
+                .apply()
+        }
+        viewModelScope.launch {
+            repository.deleteParentRoleAndUnlinkAll(email, uid)
+        }
     }
 
     fun deleteEntireAccount(context: android.content.Context? = null) {
@@ -5067,17 +5125,19 @@ class BirizViewModel(
         val prevBoardCode = prevState.connectedBoardSessionCode
         val cleanupCtx = context ?: appContext
 
+        // 1. Önce isDeleting kilidini aç ve tüm dinleyicileri durdur
+        _uiState.value = prevState.copy(
+            isDeleting = true,
+            deletingStatusMessage = "Hesabınız, bulut kayıtları ve tüm cihaz izleriniz kalıcı olarak siliniyor..."
+        )
+
         refreshUserJob?.cancel()
         refreshUserJob = null
         activeResolvingUid = null
         lastResolvedUid = null
         clearAllListenersAndSessionCaches()
+        repository.stopAllListenersForAccountDeletion()
         disconnectSmartBoard()
-
-        _uiState.value = prevState.copy(
-            isDeleting = true,
-            deletingStatusMessage = "Hesabınız, bulut kayıtları ve tüm cihaz izleriniz kalıcı olarak siliniyor..."
-        )
 
         viewModelScope.launch {
             try {
@@ -5117,6 +5177,7 @@ class BirizViewModel(
     }
 
     fun resetToRoleSelection() {
+        if (_uiState.value.isDeleting) return
         _uiState.value = _uiState.value.copy(
             currentScreen = ScreenState.ROLE_AND_KVKK,
             selectedSection = null,

@@ -74,23 +74,28 @@ class ClassRegistryRepository(
     private var classroomsJob: kotlinx.coroutines.Job? = null
     private var schoolsJob: kotlinx.coroutines.Job? = null
 
+    @Volatile
+    var isAccountDeleting: Boolean = false
+        private set
+
     init {
         try {
             Firebase.auth.addAuthStateListener { auth ->
                 val user = auth.currentUser
-                if (user != null) {
+                if (user != null && !isAccountDeleting && !isGlobalAccountDeleting) {
                     startObserving()
-                } else {
+                } else if (user == null) {
                     stopObserving()
                 }
             }
-            if (Firebase.auth.currentUser != null) {
+            if (Firebase.auth.currentUser != null && !isAccountDeleting && !isGlobalAccountDeleting) {
                 startObserving()
             }
         } catch (_: Exception) {}
     }
 
     private fun startObserving() {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         if (classroomsJob == null || classroomsJob?.isActive == false) {
             classroomsJob = db.collection("classrooms")
                 .snapshots()
@@ -186,7 +191,18 @@ class ClassRegistryRepository(
         testUserId = null
     }
 
+    fun stopAllListenersForAccountDeletion() {
+        isAccountDeleting = true
+        isGlobalAccountDeleting = true
+        stopObserving()
+        studentsJob?.cancel()
+        studentsJob = null
+        _students.value = emptyList()
+        _registeredClasses.value = emptyList()
+    }
+
     fun clearSessionCaches() {
+        stopObserving()
         studentsJob?.cancel()
         studentsJob = null
         _students.value = emptyList()
@@ -758,6 +774,7 @@ class ClassRegistryRepository(
 
     fun observeStudents(classroomId: String) {
         studentsJob?.cancel()
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         if (Firebase.auth.currentUser != null) {
             studentsJob = db.collection("classrooms").document(classroomId).collection("students")
                 .snapshots()
@@ -1126,6 +1143,7 @@ class ClassRegistryRepository(
         parentName: String,
         isOnline: Boolean
     ) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         if (studentIds.isEmpty()) return
         val nowMillis = System.currentTimeMillis()
         val nowFormatted = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
@@ -1156,7 +1174,7 @@ class ClassRegistryRepository(
 
         // 2. Sync to Firestore immediately without blocking on a prior network get() so
         // closing/minimizing the app window instantly updates Teacher's screen in real-time
-        if (isFirebaseAuthAvailable && !classroomId.isNullOrBlank() && classroomId != "default") {
+        if (isFirebaseAuthAvailable && !isAccountDeleting && !isGlobalAccountDeleting && !classroomId.isNullOrBlank() && classroomId != "default") {
             val currentStudentsSnapshot = _students.value
             for (sId in studentIds) {
                 try {
@@ -1199,6 +1217,7 @@ class ClassRegistryRepository(
         classroomId: String?,
         isOnline: Boolean
     ) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         val cid = classroomId?.trim().orEmpty()
         if (cid.isEmpty()) return
         val nowMillis = System.currentTimeMillis()
@@ -1214,7 +1233,7 @@ class ClassRegistryRepository(
         }
 
         // 2. Sync to Firestore classrooms/{cid} so Parents see live teacher connectivity
-        if (isFirebaseAuthAvailable && cid != "default") {
+        if (isFirebaseAuthAvailable && !isAccountDeleting && !isGlobalAccountDeleting && cid != "default") {
             try {
                 db.collection("classrooms").document(cid)
                     .update(
@@ -1242,26 +1261,24 @@ class ClassRegistryRepository(
 
     // --- Profil & Cascade Delete İşlemleri ---
 
-    suspend fun deleteTeacherRoleAndClassroom(classroomId: String) {
+    suspend fun deleteTeacherRoleAndClassroom(classroomId: String, context: Context? = null) {
         val uid = requireUserId()
+        studentsJob?.cancel()
+        studentsJob = null
+
         if (Firebase.auth.currentUser != null) {
-            try {
-                val studentSnapshots = db.collection("classrooms").document(classroomId)
-                    .collection("students").get().await()
-                for (doc in studentSnapshots.documents) {
-                    doc.reference.delete().await()
-                }
-            } catch (e: Exception) {
-                // ignore
+            if (context != null) {
+                try {
+                    SmartBoardHelper.deleteUserSmartBoardTraces(
+                        context = context,
+                        ownedClassIds = setOf(classroomId),
+                        teacherEmail = Firebase.auth.currentUser?.email.orEmpty(),
+                        activeSessionCode = null
+                    )
+                } catch (_: Exception) {}
             }
 
-            val classRef = db.collection("classrooms").document(classroomId)
-            try {
-                classRef.delete().await()
-            } catch (e: Exception) {
-                handleFirestoreError(e, OperationType.DELETE, classRef.path)
-                throw e
-            }
+            deleteOwnedClassroomCompletely(classroomId)
 
             val userRef = db.collection("users").document(uid)
             try {
@@ -1282,11 +1299,35 @@ class ClassRegistryRepository(
         _students.value = emptyList()
     }
 
+    suspend fun deleteParentRoleAndUnlinkAll(userEmail: String, uid: String) {
+        if (isFirebaseAuthAvailable) {
+            val allClassIds = try {
+                withTimeoutOrNull(6000L) {
+                    db.collection("classrooms").get().await().documents.map { it.id }
+                } ?: _registeredClasses.value.map { it.id }
+            } catch (_: Exception) {
+                _registeredClasses.value.map { it.id }
+            }
+            if (allClassIds.isNotEmpty() && userEmail.isNotBlank()) {
+                purgeParentAndUserTracesInOtherClassrooms(
+                    otherClassroomIds = allClassIds,
+                    userEmail = userEmail,
+                    uid = uid
+                )
+            }
+            if (uid.isNotBlank()) {
+                updateUserRole(uid, "UYE")
+            }
+        }
+    }
+
     fun markTeacherOfflineFireAndForget(classroomId: String?) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         val cid = classroomId?.trim().orEmpty()
         if (cid.isBlank() || cid == "default") return
         val nowMillis = System.currentTimeMillis()
         scope.launch {
+            if (isAccountDeleting || isGlobalAccountDeleting) return@launch
             withContext(NonCancellable) {
                 try {
                     withTimeoutOrNull(2500L) {
@@ -1309,6 +1350,7 @@ class ClassRegistryRepository(
         studentIds: List<String>,
         parentEmail: String
     ) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         val cid = classroomId?.trim().orEmpty()
         if (cid.isBlank() || cid == "default" || studentIds.isEmpty()) return
         val nowMillis = System.currentTimeMillis()
@@ -1364,21 +1406,88 @@ class ClassRegistryRepository(
 
     private suspend fun deleteAllDocsInCollection(collectionRef: CollectionReference) {
         try {
-            val snap = withTimeoutOrNull(4500L) { collectionRef.get().await() } ?: return
-            if (!snap.isEmpty) {
-                snap.documents.chunked(400).forEach { chunk ->
-                    val batch = db.batch()
-                    chunk.forEach { doc -> batch.delete(doc.reference) }
-                    withTimeoutOrNull(4500L) { batch.commit().await() }
+            var safetyPages = 0
+            while (safetyPages < 25) {
+                safetyPages++
+                val snap = withTimeoutOrNull(9000L) {
+                    collectionRef.limit(300).get().await()
+                } ?: break
+                if (snap.isEmpty) break
+
+                val docs = snap.documents
+                val batchCommitted = try {
+                    withTimeoutOrNull(9000L) {
+                        val batch = db.batch()
+                        docs.forEach { doc -> batch.delete(doc.reference) }
+                        batch.commit().await()
+                        true
+                    } ?: false
+                } catch (_: Exception) {
+                    false
                 }
+
+                if (!batchCommitted) {
+                    // Fallback: tek tek sil
+                    coroutineScope {
+                        docs.chunked(25).forEach { miniChunk ->
+                            miniChunk.map { doc ->
+                                async {
+                                    try {
+                                        withTimeoutOrNull(3000L) { doc.reference.delete().await() }
+                                    } catch (_: Exception) {}
+                                }
+                            }.awaitAll()
+                        }
+                    }
+                }
+
+                if (docs.size < 300) break
             }
         } catch (_: Exception) {}
     }
 
     private suspend fun deleteOwnedClassroomCompletely(classroomId: String) {
+        if (classroomId.isBlank() || classroomId == "default") return
         val classRef = db.collection("classrooms").document(classroomId)
+        val classesDocRef = db.collection("classes").document(classroomId)
 
-        // 1. Sınıfın tüm alt koleksiyonlarını temizle
+        _registeredClasses.value = _registeredClasses.value.filterNot { it.id == classroomId }
+
+        // 1. ÖNCELİK #1: Ana sınıf belgelerini (classrooms/{id} ve classes/{id}) İLK SANİYEDE sil!
+        // Böylece alt koleksiyonlarda 1.500+ yıldız/kitap kaydı silinirken bile sınıf belgesi anında yok olur.
+        try {
+            withTimeoutOrNull(6000L) { classRef.delete().await() }
+        } catch (_: Exception) {}
+        try {
+            withTimeoutOrNull(4000L) { classesDocRef.delete().await() }
+        } catch (_: Exception) {}
+
+        // 2. Kök tournaments/{tid} ve matches alt koleksiyonlarını paralel temizle
+        try {
+            val tournamentIds = mutableSetOf<String>()
+            withTimeoutOrNull(5000L) {
+                classRef.collection("tournaments").get().await().documents.forEach { tournamentIds.add(it.id) }
+            }
+            withTimeoutOrNull(5000L) {
+                db.collection("tournaments").whereEqualTo("classId", classroomId).get().await().documents.forEach {
+                    tournamentIds.add(it.id)
+                }
+            }
+            if (tournamentIds.isNotEmpty()) {
+                coroutineScope {
+                    tournamentIds.map { tid ->
+                        async {
+                            deleteAllDocsInCollection(db.collection("tournaments").document(tid).collection("matches"))
+                            try {
+                                withTimeoutOrNull(4000L) { db.collection("tournaments").document(tid).delete().await() }
+                            } catch (_: Exception) {}
+                        }
+                    }.awaitAll()
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Sınıfın tüm 14 alt koleksiyonunu PARALEL ve sayfalı (paginated) olarak temizle
         val subcollections = listOf(
             "students",
             "announcements",
@@ -1391,40 +1500,28 @@ class ClassRegistryRepository(
             "schedule",
             "seating",
             "stars",
+            "star_records",
+            "tournaments",
             "live_board"
         )
-        for (sub in subcollections) {
-            deleteAllDocsInCollection(classRef.collection(sub))
-        }
-
-        // 2. Turnuvalar ve kök tournaments/{tid}/matches alt koleksiyonlarını temizle
-        try {
-            val tournamentsSnap = classRef.collection("tournaments").get().await()
-            for (tDoc in tournamentsSnap.documents) {
-                deleteAllDocsInCollection(db.collection("tournaments").document(tDoc.id).collection("matches"))
-                try {
-                    db.collection("tournaments").document(tDoc.id).delete().await()
-                } catch (_: Exception) {}
-                try {
-                    tDoc.reference.delete().await()
-                } catch (_: Exception) {}
+        coroutineScope {
+            val subJobs = subcollections.map { sub ->
+                async {
+                    deleteAllDocsInCollection(classRef.collection(sub))
+                }
+            } + async {
+                deleteAllDocsInCollection(classesDocRef.collection("live_board"))
             }
-        } catch (_: Exception) {}
-
-        // 3. classes/{classroomId}/live_board alt koleksiyonunu ve belgeyi temizle
-        try {
-            val classesDocRef = db.collection("classes").document(classroomId)
-            deleteAllDocsInCollection(classesDocRef.collection("live_board"))
-            classesDocRef.delete().await()
-        } catch (_: Exception) {}
-
-        // 4. Ana sınıf belgesini sil
-        try {
-            classRef.delete().await()
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.DELETE, classRef.path)
-            throw e
+            subJobs.awaitAll()
         }
+
+        // 4. Alt koleksiyon temizliği sırasında gecikmeli bir yazma ihtimaline karşı kök belgeleri son kez sil
+        try {
+            withTimeoutOrNull(5000L) { classRef.delete().await() }
+        } catch (_: Exception) {}
+        try {
+            withTimeoutOrNull(4000L) { classesDocRef.delete().await() }
+        } catch (_: Exception) {}
     }
 
     private suspend fun purgeParentAndUserTracesInOtherClassrooms(
@@ -1440,7 +1537,7 @@ class ClassRegistryRepository(
         coroutineScope {
             otherClassroomIds.map { cid ->
                 async {
-                    withTimeoutOrNull(6000L) {
+                    withTimeoutOrNull(8000L) {
                         val classRef = db.collection("classrooms").document(cid)
 
                         // 1. Öğrencilerden veli e-postasını/profilini temizle (diğer veliler varsa koru)
@@ -1502,15 +1599,13 @@ class ClassRegistryRepository(
 
                             // 2. Bu velinin gönderdiği bireysel sohbet mesajlarını temizle
                             try {
-                                val msgSnaps = classRef.collection("messages")
-                                    .whereEqualTo("parentEmail", cleanEmail)
-                                    .get()
-                                    .await()
+                                val msgSnaps = classRef.collection("messages").get().await()
                                 val toDelete = msgSnaps.documents.filter { d ->
                                     val isFromTeacher = d.getBoolean("isFromTeacher") ?: false
-                                    !isFromTeacher
+                                    val msgParentEmail = d.getString("parentEmail")?.trim().orEmpty()
+                                    !isFromTeacher && msgParentEmail.equals(cleanEmail, ignoreCase = true)
                                 }
-                                toDelete.chunked(400).forEach { chunk ->
+                                toDelete.chunked(300).forEach { chunk ->
                                     val batch = db.batch()
                                     chunk.forEach { batch.delete(it.reference) }
                                     batch.commit().await()
@@ -1534,6 +1629,22 @@ class ClassRegistryRepository(
         }
     }
 
+    private fun deletedAccountTombstoneId(email: String, uid: String): String {
+        val normEmail = email.trim().lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^a-z0-9._-]"), "_")
+        return if (normEmail.isNotBlank()) "email_$normEmail" else "uid_$uid"
+    }
+
+    suspend fun clearAccountDeletionTombstone(uid: String, email: String) {
+        if (!isFirebaseAuthAvailable) return
+        val tombstoneId = deletedAccountTombstoneId(email, uid)
+        try {
+            withTimeoutOrNull(3000L) {
+                db.collection("deleted_accounts").document(tombstoneId).delete().await()
+            }
+        } catch (_: Exception) {}
+    }
+
     suspend fun deleteEntireAccount(
         context: Context? = null,
         currentRole: UserRole = UserRole.MEMBER,
@@ -1543,6 +1654,7 @@ class ClassRegistryRepository(
         val fbUser = Firebase.auth.currentUser
         val uid = fbUser?.uid ?: if (isTestMode) (testUserId ?: "test_uid") else requireUserId()
         val userEmail = fbUser?.email?.trim().orEmpty()
+        val cleanEmail = userEmail.lowercase(java.util.Locale.ROOT)
 
         // 1. Oturum süresi eskidiyse (4 dk+) veritabanını silmeden önce güvenli Google doğrulaması iste.
         // Böylece kullanıcı doğrulamayı iptal ederse veriler yarım silinmez.
@@ -1556,110 +1668,345 @@ class ClassRegistryRepository(
             }
         }
 
-        if (fbUser != null) {
-            // 2. Sahip olunan sınıfları ve paylaşılan sınıfları ayır (Veli asla öğretmenin sınıfını silemez!)
-            val allClassDocs = try {
-                db.collection("classrooms").get().await().documents
-            } catch (e: Exception) {
-                emptyList()
+        // 2. Tüm canlı Firestore dinleyicilerini ve arka plan yazmalarını ANINDA durdur
+        stopAllListenersForAccountDeletion()
+
+        try {
+            if (fbUser != null) {
+                // 3. Bu kullanıcıya veya e-postasına ait TÜM users belgelerini ve atanmış sınıfları tespit et
+                val matchedUserDocIds = linkedSetOf<String>()
+                val assignedClassIdsFromUsers = linkedSetOf<String>()
+                if (uid.isNotBlank()) matchedUserDocIds.add(uid)
+
+                try {
+                    val directUserDoc = withTimeoutOrNull(4500L) {
+                        db.collection("users").document(uid).get(Source.SERVER).await()
+                    } ?: withTimeoutOrNull(3000L) {
+                        db.collection("users").document(uid).get().await()
+                    }
+                    if (directUserDoc != null && directUserDoc.exists()) {
+                        directUserDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                            assignedClassIdsFromUsers.add(it)
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                if (cleanEmail.isNotBlank()) {
+                    try {
+                        val allUsersSnap = withTimeoutOrNull(5000L) {
+                            db.collection("users").get(Source.SERVER).await()
+                        } ?: withTimeoutOrNull(3500L) {
+                            db.collection("users").get().await()
+                        }
+                        allUsersSnap?.documents?.forEach { uDoc ->
+                            val docEmail = uDoc.getString("email")?.trim().orEmpty()
+                            val docUserId = uDoc.getString("userId")?.trim().orEmpty()
+                            if (uDoc.id == uid || docUserId == uid || docEmail.equals(cleanEmail, ignoreCase = true)) {
+                                matchedUserDocIds.add(uDoc.id)
+                                uDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                                    assignedClassIdsFromUsers.add(it)
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                // 4. Sahip olunan sınıfları ve paylaşılan sınıfları ayır (Veli asla öğretmenin sınıfını silemez!)
+                val allClassDocs = try {
+                    withTimeoutOrNull(6000L) {
+                        db.collection("classrooms").get(Source.SERVER).await().documents
+                    } ?: withTimeoutOrNull(4000L) {
+                        db.collection("classrooms").get().await().documents
+                    } ?: emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+
+                val ownedClassIds = linkedSetOf<String>()
+                val otherClassIds = linkedSetOf<String>()
+
+                ownedClassIds.addAll(assignedClassIdsFromUsers)
+
+                for (cDoc in allClassDocs) {
+                    val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
+                    val docTeacherEmail = cDoc.getString("teacherEmail")?.trim().orEmpty()
+                    val isOwnerMatch = (docTeacherId.isNotBlank() && docTeacherId in matchedUserDocIds) ||
+                        (cleanEmail.isNotBlank() && docTeacherEmail.equals(cleanEmail, ignoreCase = true)) ||
+                        (cDoc.id in assignedClassIdsFromUsers)
+                    val isFallbackActiveTeacherClass = currentRole == UserRole.TEACHER &&
+                        !activeClassId.isNullOrBlank() &&
+                        activeClassId != "default" &&
+                        cDoc.id == activeClassId &&
+                        (docTeacherId.isBlank() || docTeacherId in matchedUserDocIds || docTeacherEmail.equals(cleanEmail, ignoreCase = true))
+
+                    if (isOwnerMatch || isFallbackActiveTeacherClass) {
+                        ownedClassIds.add(cDoc.id)
+                    } else {
+                        otherClassIds.add(cDoc.id)
+                    }
+                }
+
+                if (currentRole == UserRole.TEACHER &&
+                    !activeClassId.isNullOrBlank() &&
+                    activeClassId != "default" &&
+                    activeClassId !in otherClassIds
+                ) {
+                    ownedClassIds.add(activeClassId)
+                }
+
+                if (com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(cleanEmail) &&
+                    defaultSampleClass.id !in otherClassIds
+                ) {
+                    ownedClassIds.add(defaultSampleClass.id)
+                }
+
+                // 5. Silme mezar taşını (tombstone) kaydet ve KÖK (users + classrooms) belgelerini İLK ADIMDA sil!
+                val tombstoneId = deletedAccountTombstoneId(cleanEmail, uid)
+                try {
+                    withTimeoutOrNull(4000L) {
+                        db.collection("deleted_accounts").document(tombstoneId).set(
+                            mapOf(
+                                "uid" to uid,
+                                "email" to cleanEmail,
+                                "deletedUserDocIds" to matchedUserDocIds.toList(),
+                                "deletedClassIds" to ownedClassIds.toList(),
+                                "deletedAtMillis" to System.currentTimeMillis(),
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                    }
+                } catch (_: Exception) {}
+
+                // ÖNCELİK #1: Kök users/{id} ve classrooms/{id} belgelerini anında tek batch ile sil
+                try {
+                    withTimeoutOrNull(6000L) {
+                        val rootBatch = db.batch()
+                        matchedUserDocIds.forEach { uId ->
+                            rootBatch.delete(db.collection("users").document(uId))
+                        }
+                        ownedClassIds.forEach { cId ->
+                            rootBatch.delete(db.collection("classrooms").document(cId))
+                            rootBatch.delete(db.collection("classes").document(cId))
+                        }
+                        rootBatch.commit().await()
+                    }
+                } catch (_: Exception) {
+                    // Fallback: tek tek sil
+                    matchedUserDocIds.forEach { uId ->
+                        try {
+                            withTimeoutOrNull(3500L) { db.collection("users").document(uId).delete().await() }
+                        } catch (_: Exception) {}
+                    }
+                    ownedClassIds.forEach { cId ->
+                        try {
+                            withTimeoutOrNull(3500L) { db.collection("classrooms").document(cId).delete().await() }
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                // 6. Akıllı Tahta oturumlarını ve chunk verilerini sil
+                if (context != null) {
+                    try {
+                        SmartBoardHelper.deleteUserSmartBoardTraces(
+                            context = context,
+                            ownedClassIds = ownedClassIds,
+                            teacherEmail = userEmail,
+                            activeSessionCode = activeBoardSessionCode
+                        )
+                    } catch (e: Exception) {
+                        Log.w("ClassRegistryRepo", "Failed clearing SmartBoard traces", e)
+                    }
+                }
+
+                // 7. Öğretmene ait tüm sınıfları ve 14 alt koleksiyonunu paralel sil
+                coroutineScope {
+                    ownedClassIds.map { ownedId ->
+                        async {
+                            try {
+                                deleteOwnedClassroomCompletely(ownedId)
+                            } catch (e: Exception) {
+                                Log.w("ClassRegistryRepo", "Failed deleting owned classroom $ownedId", e)
+                            }
+                        }
+                    }.awaitAll()
+                }
+
+                // 8. Diğer sınıflardaki veli/mesaj/temizleme izlerini temizle
+                purgeParentAndUserTracesInOtherClassrooms(
+                    otherClassroomIds = otherClassIds.toList(),
+                    userEmail = userEmail,
+                    uid = uid
+                )
+
+                // 9. Kullanıcının oluşturduğu ve başka hiçbir sınıfın kullanmadığı okul kayıtlarını temizle
+                try {
+                    withTimeoutOrNull(4500L) {
+                        val schoolsSnap = db.collection("schools").whereEqualTo("creatorId", uid).get().await()
+                        for (sDoc in schoolsSnap.documents) {
+                            try {
+                                sDoc.reference.delete().await()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // 10. Kök users/{id} ve classrooms/{id} belgelerinin silindiğini son kez garanti altına al
+                matchedUserDocIds.forEach { uId ->
+                    try {
+                        withTimeoutOrNull(4000L) { db.collection("users").document(uId).delete().await() }
+                    } catch (_: Exception) {}
+                }
+                ownedClassIds.forEach { cId ->
+                    try {
+                        withTimeoutOrNull(4000L) { db.collection("classrooms").document(cId).delete().await() }
+                    } catch (_: Exception) {}
+                }
+
+                // 11. FCM push tokenını ve Firebase Auth kullanıcı kaydını kalıcı olarak sil
+                try {
+                    withTimeoutOrNull(2500L) { FirebaseMessaging.getInstance().deleteToken().await() }
+                } catch (_: Exception) {}
+
+                try {
+                    fbUser.delete().await()
+                } catch (e: FirebaseAuthRecentLoginRequiredException) {
+                    if (context != null) {
+                        val reauthed = GoogleAuthHelper.reauthenticateCurrentUser(context)
+                        if (!reauthed) {
+                            throw IllegalStateException("Verileriniz temizlendi; ancak kimlik kaydının silinmesi için Google doğrulaması gerekiyor.")
+                        }
+                        fbUser.delete().await()
+                    } else {
+                        throw e
+                    }
+                }
             }
 
-            val ownedClassIds = linkedSetOf<String>()
-            val otherClassIds = mutableListOf<String>()
+            // 12. Cihazdaki tüm yerel BİRİZ dosyalarını, bildirimleri, WorkManager işlerini ve önbelleği sil
+            if (context != null) {
+                AppDataWipeHelper.wipeAllLocalAppData(context)
+            }
+
+            clearSessionCaches()
+        } finally {
+            isAccountDeleting = false
+            isGlobalAccountDeleting = false
+        }
+    }
+
+    /**
+     * Kullanıcı hesabını sildikten sonra aynı Google hesabıyla tekrar üye olduğunda
+     * (yeni bir Firebase Auth UID aldığında veya deleted_accounts mezar taşı bulunduğunda),
+     * önceki silinmiş hesaptan kalmış olabilecek tüm yetim (orphaned) Firestore verilerini
+     * otomatik olarak temizler. Böylece kullanıcı %100 sıfır ve temiz bir hesapla başlar.
+     */
+    private suspend fun purgeOrphanedDataOnFreshRegistration(
+        newUid: String,
+        email: String,
+        tombstoneDoc: com.google.firebase.firestore.DocumentSnapshot?
+    ) {
+        val cleanEmail = email.trim().lowercase(java.util.Locale.ROOT)
+        if (cleanEmail.isBlank() && tombstoneDoc == null) return
+
+        val hasTombstone = tombstoneDoc != null && tombstoneDoc.exists()
+        val oldUids = linkedSetOf<String>()
+        val tombstoneClassIds = linkedSetOf<String>()
+
+        if (hasTombstone && tombstoneDoc != null) {
+            tombstoneDoc.getString("uid")?.trim()?.takeIf { it.isNotBlank() }?.let { oldUids.add(it) }
+            @Suppress("UNCHECKED_CAST")
+            (tombstoneDoc.get("deletedUserDocIds") as? List<String>)?.forEach {
+                if (it.isNotBlank()) oldUids.add(it)
+            }
+            @Suppress("UNCHECKED_CAST")
+            (tombstoneDoc.get("deletedClassIds") as? List<String>)?.forEach {
+                if (it.isNotBlank() && it != "default") tombstoneClassIds.add(it)
+            }
+        }
+
+        // 1. E-postası eşleşen eski users belgelerini bul ve sil
+        if (cleanEmail.isNotBlank()) {
+            try {
+                val usersSnap = withTimeoutOrNull(4500L) {
+                    db.collection("users").get(Source.SERVER).await()
+                } ?: withTimeoutOrNull(3000L) {
+                    db.collection("users").get().await()
+                }
+                usersSnap?.documents?.forEach { uDoc ->
+                    val docEmail = uDoc.getString("email")?.trim().orEmpty()
+                    if (docEmail.equals(cleanEmail, ignoreCase = true) && (uDoc.id != newUid || hasTombstone)) {
+                        oldUids.add(uDoc.id)
+                        uDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                            tombstoneClassIds.add(it)
+                        }
+                        try {
+                            withTimeoutOrNull(3000L) { uDoc.reference.delete().await() }
+                        } catch (_: Exception) {}
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. E-postası veya eski UID'si eşleşen yetim sınıfları ve alt koleksiyonlarını tamamen sil
+        try {
+            val allClassDocs = withTimeoutOrNull(5000L) {
+                db.collection("classrooms").get(Source.SERVER).await().documents
+            } ?: withTimeoutOrNull(3500L) {
+                db.collection("classrooms").get().await().documents
+            } ?: emptyList()
+
+            val orphanOwnedClassIds = linkedSetOf<String>()
+            val otherClassIds = linkedSetOf<String>()
+            orphanOwnedClassIds.addAll(tombstoneClassIds)
 
             for (cDoc in allClassDocs) {
                 val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
                 val docTeacherEmail = cDoc.getString("teacherEmail")?.trim().orEmpty()
-                val isOwnerMatch = (uid.isNotBlank() && docTeacherId == uid) ||
-                    (userEmail.isNotBlank() && docTeacherEmail.equals(userEmail, ignoreCase = true))
-                val isFallbackActiveTeacherClass = currentRole == UserRole.TEACHER &&
-                    !activeClassId.isNullOrBlank() &&
-                    activeClassId != "default" &&
-                    cDoc.id == activeClassId &&
-                    (docTeacherId.isBlank() || docTeacherId == uid || docTeacherEmail.equals(userEmail, ignoreCase = true))
+                val matchesEmail = cleanEmail.isNotBlank() && docTeacherEmail.equals(cleanEmail, ignoreCase = true)
+                val matchesOldUid = docTeacherId.isNotBlank() && docTeacherId in oldUids
+                val isDifferentUidForSameEmail = matchesEmail && (docTeacherId != newUid || hasTombstone)
 
-                if (isOwnerMatch || isFallbackActiveTeacherClass) {
-                    ownedClassIds.add(cDoc.id)
+                if (matchesOldUid || isDifferentUidForSameEmail || cDoc.id in tombstoneClassIds) {
+                    orphanOwnedClassIds.add(cDoc.id)
                 } else {
                     otherClassIds.add(cDoc.id)
                 }
             }
 
-            if (currentRole == UserRole.TEACHER &&
-                !activeClassId.isNullOrBlank() &&
-                activeClassId != "default" &&
-                activeClassId !in ownedClassIds &&
-                activeClassId !in otherClassIds
-            ) {
-                ownedClassIds.add(activeClassId)
-            }
-
-            // 3. Akıllı Tahta oturumlarını ve chunk verilerini sil
-            if (context != null) {
-                try {
-                    SmartBoardHelper.deleteUserSmartBoardTraces(
-                        context = context,
-                        ownedClassIds = ownedClassIds,
-                        teacherEmail = userEmail,
-                        activeSessionCode = activeBoardSessionCode
-                    )
-                } catch (e: Exception) {
-                    Log.w("ClassRegistryRepo", "Failed clearing SmartBoard traces", e)
+            if (orphanOwnedClassIds.isNotEmpty()) {
+                coroutineScope {
+                    orphanOwnedClassIds.map { cid ->
+                        async {
+                            try {
+                                deleteOwnedClassroomCompletely(cid)
+                            } catch (_: Exception) {}
+                        }
+                    }.awaitAll()
                 }
             }
 
-            // 4. Öğretmene ait tüm sınıfları ve alt koleksiyonlarını eksiksiz sil
-            for (ownedId in ownedClassIds) {
-                try {
-                    deleteOwnedClassroomCompletely(ownedId)
-                } catch (e: Exception) {
-                    Log.w("ClassRegistryRepo", "Failed deleting owned classroom $ownedId", e)
-                }
+            // 3. Diğer sınıflardaki eski veli bağlantılarını temizle
+            if (otherClassIds.isNotEmpty() && cleanEmail.isNotBlank()) {
+                purgeParentAndUserTracesInOtherClassrooms(
+                    otherClassroomIds = otherClassIds.toList(),
+                    userEmail = cleanEmail,
+                    uid = newUid
+                )
             }
+        } catch (_: Exception) {}
 
-            // 5. Diğer sınıflardaki veli/mesaj/temizleme izlerini temizle
-            purgeParentAndUserTracesInOtherClassrooms(
-                otherClassroomIds = otherClassIds,
-                userEmail = userEmail,
-                uid = uid
-            )
-
-            // 6. Kullanıcı profil belgesini ve FCM push tokenını sil
-            val userRef = db.collection("users").document(uid)
+        // 4. Mezar taşını temizle
+        if (hasTombstone && tombstoneDoc != null) {
             try {
-                withTimeoutOrNull(4500L) { userRef.delete().await() }
-            } catch (e: Exception) {
-                handleFirestoreError(e, OperationType.DELETE, userRef.path)
-            }
-            try {
-                withTimeoutOrNull(3000L) { FirebaseMessaging.getInstance().deleteToken().await() }
+                withTimeoutOrNull(3000L) { tombstoneDoc.reference.delete().await() }
             } catch (_: Exception) {}
-
-            // 7. Firebase Auth kullanıcı kaydını kalıcı olarak sil
-            try {
-                fbUser.delete().await()
-            } catch (e: FirebaseAuthRecentLoginRequiredException) {
-                if (context != null) {
-                    val reauthed = GoogleAuthHelper.reauthenticateCurrentUser(context)
-                    if (!reauthed) {
-                        throw IllegalStateException("Verileriniz temizlendi; ancak kimlik kaydının silinmesi için Google doğrulaması gerekiyor.")
-                    }
-                    fbUser.delete().await()
-                } else {
-                    throw e
-                }
-            }
         }
-
-        // 8. Cihazdaki tüm yerel BİRİZ dosyalarını, bildirimleri, WorkManager işlerini ve önbelleği sil
-        if (context != null) {
-            AppDataWipeHelper.wipeAllLocalAppData(context)
-        }
-
-        clearSessionCaches()
     }
 
     suspend fun ensureUserProfile(uid: String, fullName: String, email: String): com.example.data.model.UserProfile {
+        isAccountDeleting = false
+        isGlobalAccountDeleting = false
+
         if (Firebase.auth.currentUser == null) {
             return com.example.data.model.UserProfile(
                 id = uid,
@@ -1667,23 +2014,94 @@ class ClassRegistryRepository(
                 fullName = fullName,
                 email = email,
                 role = "UYE",
-                kvkkAccepted = false
+                kvkkAccepted = false,
+                isFreshRegistration = true
             )
         }
 
+        val cleanEmail = email.trim().lowercase(java.util.Locale.ROOT)
+        val tombstoneId = deletedAccountTombstoneId(cleanEmail, uid)
         val userRef = db.collection("users").document(uid)
-        val snapshot = try {
-            withTimeoutOrNull(4500L) { userRef.get().await() }
-                ?: withTimeoutOrNull(1000L) { userRef.get(Source.CACHE).await() }
-        } catch (_: Exception) {
-            try {
-                withTimeoutOrNull(1000L) { userRef.get(Source.CACHE).await() }
-            } catch (_: Exception) {
-                null
+
+        val (snapshot, tombstoneSnap) = coroutineScope {
+            val userDeferred = async {
+                try {
+                    withTimeoutOrNull(5000L) { userRef.get(Source.SERVER).await() }
+                        ?: withTimeoutOrNull(3000L) { userRef.get().await() }
+                } catch (_: Exception) {
+                    try {
+                        withTimeoutOrNull(2500L) { userRef.get().await() }
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
             }
+            val tombstoneDeferred = async {
+                try {
+                    withTimeoutOrNull(4000L) {
+                        db.collection("deleted_accounts").document(tombstoneId).get(Source.SERVER).await()
+                    } ?: withTimeoutOrNull(2000L) {
+                        db.collection("deleted_accounts").document(tombstoneId).get().await()
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            Pair(userDeferred.await(), tombstoneDeferred.await())
+        }
+
+        val wasAccountExplicitlyDeleted = tombstoneSnap != null && tombstoneSnap.exists()
+        val isBrandNewUserOnServer = snapshot != null && !snapshot.exists()
+
+        // Eğer kullanıcı hesabını silip tekrar üye olduysa (yeni UID veya silme mezar taşı varsa),
+        // önceki hesaptan kalan tüm yetim Firestore verilerini temizle ve sıfırdan başlat!
+        if (wasAccountExplicitlyDeleted || isBrandNewUserOnServer) {
+            purgeOrphanedDataOnFreshRegistration(
+                newUid = uid,
+                email = cleanEmail,
+                tombstoneDoc = tombstoneSnap
+            )
+
+            val freshPayload = mapOf(
+                "userId" to uid,
+                "fullName" to fullName,
+                "email" to email,
+                "role" to "UYE",
+                "kvkkAccepted" to false,
+                "assignedClassId" to null,
+                "assignedSchoolId" to null,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            try {
+                withTimeoutOrNull(5000L) {
+                    userRef.set(freshPayload).await()
+                }
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.CREATE, userRef.path)
+            }
+
+            if (Firebase.auth.currentUser != null) {
+                startObserving()
+            }
+
+            return com.example.data.model.UserProfile(
+                id = uid,
+                userId = uid,
+                fullName = fullName,
+                email = email,
+                role = "UYE",
+                kvkkAccepted = false,
+                assignedClassId = null,
+                assignedSchoolId = null,
+                isFreshRegistration = true
+            )
         }
 
         if (snapshot != null && snapshot.exists()) {
+            if (Firebase.auth.currentUser != null) {
+                startObserving()
+            }
             return com.example.data.model.UserProfile(
                 id = snapshot.id,
                 userId = snapshot.getString("userId") ?: uid,
@@ -1692,30 +2110,9 @@ class ClassRegistryRepository(
                 role = snapshot.getString("role") ?: "UYE",
                 kvkkAccepted = snapshot.getBoolean("kvkkAccepted") ?: false,
                 assignedClassId = snapshot.getString("assignedClassId"),
-                assignedSchoolId = snapshot.getString("assignedSchoolId")
+                assignedSchoolId = snapshot.getString("assignedSchoolId"),
+                isFreshRegistration = false
             )
-        }
-
-        // Yalnızca belge gerçekten yoksa oluştur ve giriş akışını yazma onayına kilitlemeden devam et
-        if (snapshot != null && !snapshot.exists()) {
-            val payload = mapOf(
-                "userId" to uid,
-                "fullName" to fullName,
-                "email" to email,
-                "role" to "UYE",
-                "kvkkAccepted" to false,
-                "createdAt" to FieldValue.serverTimestamp(),
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            scope.launch {
-                try {
-                    withTimeoutOrNull(6000L) {
-                        userRef.set(payload, com.google.firebase.firestore.SetOptions.merge()).await()
-                    }
-                } catch (e: Exception) {
-                    handleFirestoreError(e, OperationType.CREATE, userRef.path)
-                }
-            }
         }
 
         return com.example.data.model.UserProfile(
@@ -1724,20 +2121,21 @@ class ClassRegistryRepository(
             fullName = fullName,
             email = email,
             role = "UYE",
-            kvkkAccepted = false
+            kvkkAccepted = false,
+            isFreshRegistration = false
         )
     }
 
     suspend fun fetchClassroomById(classroomId: String): ClassRoom? {
-        val cached = _registeredClasses.value.firstOrNull { it.id == classroomId }
-        if (cached != null) return cached
-
-        if (Firebase.auth.currentUser == null) return null
+        if (classroomId.isBlank() || classroomId == "default") return null
+        if (Firebase.auth.currentUser == null) {
+            return _registeredClasses.value.firstOrNull { it.id == classroomId }
+        }
         return try {
-            val doc = withTimeoutOrNull(4500L) {
+            val doc = withTimeoutOrNull(5000L) {
+                db.collection("classrooms").document(classroomId).get(Source.SERVER).await()
+            } ?: withTimeoutOrNull(3000L) {
                 db.collection("classrooms").document(classroomId).get().await()
-            } ?: withTimeoutOrNull(1000L) {
-                db.collection("classrooms").document(classroomId).get(Source.CACHE).await()
             }
             if (doc != null && doc.exists()) {
                 val cityName = doc.getString("cityName") ?: ""
@@ -1767,7 +2165,10 @@ class ClassRegistryRepository(
                     _registeredClasses.value = _registeredClasses.value + room
                 }
                 room
-            } else null
+            } else {
+                _registeredClasses.value = _registeredClasses.value.filterNot { it.id == classroomId }
+                null
+            }
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.GET, "classrooms/$classroomId")
             null
@@ -1790,30 +2191,35 @@ class ClassRegistryRepository(
         )
     }
 
-    suspend fun findTeacherClassroom(uid: String, teacherEmail: String): ClassRoom? {
-        // 1. Check in currently cached registered classes
-        val cached = _registeredClasses.value.firstOrNull {
-            it.teacherId == uid ||
-            (teacherEmail.isNotBlank() && it.teacherEmail.equals(teacherEmail.trim(), ignoreCase = true))
+    suspend fun findTeacherClassroom(
+        uid: String,
+        teacherEmail: String,
+        allowEmailFallbackForDifferentUid: Boolean = false
+    ): ClassRoom? {
+        if (Firebase.auth.currentUser == null) {
+            return _registeredClasses.value.firstOrNull {
+                it.teacherId == uid ||
+                (allowEmailFallbackForDifferentUid && teacherEmail.isNotBlank() && it.teacherEmail.equals(teacherEmail.trim(), ignoreCase = true))
+            }
         }
-        if (cached != null) return cached
-
-        if (Firebase.auth.currentUser == null) return null
 
         val cleanEmail = teacherEmail.trim()
 
-        // 2. Query Firestore classrooms by teacherId & teacherEmail in parallel with bounded timeout
+        // 1. Query Firestore classrooms from SERVER first by teacherId (& optionally teacherEmail)
         val parallelDoc = try {
             coroutineScope {
                 val byUidDeferred = async {
-                    withTimeoutOrNull(4500L) {
-                        db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get().await()
+                    withTimeoutOrNull(5000L) {
+                        db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get(Source.SERVER).await()
                     }?.documents?.firstOrNull()
+                        ?: withTimeoutOrNull(2500L) {
+                            db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get().await()
+                        }?.documents?.firstOrNull()
                 }
-                val byEmailDeferred = if (cleanEmail.isNotBlank()) {
+                val byEmailDeferred = if (allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
                     async {
-                        withTimeoutOrNull(4500L) {
-                            db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get().await()
+                        withTimeoutOrNull(5000L) {
+                            db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get(Source.SERVER).await()
                         }?.documents?.firstOrNull()
                     }
                 } else null
@@ -1830,18 +2236,18 @@ class ClassRegistryRepository(
             return room
         }
 
-        // 3. Case-insensitive fallback scan over all classrooms in Firestore
+        // 2. Fallback scan over all classrooms in Firestore
         try {
-            val allClassrooms = withTimeoutOrNull(4500L) {
+            val allClassrooms = withTimeoutOrNull(5000L) {
+                db.collection("classrooms").get(Source.SERVER).await()
+            } ?: withTimeoutOrNull(2500L) {
                 db.collection("classrooms").get().await()
-            } ?: withTimeoutOrNull(1000L) {
-                db.collection("classrooms").get(Source.CACHE).await()
             }
             val matchedDoc = allClassrooms?.documents?.firstOrNull { doc ->
                 val docTeacherId = doc.getString("teacherId") ?: ""
                 val docEmail = doc.getString("teacherEmail") ?: ""
                 (uid.isNotBlank() && docTeacherId == uid) ||
-                (cleanEmail.isNotBlank() && docEmail.trim().equals(cleanEmail, ignoreCase = true))
+                (allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank() && docEmail.trim().equals(cleanEmail, ignoreCase = true))
             }
             if (matchedDoc != null && matchedDoc.exists()) {
                 val room = docToClassRoom(matchedDoc, uid, teacherEmail)
@@ -1857,21 +2263,21 @@ class ClassRegistryRepository(
     }
 
     private fun healTeacherUserAssignment(uid: String, classId: String) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         if (uid.isBlank() || classId.isBlank() || Firebase.auth.currentUser == null) return
         scope.launch {
+            if (isAccountDeleting || isGlobalAccountDeleting) return@launch
             try {
-                db.collection("users").document(uid).set(
+                db.collection("users").document(uid).update(
                     mapOf(
                         "assignedClassId" to classId,
                         "role" to "TEACHER",
                         "kvkkAccepted" to true,
                         "updatedAt" to FieldValue.serverTimestamp()
-                    ),
-                    com.google.firebase.firestore.SetOptions.merge()
+                    )
                 )
-                db.collection("classrooms").document(classId).set(
-                    mapOf("teacherId" to uid),
-                    com.google.firebase.firestore.SetOptions.merge()
+                db.collection("classrooms").document(classId).update(
+                    mapOf("teacherId" to uid)
                 )
             } catch (_: Exception) {}
         }
@@ -2054,15 +2460,15 @@ class ClassRegistryRepository(
     }
 
     suspend fun saveFcmToken(uid: String, token: String) {
+        if (isAccountDeleting || isGlobalAccountDeleting) return
         if (uid.isBlank() || token.isBlank()) return
         try {
             db.collection("users").document(uid)
-                .set(
+                .update(
                     mapOf(
                         "fcmToken" to token,
                         "fcmUpdatedAt" to FieldValue.serverTimestamp()
-                    ),
-                    com.google.firebase.firestore.SetOptions.merge()
+                    )
                 )
                 .await()
         } catch (_: Exception) {
@@ -2203,6 +2609,9 @@ class ClassRegistryRepository(
     }
 
     companion object {
+        @Volatile
+        var isGlobalAccountDeleting: Boolean = false
+
         internal fun parseLinkedParentsFromDoc(
             doc: com.google.firebase.firestore.DocumentSnapshot,
             includeLegacyFallback: Boolean = true

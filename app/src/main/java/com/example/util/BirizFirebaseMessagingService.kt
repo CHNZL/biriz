@@ -24,7 +24,7 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        if (token.isBlank()) return
+        if (token.isBlank() || com.example.data.repository.ClassRegistryRepository.isGlobalAccountDeleting) return
         val uid = try {
             Firebase.auth.currentUser?.uid
         } catch (_: Exception) {
@@ -32,18 +32,18 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
         } ?: return
 
         serviceScope.launch {
+            if (com.example.data.repository.ClassRegistryRepository.isGlobalAccountDeleting) return@launch
             try {
                 val db = FirestoreProvider.get(applicationContext)
                 db.collection("users").document(uid)
-                    .set(
+                    .update(
                         mapOf(
                             "fcmToken" to token,
                             "fcmUpdatedAt" to FieldValue.serverTimestamp()
-                        ),
-                        SetOptions.merge()
+                        )
                     )
             } catch (e: Exception) {
-                Log.w("BirizFCM", "Failed saving refreshed FCM token", e)
+                Log.w("BirizFCM", "Skipped saving refreshed FCM token: ${e.message}")
             }
         }
     }

@@ -1,17 +1,17 @@
 {
-  "title": "Hibrit Tahta Altyapısı (Cloudflare + WebRTC)",
+  "title": "Kalıcı Hesap ve Firestore Veri Silme Mimarisi",
   "items": [
     {
-      "title": "Kotasız Cloudflare Tahta Bağlantısı",
-      "summary": "Akıllı tahta eşleştirme, sınıf modülleri, zamanlayıcı ve dosya paylaşımı Cloudflare altyapısına taşınarak Firebase kotası tüketimi sıfırlandı."
+      "title": "Tam Kapsamlı Firestore Veri Temizliği",
+      "summary": "Hesap veya rol silindiğinde kullanıcı profili, sınıf kaydı ve 14 alt koleksiyonun tamamı (öğrenciler, yıldızlar, kitaplık, mesajlar, duyurular, turnuvalar) sayfalama (pagination) ile eksiksiz silinir."
     },
     {
-      "title": "Doğrudan WebRTC P2P Ekran Yansıtma",
-      "summary": "Aynı Wi-Fi ve uyumlu ağlarda canlı uygulama yansıtma doğrudan cihazdan tahtaya daha akıcı ve yüksek çözünürlüklü aktarılır."
+      "title": "Yeniden Üyelikte %100 Sıfır Başlangıç",
+      "summary": "Hesabını silen bir kullanıcı aynı e-posta ile tekrar üye olduğunda eski sınıf veya profil bilgileri geri gelmez; doğrudan yeni üye ve rol seçimi ekranından başlar."
     },
     {
-      "title": "Akıllı Yedekli Otomatik Geçiş",
-      "summary": "Okul ağı P2P bağlantıyı engellediğinde yayın kesilmeden otomatik olarak Cloudflare WebSocket kanalı üzerinden devam eder."
+      "title": "Arka Plan Yazma Koruması (Tombstone)",
+      "summary": "Silme işlemi sırasında bildirim servisleri ve çevrimiçi durum izleyicilerinin silinen kaydı tekrar oluşturması engellendi."
     }
   ]
 }
