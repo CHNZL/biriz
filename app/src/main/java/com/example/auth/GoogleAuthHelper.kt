@@ -20,6 +20,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.CancellationException
@@ -205,6 +206,7 @@ object GoogleAuthHelper {
 
         val credentialManager = CredentialManager.create(activity)
         return try {
+            awaitPendingClearState()
             val googleIdToken = fetchInteractiveGoogleIdToken(activity, credentialManager, clientId)
             val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
             currentUser.reauthenticate(authCredential).await()
@@ -212,6 +214,9 @@ object GoogleAuthHelper {
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Reauthentication cancelled by user", e)
             false
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            Log.w("Auth", "Reauthentication account mismatch", e)
+            throw IllegalStateException("Güvenlik doğrulaması için lütfen oturumu açık olan Google hesabınızı seçin.")
         }
     }
 
@@ -245,6 +250,11 @@ object GoogleAuthHelper {
                 val googleIdToken = fetchInteractiveGoogleIdToken(activity, credentialManager, clientId)
                 val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                 Firebase.auth.signInWithCredential(authCredential).await()
+                try {
+                    withTimeoutOrNull(2500L) {
+                        Firebase.auth.currentUser?.getIdToken(false)?.await()
+                    }
+                } catch (_: Exception) {}
                 onAuthSuccess()
             } catch (e: CancellationException) {
                 throw e
