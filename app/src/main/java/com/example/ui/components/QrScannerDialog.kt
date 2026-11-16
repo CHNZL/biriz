@@ -236,6 +236,7 @@ private fun CameraPreviewView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -259,7 +260,14 @@ private fun CameraPreviewView(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also {
-                        it.setAnalyzer(cameraExecutor, QrCodeAnalyzer(onCodeDetected))
+                        it.setAnalyzer(
+                            cameraExecutor,
+                            QrCodeAnalyzer { decodedCode ->
+                                mainExecutor.execute {
+                                    onCodeDetected(decodedCode)
+                                }
+                            }
+                        )
                     }
 
                 try {
@@ -273,7 +281,7 @@ private fun CameraPreviewView(
                 } catch (exc: Exception) {
                     Log.e("QrScanner", "Use case binding failed", exc)
                 }
-            }, ContextCompat.getMainExecutor(ctx))
+            }, mainExecutor)
 
             previewView
         },
@@ -286,34 +294,38 @@ private class QrCodeAnalyzer(
 ) : ImageAnalysis.Analyzer {
     private val reader = MultiFormatReader().apply {
         val hints = mapOf<DecodeHintType, Any>(
-            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE, BarcodeFormat.CODE_128)
+            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE, BarcodeFormat.CODE_128),
+            DecodeHintType.TRY_HARDER to true,
+            DecodeHintType.ALSO_INVERTED to true
         )
         setHints(hints)
     }
-    private var isFound = false
+    private val isFound = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun analyze(imageProxy: ImageProxy) {
-        if (isFound) {
+        if (isFound.get()) {
             imageProxy.close()
             return
         }
 
-        val buffer: ByteBuffer = imageProxy.planes[0].buffer
+        val plane = imageProxy.planes[0]
+        val buffer: ByteBuffer = plane.buffer
         val data = ByteArray(buffer.remaining())
         buffer.get(data)
         val width = imageProxy.width
         val height = imageProxy.height
+        val rowStride = plane.rowStride.coerceAtLeast(width)
 
         val source = PlanarYUVLuminanceSource(
-            data, width, height, 0, 0, width, height, false
+            data, rowStride, height, 0, 0, width, height, false
         )
         val bitmap = BinaryBitmap(HybridBinarizer(source))
 
         try {
             val result = reader.decodeWithState(bitmap)
-            if (!isFound) {
-                isFound = true
-                onQrFound(result.text)
+            val extracted = extractCodeFromQr(result.text)
+            if (extracted.length >= 4 && isFound.compareAndSet(false, true)) {
+                onQrFound(extracted)
             }
         } catch (_: Exception) {
             // Frame içinde karekod bulunamadı

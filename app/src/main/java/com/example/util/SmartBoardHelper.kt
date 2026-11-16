@@ -24,15 +24,19 @@ import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
+import java.util.UUID
 
 /**
  * Akıllı Tahta Kumandası ve Canlı Yansıtma Yardımcısı.
@@ -52,6 +56,8 @@ object SmartBoardHelper {
 
     @Volatile
     private var activeSessionCode: String? = null
+    @Volatile
+    private var activeConnectionId: String? = null
     @Volatile
     private var connectionEpoch: Long = 0L
 
@@ -114,6 +120,7 @@ object SmartBoardHelper {
                 connectionEpoch += 1L
             }
             activeSessionCode = null
+            activeConnectionId = null
         } else {
             activeSessionCode = clean
         }
@@ -239,7 +246,7 @@ object SmartBoardHelper {
                 "totalBooksCount" to books.size,
                 "activeLoansCount" to activeLoans,
                 "totalCompletedCount" to records.size,
-                "books" to books.take(100).map { b ->
+                "books" to books.take(80).map { b ->
                     mapOf(
                         "id" to b.id,
                         "registrationNo" to b.registrationNo,
@@ -250,7 +257,7 @@ object SmartBoardHelper {
                         "currentStudentId" to b.currentStudentId,
                         "currentStudentName" to b.currentStudentName,
                         "assignmentDate" to b.assignmentDate,
-                        "activeAssignments" to b.activeAssignments.map { a ->
+                        "activeAssignments" to b.activeAssignments.take(12).map { a ->
                             mapOf(
                                 "studentId" to a.studentId,
                                 "studentName" to a.studentName,
@@ -259,7 +266,7 @@ object SmartBoardHelper {
                         }
                     )
                 },
-                "recentRecords" to records.take(24).map { r ->
+                "recentRecords" to records.take(20).map { r ->
                     mapOf(
                         "id" to r.id,
                         "bookId" to r.bookId,
@@ -282,10 +289,10 @@ object SmartBoardHelper {
     private fun prepareTournamentData(context: Context, classId: String): Map<String, Any?> {
         return try {
             val tournaments = TournamentPersistenceHelper.loadTournaments(context, classId)
-            val sortedTournaments = tournaments.sortedBy { if (it.status.name == "DEVAM_EDIYOR") 0 else 1 }.take(12)
+            val sortedTournaments = tournaments.sortedBy { if (it.status.name == "DEVAM_EDIYOR") 0 else 1 }.take(8)
             mapOf(
                 "tournaments" to sortedTournaments.map { t ->
-                    val matches = TournamentPersistenceHelper.loadMatches(context, t.id)
+                    val matches = TournamentPersistenceHelper.loadMatches(context, t.id).take(40)
                     mapOf(
                         "id" to t.id,
                         "name" to t.name,
@@ -369,7 +376,9 @@ object SmartBoardHelper {
         isRunning: Boolean,
         isFinished: Boolean
     ) {
-        val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
+        val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        if (activeSessionCode != activeCode) return
+        val expectedEpoch = connectionEpoch
         val targetClassId = classId.ifBlank { lastClassId }
         val now = System.currentTimeMillis()
         val payload = hashMapOf<String, Any?>(
@@ -384,27 +393,39 @@ object SmartBoardHelper {
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
         scope.launch {
-            val mainDb = getMainFirestore(context)
-            try {
-                if (!activeCode.isNullOrBlank()) {
-                    mainDb.collection("board_sessions")
-                        .document(activeCode)
-                        .set(payload, SetOptions.merge())
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                val mainDb = getMainFirestore(context)
+                try {
+                    withTimeoutOrNull(3500L) {
+                        mainDb.collection("board_sessions")
+                            .document(activeCode)
+                            .set(payload, SetOptions.merge())
+                            .await()
+                    }
+                    if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                    if (targetClassId.isNotBlank() && targetClassId != "default") {
+                        withTimeoutOrNull(2500L) {
+                            mainDb.collection("classrooms")
+                                .document(targetClassId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(payload, SetOptions.merge())
+                                .await()
+                        }
+                        if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                        withTimeoutOrNull(2500L) {
+                            mainDb.collection("classes")
+                                .document(targetClassId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(payload, SetOptions.merge())
+                                .await()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error syncing timer state: ${e.message}")
                 }
-                if (targetClassId.isNotBlank() && targetClassId != "default") {
-                    mainDb.collection("classrooms")
-                        .document(targetClassId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-                    mainDb.collection("classes")
-                        .document(targetClassId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error syncing timer state: ${e.message}")
             }
         }
     }
@@ -420,6 +441,8 @@ object SmartBoardHelper {
         rollingGender: String
     ) {
         val activeCode = getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
+        if (activeSessionCode != activeCode) return
+        val expectedEpoch = connectionEpoch
         val targetClassId = classId.ifBlank { lastClassId }
         val now = System.currentTimeMillis()
         val payload = mapOf(
@@ -432,25 +455,36 @@ object SmartBoardHelper {
             "updatedAt" to now
         )
         scope.launch {
-            val mainDb = getMainFirestore(context)
-            try {
-                mainDb.collection("board_sessions")
-                    .document(activeCode)
-                    .set(payload, SetOptions.merge())
-                if (targetClassId.isNotBlank() && targetClassId != "default") {
-                    mainDb.collection("classrooms")
-                        .document(targetClassId)
-                        .collection("live_board")
-                        .document("state")
-                        .set(payload, SetOptions.merge())
-                }
-            } catch (_: Exception) {}
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                val mainDb = getMainFirestore(context)
+                try {
+                    withTimeoutOrNull(2500L) {
+                        mainDb.collection("board_sessions")
+                            .document(activeCode)
+                            .set(payload, SetOptions.merge())
+                            .await()
+                    }
+                    if (!isEpochStillActive(activeCode, expectedEpoch)) return@withLock
+                    if (targetClassId.isNotBlank() && targetClassId != "default") {
+                        withTimeoutOrNull(2500L) {
+                            mainDb.collection("classrooms")
+                                .document(targetClassId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(payload, SetOptions.merge())
+                                .await()
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 
     /**
-     * Akıllı tahtada görünen 8 haneli kod ile eşleştirme yapar.
-     * `board_sessions/{temizKod}` belgesine CONNECTED durumu yazar (SetOptions.merge() ile).
+     * Akıllı tahtada görünen 8 haneli kod ile sunucu onaylı eşleştirme yapar.
+     * 1. Aşama: Hızlı (<1 KB) CONNECTED el sıkışmasını Firestore'a yazar ve sunucu onayını bekler.
+     * 2. Aşama: El sıkışma onaylandıktan hemen sonra sınıf verilerini arka planda aktarır.
      */
     suspend fun connectSession(
         context: Context,
@@ -469,15 +503,18 @@ object SmartBoardHelper {
         scheduleConfig: ScheduleConfig = ScheduleConfig(),
         seatingPlanState: SeatingPlanState? = null,
         groupMakerState: GroupMakerState? = null
-    ): Result<Unit> {
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         val cleanCode = normalizeCode(sessionCode)
         if (cleanCode.length < 4) {
-            return Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
+            return@withContext Result.failure(IllegalArgumentException("Eşleştirme kodu en az 4 karakter olmalıdır."))
         }
 
         val myEpoch = ++connectionEpoch
+        val now = System.currentTimeMillis()
+        val newConnectionId = "conn_${now}_${UUID.randomUUID().toString().replace("-", "").take(8)}"
         activeSessionCode = cleanCode
-        saveConnectionState(context, cleanCode, true)
+        activeConnectionId = newConnectionId
+        lastBoardCast = null
 
         lastClassId = classId
         lastCurrentSubPage = currentSubPage
@@ -489,68 +526,13 @@ object SmartBoardHelper {
         if (seatingPlanState != null) lastSeatingPlanState = seatingPlanState
         if (groupMakerState != null) lastGroupMakerState = groupMakerState
 
-        val now = System.currentTimeMillis()
-        val studentData = prepareStudentPresentationData(context, classId, students)
-        val recentStars = prepareRecentStarsData(context, classId)
-        val luckyData = prepareLuckyStudentData(context, classId)
-        val libraryData = prepareLibraryData(context, classId)
-        val tournamentData = prepareTournamentData(context, classId)
-
-        val scheduleData = schedule.map { l ->
-            mapOf(
-                "dayOfWeek" to l.dayOfWeek,
-                "lessonIndex" to l.lessonIndex,
-                "subjectName" to l.subjectName,
-                "topicOrNotes" to l.topicOrNotes,
-                "teacherName" to l.teacherName,
-                "colorTheme" to l.colorTheme
-            )
-        }
-
-        val scheduleConfigData = mapOf(
-            "dailyLessonCount" to scheduleConfig.dailyLessonCount,
-            "firstLessonStartTime" to scheduleConfig.firstLessonStartTime,
-            "lessonDurationMinutes" to scheduleConfig.lessonDurationMinutes,
-            "recessDurations" to scheduleConfig.recessDurations,
-            "isLunchBreakActive" to scheduleConfig.isLunchBreakActive,
-            "lunchAfterLessonIndex" to scheduleConfig.lunchAfterLessonIndex,
-            "lunchDurationMinutes" to scheduleConfig.lunchDurationMinutes
-        )
-
-        val seatingData = seatingPlanState?.let { plan ->
-            mapOf(
-                "groupCount" to plan.config.groupCount,
-                "rowsPerGroup" to plan.config.rowsPerGroup,
-                "peoplePerRow" to plan.config.peoplePerRow,
-                "windowPosition" to plan.config.windowPosition.name,
-                "doorPosition" to plan.config.doorPosition.name,
-                "deskPosition" to plan.config.deskPosition.name,
-                "assignments" to plan.assignments,
-                "activePlanName" to plan.activePlanName
-            )
-        }
-
-        val groupsData = groupMakerState?.let { gm ->
-            mapOf(
-                "groups" to gm.groups.map { g ->
-                    mapOf(
-                        "id" to g.id,
-                        "name" to g.name,
-                        "colorTheme" to g.colorTheme.id,
-                        "leaderStudentId" to g.leaderStudentId,
-                        "studentIds" to g.studentIds
-                    )
-                },
-                "unassignedStudentIds" to gm.unassignedStudentIds,
-                "isPresenterMode" to gm.isPresenterMode
-            )
-        }
-
-        val sessionPayload = hashMapOf<String, Any?>(
+        val handshakePayload = hashMapOf<String, Any?>(
             "sessionCode" to cleanCode,
+            "connectionId" to newConnectionId,
             "status" to "CONNECTED",
             "isConnected" to true,
             "isLiveMirrorActive" to true,
+            "isPrivacyMode" to false,
             "teacherUid" to teacherUid,
             "teacherName" to teacherName,
             "classId" to classId,
@@ -559,82 +541,239 @@ object SmartBoardHelper {
             "branch" to branch,
             "activeModule" to currentSubPage,
             "activeModuleTitle" to currentSubPageTitle,
-            "isPrivacyMode" to false,
+            "currentSubPage" to currentSubPage,
+            "currentSubPageTitle" to currentSubPageTitle,
             "selectedDay" to activeDay,
-            "students" to studentData,
-            "recentStars" to recentStars,
-            "schedule" to scheduleData,
-            "scheduleConfig" to scheduleConfigData,
-            "luckyData" to luckyData,
-            "libraryData" to libraryData,
-            "tournamentData" to tournamentData,
-            "updatedAt" to now,
+            "activeScheduleDay" to activeDay,
             "connectedAt" to now,
+            "updatedAt" to now,
+            "disconnectedAt" to FieldValue.delete(),
+            "disconnectedSessionCode" to FieldValue.delete(),
+            "disconnectedConnectionId" to FieldValue.delete(),
+            "boardCast" to FieldValue.delete(),
             "serverTimestamp" to FieldValue.serverTimestamp()
         )
-        if (seatingData != null) sessionPayload["seatingPlan"] = seatingData
-        if (groupsData != null) sessionPayload["groups"] = groupsData
 
-        val liveStatePayload = HashMap(sessionPayload).apply {
-            put("isLiveMirrorActive", true)
-            put("currentSubPage", currentSubPage)
-            put("currentSubPageTitle", currentSubPageTitle)
-            put("activeScheduleDay", activeDay)
+        val mainDb = try {
+            getMainFirestore(context)
+        } catch (e: Exception) {
+            connectionEpoch += 1L
+            activeSessionCode = null
+            activeConnectionId = null
+            saveConnectionState(context, null, false)
+            return@withContext Result.failure(Exception("Veritabanı başlatılamadı: ${e.message}"))
         }
 
-        return try {
-            val mainDb = getMainFirestore(context)
+        val handshakeResult = sessionWriteMutex.withLock {
+            if (!isEpochStillActive(cleanCode, myEpoch)) {
+                return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
+            }
+            try {
+                withTimeout(10_000L) {
+                    mainDb.collection("board_sessions")
+                        .document(cleanCode)
+                        .set(handshakePayload, SetOptions.merge())
+                        .await()
+                }
 
-            scope.launch {
-                sessionWriteMutex.withLock {
-                    if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                if (!isEpochStillActive(cleanCode, myEpoch)) {
+                    return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
+                }
+
+                saveConnectionState(context, cleanCode, true)
+
+                if (classId.isNotBlank() && classId != "default") {
+                    withTimeoutOrNull(3500L) {
+                        mainDb.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(handshakePayload, SetOptions.merge())
+                            .await()
+                    }
+                    if (!isEpochStillActive(cleanCode, myEpoch)) {
+                        return@withLock Result.failure(IllegalStateException("Bağlantı işlemi iptal edildi."))
+                    }
+                    withTimeoutOrNull(3500L) {
+                        mainDb.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(handshakePayload, SetOptions.merge())
+                            .await()
+                    }
+                }
+
+                Result.success(Unit)
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "Handshake timed out for $cleanCode")
+                Result.failure(Exception("Tahta sunucusuna bağlanılamadı (zaman aşımı). İnternet bağlantınızı kontrol edip tekrar deneyin."))
+            } catch (e: Exception) {
+                Log.e(TAG, "Handshake failed for $cleanCode", e)
+                Result.failure(Exception("Tahta bağlantısı sunucuya kaydedilemedi: ${e.localizedMessage ?: "Ağ hatası"}"))
+            }
+        }
+
+        if (handshakeResult.isFailure) {
+            if (isEpochStillActive(cleanCode, myEpoch)) {
+                connectionEpoch += 1L
+                activeSessionCode = null
+                activeConnectionId = null
+                saveConnectionState(context, null, false)
+            }
+            return@withContext handshakeResult
+        }
+
+        // 2. AŞAMA: Ağır sınıf modül verilerini arka planda güvenli şekilde gönder
+        scope.launch {
+            val dataNow = System.currentTimeMillis()
+            val studentData = prepareStudentPresentationData(context, classId, students)
+            val recentStars = prepareRecentStarsData(context, classId)
+            val luckyData = prepareLuckyStudentData(context, classId)
+            val libraryData = prepareLibraryData(context, classId)
+            val tournamentData = prepareTournamentData(context, classId)
+
+            val scheduleData = schedule.map { l ->
+                mapOf(
+                    "dayOfWeek" to l.dayOfWeek,
+                    "lessonIndex" to l.lessonIndex,
+                    "subjectName" to l.subjectName,
+                    "topicOrNotes" to l.topicOrNotes,
+                    "teacherName" to l.teacherName,
+                    "colorTheme" to l.colorTheme
+                )
+            }
+
+            val scheduleConfigData = mapOf(
+                "dailyLessonCount" to scheduleConfig.dailyLessonCount,
+                "firstLessonStartTime" to scheduleConfig.firstLessonStartTime,
+                "lessonDurationMinutes" to scheduleConfig.lessonDurationMinutes,
+                "recessDurations" to scheduleConfig.recessDurations,
+                "isLunchBreakActive" to scheduleConfig.isLunchBreakActive,
+                "lunchAfterLessonIndex" to scheduleConfig.lunchAfterLessonIndex,
+                "lunchDurationMinutes" to scheduleConfig.lunchDurationMinutes
+            )
+
+            val seatingData = seatingPlanState?.let { plan ->
+                mapOf(
+                    "groupCount" to plan.config.groupCount,
+                    "rowsPerGroup" to plan.config.rowsPerGroup,
+                    "peoplePerRow" to plan.config.peoplePerRow,
+                    "windowPosition" to plan.config.windowPosition.name,
+                    "doorPosition" to plan.config.doorPosition.name,
+                    "deskPosition" to plan.config.deskPosition.name,
+                    "assignments" to plan.assignments,
+                    "activePlanName" to plan.activePlanName
+                )
+            }
+
+            val groupsData = groupMakerState?.let { gm ->
+                mapOf(
+                    "groups" to gm.groups.map { g ->
+                        mapOf(
+                            "id" to g.id,
+                            "name" to g.name,
+                            "colorTheme" to g.colorTheme.id,
+                            "leaderStudentId" to g.leaderStudentId,
+                            "studentIds" to g.studentIds
+                        )
+                    },
+                    "unassignedStudentIds" to gm.unassignedStudentIds,
+                    "isPresenterMode" to gm.isPresenterMode
+                )
+            }
+
+            val fullPayload = hashMapOf<String, Any?>(
+                "sessionCode" to cleanCode,
+                "connectionId" to newConnectionId,
+                "status" to "CONNECTED",
+                "isConnected" to true,
+                "isLiveMirrorActive" to true,
+                "isPrivacyMode" to false,
+                "classId" to classId,
+                "students" to studentData,
+                "recentStars" to recentStars,
+                "schedule" to scheduleData,
+                "scheduleConfig" to scheduleConfigData,
+                "luckyData" to luckyData,
+                "libraryData" to libraryData,
+                "tournamentData" to tournamentData,
+                "updatedAt" to dataNow,
+                "serverTimestamp" to FieldValue.serverTimestamp()
+            )
+            if (seatingData != null) fullPayload["seatingPlan"] = seatingData
+            if (groupsData != null) fullPayload["groups"] = groupsData
+
+            sessionWriteMutex.withLock {
+                if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                try {
+                    withTimeoutOrNull(8000L) {
+                        mainDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(fullPayload, SetOptions.merge())
+                            .await()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Full payload write warning, retrying slim payload: ${e.message}")
+                    if (isEpochStillActive(cleanCode, myEpoch)) {
+                        val slimPayload = HashMap(fullPayload).apply {
+                            remove("libraryData")
+                            remove("tournamentData")
+                        }
+                        try {
+                            withTimeoutOrNull(6000L) {
+                                mainDb.collection("board_sessions")
+                                    .document(cleanCode)
+                                    .set(slimPayload, SetOptions.merge())
+                                    .await()
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+
+                if (classId.isNotBlank() && classId != "default") {
                     try {
                         withTimeoutOrNull(4500L) {
-                            mainDb.collection("board_sessions")
-                                .document(cleanCode)
-                                .set(sessionPayload, SetOptions.merge())
-                                .await()
-                        }
-
-                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-
-                        if (classId.isNotBlank() && classId != "default") {
                             mainDb.collection("classes")
                                 .document(classId)
                                 .collection("live_board")
                                 .document("state")
-                                .set(liveStatePayload, SetOptions.merge())
-
+                                .set(fullPayload, SetOptions.merge())
+                                .await()
+                        }
+                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                        withTimeoutOrNull(4500L) {
                             mainDb.collection("classrooms")
                                 .document(classId)
                                 .collection("live_board")
                                 .document("state")
-                                .set(liveStatePayload, SetOptions.merge())
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Exception writing connectSession to mainDb: ${e.message}")
-                    }
-
-                    try {
-                        if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
-                        val defaultDb = FirebaseFirestore.getInstance()
-                        if (defaultDb != mainDb) {
-                            withTimeoutOrNull(3000L) {
-                                defaultDb.collection("board_sessions")
-                                    .document(cleanCode)
-                                    .set(sessionPayload, SetOptions.merge())
-                                    .await()
-                            }
+                                .set(fullPayload, SetOptions.merge())
+                                .await()
                         }
                     } catch (_: Exception) {}
                 }
-            }
 
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error connecting smart board session", e)
-            Result.success(Unit)
+                try {
+                    if (!isEpochStillActive(cleanCode, myEpoch)) return@withLock
+                    val defaultDb = FirebaseFirestore.getInstance()
+                    if (defaultDb != mainDb) {
+                        val mergedBackup = HashMap(handshakePayload).apply {
+                            putAll(fullPayload)
+                        }
+                        withTimeoutOrNull(4000L) {
+                            defaultDb.collection("board_sessions")
+                                .document(cleanCode)
+                                .set(mergedBackup, SetOptions.merge())
+                                .await()
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         }
+
+        return@withContext Result.success(Unit)
     }
 
     /**
@@ -833,8 +972,12 @@ object SmartBoardHelper {
                 if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
                 val mainDb = getMainFirestore(context)
                 try {
+                    activeConnectionId?.let { cid ->
+                        boardSessionUpdate["connectionId"] = cid
+                        liveBoardPayload["connectionId"] = cid
+                    }
                     // 1. DOĞRUDAN board_sessions/{temizKod} belgesini güncelle
-                    withTimeoutOrNull(4000L) {
+                    withTimeoutOrNull(5000L) {
                         mainDb.collection("board_sessions")
                             .document(cleanCode)
                             .set(boardSessionUpdate, SetOptions.merge())
@@ -845,17 +988,23 @@ object SmartBoardHelper {
 
                     // 2. classes/{classId}/live_board/state & classrooms/{classId}/live_board/state
                     if (classId.isNotBlank() && classId != "default") {
-                        mainDb.collection("classes")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveBoardPayload, SetOptions.merge())
-
-                        mainDb.collection("classrooms")
-                            .document(classId)
-                            .collection("live_board")
-                            .document("state")
-                            .set(liveBoardPayload, SetOptions.merge())
+                        withTimeoutOrNull(4000L) {
+                            mainDb.collection("classes")
+                                .document(classId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(liveBoardPayload, SetOptions.merge())
+                                .await()
+                        }
+                        if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
+                        withTimeoutOrNull(4000L) {
+                            mainDb.collection("classrooms")
+                                .document(classId)
+                                .collection("live_board")
+                                .document("state")
+                                .set(liveBoardPayload, SetOptions.merge())
+                                .await()
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error updating live board state on main db: ${e.message}")
@@ -866,9 +1015,12 @@ object SmartBoardHelper {
                     if (!isEpochStillActive(cleanCode, expectedEpoch)) return@withLock
                     val defaultDb = FirebaseFirestore.getInstance()
                     if (defaultDb != mainDb) {
-                        defaultDb.collection("board_sessions")
-                            .document(cleanCode)
-                            .set(boardSessionUpdate, SetOptions.merge())
+                        withTimeoutOrNull(3500L) {
+                            defaultDb.collection("board_sessions")
+                                .document(cleanCode)
+                                .set(boardSessionUpdate, SetOptions.merge())
+                                .await()
+                        }
                     }
                 } catch (_: Exception) {}
             }
@@ -882,14 +1034,18 @@ object SmartBoardHelper {
         val targetCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null }
             ?: activeSessionCode
             ?: getSavedSessionCode(context)?.let { normalizeCode(it) }?.ifEmpty { null }
+        val prevConnId = activeConnectionId ?: ""
         connectionEpoch += 1L
         activeSessionCode = null
+        activeConnectionId = null
         lastBoardCast = null
         saveConnectionState(context, null, false)
 
         val now = System.currentTimeMillis()
         val disconnectSessionPayload = hashMapOf<String, Any?>(
             "sessionCode" to (targetCode ?: ""),
+            "connectionId" to "",
+            "disconnectedConnectionId" to prevConnId,
             "status" to "DISCONNECTED",
             "isConnected" to false,
             "isLiveMirrorActive" to false,
@@ -909,6 +1065,8 @@ object SmartBoardHelper {
         val disconnectLivePayload = hashMapOf<String, Any?>(
             "classId" to classId,
             "sessionCode" to "",
+            "connectionId" to "",
+            "disconnectedConnectionId" to prevConnId,
             "disconnectedSessionCode" to (targetCode ?: ""),
             "status" to "DISCONNECTED",
             "isConnected" to false,
@@ -930,18 +1088,35 @@ object SmartBoardHelper {
             withContext(NonCancellable) {
                 sessionWriteMutex.withLock {
                     val mainDb = getMainFirestore(context)
-                    try {
-                        if (!targetCode.isNullOrBlank()) {
-                            withTimeoutOrNull(4500L) {
+                    if (!targetCode.isNullOrBlank()) {
+                        var mainWritten = false
+                        for (attempt in 1..2) {
+                            try {
+                                withTimeout(8000L) {
+                                    mainDb.collection("board_sessions")
+                                        .document(targetCode)
+                                        .set(disconnectSessionPayload, SetOptions.merge())
+                                        .await()
+                                }
+                                mainWritten = true
+                                break
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Disconnect attempt $attempt failed for $targetCode: ${e.message}")
+                                if (attempt == 1) delay(450L)
+                            }
+                        }
+                        if (!mainWritten) {
+                            try {
                                 mainDb.collection("board_sessions")
                                     .document(targetCode)
                                     .set(disconnectSessionPayload, SetOptions.merge())
-                                    .await()
-                            }
+                            } catch (_: Exception) {}
                         }
+                    }
 
-                        if (classId.isNotBlank() && classId != "default") {
-                            withTimeoutOrNull(3500L) {
+                    if (classId.isNotBlank() && classId != "default") {
+                        try {
+                            withTimeoutOrNull(4500L) {
                                 mainDb.collection("classes")
                                     .document(classId)
                                     .collection("live_board")
@@ -949,7 +1124,7 @@ object SmartBoardHelper {
                                     .set(disconnectLivePayload, SetOptions.merge())
                                     .await()
                             }
-                            withTimeoutOrNull(3500L) {
+                            withTimeoutOrNull(4500L) {
                                 mainDb.collection("classrooms")
                                     .document(classId)
                                     .collection("live_board")
@@ -957,16 +1132,16 @@ object SmartBoardHelper {
                                     .set(disconnectLivePayload, SetOptions.merge())
                                     .await()
                             }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Error disconnecting live_board: ${e.message}")
                         }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Error disconnecting smart board: ${e.message}")
                     }
 
                     // Yedek varsayılan veritabanı
                     try {
                         val defaultDb = FirebaseFirestore.getInstance()
                         if (defaultDb != mainDb && !targetCode.isNullOrBlank()) {
-                            withTimeoutOrNull(3500L) {
+                            withTimeoutOrNull(4500L) {
                                 defaultDb.collection("board_sessions")
                                     .document(targetCode)
                                     .set(disconnectSessionPayload, SetOptions.merge())
@@ -976,6 +1151,26 @@ object SmartBoardHelper {
                     } catch (_: Exception) {}
                 }
             }
+        }
+    }
+
+    /**
+     * Uygulama açılışında yerelde kayıtlı tahta oturumunun sunucuda hâlâ aktif olup olmadığını doğrular.
+     */
+    suspend fun verifySessionStillConnected(context: Context, sessionCode: String): Boolean = withContext(Dispatchers.IO) {
+        val clean = normalizeCode(sessionCode)
+        if (clean.length < 4) return@withContext false
+        return@withContext try {
+            val mainDb = getMainFirestore(context)
+            val snap = withTimeoutOrNull(5000L) {
+                mainDb.collection("board_sessions").document(clean).get().await()
+            } ?: return@withContext true // Zaman aşımı/çevrimdışıysa yerel oturumu koru
+            if (!snap.exists()) return@withContext false
+            val st = snap.getString("status")?.uppercase(Locale.ROOT) ?: ""
+            val isConn = snap.getBoolean("isConnected")
+            !(st == "DISCONNECTED" || st == "WAITING" || (isConn == false && st != "CONNECTED"))
+        } catch (_: Exception) {
+            true
         }
     }
 
@@ -1471,6 +1666,7 @@ object SmartBoardHelper {
     fun resetLocalState(context: Context? = null) {
         connectionEpoch += 1L
         activeSessionCode = null
+        activeConnectionId = null
         lastClassId = ""
         lastCurrentSubPage = "SINIF_LISTESI"
         lastCurrentSubPageTitle = "Sınıf Listesi"

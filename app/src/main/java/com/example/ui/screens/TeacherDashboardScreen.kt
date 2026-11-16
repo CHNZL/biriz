@@ -1263,7 +1263,7 @@ fun SmartBoardDialog(
     val isConnected = !connectedBoardSessionCode.isNullOrBlank()
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isConnecting) onDismiss() },
         containerColor = if (isDarkTheme) BirizDarkSurfaceGlass else Color.White,
         title = {
             Row(
@@ -1424,7 +1424,8 @@ fun SmartBoardDialog(
                 } else {
                     // 📷 Karekod Tara Butonu (Kamera ile anında bağlan)
                     Button(
-                        onClick = { isScannerOpen = true },
+                        onClick = { if (!isConnecting) isScannerOpen = true },
+                        enabled = !isConnecting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("smart_board_scan_qr_button"),
@@ -1483,10 +1484,11 @@ fun SmartBoardDialog(
                     OutlinedTextField(
                         value = codeInput,
                         onValueChange = { newValue ->
-                            if (newValue.length <= 14) {
+                            if (!isConnecting && newValue.length <= 14) {
                                 codeInput = newValue.uppercase()
                             }
                         },
+                        enabled = !isConnecting,
                         label = { Text("Eşleştirme Kodu") },
                         placeholder = { Text("Örn: K9X2P7M4") },
                         singleLine = true,
@@ -1615,7 +1617,7 @@ fun SmartBoardDialog(
         }
     )
 
-    if (isScannerOpen) {
+    if (isScannerOpen && !isConnecting) {
         QrScannerDialog(
             onDismiss = { isScannerOpen = false },
             onQrCodeScanned = { scannedCode ->

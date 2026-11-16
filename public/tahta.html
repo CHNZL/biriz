@@ -1333,6 +1333,8 @@
       var lastLiveBooksAt = 0;
       var lastConnectedAt = 0;
       var lastDisconnectedAt = 0;
+      var currentConnectionId = "";
+      var lastDisconnectedConnectionId = "";
       var lastSnapshotReceivedAt = 0;
       var missingDocMissCount = 0;
 
@@ -1344,6 +1346,7 @@
       var activeCleanupCallbacks = [];
       var classCleanupCallbacks = [];
       var restPollTimer = null;
+      var waitingRestTimer = null;
       var connectedHeartbeatTimer = null;
       var transportMode = "INIT";
 
@@ -1482,7 +1485,9 @@
         try { localStorage.setItem(STORAGE_KEY_CODE, currentSessionCode); } catch (e) {}
         lastConnectedAt = 0;
         lastDisconnectedAt = 0;
-        forceDisconnectToWaiting("🟢 Yeni eşleştirme kodu oluşturuldu • Eşleştirme bekleniyor", 0);
+        currentConnectionId = "";
+        lastDisconnectedConnectionId = "";
+        forceDisconnectToWaiting("🟢 Yeni eşleştirme kodu oluşturuldu • Eşleştirme bekleniyor", 0, "");
         renderCodeDisplay();
         ensureInitialSessionDoc();
         startSessionListening();
@@ -1603,18 +1608,32 @@
         return obj;
       }
 
-      function restGetDocument(dbId, docPath) {
+      function restGetDocumentDetailed(dbId, docPath) {
         var url = firestoreRestBaseUrl(dbId) + "/" + docPath + "?key=" + encodeURIComponent(FIREBASE_CONFIG.apiKey);
         return fetch(url, { cache: "no-store" })
           .then(function(res) {
-            if (!res.ok) return null;
-            return res.json();
+            if (res.status === 404) {
+              return { ok: false, missing: true, networkError: false, data: null };
+            }
+            if (!res.ok) {
+              return { ok: false, missing: false, networkError: true, data: null };
+            }
+            return res.json().then(function(json) {
+              if (!json || !json.fields) {
+                return { ok: false, missing: true, networkError: false, data: null };
+              }
+              return { ok: true, missing: false, networkError: false, data: decodeFirestoreFields(json.fields) };
+            });
           })
-          .then(function(json) {
-            if (!json || !json.fields) return null;
-            return decodeFirestoreFields(json.fields);
-          })
-          .catch(function() { return null; });
+          .catch(function() {
+            return { ok: false, missing: false, networkError: true, data: null };
+          });
+      }
+
+      function restGetDocument(dbId, docPath) {
+        return restGetDocumentDetailed(dbId, docPath).then(function(res) {
+          return res && res.ok ? res.data : null;
+        });
       }
 
       function restGetCollection(dbId, colPath) {
@@ -1731,6 +1750,45 @@
         }
       }
 
+      function stopWaitingRestPoll() {
+        if (waitingRestTimer) {
+          clearInterval(waitingRestTimer);
+          waitingRestTimer = null;
+        }
+      }
+
+      function checkWaitingSessionOnce() {
+        if (isBoardConnected || !currentSessionCode) return;
+        restGetDocumentDetailed(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
+          if (isBoardConnected || !currentSessionCode) return;
+          if (res && res.ok && res.data) {
+            missingDocMissCount = 0;
+            handleSessionSnapshot(res.data, "board_session", 0);
+          } else if (res && res.missing) {
+            restGetDocumentDetailed("(default)", "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(defRes) {
+              if (isBoardConnected || !currentSessionCode) return;
+              if (defRes && defRes.ok && defRes.data) {
+                missingDocMissCount = 0;
+                handleSessionSnapshot(defRes.data, "board_session", 1);
+              }
+            });
+          }
+        });
+      }
+
+      function startWaitingRestPoll() {
+        if (isBoardConnected || !currentSessionCode) return;
+        checkWaitingSessionOnce();
+        if (waitingRestTimer) return;
+        waitingRestTimer = setInterval(function() {
+          if (isBoardConnected || !currentSessionCode) {
+            stopWaitingRestPoll();
+            return;
+          }
+          checkWaitingSessionOnce();
+        }, 1500);
+      }
+
       function stopConnectedHeartbeat() {
         if (connectedHeartbeatTimer) {
           clearInterval(connectedHeartbeatTimer);
@@ -1739,28 +1797,38 @@
       }
 
       function startConnectedHeartbeat() {
-        if (connectedHeartbeatTimer || transportMode !== "SDK") return;
+        stopWaitingRestPoll();
+        if (connectedHeartbeatTimer) return;
         connectedHeartbeatTimer = setInterval(function() {
           if (!isBoardConnected || !currentSessionCode) {
             stopConnectedHeartbeat();
             return;
           }
-          restGetDocument(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(data) {
+          var targetDbId = preferredDbIndex === 1 ? "(default)" : NAMED_DB_ID;
+          restGetDocumentDetailed(targetDbId, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
             if (!isBoardConnected) return;
-            if (data) {
-              missingDocMissCount = 0;
-              var st = String(data.status || "").toUpperCase();
-              if (st === "DISCONNECTED" || (data.isConnected === false && st !== "CONNECTED") || st === "WAITING") {
-                handleSessionSnapshot(data, "board_session", preferredDbIndex);
-              }
-            } else {
+            if (!res || res.networkError) return;
+            if (res.missing) {
               missingDocMissCount++;
               if (missingDocMissCount >= 2) {
-                forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0);
+                forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
+              }
+              return;
+            }
+            if (res.ok && res.data) {
+              missingDocMissCount = 0;
+              var data = res.data;
+              var st = String(data.status || "").toUpperCase();
+              var incomingTs = Number(data.updatedAt || data.disconnectedAt || 0);
+              var isConnSwap = Boolean(currentConnectionId && data.connectionId && data.connectionId !== currentConnectionId);
+              if (st === "DISCONNECTED" || (data.isConnected === false && st !== "CONNECTED") || st === "WAITING" || isConnSwap) {
+                handleSessionSnapshot(data, "board_session", preferredDbIndex);
+              } else if (st === "CONNECTED" && incomingTs > lastAppliedModuleAt) {
+                handleSessionSnapshot(data, "board_session", preferredDbIndex);
               }
             }
           });
-        }, 3500);
+        }, 2000);
       }
 
       function clearSessionListeners() {
@@ -1772,6 +1840,7 @@
           clearInterval(restPollTimer);
           restPollTimer = null;
         }
+        stopWaitingRestPoll();
         stopConnectedHeartbeat();
       }
 
@@ -1805,29 +1874,34 @@
                       missingDocMissCount = 0;
                       handleSessionSnapshot(snap.data() || {}, "board_session", dbIndex);
                     } else if (snap && !snap.exists() && isBoardConnected && dbIndex === preferredDbIndex && codeKey === currentSessionCode) {
-                      forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0);
+                      forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
                     }
-                  }, function() {});
+                  }, function() {
+                    if (!isBoardConnected) startWaitingRestPoll();
+                  });
                   activeCleanupCallbacks.push(unsub);
                 } catch (e) {}
               })(sdkDbs[dIdx], dIdx, candidateCodes[cIdx]);
             }
           }
+          if (!isBoardConnected) {
+            startWaitingRestPoll();
+          }
         } else {
           var pollFn = function() {
-            restGetDocument(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(data) {
-              if (data) {
+            restGetDocumentDetailed(NAMED_DB_ID, "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(res) {
+              if (res && res.ok && res.data) {
                 missingDocMissCount = 0;
-                handleSessionSnapshot(data, "board_session", 0);
-              } else {
-                restGetDocument("(default)", "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(defData) {
-                  if (defData) {
+                handleSessionSnapshot(res.data, "board_session", 0);
+              } else if (res && res.missing) {
+                restGetDocumentDetailed("(default)", "board_sessions/" + encodeURIComponent(currentSessionCode)).then(function(defRes) {
+                  if (defRes && defRes.ok && defRes.data) {
                     missingDocMissCount = 0;
-                    handleSessionSnapshot(defData, "board_session", 1);
-                  } else if (isBoardConnected) {
+                    handleSessionSnapshot(defRes.data, "board_session", 1);
+                  } else if (defRes && defRes.missing && isBoardConnected) {
                     missingDocMissCount++;
                     if (missingDocMissCount >= 2) {
-                      forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0);
+                      forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Yeni eşleştirme bekleniyor", 0, currentConnectionId);
                     }
                   }
                 });
@@ -1990,11 +2064,16 @@
         return map[key] || "📋 Sınıf Listesi";
       }
 
-      function forceDisconnectToWaiting(noteMsg, disconnectedTs) {
+      function forceDisconnectToWaiting(noteMsg, disconnectedTs, disconnectedConnId) {
         var ts = Number(disconnectedTs || 0);
         if (ts > lastDisconnectedAt) {
           lastDisconnectedAt = ts;
         }
+        var dConn = String(disconnectedConnId || currentConnectionId || "");
+        if (dConn) {
+          lastDisconnectedConnectionId = dConn;
+        }
+        currentConnectionId = "";
         isBoardConnected = false;
         attachedClassId = null;
         lastConnectedAt = 0;
@@ -2018,6 +2097,9 @@
         clearClassListeners();
         stopTimerTicker();
         showWaitingScreen();
+        if (transportMode === "SDK") {
+          startWaitingRestPoll();
+        }
         if (noteMsg) {
           updateTransportNote(noteMsg, false);
         }
@@ -2029,6 +2111,8 @@
         var rawStatus = String(data.status || "").toUpperCase();
         var incomingTs = Number(data.updatedAt || data.disconnectedAt || 0);
         var incomingDisconnectedTs = Number(data.disconnectedAt || data.updatedAt || 0);
+        var incomingConnId = String(data.connectionId || "");
+        var incomingDisconnectedConnId = String(data.disconnectedConnectionId || "");
 
         var isExplicitDisconnect =
           rawStatus === "DISCONNECTED" ||
@@ -2036,8 +2120,16 @@
 
         if (isExplicitDisconnect) {
           if (source === "board_session") {
-            if (!isBoardConnected || incomingDisconnectedTs === 0 || lastConnectedAt === 0 || incomingDisconnectedTs >= lastConnectedAt) {
-              forceDisconnectToWaiting("🔌 Telefonunuzdan tahta bağlantısı kesildi • Eşleştirme bekleniyor", incomingDisconnectedTs);
+            if (!isBoardConnected) {
+              if (incomingDisconnectedTs > lastDisconnectedAt) lastDisconnectedAt = incomingDisconnectedTs;
+              if (incomingDisconnectedConnId) lastDisconnectedConnectionId = incomingDisconnectedConnId;
+              showWaitingScreen();
+              return;
+            }
+            var sameConnDisconnect = Boolean(currentConnectionId && incomingDisconnectedConnId && incomingDisconnectedConnId === currentConnectionId);
+            var isPreferredDb = (typeof dbIdx === "number" && dbIdx === preferredDbIndex);
+            if (sameConnDisconnect || isPreferredDb || incomingDisconnectedTs === 0 || lastConnectedAt === 0 || incomingDisconnectedTs >= lastConnectedAt) {
+              forceDisconnectToWaiting("🔌 Telefonunuzdan tahta bağlantısı kesildi • Eşleştirme bekleniyor", incomingDisconnectedTs, incomingDisconnectedConnId || currentConnectionId);
             }
             return;
           }
@@ -2046,7 +2138,7 @@
             var isDifferentSession = Boolean(disCode && disCode !== currentSessionCode);
             var isStalePreConnect = incomingDisconnectedTs > 0 && lastConnectedAt > 0 && incomingDisconnectedTs < lastConnectedAt;
             if (!isDifferentSession && !isStalePreConnect) {
-              forceDisconnectToWaiting("🔌 Telefonunuzdan tahta bağlantısı kesildi • Eşleştirme bekleniyor", incomingDisconnectedTs);
+              forceDisconnectToWaiting("🔌 Telefonunuzdan tahta bağlantısı kesildi • Eşleştirme bekleniyor", incomingDisconnectedTs, incomingDisconnectedConnId || currentConnectionId);
             }
             return;
           }
@@ -2056,8 +2148,13 @@
         if (source === "live_board" && !isBoardConnected) {
           return;
         }
-        if (!isBoardConnected && lastDisconnectedAt > 0 && incomingTs > 0 && incomingTs <= lastDisconnectedAt) {
-          return;
+        if (!isBoardConnected) {
+          if (incomingConnId && lastDisconnectedConnectionId && incomingConnId === lastDisconnectedConnectionId) {
+            return;
+          }
+          if (!incomingConnId && lastDisconnectedAt > 0 && incomingTs > 0 && incomingTs <= lastDisconnectedAt) {
+            return;
+          }
         }
 
         var incomingConnected =
@@ -2072,7 +2169,7 @@
             return;
           }
           if (source === "board_session" && (typeof dbIdx !== "number" || dbIdx === preferredDbIndex)) {
-            forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Eşleştirme bekleniyor", incomingTs);
+            forceDisconnectToWaiting("🔌 Akıllı tahta oturumu sonlandırıldı • Eşleştirme bekleniyor", incomingTs, currentConnectionId);
           }
           return;
         }
@@ -2085,11 +2182,21 @@
 
         if (!isBoardConnected) {
           lastConnectedAt = Number(data.connectedAt || data.updatedAt || 0);
+          currentConnectionId = incomingConnId;
           missingDocMissCount = 0;
           if (typeof dbIdx === "number") preferredDbIndex = dbIdx;
+          stopWaitingRestPoll();
           startConnectedHeartbeat();
-        } else if (typeof dbIdx === "number" && source === "board_session") {
-          preferredDbIndex = dbIdx;
+        } else {
+          if (incomingConnId && incomingConnId !== currentConnectionId) {
+            currentConnectionId = incomingConnId;
+            lastConnectedAt = Number(data.connectedAt || data.updatedAt || lastConnectedAt);
+            latestStateData = {};
+            lastAppliedModuleAt = 0;
+          }
+          if (typeof dbIdx === "number" && source === "board_session") {
+            preferredDbIndex = dbIdx;
+          }
         }
         isBoardConnected = true;
 

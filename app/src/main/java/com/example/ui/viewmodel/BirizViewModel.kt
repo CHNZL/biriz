@@ -933,6 +933,16 @@ class BirizViewModel(
 
             if (!savedSession.isNullOrBlank()) {
                 SmartBoardHelper.saveConnectionState(appContext, savedSession, savedMirror)
+                viewModelScope.launch {
+                    val stillConnected = SmartBoardHelper.verifySessionStillConnected(appContext, savedSession)
+                    if (!stillConnected && _uiState.value.connectedBoardSessionCode == savedSession && !_uiState.value.isConnectingBoard) {
+                        SmartBoardHelper.saveConnectionState(appContext, null, false)
+                        _uiState.value = _uiState.value.copy(
+                            connectedBoardSessionCode = null,
+                            isLiveBoardMirrorActive = false
+                        )
+                    }
+                }
             }
             _uiState.value = _uiState.value.copy(
                 isDarkTheme = savedDark,
@@ -3990,7 +4000,14 @@ class BirizViewModel(
 
     fun connectSmartBoard(sessionCode: String) {
         val ctx = appContext ?: return
-        val activeClass = _uiState.value.activeClassRoom ?: return
+        val activeClass = _uiState.value.activeClassRoom ?: run {
+            _uiState.value = _uiState.value.copy(
+                smartBoardMessage = "Önce aktif bir sınıf seçin."
+            )
+            return
+        }
+        if (_uiState.value.isConnectingBoard) return
+
         val teacherUid = Firebase.auth.currentUser?.uid ?: "preview_teacher"
         val teacherName = _uiState.value.currentUser.fullName
         val cleanCode = SmartBoardHelper.normalizeCode(sessionCode)
@@ -4002,20 +4019,27 @@ class BirizViewModel(
             return
         }
 
-        // 1. OPTIMISTIC UI: Beklemeden ANINDA bağlan ve modalı kapat
-        _uiState.value = _uiState.value.copy(
-            connectedBoardSessionCode = cleanCode,
-            isLiveBoardMirrorActive = true,
-            isConnectingBoard = false,
-            isSmartBoardDialogOpen = false,
-            smartBoardMessage = null,
-            snackbarMessage = "Akıllı Tahta Bağlandı: $cleanCode 🖥️"
-        )
-        SmartBoardHelper.saveConnectionState(ctx, cleanCode, true)
+        val prevCode = _uiState.value.connectedBoardSessionCode
+        if (!prevCode.isNullOrBlank() && prevCode != cleanCode) {
+            SmartBoardScreenCastService.stopCast(
+                context = ctx,
+                classId = activeClass.id,
+                sessionCode = prevCode,
+                skipFirestoreStop = true
+            )
+            SmartBoardHelper.disconnectSession(ctx, prevCode, activeClass.id)
+        }
 
-        // 2. Arka Planda Asenkron Yazma (Telefon arayüzünü ASLA kilitlemez)
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
+        _uiState.value = _uiState.value.copy(
+            isConnectingBoard = true,
+            smartBoardMessage = null
+        )
+
+        val stateSnapshot = _uiState.value
+        val studentsSnapshot = repository.students.value
+
+        viewModelScope.launch {
+            val result = try {
                 SmartBoardHelper.connectSession(
                     context = ctx,
                     sessionCode = cleanCode,
@@ -4025,18 +4049,40 @@ class BirizViewModel(
                     schoolName = activeClass.schoolName,
                     grade = activeClass.gradeLevel,
                     branch = activeClass.section,
-                    currentSubPage = _uiState.value.currentSubPage.name,
-                    currentSubPageTitle = _uiState.value.currentSubPage.title,
-                    activeDay = _uiState.value.activeScheduleDay,
-                    students = repository.students.value,
-                    schedule = _uiState.value.scheduleLessons,
-                    scheduleConfig = _uiState.value.scheduleConfig,
-                    seatingPlanState = _uiState.value.seatingPlanState,
-                    groupMakerState = _uiState.value.groupMakerState
+                    currentSubPage = stateSnapshot.currentSubPage.name,
+                    currentSubPageTitle = stateSnapshot.currentSubPage.title,
+                    activeDay = stateSnapshot.activeScheduleDay,
+                    students = studentsSnapshot,
+                    schedule = stateSnapshot.scheduleLessons,
+                    scheduleConfig = stateSnapshot.scheduleConfig,
+                    seatingPlanState = stateSnapshot.seatingPlanState,
+                    groupMakerState = stateSnapshot.groupMakerState
                 )
             } catch (e: Exception) {
-                Log.w("BirizViewModel", "Background board connect warning: ${e.message}")
+                Result.failure(e)
             }
+
+            result.fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        connectedBoardSessionCode = cleanCode,
+                        isLiveBoardMirrorActive = true,
+                        isConnectingBoard = false,
+                        isSmartBoardDialogOpen = false,
+                        smartBoardMessage = null,
+                        snackbarMessage = "Akıllı Tahta Bağlandı: $cleanCode 🖥️"
+                    )
+                },
+                onFailure = { err ->
+                    Log.w("BirizViewModel", "Smart board connect failed: ${err.message}")
+                    _uiState.value = _uiState.value.copy(
+                        connectedBoardSessionCode = null,
+                        isLiveBoardMirrorActive = false,
+                        isConnectingBoard = false,
+                        smartBoardMessage = "⚠️ ${err.message ?: "Tahtaya bağlanılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin."}"
+                    )
+                }
+            )
         }
     }
 
