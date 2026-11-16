@@ -1197,10 +1197,22 @@ class BirizViewModel(
             NotificationCategory.APP_UPDATES
         )
         if (cleanedNotifs.none { it.id == updateNotifId } && isAppUpdateNotifEnabled) {
+            val releaseItems = update.parsedReleaseItems().take(3)
+            val bulletText = releaseItems.joinToString("\n") { "• ${it.title}: ${it.summary}" }
+            val notifMessage = when {
+                bulletText.isNotBlank() -> bulletText
+                update.releaseTitle.isNotBlank() -> "${update.releaseTitle}. Dokunarak güncelleyebilirsiniz."
+                else -> "Yeni sürüm kullanıma hazır. Dokunarak yenilikleri inceleyin ve güncelleyin."
+            }
+            val notifTitle = if (update.releaseTitle.isNotBlank()) {
+                "🚀 v${update.latestVersionName} — ${update.releaseTitle}"
+            } else {
+                "🚀 Yeni Güncelleme Yayında! (v${update.latestVersionName})"
+            }
             val updateNotif = BirizNotification(
                 id = updateNotifId,
-                title = "🚀 Yeni Güncelleme Yayında! (v${update.latestVersionName})",
-                message = "Yeni sürüm kullanıma hazır. Dokunarak yenilikleri inceleyin ve güncelleyin.",
+                title = notifTitle,
+                message = notifMessage,
                 timestamp = System.currentTimeMillis(),
                 type = NotificationType.APP_UPDATE,
                 targetSubPageName = "APP_UPDATE",

@@ -123,17 +123,17 @@ object AppUpdateNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val cleanNotes = updateInfo.releaseNotes.lines()
-            .filter { it.isNotBlank() }
-            .take(3)
-            .joinToString("\n") { "• ${it.trim().trimStart('-', '*', '•').trim()}" }
+        val items = updateInfo.parsedReleaseItems().take(3)
+        val cleanNotes = items.joinToString("\n") { "• ${it.title}: ${it.summary}" }
 
         val bigText = buildString {
-            append("BİRİZ v${updateInfo.latestVersionName} yeni sürümü kullanıma hazır! 🎉\n")
+            val headline = updateInfo.releaseTitle.takeIf { it.isNotBlank() }
+                ?: "BİRİZ v${updateInfo.latestVersionName} yeni sürümü hazır!"
+            append("$headline\n")
             if (cleanNotes.isNotBlank()) {
-                append("\nYenilikler:\n$cleanNotes\n")
+                append("\n$cleanNotes\n")
             }
-            append("\nYüklemek için dokunun.")
+            append("\nYükleyip kurmak için dokunun.")
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

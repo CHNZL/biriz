@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -28,6 +29,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
+
+data class UpdateReleaseItem(
+    val title: String,
+    val summary: String
+)
 
 data class UpdateInfo(
     val isUpdateAvailable: Boolean,
@@ -37,8 +43,13 @@ data class UpdateInfo(
     val latestVersionCode: Int,
     val downloadUrl: String,
     val releaseNotes: String,
-    val releaseTag: String = ""
-)
+    val releaseTag: String = "",
+    val releaseTitle: String = "",
+    val releaseItems: List<UpdateReleaseItem> = emptyList()
+) {
+    fun parsedReleaseItems(): List<UpdateReleaseItem> =
+        releaseItems.ifEmpty { AppUpdateManager.parseReleaseNotes(releaseNotes) }
+}
 
 object AppUpdateManager {
 
@@ -132,7 +143,9 @@ object AppUpdateManager {
             val latestVersionCode = json.optInt("versionCode", extractVersionCode(rawName))
             val tag = json.optString("tag", "v$rawName").ifBlank { "v$rawName" }
             var apkUrl = json.optString("apkUrl", "").trim()
+            val releaseTitle = json.optString("releaseTitle", "").trim()
             val releaseNotes = json.optString("releaseNotes", "BİRİZ v$rawName yeni sürümü kullanıma hazır.")
+            val releaseItems = parseReleaseNotes(releaseNotes, json.optJSONArray("releaseItems"))
 
             if (apkUrl.isEmpty()) {
                 apkUrl = "https://github.com/$repo/releases/download/$tag/Biriz.apk"
@@ -147,7 +160,9 @@ object AppUpdateManager {
                 latestVersionCode = latestVersionCode,
                 downloadUrl = apkUrl,
                 releaseNotes = releaseNotes,
-                releaseTag = tag
+                releaseTag = tag,
+                releaseTitle = releaseTitle,
+                releaseItems = releaseItems
             )
         } catch (_: Exception) {
             null
@@ -268,6 +283,7 @@ object AppUpdateManager {
             val tagName = json.optString("tag_name", "").trim()
             val rawVersionName = if (tagName.startsWith("v", ignoreCase = true)) tagName.substring(1) else tagName
             val releaseNotes = json.optString("body", "Yeni BİRİZ sürümü yayınlandı.")
+            val releaseItems = parseReleaseNotes(releaseNotes)
 
             // Sürüm kodunu tag'den çıkar (Örn: v1.0.5 -> 1005)
             val latestVersionCode = extractVersionCode(rawVersionName)
@@ -302,7 +318,8 @@ object AppUpdateManager {
                 latestVersionCode = latestVersionCode,
                 downloadUrl = apkUrl,
                 releaseNotes = releaseNotes,
-                releaseTag = tagName
+                releaseTag = tagName,
+                releaseItems = releaseItems
             )
         } catch (e: Exception) {
             null
@@ -331,7 +348,9 @@ object AppUpdateManager {
             val latestVersionName = json.optString("versionName", "1.0.0").trim().removePrefix("v").removePrefix("V")
             val latestVersionCode = json.optInt("versionCode", extractVersionCode(latestVersionName))
             var apkUrl = json.optString("apkUrl", "")
+            val releaseTitle = json.optString("releaseTitle", "").trim()
             val releaseNotes = json.optString("releaseNotes", "Yeni sürüm güncellemeleri.")
+            val releaseItems = parseReleaseNotes(releaseNotes, json.optJSONArray("releaseItems"))
             val tag = json.optString("tag", "v$latestVersionName")
 
             if (apkUrl.isEmpty()) {
@@ -348,11 +367,72 @@ object AppUpdateManager {
                 latestVersionCode = latestVersionCode,
                 downloadUrl = apkUrl,
                 releaseNotes = releaseNotes,
-                releaseTag = tag
+                releaseTag = tag,
+                releaseTitle = releaseTitle,
+                releaseItems = releaseItems
             )
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * Ham sürüm notlarını veya JSON listesini kısa Türkçe başlık + tek cümle açıklama maddelerine dönüştürür.
+     */
+    fun parseReleaseNotes(rawNotes: String, itemsJson: JSONArray? = null): List<UpdateReleaseItem> {
+        val parsedFromJson = mutableListOf<UpdateReleaseItem>()
+        if (itemsJson != null) {
+            for (i in 0 until itemsJson.length()) {
+                val obj = itemsJson.optJSONObject(i) ?: continue
+                val title = obj.optString("title", "").trim()
+                val summary = obj.optString("summary", "").trim()
+                if (title.isNotEmpty() && summary.isNotEmpty()) {
+                    parsedFromJson.add(UpdateReleaseItem(title = title, summary = summary))
+                }
+            }
+        }
+        if (parsedFromJson.isNotEmpty()) return parsedFromJson
+
+        if (rawNotes.isBlank()) return emptyList()
+
+        val result = mutableListOf<UpdateReleaseItem>()
+        val ignoredFragments = listOf(
+            "indirme seçenekleri",
+            "doğrudan apk indir",
+            "sürümlü apk",
+            "uygulamayı açtığınızda",
+            "bu sürüm github senkronizasyonu",
+            "otomatik derlemesi oluşturuldu",
+            "yeni sürümü kullanıma hazır"
+        )
+
+        for (rawLine in rawNotes.lines()) {
+            val trimmed = rawLine.trim()
+            if (trimmed.isBlank()) continue
+            if (trimmed.startsWith("#")) continue
+            val lower = trimmed.lowercase()
+            if (ignoredFragments.any { lower.contains(it) }) continue
+            if (lower.contains("releases/download/") || lower.contains("[biriz")) continue
+
+            val clean = trimmed
+                .trimStart('-', '*', '•', ' ')
+                .replace("**", "")
+                .replace("*", "")
+                .trim()
+            if (clean.isBlank()) continue
+
+            val colonIdx = clean.indexOf(':')
+            if (colonIdx in 2..42) {
+                val head = clean.substring(0, colonIdx).trim()
+                val body = clean.substring(colonIdx + 1).trim()
+                if (head.isNotBlank() && body.isNotBlank()) {
+                    result.add(UpdateReleaseItem(title = head, summary = body))
+                    continue
+                }
+            }
+            result.add(UpdateReleaseItem(title = "Yenilik", summary = clean))
+        }
+        return result.take(6)
     }
 
     internal fun extractVersionCode(versionName: String): Int {

@@ -1326,12 +1326,21 @@ fun UserProfileMenuDialog(
                                                 fontWeight = FontWeight.ExtraBold,
                                                 color = Color(0xFF10B981)
                                             )
-                                            if (info.releaseNotes.isNotBlank()) {
-                                                Spacer(modifier = Modifier.height(4.dp))
+                                            if (info.releaseTitle.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
-                                                    text = info.releaseNotes,
+                                                    text = info.releaseTitle,
                                                     fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
                                                     color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                                )
+                                            }
+                                            val releaseItems = remember(info) { info.parsedReleaseItems() }
+                                            if (releaseItems.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                UpdateReleaseNotesCard(
+                                                    items = releaseItems,
+                                                    isDarkTheme = isDarkTheme
                                                 )
                                             }
                                         }

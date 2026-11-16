@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -62,6 +65,7 @@ import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
 import com.example.util.BackgroundUpdateState
 import com.example.util.UpdateInfo
+import com.example.util.UpdateReleaseItem
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -350,12 +354,21 @@ fun AppUpdateDialog(
                                             color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
                                         )
                                         Text(
-                                            text = "Yapı #${info.latestVersionCode} • Her durumda arka planda otomatik indirilir",
+                                            text = info.releaseTitle.ifBlank { "Yapı #${info.latestVersionCode} • Tek tıkla kuruluma hazır" },
                                             fontSize = 11.5.sp,
-                                            color = if (isDarkTheme) Color(0xFF6EE7B7).copy(alpha = 0.8f) else Color(0xFF059669)
+                                            color = if (isDarkTheme) Color(0xFF6EE7B7).copy(alpha = 0.85f) else Color(0xFF059669)
                                         )
                                     }
                                 }
+                            }
+
+                            val releaseItems = remember(info) { info.parsedReleaseItems() }
+                            if (releaseItems.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                UpdateReleaseNotesCard(
+                                    items = releaseItems,
+                                    isDarkTheme = isDarkTheme
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
@@ -664,6 +677,68 @@ fun AppUpdateDialog(
                     }
 
                     else -> {}
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UpdateReleaseNotesCard(
+    items: List<UpdateReleaseItem>,
+    isDarkTheme: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (items.isEmpty()) return
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isDarkTheme) Color(0xFF13263B) else Color(0xFFF8FAFC),
+        border = BorderStroke(
+            1.dp,
+            if (isDarkTheme) BirizDarkCardBorder else Color(0xFFE2E8F0)
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 190.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "✨ Bu Sürümde Neler Var?",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+            )
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = "•",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BirizTurquoise,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.title,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                        )
+                        Text(
+                            text = item.summary,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
+                        )
+                    }
                 }
             }
         }

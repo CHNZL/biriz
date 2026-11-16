@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -51,12 +52,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -698,12 +705,18 @@ fun BirizApp(viewModel: BirizViewModel) {
 
                 updateInfo?.let { info ->
                     val borderAccent = if (readyState != null || installingState != null) com.example.ui.theme.BirizSuccess else com.example.ui.theme.BirizTurquoise
+                    var isNotesExpanded by remember(info.latestVersionCode) { mutableStateOf(false) }
+                    val releaseItems = remember(info) { info.parsedReleaseItems() }
+                    val isIdleAnnouncement = installingState == null && downloadingState == null && readyState == null
+
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = if (uiState.isDarkTheme) Color(0xFF0F2942) else Color(0xFF0F172A),
                         border = BorderStroke(1.2.dp, borderAccent),
                         shadowElevation = 10.dp,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateContentSize()
                     ) {
                         Column(
                             modifier = Modifier
@@ -749,7 +762,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                                             } else {
                                                 "İndirme tamamlanınca otomatik kurulur"
                                             }
-                                            else -> "Tek dokunuşla indir ve otomatik kur"
+                                            else -> info.releaseTitle.ifBlank { "Tek dokunuşla indir ve otomatik kur" }
                                         }
                                         Text(
                                             text = titleStr,
@@ -760,7 +773,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                                         Text(
                                             text = subStr,
                                             fontSize = 10.5.sp,
-                                            color = Color(0xFF94A3B8)
+                                            color = Color(0xFF94A3B8),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -829,6 +844,51 @@ fun BirizApp(viewModel: BirizViewModel) {
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isIdleAnnouncement && releaseItems.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val visibleItems = if (isNotesExpanded) releaseItems else releaseItems.take(2)
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0x16FFFFFF),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        visibleItems.forEach { item ->
+                                            Text(
+                                                text = buildAnnotatedString {
+                                                    withStyle(SpanStyle(color = com.example.ui.theme.BirizTurquoise, fontWeight = FontWeight.Bold)) {
+                                                        append("• ${item.title}: ")
+                                                    }
+                                                    withStyle(SpanStyle(color = Color(0xFFE2E8F0))) {
+                                                        append(item.summary)
+                                                    }
+                                                },
+                                                fontSize = 10.8.sp,
+                                                lineHeight = 14.5.sp,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        if (releaseItems.size > 2) {
+                                            Text(
+                                                text = if (isNotesExpanded) "▲ Daralt" else "▼ Tüm yenilikler (+${releaseItems.size - 2})",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = com.example.ui.theme.BirizTurquoise,
+                                                modifier = Modifier
+                                                    .padding(top = 2.dp)
+                                                    .clickable { isNotesExpanded = !isNotesExpanded }
+                                            )
                                         }
                                     }
                                 }

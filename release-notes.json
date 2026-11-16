@@ -1,0 +1,17 @@
+{
+  "title": "Tek Tıkla Güncelleme ve Sürüm Özeti",
+  "items": [
+    {
+      "title": "Tek Tıkla Güncelleme",
+      "summary": "Güncelleme pencere ve bildirim karmaşası kaldırıldı; Yükle butonu doğrudan indirip kurar."
+    },
+    {
+      "title": "Türkçe Yenilik Başlıkları",
+      "summary": "Her yeni sürümde yapılan değişiklikler kısa başlıklarla madde madde gösterilir."
+    },
+    {
+      "title": "Akıllı Tahta Canlı Paylaşım",
+      "summary": "Seçilen uygulama tahtada canlı yansıtılır; ekrandan çıkıldığında son görüntü sabitlenir."
+    }
+  ]
+}

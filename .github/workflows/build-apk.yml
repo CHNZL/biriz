@@ -6,6 +6,11 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'İsteğe bağlı sürüm notları (Her satır: Başlık: Açıklama)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -104,28 +109,15 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk release-output/Biriz.apk
           cp app/build/outputs/apk/debug/app-debug.apk "release-output/Biriz-v${VERSION_NAME}.apk"
 
-          cat <<EOF > release-output/version.json
-          {
-            "versionCode": ${VERSION_CODE},
-            "versionName": "${VERSION_NAME}",
-            "tag": "v${VERSION_NAME}",
-            "apkUrl": "https://github.com/${REPO}/releases/download/v${VERSION_NAME}/Biriz.apk",
-            "appName": "BİRİZ",
-            "releaseNotes": "BİRİZ v${VERSION_NAME} otomatik derlemesi oluşturuldu."
-          }
-          EOF
-
-          cat <<EOF > release-notes.md
-          ### 🚀 BİRİZ Android Uygulaması (v${VERSION_NAME})
-
-          Bu sürüm GitHub senkronizasyonu ile otomatik olarak derlenmiştir.
-
-          #### 📲 İndirme Seçenekleri:
-          - **Doğrudan APK İndir:** [Biriz.apk](https://github.com/${REPO}/releases/download/v${VERSION_NAME}/Biriz.apk)
-          - **Sürümlü APK:** [Biriz-v${VERSION_NAME}.apk](https://github.com/${REPO}/releases/download/v${VERSION_NAME}/Biriz-v${VERSION_NAME}.apk)
-
-          *Uygulamayı açtığınızda otomatik olarak yeni sürüm uyarısı verilecek veya Ayarlar > Güncellemeleri Denetle butonuyla da tek tıkla güncelleyebilirsiniz.*
-          EOF
+          python3 scripts/generate_release_notes.py \
+            --version-name "${VERSION_NAME}" \
+            --version-code "${VERSION_CODE}" \
+            --repo "${REPO}" \
+            --apk-url "https://github.com/${REPO}/releases/download/v${VERSION_NAME}/Biriz.apk" \
+            --output-dir "release-output" \
+            --notes-file "release-notes.md" \
+            --manual-notes "${{ github.event.inputs.release_notes }}"
+          cat release-output/version.json
 
       - name: GitHub Sürümü (Release) Oluştur ve APK'yı Yükle
         env:
