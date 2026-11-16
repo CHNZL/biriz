@@ -333,6 +333,10 @@ fun extractCodeFromQr(text: String): String {
         val codeParam = trimmed.substringAfter("code=", "").substringBefore("&").substringBefore("#")
         if (codeParam.isNotBlank()) return SmartBoardHelper.normalizeCode(codeParam)
     }
+    if (trimmed.contains("kod=", ignoreCase = true)) {
+        val kodParam = trimmed.substringAfter("kod=", "").substringBefore("&").substringBefore("#")
+        if (kodParam.isNotBlank()) return SmartBoardHelper.normalizeCode(kodParam)
+    }
     if (trimmed.startsWith("BIRIZ:", ignoreCase = true)) {
         return SmartBoardHelper.normalizeCode(trimmed.substringAfter("BIRIZ:"))
     }

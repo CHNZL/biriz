@@ -204,7 +204,7 @@ object SmartBoardHelper {
                 "totalBooksCount" to books.size,
                 "activeLoansCount" to activeLoans,
                 "totalCompletedCount" to records.size,
-                "books" to books.map { b ->
+                "books" to books.take(100).map { b ->
                     mapOf(
                         "id" to b.id,
                         "registrationNo" to b.registrationNo,
@@ -247,8 +247,9 @@ object SmartBoardHelper {
     private fun prepareTournamentData(context: Context, classId: String): Map<String, Any?> {
         return try {
             val tournaments = TournamentPersistenceHelper.loadTournaments(context, classId)
+            val sortedTournaments = tournaments.sortedBy { if (it.status.name == "DEVAM_EDIYOR") 0 else 1 }.take(12)
             mapOf(
-                "tournaments" to tournaments.map { t ->
+                "tournaments" to sortedTournaments.map { t ->
                     val matches = TournamentPersistenceHelper.loadMatches(context, t.id)
                     mapOf(
                         "id" to t.id,
@@ -534,10 +535,16 @@ object SmartBoardHelper {
         if (seatingData != null) sessionPayload["seatingPlan"] = seatingData
         if (groupsData != null) sessionPayload["groups"] = groupsData
 
+        val liveStatePayload = HashMap(sessionPayload).apply {
+            put("isLiveMirrorActive", true)
+            put("currentSubPage", currentSubPage)
+            put("currentSubPageTitle", currentSubPageTitle)
+            put("activeScheduleDay", activeDay)
+        }
+
         return try {
             val mainDb = getMainFirestore(context)
 
-            // Ana veritabanına kesintisiz yaz
             scope.launch {
                 try {
                     mainDb.collection("board_sessions")
@@ -549,26 +556,33 @@ object SmartBoardHelper {
                         .addOnFailureListener { e ->
                             Log.w(TAG, "Failed writing to board_sessions/$cleanCode on mainDb: ${e.message}")
                         }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Exception writing to mainDb: ${e.message}")
-                }
-            }
 
-            // Canlı Yansıtma Durumunu da güncelle
-            updateLiveBoardState(
-                context = context,
-                classId = classId,
-                sessionCode = cleanCode,
-                isLiveMirrorActive = true,
-                currentSubPage = currentSubPage,
-                currentSubPageTitle = currentSubPageTitle,
-                activeDay = activeDay,
-                students = students,
-                schedule = schedule,
-                scheduleConfig = scheduleConfig,
-                seatingPlanState = seatingPlanState,
-                groupMakerState = groupMakerState
-            )
+                    if (classId.isNotBlank() && classId != "default") {
+                        mainDb.collection("classes")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveStatePayload, SetOptions.merge())
+
+                        mainDb.collection("classrooms")
+                            .document(classId)
+                            .collection("live_board")
+                            .document("state")
+                            .set(liveStatePayload, SetOptions.merge())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Exception writing connectSession to mainDb: ${e.message}")
+                }
+
+                try {
+                    val defaultDb = FirebaseFirestore.getInstance()
+                    if (defaultDb != mainDb) {
+                        defaultDb.collection("board_sessions")
+                            .document(cleanCode)
+                            .set(sessionPayload, SetOptions.merge())
+                    }
+                } catch (_: Exception) {}
+            }
 
             saveConnectionState(context, cleanCode, true)
             Result.success(Unit)
@@ -899,12 +913,12 @@ object SmartBoardHelper {
               <div class="card">
                 <h1>🖥️ BİRİZ Akıllı Tahta</h1>
                 <p>Telefondaki kod giriş alanına aşağıdaki 8 haneli kodu giriniz:</p>
-                <div class="code" id="code">BRZ94K7P</div>
+                <div class="code" id="code">--------</div>
               </div>
               <script>
                 const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-                let c = "BRZ";
-                for (let i = 0; i < 5; i++) c += chars.charAt(Math.floor(Math.random() * chars.length));
+                let c = "";
+                for (let i = 0; i < 8; i++) c += chars.charAt(Math.floor(Math.random() * chars.length));
                 document.getElementById("code").innerText = c;
               </script>
             </body>
