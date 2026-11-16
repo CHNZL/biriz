@@ -1,17 +1,17 @@
 {
-  "title": "Kalıcı Hesap ve Firestore Veri Silme Mimarisi",
+  "title": "Firestore 'users' Koleksiyonu Kalıcı Temizlik ve Yetim Kayıt Koruması",
   "items": [
     {
-      "title": "Tam Kapsamlı Firestore Veri Temizliği",
-      "summary": "Hesap veya rol silindiğinde kullanıcı profili, sınıf kaydı ve 14 alt koleksiyonun tamamı (öğrenciler, yıldızlar, kitaplık, mesajlar, duyurular, turnuvalar) sayfalama (pagination) ile eksiksiz silinir."
+      "title": "Firestore 'users' Koleksiyonundan Kesin Silme (SDK + Doğrudan HTTPS REST)",
+      "summary": "Hesap silindiğinde Authentication kaydı silinmeden hemen önce ve sonra 'users/{uid}' belgesi hem Firestore SDK hem de doğrudan REST API ile kalıcı olarak silinir; koleksiyonda eski kayıt kalmaz."
     },
     {
-      "title": "Yeniden Üyelikte %100 Sıfır Başlangıç",
-      "summary": "Hesabını silen bir kullanıcı aynı e-posta ile tekrar üye olduğunda eski sınıf veya profil bilgileri geri gelmez; doğrudan yeni üye ve rol seçimi ekranından başlar."
+      "title": "Yetim (Orphaned) Kullanıcı Kayıtlarının Otomatik Temizliği",
+      "summary": "Authentication'dan silindiği halde Firestore 'users' koleksiyonunda kalmış geçersiz kayıtlar ve eski UID fazlalıkları otomatik olarak tespit edilip veritabanından temizlenir."
     },
     {
-      "title": "Arka Plan Yazma Koruması (Tombstone)",
-      "summary": "Silme işlemi sırasında bildirim servisleri ve çevrimiçi durum izleyicilerinin silinen kaydı tekrar oluşturması engellendi."
+      "title": "Rol Seçim Ekranında Kalıcı Hesap Silme Desteği",
+      "summary": "Henüz öğretmen veya veli kurulumunu tamamlamamış kullanıcılar da Rol Seçim ekranından hesaplarını ve Firestore kayıtlarını tek dokunuşla kalıcı olarak silebilir."
     }
   ]
 }

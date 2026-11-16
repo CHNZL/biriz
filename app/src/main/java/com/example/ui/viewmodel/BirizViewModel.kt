@@ -1045,10 +1045,25 @@ class BirizViewModel(
         startPeriodicUpdateChecker()
     }
 
+    private var lastOrphanPurgeAttemptMillis: Long = 0L
+
     fun onAppForegrounded() {
         isAppInForeground = true
         val state = _uiState.value
         if (state.isDeleting || repository.isAccountDeleting) return
+        val now = System.currentTimeMillis()
+        if (now - lastOrphanPurgeAttemptMillis > 180_000L) {
+            val activeFbUser = try { Firebase.auth.currentUser } catch (_: Throwable) { null }
+            if (activeFbUser != null) {
+                lastOrphanPurgeAttemptMillis = now
+                viewModelScope.launch {
+                    repository.purgeStaleAndOrphanedUserDocuments(
+                        activeUid = activeFbUser.uid,
+                        activeEmail = activeFbUser.email.orEmpty()
+                    )
+                }
+            }
+        }
         appContext?.let { ctx ->
             flushPendingMorningDigest(ctx, currentViewerKey(state), forceEvenIfWithinWindow = false)
         }

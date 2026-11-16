@@ -61,4 +61,12 @@ test("Authenticated teacher access: write and read succeed", async () => {
     })
   );
   await assertSucceeds(aliceDb.collection("classrooms").doc("c1").get());
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      email: "alice@example.com",
+      role: "TEACHER",
+    })
+  );
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).delete());
 });

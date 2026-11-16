@@ -71,6 +71,13 @@ import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.ui.theme.BirizTurquoiseSoft
 
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+
 @Composable
 fun RoleSelectionScreen(
     currentRole: UserRole,
@@ -83,9 +90,56 @@ fun RoleSelectionScreen(
     onSelectParentAttempt: () -> Unit,
     currentUser: com.example.ui.viewmodel.AuthenticatedUser = com.example.ui.viewmodel.AuthenticatedUser(),
     onLogout: () -> Unit = {},
+    onDeleteEntireAccount: () -> Unit = {},
     isDarkTheme: Boolean = false,
     onToggleTheme: () -> Unit = {}
 ) {
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false },
+            containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
+            title = {
+                Text(
+                    text = "Hesabımı Kalıcı Olarak Sil",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = Color(0xFFDC2626)
+                )
+            },
+            text = {
+                Text(
+                    text = "BİRİZ hesabınız, Firebase Authentication kaydınız ve Firestore 'users' koleksiyonundaki tüm profil bilgileriniz kalıcı olarak silinecektir. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?",
+                    fontSize = 13.5.sp,
+                    lineHeight = 20.sp,
+                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        onDeleteEntireAccount()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    modifier = Modifier.testTag("confirm_role_screen_delete_account_button")
+                ) {
+                    Text("Evet, Kalıcı Olarak Sil", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountDialog = false }) {
+                    Text(
+                        "Vazgeç",
+                        color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
+
     if (isKvkkDialogVisible) {
         KvkkDialog(
             onDismissRequest = onCloseKvkkDialog,
@@ -503,6 +557,32 @@ fun RoleSelectionScreen(
                     tint = continueContentColor,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                TextButton(
+                    onClick = { showDeleteAccountDialog = true },
+                    modifier = Modifier.testTag("role_screen_delete_account_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = "Hesabımı Kalıcı Olarak Sil",
+                        tint = Color(0xFFDC2626),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Hesabımı ve Verilerimi Kalıcı Olarak Sil",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFDC2626)
+                    )
+                }
             }
         }
     }

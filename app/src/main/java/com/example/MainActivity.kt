@@ -355,6 +355,7 @@ fun BirizApp(viewModel: BirizViewModel) {
                         onSelectParentAttempt = { viewModel.onParentRoleAttempt() },
                         currentUser = uiState.currentUser,
                         onLogout = { viewModel.signOut(context) },
+                        onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
                         isDarkTheme = uiState.isDarkTheme,
                         onToggleTheme = { viewModel.toggleTheme() }
                     )
