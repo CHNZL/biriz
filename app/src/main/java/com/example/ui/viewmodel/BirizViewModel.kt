@@ -3528,9 +3528,14 @@ class BirizViewModel(
 
     fun onKvkkCheckedChanged(accepted: Boolean) {
         _uiState.value = _uiState.value.copy(
-            isKvkkAccepted = accepted,
-            currentRole = if (accepted) UserRole.TEACHER else UserRole.MEMBER
+            isKvkkAccepted = accepted
         )
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
+        if (!uid.isNullOrBlank()) {
+            viewModelScope.launch {
+                repository.updateKvkkConsent(uid, accepted)
+            }
+        }
     }
 
     fun openKvkkDialog() {
@@ -3544,19 +3549,24 @@ class BirizViewModel(
     fun acceptKvkkFromDialog() {
         _uiState.value = _uiState.value.copy(
             isKvkkAccepted = true,
-            isKvkkDialogVisible = false,
-            currentRole = UserRole.TEACHER
+            isKvkkDialogVisible = false
         )
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
+        if (!uid.isNullOrBlank()) {
+            viewModelScope.launch {
+                repository.updateKvkkConsent(uid, true)
+            }
+        }
     }
 
     fun selectTeacherRole() {
         if (!_uiState.value.isKvkkAccepted) {
             _uiState.value = _uiState.value.copy(
-                snackbarMessage = "Devam etmek için KVKK Aydınlatma Metnini onaylamanız gerekmektedir."
+                snackbarMessage = "Öğretmen rolünü seçebilmek için önce KVKK Aydınlatma Metni ve Kullanım Şartlarını onaylamanız gerekmektedir."
             )
             return
         }
-        val uid = Firebase.auth.currentUser?.uid
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
         val email = _uiState.value.currentUser.email
         if (uid != null) {
             viewModelScope.launch {
@@ -3581,11 +3591,23 @@ class BirizViewModel(
     }
 
     fun onParentRoleAttempt() {
+        if (!_uiState.value.isKvkkAccepted) {
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = "Veli rolünü seçebilmek için önce KVKK Aydınlatma Metni ve Kullanım Şartlarını onaylamanız gerekmektedir."
+            )
+            return
+        }
         switchToParentRole()
     }
 
     fun switchToParentRole() {
-        val uid = Firebase.auth.currentUser?.uid
+        if (_uiState.value.currentScreen == ScreenState.ROLE_AND_KVKK && !_uiState.value.isKvkkAccepted) {
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = "Veli rolünü seçebilmek için önce KVKK Aydınlatma Metni ve Kullanım Şartlarını onaylamanız gerekmektedir."
+            )
+            return
+        }
+        val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
         val email = _uiState.value.currentUser.email
         if (uid != null) {
             viewModelScope.launch {
@@ -3605,6 +3627,7 @@ class BirizViewModel(
 
         _uiState.value = _uiState.value.copy(
             currentRole = UserRole.PARENT,
+            isKvkkAccepted = true,
             currentScreen = ScreenState.PARENT_PORTAL,
             snackbarMessage = "BİRİZ Veli Modülüne Geçiş Yapıldı 👨‍👩‍👧‍👦"
         )

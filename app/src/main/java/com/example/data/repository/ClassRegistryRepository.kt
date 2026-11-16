@@ -2498,12 +2498,13 @@ class ClassRegistryRepository(
 
     suspend fun updateKvkkConsent(uid: String, accepted: Boolean) {
         if (isAccountDeleting || isGlobalAccountDeleting) return
-        if (Firebase.auth.currentUser != null) {
+        if (isFirebaseAuthAvailable) {
             val userRef = db.collection("users").document(uid)
             try {
                 userRef.update(
                     mapOf(
                         "kvkkAccepted" to accepted,
+                        "termsAccepted" to accepted,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
@@ -2524,13 +2525,20 @@ class ClassRegistryRepository(
         if (isAccountDeleting || isGlobalAccountDeleting) return
         if (isFirebaseAuthAvailable) {
             val userRef = db.collection("users").document(uid)
+            val isActiveRole = role.equals("TEACHER", ignoreCase = true) ||
+                role.equals("PARENT", ignoreCase = true) ||
+                role.equals("OGRETMEN", ignoreCase = true) ||
+                role.equals("VELI", ignoreCase = true)
+            val payload = mutableMapOf<String, Any>(
+                "role" to role,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (isActiveRole) {
+                payload["kvkkAccepted"] = true
+                payload["termsAccepted"] = true
+            }
             try {
-                userRef.update(
-                    mapOf(
-                        "role" to role,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                userRef.update(payload).await()
             } catch (_: Exception) {
                 // Silinmiş bir kullanıcı belgesini SetOptions.merge() ile tekrar oluşturma!
             }
