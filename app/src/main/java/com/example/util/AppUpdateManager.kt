@@ -1,7 +1,10 @@
 package com.example.util
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -9,9 +12,12 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.example.BuildConfig
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -646,24 +652,95 @@ object AppUpdateManager {
         }
     }
 
+    private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /**
-     * İndirilen APK dosyasını doğrudan sistem paket yükleyicisine aktararak
-     * gereksiz soru ve onay adımları olmadan güncellemeyi başlatır.
+     * İndirilen APK dosyasını PackageInstaller oturumuyla doğrudan sistem yükleyicisine aktarır.
+     * Ara "Uygulama hazırlanıyor..." ekranını atlar ve Android 12+ cihazlarda sessiz güncellemeye olanak tanır.
      */
-    fun installApk(context: Context, apkFile: File) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!context.packageManager.canRequestPackageInstalls()) {
-                    Toast.makeText(
-                        context,
-                        "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    requestInstallPermission(context)
-                    return
+    fun installApk(context: Context, apkFile: File, targetVersionCode: Int = -1) {
+        val appContext = context.applicationContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!appContext.packageManager.canRequestPackageInstalls()) {
+                AppUpdateDownloadController.revertInstallingToReady(apkFile.absolutePath, targetVersionCode)
+                Toast.makeText(
+                    appContext,
+                    "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
+                    Toast.LENGTH_LONG
+                ).show()
+                requestInstallPermission(appContext)
+                return
+            }
+        }
+
+        AppUpdateNotificationHelper.cancelUpdateNotification(appContext)
+
+        installScope.launch {
+            var sessionId = -1
+            try {
+                val packageInstaller = appContext.packageManager.packageInstaller
+                // Yarım kalmış eski oturumları temizle
+                try {
+                    packageInstaller.mySessions.forEach { existing ->
+                        try {
+                            packageInstaller.abandonSession(existing.sessionId)
+                        } catch (_: Exception) {}
+                    }
+                } catch (_: Exception) {}
+
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                    setAppPackageName(appContext.packageName)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        setInstallReason(PackageManager.INSTALL_REASON_USER)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    }
+                }
+
+                sessionId = packageInstaller.createSession(params)
+                val session = packageInstaller.openSession(sessionId)
+                session.use { activeSession ->
+                    activeSession.openWrite("biriz_update.apk", 0L, apkFile.length()).use { out ->
+                        apkFile.inputStream().use { input ->
+                            input.copyTo(out, bufferSize = 64 * 1024)
+                        }
+                        activeSession.fsync(out)
+                    }
+
+                    val callbackIntent = Intent(appContext, AppUpdateInstallReceiver::class.java).apply {
+                        action = AppUpdateInstallReceiver.ACTION_INSTALL_RESULT
+                        putExtra(AppUpdateInstallReceiver.EXTRA_APK_PATH, apkFile.absolutePath)
+                        putExtra(AppUpdateInstallReceiver.EXTRA_VERSION_CODE, targetVersionCode)
+                    }
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    } else {
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                    }
+                    val pendingIntent = PendingIntent.getBroadcast(
+                        appContext,
+                        sessionId,
+                        callbackIntent,
+                        flags
+                    )
+                    activeSession.commit(pendingIntent.intentSender)
+                }
+            } catch (e: Exception) {
+                if (sessionId != -1) {
+                    try {
+                        appContext.packageManager.packageInstaller.abandonSession(sessionId)
+                    } catch (_: Exception) {}
+                }
+                withContext(Dispatchers.Main) {
+                    installApkViaIntent(appContext, apkFile, targetVersionCode)
                 }
             }
+        }
+    }
 
+    private fun installApkViaIntent(context: Context, apkFile: File, targetVersionCode: Int) {
+        try {
             val apkUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -679,8 +756,10 @@ object AppUpdateManager {
                 putExtra(Intent.EXTRA_RETURN_RESULT, true)
             }
 
+            AppUpdateDownloadController.revertInstallingToReady(apkFile.absolutePath, targetVersionCode)
             context.startActivity(installIntent)
         } catch (e: Exception) {
+            AppUpdateDownloadController.revertInstallingToReady(apkFile.absolutePath, targetVersionCode)
             Toast.makeText(
                 context,
                 "Güncelleme başlatılamadı: ${e.localizedMessage}",

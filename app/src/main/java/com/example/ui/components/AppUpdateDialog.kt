@@ -76,6 +76,7 @@ sealed interface UpdateDialogState {
         val totalBytes: Long = -1L
     ) : UpdateDialogState
     data class ReadyToInstall(val info: UpdateInfo, val apkFile: File) : UpdateDialogState
+    data class Installing(val info: UpdateInfo, val apkFile: File) : UpdateDialogState
     data class UpToDate(val info: UpdateInfo) : UpdateDialogState
     data class Error(val message: String, val retryInfo: UpdateInfo? = null) : UpdateDialogState
 }
@@ -106,6 +107,10 @@ fun AppUpdateDialog(
                     currentBg.info,
                     currentBg.apkFile
                 )
+                is BackgroundUpdateState.Installing -> UpdateDialogState.Installing(
+                    currentBg.info,
+                    currentBg.apkFile
+                )
                 is BackgroundUpdateState.Failed -> UpdateDialogState.Error(
                     currentBg.message,
                     currentBg.info
@@ -129,12 +134,17 @@ fun AppUpdateDialog(
             AppUpdateManager.requestInstallPermission(context)
             return
         }
+        AppUpdateNotificationHelper.cancelUpdateNotification(context)
         AppUpdateDownloadController.startDownload(context, info)
+        onDismiss()
     }
 
     fun runCheck() {
         val currentBg = AppUpdateDownloadController.state.value
-        if (currentBg is BackgroundUpdateState.Downloading || currentBg is BackgroundUpdateState.ReadyToInstall) {
+        if (currentBg is BackgroundUpdateState.Downloading ||
+            currentBg is BackgroundUpdateState.ReadyToInstall ||
+            currentBg is BackgroundUpdateState.Installing
+        ) {
             return
         }
         AppUpdateDownloadController.markIdle()
@@ -154,15 +164,17 @@ fun AppUpdateDialog(
                     localState = UpdateDialogState.ReadyToInstall(updatedBg.info, updatedBg.apkFile)
                     if (autoStartDownload) {
                         AppUpdateNotificationHelper.cancelUpdateNotification(context)
-                        AppUpdateManager.installApk(context, updatedBg.apkFile)
+                        if (AppUpdateManager.canInstallPackages(context)) {
+                            AppUpdateDownloadController.lastAutoPromptedVersionCode = updatedBg.info.latestVersionCode
+                            AppUpdateDownloadController.markInstalling(updatedBg.info, updatedBg.apkFile)
+                        }
+                        AppUpdateManager.installApk(context, updatedBg.apkFile, updatedBg.info.latestVersionCode)
                         onDismiss()
                     }
                 } else {
                     localState = UpdateDialogState.Available(result)
                     if (autoStartDownload) {
                         startBackgroundDownload(result)
-                    } else {
-                        AppUpdateNotificationHelper.showUpdateNotification(context, result, forceResend = true)
                     }
                 }
             } else {
@@ -184,6 +196,9 @@ fun AppUpdateDialog(
             is BackgroundUpdateState.ReadyToInstall -> {
                 localState = UpdateDialogState.ReadyToInstall(currentBg.info, currentBg.apkFile)
             }
+            is BackgroundUpdateState.Installing -> {
+                onDismiss()
+            }
             else -> {
                 if (autoStartDownload && initialInfo != null && initialInfo.isUpdateAvailable) {
                     startBackgroundDownload(initialInfo)
@@ -203,6 +218,10 @@ fun AppUpdateDialog(
             totalBytes = currentBg.totalBytes
         )
         is BackgroundUpdateState.ReadyToInstall -> UpdateDialogState.ReadyToInstall(
+            info = currentBg.info,
+            apkFile = currentBg.apkFile
+        )
+        is BackgroundUpdateState.Installing -> UpdateDialogState.Installing(
             info = currentBg.info,
             apkFile = currentBg.apkFile
         )
@@ -497,7 +516,11 @@ fun AppUpdateDialog(
                             Button(
                                 onClick = {
                                     AppUpdateNotificationHelper.cancelUpdateNotification(context)
-                                    AppUpdateManager.installApk(context, current.apkFile)
+                                    if (AppUpdateManager.canInstallPackages(context)) {
+                                        AppUpdateDownloadController.lastAutoPromptedVersionCode = current.info.latestVersionCode
+                                        AppUpdateDownloadController.markInstalling(current.info, current.apkFile)
+                                    }
+                                    AppUpdateManager.installApk(context, current.apkFile, current.info.latestVersionCode)
                                     onDismiss()
                                 },
                                 modifier = Modifier
@@ -512,8 +535,30 @@ fun AppUpdateDialog(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Şimdi Yükle / Kur", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Yükle ve Kur", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+
+                    is UpdateDialogState.Installing -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(
+                                color = BirizSuccess,
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "v${current.info.latestVersionName} kuruluyor...",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                            )
                         }
                     }
 

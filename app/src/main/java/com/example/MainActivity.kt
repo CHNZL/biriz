@@ -135,11 +135,13 @@ class MainActivity : ComponentActivity() {
         )
         val readyAfterResume = AppUpdateDownloadController.state.value as? BackgroundUpdateState.ReadyToInstall
         if (readyAfterResume != null &&
-            AppUpdateDownloadController.lastAutoPromptedVersionCode != readyAfterResume.info.latestVersionCode
+            AppUpdateDownloadController.lastAutoPromptedVersionCode != readyAfterResume.info.latestVersionCode &&
+            AppUpdateManager.canInstallPackages(this)
         ) {
             AppUpdateDownloadController.lastAutoPromptedVersionCode = readyAfterResume.info.latestVersionCode
             AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
-            AppUpdateManager.installApk(this, readyAfterResume.apkFile)
+            AppUpdateDownloadController.markInstalling(readyAfterResume.info, readyAfterResume.apkFile)
+            AppUpdateManager.installApk(this, readyAfterResume.apkFile, readyAfterResume.info.latestVersionCode)
         }
     }
 
@@ -176,12 +178,22 @@ class MainActivity : ComponentActivity() {
                 }
             if (readyFile != null && readyFile.exists()) {
                 AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
-                AppUpdateManager.installApk(this, readyFile)
+                val availableInfo = viewModel.uiState.value.availableUpdateInfo
+                val targetCode = availableInfo?.latestVersionCode ?: -1
+                if (availableInfo != null && AppUpdateManager.canInstallPackages(this)) {
+                    AppUpdateDownloadController.lastAutoPromptedVersionCode = targetCode
+                    AppUpdateDownloadController.markInstalling(availableInfo, readyFile)
+                }
+                AppUpdateManager.installApk(this, readyFile, targetCode)
             } else {
-                viewModel.openGlobalUpdateDialog()
+                viewModel.startDirectUpdate(this)
             }
             intent.removeExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_READY_APK)
             intent.removeExtra(AppUpdateNotificationHelper.EXTRA_INSTALL_APK_PATH)
+        } else if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_DIRECT_INSTALL_UPDATE, false)) {
+            AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
+            viewModel.startDirectUpdate(this)
+            intent.removeExtra(AppUpdateNotificationHelper.EXTRA_DIRECT_INSTALL_UPDATE)
         } else if (intent.getBooleanExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false)) {
             viewModel.openGlobalUpdateDialog()
             intent.removeExtra(AppUpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG)
@@ -664,11 +676,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                 }
             }
 
-            // 🚀 Canlı Yayınlanan / Arka Planda İndirilen / Kuruluma Hazır Güncelleme Banner'ı
+            // 🚀 Canlı Yayınlanan / İndirilen / Doğrudan Kurulan Güncelleme Banner'ı (tek pencere, sıfır diyalog yağmuru)
             val isBgDownloading = bgUpdateState is BackgroundUpdateState.Downloading && !uiState.isGlobalUpdateDialogOpen
+            val isBgInstalling = bgUpdateState is BackgroundUpdateState.Installing && !uiState.isGlobalUpdateDialogOpen
             val isBgReady = bgUpdateState is BackgroundUpdateState.ReadyToInstall && !uiState.isGlobalUpdateDialogOpen
-            val showBanner = isBgDownloading || isBgReady ||
-                (uiState.availableUpdateInfo?.isUpdateAvailable == true && !uiState.isUpdateBannerDismissed)
+            val showBanner = isBgDownloading || isBgInstalling || isBgReady ||
+                (!uiState.isGlobalUpdateDialogOpen && uiState.availableUpdateInfo?.isUpdateAvailable == true && !uiState.isUpdateBannerDismissed)
 
             AnimatedVisibility(
                 visible = showBanner,
@@ -679,11 +692,12 @@ fun BirizApp(viewModel: BirizViewModel) {
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 val readyState = bgUpdateState as? BackgroundUpdateState.ReadyToInstall
+                val installingState = bgUpdateState as? BackgroundUpdateState.Installing
                 val downloadingState = bgUpdateState as? BackgroundUpdateState.Downloading
-                val updateInfo = readyState?.info ?: downloadingState?.info ?: uiState.availableUpdateInfo
+                val updateInfo = installingState?.info ?: readyState?.info ?: downloadingState?.info ?: uiState.availableUpdateInfo
 
                 updateInfo?.let { info ->
-                    val borderAccent = if (readyState != null) com.example.ui.theme.BirizSuccess else com.example.ui.theme.BirizTurquoise
+                    val borderAccent = if (readyState != null || installingState != null) com.example.ui.theme.BirizSuccess else com.example.ui.theme.BirizTurquoise
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = if (uiState.isDarkTheme) Color(0xFF0F2942) else Color(0xFF0F172A),
@@ -722,18 +736,20 @@ fun BirizApp(viewModel: BirizViewModel) {
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         val titleStr = when {
-                                            readyState != null -> "✅ BİRİZ v${info.latestVersionName} İndirildi!"
-                                            downloadingState != null -> "⬇️ v${info.latestVersionName} Arka Planda İndiriliyor (%${(downloadingState.progress * 100).toInt()})"
+                                            installingState != null -> "⚙️ BİRİZ v${info.latestVersionName} Kuruluyor..."
+                                            readyState != null -> "✅ BİRİZ v${info.latestVersionName} Hazır!"
+                                            downloadingState != null -> "⬇️ v${info.latestVersionName} Yükleniyor (%${(downloadingState.progress * 100).toInt()})"
                                             else -> "🚀 Yeni BİRİZ v${info.latestVersionName} Yayında!"
                                         }
                                         val subStr = when {
-                                            readyState != null -> "Tek dokunuşla hemen kurabilirsiniz"
+                                            installingState != null -> "Otomatik kurulum başlatılıyor, tamamlandığında uygulama kapanır"
+                                            readyState != null -> "Kurulumu tamamlamak için dokunun"
                                             downloadingState != null -> if (downloadingState.totalBytes > 0L) {
-                                                "${AppUpdateDownloadController.formatBytesMb(downloadingState.downloadedBytes)} / ${AppUpdateDownloadController.formatBytesMb(downloadingState.totalBytes)}"
+                                                "${AppUpdateDownloadController.formatBytesMb(downloadingState.downloadedBytes)} / ${AppUpdateDownloadController.formatBytesMb(downloadingState.totalBytes)} • İndikten sonra kurulur"
                                             } else {
-                                                "Uygulamayı kullanmaya devam edebilirsiniz"
+                                                "İndirme tamamlanınca otomatik kurulur"
                                             }
-                                            else -> "Tek tıkla hemen güncelleyin"
+                                            else -> "Tek dokunuşla indir ve otomatik kur"
                                         }
                                         Text(
                                             text = titleStr,
@@ -754,11 +770,19 @@ fun BirizApp(viewModel: BirizViewModel) {
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     when {
+                                        installingState != null -> {
+                                            // Kurulum sistem tarafından devam ederken ek pencere veya buton açma
+                                        }
+
                                         readyState != null -> {
                                             Button(
                                                 onClick = {
                                                     AppUpdateNotificationHelper.cancelUpdateNotification(context)
-                                                    AppUpdateManager.installApk(context, readyState.apkFile)
+                                                    if (AppUpdateManager.canInstallPackages(context)) {
+                                                        AppUpdateDownloadController.lastAutoPromptedVersionCode = readyState.info.latestVersionCode
+                                                        AppUpdateDownloadController.markInstalling(readyState.info, readyState.apkFile)
+                                                    }
+                                                    AppUpdateManager.installApk(context, readyState.apkFile, readyState.info.latestVersionCode)
                                                 },
                                                 shape = RoundedCornerShape(10.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizSuccess),
@@ -769,20 +793,23 @@ fun BirizApp(viewModel: BirizViewModel) {
                                         }
 
                                         downloadingState != null -> {
-                                            Button(
-                                                onClick = { viewModel.openGlobalUpdateDialog() },
-                                                shape = RoundedCornerShape(10.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                            IconButton(
+                                                onClick = { AppUpdateDownloadController.cancelDownload(context) },
+                                                modifier = Modifier.size(30.dp)
                                             ) {
-                                                Text("Durum", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "İndirmeyi İptal Et",
+                                                    tint = Color(0xFF94A3B8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
 
                                         else -> {
                                             Button(
                                                 onClick = {
-                                                    viewModel.openGlobalUpdateDialog(autoStartDownload = true)
+                                                    viewModel.startDirectUpdate(context, info)
                                                 },
                                                 shape = RoundedCornerShape(10.dp),
                                                 colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BirizTurquoise),
@@ -823,6 +850,13 @@ fun BirizApp(viewModel: BirizViewModel) {
                                         trackColor = Color(0x30FFFFFF)
                                     )
                                 }
+                            } else if (installingState != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                    color = com.example.ui.theme.BirizSuccess,
+                                    trackColor = Color(0x30FFFFFF)
+                                )
                             }
                         }
                     }

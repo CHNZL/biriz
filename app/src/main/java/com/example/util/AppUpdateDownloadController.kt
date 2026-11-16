@@ -25,6 +25,11 @@ sealed interface BackgroundUpdateState {
         val apkFile: File
     ) : BackgroundUpdateState
 
+    data class Installing(
+        val info: UpdateInfo,
+        val apkFile: File
+    ) : BackgroundUpdateState
+
     data class Failed(
         val info: UpdateInfo,
         val message: String
@@ -49,27 +54,36 @@ object AppUpdateDownloadController {
     fun startDownload(context: Context, info: UpdateInfo) {
         if (!info.isUpdateAvailable) return
 
-        // Aynı sürüm zaten indiriliyorsa yeniden başlatma
+        // Aynı sürüm zaten indiriliyorsa veya kuruluyorsa yeniden başlatma
         val current = _state.value
-        if (current is BackgroundUpdateState.Downloading &&
-            current.info.latestVersionCode == info.latestVersionCode
+        if ((current is BackgroundUpdateState.Downloading &&
+                current.info.latestVersionCode == info.latestVersionCode) ||
+            (current is BackgroundUpdateState.Installing &&
+                current.info.latestVersionCode == info.latestVersionCode)
         ) {
             return
         }
 
-        // Aynı sürümün APK'sı cihazda zaten hazırsa tekrar indirmeden kurulum aşamasına geç
+        // Aynı sürümün APK'sı cihazda zaten hazırsa tekrar indirmeden doğrudan kurulumu başlat
         val cachedApk = AppUpdateManager.getDownloadedApkForVersion(context, info.latestVersionCode)
         if (cachedApk != null) {
-            _state.value = BackgroundUpdateState.ReadyToInstall(info, cachedApk)
-            AppUpdateNotificationHelper.cancelDownloadProgressNotification(context)
-            AppUpdateNotificationHelper.showDownloadCompleteNotification(context, info, cachedApk.absolutePath)
+            AppUpdateNotificationHelper.cancelUpdateNotification(context)
             if (isAppInForeground) {
-                lastAutoPromptedVersionCode = info.latestVersionCode
-                AppUpdateManager.installApk(context, cachedApk)
+                if (AppUpdateManager.canInstallPackages(context)) {
+                    lastAutoPromptedVersionCode = info.latestVersionCode
+                    markInstalling(info, cachedApk)
+                } else {
+                    markReady(info, cachedApk)
+                }
+                AppUpdateManager.installApk(context, cachedApk, info.latestVersionCode)
+            } else {
+                markReady(info, cachedApk)
+                AppUpdateNotificationHelper.showDownloadCompleteNotification(context, info, cachedApk.absolutePath)
             }
             return
         }
 
+        AppUpdateNotificationHelper.cancelUpdateNotification(context)
         _state.value = BackgroundUpdateState.Downloading(
             info = info,
             progress = 0f,
@@ -105,16 +119,23 @@ object AppUpdateDownloadController {
 
     fun restoreCachedUpdateIfReady(context: Context, availableInfo: UpdateInfo?) {
         if (availableInfo == null || !availableInfo.isUpdateAvailable) {
-            if (_state.value is BackgroundUpdateState.ReadyToInstall) {
-                val ready = _state.value as BackgroundUpdateState.ReadyToInstall
-                if (ready.info.latestVersionCode <= BuildConfig.VERSION_CODE || !ready.apkFile.exists()) {
-                    _state.value = BackgroundUpdateState.Idle
+            when (val current = _state.value) {
+                is BackgroundUpdateState.ReadyToInstall -> {
+                    if (current.info.latestVersionCode <= BuildConfig.VERSION_CODE || !current.apkFile.exists()) {
+                        _state.value = BackgroundUpdateState.Idle
+                    }
                 }
+                is BackgroundUpdateState.Installing -> {
+                    if (current.info.latestVersionCode <= BuildConfig.VERSION_CODE || !current.apkFile.exists()) {
+                        _state.value = BackgroundUpdateState.Idle
+                    }
+                }
+                else -> {}
             }
             return
         }
         val current = _state.value
-        if (current is BackgroundUpdateState.Downloading) return
+        if (current is BackgroundUpdateState.Downloading || current is BackgroundUpdateState.Installing) return
 
         val cachedApk = AppUpdateManager.getDownloadedApkForVersion(context, availableInfo.latestVersionCode)
         if (cachedApk != null) {
@@ -144,6 +165,29 @@ object AppUpdateDownloadController {
         _state.value = BackgroundUpdateState.ReadyToInstall(info, apkFile)
     }
 
+    internal fun markInstalling(info: UpdateInfo, apkFile: File) {
+        _state.value = BackgroundUpdateState.Installing(info, apkFile)
+    }
+
+    internal fun revertInstallingToReady(apkPath: String?, versionCode: Int) {
+        val current = _state.value
+        if (current is BackgroundUpdateState.Installing) {
+            if (current.apkFile.exists()) {
+                _state.value = BackgroundUpdateState.ReadyToInstall(current.info, current.apkFile)
+            } else {
+                _state.value = BackgroundUpdateState.Idle
+            }
+            return
+        }
+        if (current is BackgroundUpdateState.ReadyToInstall) return
+        if (!apkPath.isNullOrBlank() && versionCode > BuildConfig.VERSION_CODE) {
+            val file = File(apkPath)
+            if (!file.exists()) {
+                _state.value = BackgroundUpdateState.Idle
+            }
+        }
+    }
+
     internal fun markFailed(info: UpdateInfo, message: String) {
         _state.value = BackgroundUpdateState.Failed(info, message)
     }
@@ -155,11 +199,13 @@ object AppUpdateDownloadController {
     fun getActiveKeepFilePath(): String? {
         return when (val s = _state.value) {
             is BackgroundUpdateState.ReadyToInstall -> s.apkFile.absolutePath
+            is BackgroundUpdateState.Installing -> s.apkFile.absolutePath
             else -> null
         }
     }
 
-    fun isActivelyDownloading(): Boolean = _state.value is BackgroundUpdateState.Downloading
+    fun isActivelyDownloading(): Boolean =
+        _state.value is BackgroundUpdateState.Downloading || _state.value is BackgroundUpdateState.Installing
 
     fun formatBytesMb(bytes: Long): String {
         if (bytes <= 0L) return "0.0 MB"

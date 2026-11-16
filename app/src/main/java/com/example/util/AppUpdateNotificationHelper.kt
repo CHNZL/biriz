@@ -21,6 +21,7 @@ object AppUpdateNotificationHelper {
     const val DOWNLOAD_NOTIFICATION_ID = 2027
 
     const val EXTRA_OPEN_UPDATE_DIALOG = "extra_open_update_dialog"
+    const val EXTRA_DIRECT_INSTALL_UPDATE = "extra_direct_install_update"
     const val EXTRA_INSTALL_READY_APK = "extra_install_ready_apk"
     const val EXTRA_INSTALL_APK_PATH = "extra_install_apk_path"
     const val EXTRA_UPDATE_VERSION = "extra_update_version"
@@ -106,6 +107,22 @@ object AppUpdateNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val directInstallIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_DIRECT_INSTALL_UPDATE, true)
+            putExtra(EXTRA_UPDATE_VERSION, updateInfo.latestVersionName)
+            putExtra(EXTRA_DOWNLOAD_URL, updateInfo.downloadUrl)
+            putExtra(EXTRA_RELEASE_NOTES, updateInfo.releaseNotes)
+        }
+
+        val directInstallPendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID + 2,
+            directInstallIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val cleanNotes = updateInfo.releaseNotes.lines()
             .filter { it.isNotBlank() }
             .take(3)
@@ -130,8 +147,8 @@ object AppUpdateNotificationHelper {
             .setContentIntent(pendingIntent)
             .addAction(
                 android.R.drawable.stat_sys_download,
-                "Hemen Güncelle",
-                pendingIntent
+                "Yükle ve Kur",
+                directInstallPendingIntent
             )
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()

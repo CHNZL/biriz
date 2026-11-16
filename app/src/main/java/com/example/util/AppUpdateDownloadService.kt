@@ -96,24 +96,30 @@ class AppUpdateDownloadService : Service() {
                         )
 
                         if (apkFile != null && apkFile.exists() && apkFile.length() > 50_000L) {
-                            AppUpdateDownloadController.markReady(info, apkFile)
                             ServiceCompat.stopForeground(
                                 this@AppUpdateDownloadService,
                                 ServiceCompat.STOP_FOREGROUND_REMOVE
                             )
-                            AppUpdateNotificationHelper.cancelDownloadProgressNotification(applicationContext)
-                            AppUpdateNotificationHelper.showDownloadCompleteNotification(
-                                context = applicationContext,
-                                updateInfo = info,
-                                apkPath = apkFile.absolutePath
-                            )
+                            AppUpdateNotificationHelper.cancelUpdateNotification(applicationContext)
 
-                            // Uygulama şu anda ön plandaysa (pencere kapalı olsa bile) doğrudan kurulumu başlat
+                            // Uygulama ön plandaysa ek "İndirildi!" bildirimi/penceresi açmadan doğrudan kuruluma geç
                             if (AppUpdateDownloadController.isAppInForeground) {
-                                AppUpdateDownloadController.lastAutoPromptedVersionCode = info.latestVersionCode
-                                Handler(Looper.getMainLooper()).post {
-                                    AppUpdateManager.installApk(applicationContext, apkFile)
+                                if (AppUpdateManager.canInstallPackages(applicationContext)) {
+                                    AppUpdateDownloadController.lastAutoPromptedVersionCode = info.latestVersionCode
+                                    AppUpdateDownloadController.markInstalling(info, apkFile)
+                                } else {
+                                    AppUpdateDownloadController.markReady(info, apkFile)
                                 }
+                                Handler(Looper.getMainLooper()).post {
+                                    AppUpdateManager.installApk(applicationContext, apkFile, info.latestVersionCode)
+                                }
+                            } else {
+                                AppUpdateDownloadController.markReady(info, apkFile)
+                                AppUpdateNotificationHelper.showDownloadCompleteNotification(
+                                    context = applicationContext,
+                                    updateInfo = info,
+                                    apkPath = apkFile.absolutePath
+                                )
                             }
                         } else {
                             val errMsg = "APK dosyası indirilemedi. İnternet bağlantınızı kontrol edip tekrar deneyin."

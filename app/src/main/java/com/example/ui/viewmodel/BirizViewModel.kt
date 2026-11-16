@@ -1156,12 +1156,16 @@ class BirizViewModel(
                 AppUpdateDownloadController.restoreCachedUpdateIfReady(ctx, update)
                 val bg = AppUpdateDownloadController.state.value
                 val isDownloadingOrReady = (bg is BackgroundUpdateState.Downloading && bg.info.latestVersionCode == update.latestVersionCode) ||
-                    (bg is BackgroundUpdateState.ReadyToInstall && bg.info.latestVersionCode == update.latestVersionCode)
+                    (bg is BackgroundUpdateState.ReadyToInstall && bg.info.latestVersionCode == update.latestVersionCode) ||
+                    (bg is BackgroundUpdateState.Installing && bg.info.latestVersionCode == update.latestVersionCode)
                 val isAppUpdateNotifEnabled = NotificationPreferencesHelper.isCategoryEnabled(
                     _uiState.value.notificationPreferences,
                     NotificationCategory.APP_UPDATES
                 )
-                if (!isDownloadingOrReady && (forceResendNotification || isAppUpdateNotifEnabled)) {
+                // Uygulama ön plandayken zaten üst banner görünür; çift pencere/bildirim yağmuru yaratma
+                val shouldPostSystemNotif = forceResendNotification ||
+                    (!AppUpdateDownloadController.isAppInForeground && isAppUpdateNotifEnabled)
+                if (!isDownloadingOrReady && shouldPostSystemNotif) {
                     AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = forceResendNotification)
                 }
             } else {
@@ -1244,6 +1248,47 @@ class BirizViewModel(
         _uiState.value = _uiState.value.copy(isGlobalUpdateDialogOpen = false, isAutoDownloadOnOpen = false)
     }
 
+    fun startDirectUpdate(context: Context, info: UpdateInfo? = _uiState.value.availableUpdateInfo) {
+        dismissGlobalUpdateDialog()
+        if (info != null && info.isUpdateAvailable) {
+            if (!AppUpdateManager.canInstallPackages(context)) {
+                android.widget.Toast.makeText(
+                    context,
+                    "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                AppUpdateManager.requestInstallPermission(context)
+            } else {
+                AppUpdateNotificationHelper.cancelUpdateNotification(context)
+                AppUpdateDownloadController.startDownload(context, info)
+            }
+        } else {
+            viewModelScope.launch {
+                val ctx = appContext ?: context.applicationContext
+                val update = AppUpdateManager.checkForUpdates(ctx)
+                if (update != null && update.isUpdateAvailable) {
+                    _uiState.value = _uiState.value.copy(
+                        availableUpdateInfo = update,
+                        isUpdateBannerDismissed = false
+                    )
+                    pruneStaleUpdateNotifications(update)
+                    syncUpdateNotification(update)
+                    if (!AppUpdateManager.canInstallPackages(ctx)) {
+                        android.widget.Toast.makeText(
+                            ctx,
+                            "Lütfen BİRİZ uygulamasına güncelleme yükleme izni verin.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        AppUpdateManager.requestInstallPermission(ctx)
+                    } else {
+                        AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+                        AppUpdateDownloadController.startDownload(ctx, update)
+                    }
+                }
+            }
+        }
+    }
+
     fun dismissUpdateBanner() {
         _uiState.value = _uiState.value.copy(isUpdateBannerDismissed = true)
     }
@@ -1261,12 +1306,6 @@ class BirizViewModel(
                     pruneStaleUpdateNotifications(update)
                     syncUpdateNotification(update)
                     AppUpdateDownloadController.restoreCachedUpdateIfReady(ctx, update)
-                    val bg = AppUpdateDownloadController.state.value
-                    val isDownloadingOrReady = (bg is BackgroundUpdateState.Downloading && bg.info.latestVersionCode == update.latestVersionCode) ||
-                        (bg is BackgroundUpdateState.ReadyToInstall && bg.info.latestVersionCode == update.latestVersionCode)
-                    if (!isDownloadingOrReady) {
-                        AppUpdateNotificationHelper.showUpdateNotification(ctx, update, forceResend = true)
-                    }
                     onResult?.invoke(true)
                 } else {
                     if (update != null && !update.isUpdateAvailable) {
