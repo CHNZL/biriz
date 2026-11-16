@@ -1364,6 +1364,90 @@ object SmartBoardHelper {
         }
     }
 
+    /**
+     * Çıkış yapıldığında veya hesap silindiğinde bellek içi tahta önbelleğini temizler.
+     */
+    fun resetLocalState(context: Context? = null) {
+        lastClassId = ""
+        lastCurrentSubPage = "SINIF_LISTESI"
+        lastCurrentSubPageTitle = "Sınıf Listesi"
+        lastActiveDay = "PZT"
+        lastStudents = emptyList()
+        lastSchedule = emptyList()
+        lastScheduleConfig = ScheduleConfig()
+        lastSeatingPlanState = null
+        lastGroupMakerState = null
+        lastBoardCast = null
+        if (context != null) {
+            try {
+                saveConnectionState(context, null, true)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Hesap silinirken kullanıcıya/sınıflarına ait tüm Akıllı Tahta oturumlarını
+     * ve `cast_chunks` alt koleksiyonlarını Firestore'dan temizler.
+     */
+    suspend fun deleteUserSmartBoardTraces(
+        context: Context,
+        ownedClassIds: Set<String>,
+        teacherEmail: String,
+        activeSessionCode: String?
+    ) {
+        val mainDb = getMainFirestore(context)
+        val defaultDb = try {
+            FirebaseFirestore.getInstance()
+        } catch (_: Exception) {
+            null
+        }
+        val dbs = listOfNotNull(mainDb, defaultDb?.takeIf { it != mainDb })
+
+        val sessionIdsToDelete = mutableSetOf<String>()
+        activeSessionCode?.let { normalizeCode(it) }?.takeIf { it.isNotBlank() }?.let { sessionIdsToDelete.add(it) }
+        try {
+            getSavedSessionCode(context)?.let { normalizeCode(it) }?.takeIf { it.isNotBlank() }?.let { sessionIdsToDelete.add(it) }
+        } catch (_: Exception) {}
+
+        val cleanEmail = teacherEmail.trim()
+        for (db in dbs) {
+            try {
+                ownedClassIds.filter { it.isNotBlank() && it != "default" }.forEach { cid ->
+                    try {
+                        val byClass = db.collection("board_sessions")
+                            .whereEqualTo("classId", cid)
+                            .get()
+                            .await()
+                        byClass.documents.forEach { sessionIdsToDelete.add(it.id) }
+                    } catch (_: Exception) {}
+                }
+                if (cleanEmail.isNotBlank()) {
+                    try {
+                        val byEmail = db.collection("board_sessions")
+                            .whereEqualTo("teacherEmail", cleanEmail)
+                            .get()
+                            .await()
+                        byEmail.documents.forEach { sessionIdsToDelete.add(it.id) }
+                    } catch (_: Exception) {}
+                }
+
+                for (sid in sessionIdsToDelete) {
+                    try {
+                        val sessionRef = db.collection("board_sessions").document(sid)
+                        val chunksSnap = sessionRef.collection("cast_chunks").get().await()
+                        chunksSnap.documents.chunked(400).forEach { chunk ->
+                            val batch = db.batch()
+                            chunk.forEach { batch.delete(it.reference) }
+                            batch.commit().await()
+                        }
+                        sessionRef.delete().await()
+                    } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {}
+        }
+        resetLocalState(context)
+    }
+
     const val SMART_BOARD_WEB_URL = "https://cihanogretmen.com/tahta"
 
     /**

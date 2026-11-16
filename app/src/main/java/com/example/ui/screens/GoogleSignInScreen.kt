@@ -93,12 +93,14 @@ fun GoogleSignInScreen(
     @Suppress("UNUSED_PARAMETER") onTestSignIn: () -> Unit = {},
     isDarkTheme: Boolean = false,
     onToggleTheme: () -> Unit = {},
+    isAuthResolving: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val credentialManager = remember { CredentialManager.create(context) }
     var isLoading by remember { mutableStateOf(false) }
+    val effectiveLoading = isLoading || isAuthResolving
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showUpdateDialog by remember { mutableStateOf(false) }
@@ -324,8 +326,8 @@ fun GoogleSignInScreen(
                             context = context,
                             credentialManager = credentialManager,
                             onAuthSuccess = {
-                                isLoading = false
                                 onSignInSuccess()
+                                isLoading = false
                             },
                             onAuthError = { err ->
                                 isLoading = false
@@ -337,7 +339,7 @@ fun GoogleSignInScreen(
                             }
                         )
                     },
-                    enabled = !isLoading,
+                    enabled = !effectiveLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -357,7 +359,7 @@ fun GoogleSignInScreen(
                         if (isDarkTheme) BirizTurquoise else Color(0x30FFFFFF)
                     )
                 ) {
-                    if (isLoading) {
+                    if (effectiveLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(22.dp),
                             color = Color.White,
@@ -365,7 +367,11 @@ fun GoogleSignInScreen(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Google ile Güvenli Bağlanılıyor...",
+                            text = if (isAuthResolving) {
+                                "Hesabınız ve verileriniz yükleniyor..."
+                            } else {
+                                "Google ile Güvenli Bağlanılıyor..."
+                            },
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.5.sp

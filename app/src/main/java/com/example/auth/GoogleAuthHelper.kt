@@ -24,12 +24,17 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 object GoogleAuthHelper {
+
+    @Volatile
+    private var activeClearJob: Job? = null
 
     private tailrec fun Context.findActivity(): Activity? = when (this) {
         is Activity -> this
@@ -107,6 +112,7 @@ object GoogleAuthHelper {
 
         scope.launch {
             try {
+                awaitPendingClearState()
                 val targetContext = context.findActivity() ?: context
                 val result = credentialManager.getCredential(targetContext, request)
                 val googleIdToken = extractGoogleIdToken(result.credential)
@@ -123,13 +129,89 @@ object GoogleAuthHelper {
 
     suspend fun clearCredentialState(context: Context) {
         try {
-            val cm = CredentialManager.create(context)
+            val cm = CredentialManager.create(context.applicationContext ?: context)
             cm.clearCredentialState(ClearCredentialStateRequest())
             Log.d("Auth", "Credential state successfully cleared")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w("Auth", "Failed to clear credential state", e)
+        }
+    }
+
+    fun launchClearCredentialState(scope: CoroutineScope, context: Context) {
+        val appCtx = context.applicationContext ?: context
+        activeClearJob?.cancel()
+        activeClearJob = scope.launch {
+            withContext(NonCancellable) {
+                clearCredentialState(appCtx)
+            }
+        }
+    }
+
+    private suspend fun awaitPendingClearState() {
+        val job = activeClearJob ?: return
+        if (job.isActive) {
+            withTimeoutOrNull(1200L) {
+                job.join()
+            }
+        }
+        activeClearJob = null
+    }
+
+    private suspend fun fetchInteractiveGoogleIdToken(
+        activity: Activity,
+        credentialManager: CredentialManager,
+        clientId: String
+    ): String {
+        val primaryRequest = buildInteractiveSignInRequest(clientId)
+        val result = try {
+            credentialManager.getCredential(activity, primaryRequest)
+        } catch (e: GetCredentialCancellationException) {
+            throw e
+        } catch (e: NoCredentialException) {
+            Log.w("Auth", "Primary GetSignInWithGoogleOption returned NoCredentialException, trying GetGoogleIdOption fallback", e)
+            val fallbackRequest = buildGoogleIdRequest(
+                serverClientId = clientId,
+                filterByAuthorizedAccounts = false,
+                autoSelectEnabled = false
+            )
+            credentialManager.getCredential(activity, fallbackRequest)
+        } catch (e: GetCredentialProviderConfigurationException) {
+            Log.w("Auth", "Primary GetSignInWithGoogleOption config issue, trying GetGoogleIdOption fallback", e)
+            val fallbackRequest = buildGoogleIdRequest(
+                serverClientId = clientId,
+                filterByAuthorizedAccounts = false,
+                autoSelectEnabled = false
+            )
+            credentialManager.getCredential(activity, fallbackRequest)
+        }
+        return extractGoogleIdToken(result.credential)
+    }
+
+    /**
+     * Kalıcı hesap silme öncesi Firebase Auth son oturum süresi dolmuşsa
+     * kullanıcının kimliğini Google Credential Manager ile yeniden doğrular.
+     * İptal edilirse false döner, başarılıysa true döner.
+     */
+    suspend fun reauthenticateCurrentUser(context: Context): Boolean {
+        val currentUser = Firebase.auth.currentUser ?: return false
+        val clientId = getServerClientId(context)
+        if (clientId.isBlank()) {
+            throw IllegalStateException("Google kimlik doğrulama yapılandırması bulunamadı.")
+        }
+        val activity = context.findActivity()
+            ?: throw IllegalStateException("Güvenlik doğrulaması için aktif pencere bulunamadı.")
+
+        val credentialManager = CredentialManager.create(activity)
+        return try {
+            val googleIdToken = fetchInteractiveGoogleIdToken(activity, credentialManager, clientId)
+            val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+            currentUser.reauthenticate(authCredential).await()
+            true
+        } catch (e: GetCredentialCancellationException) {
+            Log.w("Auth", "Reauthentication cancelled by user", e)
+            false
         }
     }
 
@@ -155,32 +237,12 @@ object GoogleAuthHelper {
 
         scope.launch {
             try {
+                // Önceki çıkış işleminden kalan clearCredentialState çağrısının yeni seçiciyle çakışmasını önle
+                awaitPendingClearState()
+
                 // Önemli: GetSignInWithGoogleOption tek başına gönderilmelidir;
                 // GetGoogleIdOption ile aynı istekte birleştirilmesi Credential Manager hatasına yol açar.
-                val primaryRequest = buildInteractiveSignInRequest(clientId)
-                val result = try {
-                    credentialManager.getCredential(activity, primaryRequest)
-                } catch (e: GetCredentialCancellationException) {
-                    throw e
-                } catch (e: NoCredentialException) {
-                    Log.w("Auth", "Primary GetSignInWithGoogleOption returned NoCredentialException, trying GetGoogleIdOption fallback", e)
-                    val fallbackRequest = buildGoogleIdRequest(
-                        serverClientId = clientId,
-                        filterByAuthorizedAccounts = false,
-                        autoSelectEnabled = false
-                    )
-                    credentialManager.getCredential(activity, fallbackRequest)
-                } catch (e: GetCredentialProviderConfigurationException) {
-                    Log.w("Auth", "Primary GetSignInWithGoogleOption config issue, trying GetGoogleIdOption fallback", e)
-                    val fallbackRequest = buildGoogleIdRequest(
-                        serverClientId = clientId,
-                        filterByAuthorizedAccounts = false,
-                        autoSelectEnabled = false
-                    )
-                    credentialManager.getCredential(activity, fallbackRequest)
-                }
-
-                val googleIdToken = extractGoogleIdToken(result.credential)
+                val googleIdToken = fetchInteractiveGoogleIdToken(activity, credentialManager, clientId)
                 val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                 Firebase.auth.signInWithCredential(authCredential).await()
                 onAuthSuccess()
@@ -210,14 +272,15 @@ object GoogleAuthHelper {
         onSignOutComplete: () -> Unit = {},
         scope: CoroutineScope
     ) {
-        scope.launch {
+        Firebase.auth.signOut()
+        activeClearJob?.cancel()
+        activeClearJob = scope.launch {
             withContext(NonCancellable) {
                 try {
                     credentialManager.clearCredentialState(ClearCredentialStateRequest())
                 } catch (e: Exception) {
                     Log.w("Auth", "Failed to clear credential state: ${e.message}")
                 } finally {
-                    Firebase.auth.signOut()
                     onSignOutComplete()
                 }
             }

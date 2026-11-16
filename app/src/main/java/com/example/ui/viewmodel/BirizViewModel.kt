@@ -173,6 +173,8 @@ data class BirizUiState(
     val currentSubPage: DashboardSubPage = DashboardSubPage.ANA_SAYFA,
     val isAddStudentDialogOpen: Boolean = false,
     val isDeleting: Boolean = false,
+    val deletingStatusMessage: String = "Hesap ve veriler kalıcı olarak siliniyor...",
+    val isAuthResolving: Boolean = false,
 
     // Esnek Ders Programı Durumu
     val scheduleConfig: ScheduleConfig = ScheduleConfig(),
@@ -248,6 +250,8 @@ class BirizViewModel(
     private var groupMakerListenerRegistration: ListenerRegistration? = null
     private var parentPresenceJob: Job? = null
     private var teacherPresenceJob: Job? = null
+    private var refreshUserJob: Job? = null
+    private var activeResolvingUid: String? = null
     private val knownMessageIds = mutableSetOf<String>()
     private val processedNotifMessageIds = mutableSetOf<String>()
     private var loadedNotifiedClassId: String? = null
@@ -493,6 +497,57 @@ class BirizViewModel(
         tournamentMatchListeners.clear()
         scheduledMessagesDueJob?.cancel()
         scheduledMessagesDueJob = null
+    }
+
+    private fun clearAllListenersAndSessionCaches() {
+        scheduleListenerRegistration?.remove()
+        scheduleListenerRegistration = null
+        seatingPlanListenerRegistration?.remove()
+        seatingPlanListenerRegistration = null
+        groupMakerListenerRegistration?.remove()
+        groupMakerListenerRegistration = null
+        teacherPresenceJob?.cancel()
+        teacherPresenceJob = null
+        parentPresenceJob?.cancel()
+        parentPresenceJob = null
+        clearActivityListeners()
+
+        observedNotificationClassId = null
+        loadedNotifiedClassId = null
+        loadedActivityStateKey = null
+        loadedClearStateKey = null
+        previousActivitySnapshot = null
+        previousTeacherStudentsSnapshot = null
+        previousTeacherAnnouncements = null
+        previousChatReactions = null
+        seenActivityEventKeys = emptySet()
+        activityBaselineTimestampMs = 0L
+
+        knownMessageIds.clear()
+        processedNotifMessageIds.clear()
+        rawChatMessages = emptyList()
+        chatClearTimestamps = emptyMap()
+        pendingPollVotes.clear()
+
+        latestAnnouncements = emptyList()
+        latestStars = emptyList()
+        latestBooks = emptyList()
+        latestReadingRecords = emptyList()
+        latestTournaments = emptyList()
+        latestMatchesByTournament.clear()
+        latestScheduleUpdatedAtMs = 0L
+        latestSeatingUpdatedAtMs = 0L
+        latestGroupsUpdatedAtMs = 0L
+
+        hasCloudAnnouncements = false
+        hasCloudStars = false
+        hasCloudBooks = false
+        hasCloudReadingRecords = false
+        hasCloudTournaments = false
+        hasCloudSchedule = false
+        hasCloudSeating = false
+        hasCloudGroups = false
+        loadedCloudMatchTournamentIds.clear()
     }
 
     private fun seedLocalActivitySnapshotsIfNeeded(
@@ -1003,8 +1058,9 @@ class BirizViewModel(
     }
 
     fun updateTeacherPresence(isOnline: Boolean) {
-        if (isOnline && !isAppInForeground) return
         val state = _uiState.value
+        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting) return
+        if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.TEACHER && isOnline) return
         val activeClass = state.activeClassRoom ?: return
         val classId = activeClass.id
@@ -1038,8 +1094,9 @@ class BirizViewModel(
     }
 
     fun updateParentPresence(isOnline: Boolean) {
-        if (isOnline && !isAppInForeground) return
         val state = _uiState.value
+        if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting) return
+        if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.PARENT && isOnline) return
         val linkedIds = state.linkedParentStudentIds
         if (linkedIds.isEmpty()) return
@@ -3099,12 +3156,19 @@ class BirizViewModel(
     }
 
     fun refreshCurrentUser() {
+        if (_uiState.value.isDeleting) return
         if (_uiState.value.isTestMode && Firebase.auth.currentUser == null) {
             return
         }
 
         val fbUser = Firebase.auth.currentUser
         if (fbUser != null) {
+            if (refreshUserJob?.isActive == true && activeResolvingUid == fbUser.uid) {
+                return
+            }
+            refreshUserJob?.cancel()
+            activeResolvingUid = fbUser.uid
+
             val userEmail = (fbUser.email ?: "").ifBlank { "cihan.ozel10@gmail.com" }
             var name = fbUser.displayName
             if (name.isNullOrBlank() || name == "Öğretmen") {
@@ -3126,6 +3190,7 @@ class BirizViewModel(
 
             val photoUrl = fbUser.photoUrl?.toString()
             _uiState.value = _uiState.value.copy(
+                isAuthResolving = true,
                 currentUser = AuthenticatedUser(
                     fullName = name,
                     email = userEmail,
@@ -3135,174 +3200,190 @@ class BirizViewModel(
                 )
             )
 
-            viewModelScope.launch {
-                val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
-                val isTeacher = profile.role == "TEACHER" || profile.role == "OGRETMEN"
-                val assignedClassId = profile.assignedClassId
+            refreshUserJob = viewModelScope.launch {
+                try {
+                    val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@launch
 
-                // 1. Öğretmen rolü veya tanımlı sınıf kontrolü (Firestore'dan öncelikli geri yükleme)
-                var resolvedClass: ClassRoom? = null
-                if (!assignedClassId.isNullOrBlank()) {
-                    resolvedClass = repository.fetchClassroomById(assignedClassId)
-                }
+                    val isTeacher = profile.role == "TEACHER" || profile.role == "OGRETMEN"
+                    val assignedClassId = profile.assignedClassId
 
-                if (resolvedClass == null) {
-                    resolvedClass = repository.findTeacherClassroom(fbUser.uid, userEmail)
-                }
-
-                if (resolvedClass == null && com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(userEmail)) {
-                    resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
-                    if (resolvedClass == null) {
-                        val sivasCity = repository.cities.firstOrNull { it.id == "58" }
-                            ?: City("58", "SİVAS", listOf("MERKEZ"))
-                        try {
-                            repository.addSchool(sivasCity.id, "MERKEZ", "SÜLEYMAN SAMİ KEPENEK İLKOKULU")
-                            resolvedClass = repository.registerClass(
-                                city = sivasCity,
-                                districtName = "MERKEZ",
-                                schoolName = "SÜLEYMAN SAMİ KEPENEK İLKOKULU",
-                                gradeLevel = 4,
-                                section = "D",
-                                teacherName = name,
-                                teacherEmail = userEmail
-                            )
-                        } catch (_: Exception) {
-                            resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
-                        }
+                    // 1. Öğretmen rolü veya tanımlı sınıf kontrolü (Firestore'dan öncelikli geri yükleme)
+                    var resolvedClass: ClassRoom? = null
+                    if (!assignedClassId.isNullOrBlank()) {
+                        resolvedClass = repository.fetchClassroomById(assignedClassId)
                     }
+
                     if (resolvedClass == null) {
-                        resolvedClass = repository.defaultSampleClass.copy(
-                            teacherId = fbUser.uid,
-                            teacherName = name,
+                        resolvedClass = repository.findTeacherClassroom(fbUser.uid, userEmail)
+                    }
+
+                    // Önceden silinmişse örnek sınıfı otomatik yeniden oluşturma; yalnızca mevcutsa bağla.
+                    if (resolvedClass == null && com.example.util.WebDataMigrationHelper.isTargetTeacherEmail(userEmail)) {
+                        resolvedClass = repository.fetchClassroomById(repository.defaultSampleClass.id)
+                    }
+
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@launch
+
+                    if (resolvedClass != null) {
+                        _uiState.value = _uiState.value.copy(
+                            activeClassRoom = resolvedClass,
+                            currentRole = UserRole.TEACHER,
+                            isKvkkAccepted = true,
+                            currentScreen = ScreenState.TEACHER_DASHBOARD,
+                            currentSubPage = DashboardSubPage.ANA_SAYFA,
+                            isAuthResolving = false
+                        )
+                        saveParentSessionState()
+
+                        repository.observeStudents(resolvedClass.id)
+                        ensureWebDataMigrationIfNeeded(
+                            classId = resolvedClass.id,
+                            teacherUid = fbUser.uid,
                             teacherEmail = userEmail
                         )
+                        loadScheduleFromStorage(resolvedClass.id)
+                        loadSeatingPlanFromStorage(resolvedClass.id)
+                        loadCommunicationFromStorage(resolvedClass.id)
+                        loadGroupMakerFromStorage(resolvedClass.id)
+                        syncBackgroundWorkersAndPushToken(_uiState.value)
+                        return@launch
                     }
-                }
 
-                if (resolvedClass != null) {
+                    // 2. Veli Rolü veya Öğrenci Bağlantısı Kontrolü
+                    val prefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+                    val savedRole = prefs?.getString("key_saved_role", "") ?: ""
+                    val savedLinkedIdsStr = prefs?.getString("key_linked_student_ids", "") ?: ""
+                    val savedLinkedIds = if (savedLinkedIdsStr.isNotBlank()) {
+                        savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
+                    } else emptyList()
+
+                    val hasLocalParentRole = savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT
+                    val hasLocalLinkedStudents = _uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty()
+                    val isProfileParent = profile.role.uppercase() in listOf("PARENT", "VELI")
+
+                    // Firestore ve hafızadan e-postaya bağlı öğrenci sorgusu
+                    val parentLinkedMatches = repository.findStudentsLinkedToParent(userEmail)
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@launch
+
+                    val hasParentLinkedStudents = parentLinkedMatches.isNotEmpty()
+
+                    if (isProfileParent || hasLocalParentRole || hasLocalLinkedStudents || hasParentLinkedStudents) {
+                        val combinedLinkedStudentIds = if (hasParentLinkedStudents) {
+                            parentLinkedMatches.map { it.first.id }.distinct()
+                        } else {
+                            (_uiState.value.linkedParentStudentIds + savedLinkedIds)
+                                .distinct()
+                                .filter { id ->
+                                    val s = repository.students.value.find { it.id == id }
+                                    s == null || s.isParentLinked
+                                }
+                        }
+                        val activeStudentId = if (_uiState.value.activeParentStudentId in combinedLinkedStudentIds) {
+                            _uiState.value.activeParentStudentId
+                        } else {
+                            combinedLinkedStudentIds.firstOrNull()
+                        }
+                        val parentClass = parentLinkedMatches.firstOrNull()?.second
+                            ?: _uiState.value.activeClassRoom
+                            ?: repository.defaultSampleClass
+
+                        if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != parentClass.id) {
+                            _uiState.value = _uiState.value.copy(activeClassRoom = parentClass)
+                        }
+
+                        repository.observeStudents(parentClass.id)
+                        loadScheduleFromStorage(parentClass.id)
+                        loadSeatingPlanFromStorage(parentClass.id)
+                        loadGroupMakerFromStorage(parentClass.id)
+                        loadCommunicationFromStorage(parentClass.id)
+
+                        if (combinedLinkedStudentIds.isNotEmpty()) {
+                            repository.updateParentPresence(
+                                classroomId = parentClass.id,
+                                studentIds = combinedLinkedStudentIds,
+                                parentEmail = userEmail,
+                                parentName = name,
+                                isOnline = true
+                            )
+                        }
+
+                        if (profile.role != "PARENT" && profile.role != "VELI") {
+                            repository.updateUserRole(fbUser.uid, "PARENT")
+                        }
+
+                        if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@launch
+
+                        _uiState.value = _uiState.value.copy(
+                            currentRole = UserRole.PARENT,
+                            isKvkkAccepted = true,
+                            currentScreen = ScreenState.PARENT_PORTAL,
+                            linkedParentStudentIds = combinedLinkedStudentIds,
+                            activeParentStudentId = activeStudentId,
+                            isAuthResolving = false
+                        )
+                        reloadNotificationPreferences(_uiState.value)
+                        refreshChatClearStateForCurrentViewer(parentClass.id, forceReload = true)
+                        saveParentSessionState()
+                        syncBackgroundWorkersAndPushToken(_uiState.value)
+                        return@launch
+                    }
+
+                    // 3. Öğretmen olarak kayıtlı olup henüz sınıf oluşturmamış olanlar
+                    if (isTeacher || savedRole == UserRole.TEACHER.code) {
+                        _uiState.value = _uiState.value.copy(
+                            currentRole = UserRole.TEACHER,
+                            isKvkkAccepted = true,
+                            currentScreen = ScreenState.TEACHER_SETUP,
+                            isAuthResolving = false
+                        )
+                        saveParentSessionState()
+                        return@launch
+                    }
+
+                    // 4. Henüz rol seçimi yapmamış yeni kullanıcılar için Rol ve KVKK ekranı
                     _uiState.value = _uiState.value.copy(
-                        activeClassRoom = resolvedClass,
-                        currentRole = UserRole.TEACHER,
-                        isKvkkAccepted = true,
-                        currentScreen = ScreenState.TEACHER_DASHBOARD,
-                        currentSubPage = DashboardSubPage.ANA_SAYFA
+                        currentRole = UserRole.MEMBER,
+                        isKvkkAccepted = profile.kvkkAccepted,
+                        isAuthResolving = false,
+                        currentScreen = if (_uiState.value.currentScreen == ScreenState.GOOGLE_SIGN_IN) {
+                            ScreenState.ROLE_AND_KVKK
+                        } else {
+                            _uiState.value.currentScreen
+                        }
                     )
-                    saveParentSessionState()
-
-                    repository.observeStudents(resolvedClass.id)
-                    ensureWebDataMigrationIfNeeded(
-                        classId = resolvedClass.id,
-                        teacherUid = fbUser.uid,
-                        teacherEmail = userEmail
-                    )
-                    loadScheduleFromStorage(resolvedClass.id)
-                    loadSeatingPlanFromStorage(resolvedClass.id)
-                    loadCommunicationFromStorage(resolvedClass.id)
-                    loadGroupMakerFromStorage(resolvedClass.id)
-                    syncBackgroundWorkersAndPushToken(_uiState.value)
-                    return@launch
-                }
-
-                // 2. Veli Rolü veya Öğrenci Bağlantısı Kontrolü
-                val prefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
-                val savedRole = prefs?.getString("key_saved_role", "") ?: ""
-                val savedLinkedIdsStr = prefs?.getString("key_linked_student_ids", "") ?: ""
-                val savedLinkedIds = if (savedLinkedIdsStr.isNotBlank()) {
-                    savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
-                } else emptyList()
-
-                val hasLocalParentRole = savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT
-                val hasLocalLinkedStudents = _uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty()
-                val isProfileParent = profile.role.uppercase() in listOf("PARENT", "VELI")
-
-                // Firestore ve hafızadan e-postaya bağlı öğrenci sorgusu
-                val parentLinkedMatches = repository.findStudentsLinkedToParent(userEmail)
-                val hasParentLinkedStudents = parentLinkedMatches.isNotEmpty()
-
-                if (isProfileParent || hasLocalParentRole || hasLocalLinkedStudents || hasParentLinkedStudents) {
-                    val combinedLinkedStudentIds = if (hasParentLinkedStudents) {
-                        parentLinkedMatches.map { it.first.id }.distinct()
-                    } else {
-                        (_uiState.value.linkedParentStudentIds + savedLinkedIds)
-                            .distinct()
-                            .filter { id ->
-                                val s = repository.students.value.find { it.id == id }
-                                s == null || s.isParentLinked
-                            }
-                    }
-                    val activeStudentId = if (_uiState.value.activeParentStudentId in combinedLinkedStudentIds) {
-                        _uiState.value.activeParentStudentId
-                    } else {
-                        combinedLinkedStudentIds.firstOrNull()
-                    }
-                    val parentClass = parentLinkedMatches.firstOrNull()?.second
-                        ?: _uiState.value.activeClassRoom
-                        ?: repository.defaultSampleClass
-
-                    if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != parentClass.id) {
-                        _uiState.value = _uiState.value.copy(activeClassRoom = parentClass)
-                    }
-
-                    repository.observeStudents(parentClass.id)
-                    loadScheduleFromStorage(parentClass.id)
-                    loadSeatingPlanFromStorage(parentClass.id)
-                    loadGroupMakerFromStorage(parentClass.id)
-                    loadCommunicationFromStorage(parentClass.id)
-
-                    if (combinedLinkedStudentIds.isNotEmpty()) {
-                        repository.updateParentPresence(
-                            classroomId = parentClass.id,
-                            studentIds = combinedLinkedStudentIds,
-                            parentEmail = userEmail,
-                            parentName = name,
-                            isOnline = true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w("BirizViewModel", "refreshCurrentUser error: ${e.message}", e)
+                    if (Firebase.auth.currentUser?.uid == fbUser.uid &&
+                        _uiState.value.currentScreen == ScreenState.GOOGLE_SIGN_IN &&
+                        !_uiState.value.isDeleting
+                    ) {
+                        _uiState.value = _uiState.value.copy(
+                            currentRole = UserRole.MEMBER,
+                            currentScreen = ScreenState.ROLE_AND_KVKK,
+                            isAuthResolving = false
                         )
                     }
-
-                    if (profile.role != "PARENT" && profile.role != "VELI") {
-                        repository.updateUserRole(fbUser.uid, "PARENT")
+                } finally {
+                    if (activeResolvingUid == fbUser.uid) {
+                        activeResolvingUid = null
+                        if (_uiState.value.isAuthResolving) {
+                            _uiState.value = _uiState.value.copy(isAuthResolving = false)
+                        }
                     }
-
-                    _uiState.value = _uiState.value.copy(
-                        currentRole = UserRole.PARENT,
-                        isKvkkAccepted = true,
-                        currentScreen = ScreenState.PARENT_PORTAL,
-                        linkedParentStudentIds = combinedLinkedStudentIds,
-                        activeParentStudentId = activeStudentId
-                    )
-                    reloadNotificationPreferences(_uiState.value)
-                    refreshChatClearStateForCurrentViewer(parentClass.id, forceReload = true)
-                    saveParentSessionState()
-                    syncBackgroundWorkersAndPushToken(_uiState.value)
-                    return@launch
                 }
-
-                // 3. Öğretmen olarak kayıtlı olup henüz sınıf oluşturmamış olanlar
-                if (isTeacher || savedRole == UserRole.TEACHER.code) {
-                    _uiState.value = _uiState.value.copy(
-                        currentRole = UserRole.TEACHER,
-                        isKvkkAccepted = true,
-                        currentScreen = ScreenState.TEACHER_SETUP
-                    )
-                    saveParentSessionState()
-                    return@launch
-                }
-
-                // 4. Henüz rol seçimi yapmamış yeni kullanıcılar için Rol ve KVKK ekranı
-                _uiState.value = _uiState.value.copy(
-                    currentRole = UserRole.MEMBER,
-                    isKvkkAccepted = profile.kvkkAccepted,
-                    currentScreen = if (_uiState.value.currentScreen == ScreenState.GOOGLE_SIGN_IN) {
-                        ScreenState.ROLE_AND_KVKK
-                    } else {
-                        _uiState.value.currentScreen
-                    }
-                )
             }
         } else {
+            refreshUserJob?.cancel()
+            refreshUserJob = null
+            activeResolvingUid = null
             _uiState.value = _uiState.value.copy(
                 currentScreen = ScreenState.GOOGLE_SIGN_IN,
-                activeClassRoom = null
+                activeClassRoom = null,
+                isAuthResolving = false,
+                currentUser = AuthenticatedUser()
             )
         }
     }
@@ -4892,21 +4973,55 @@ class BirizViewModel(
     }
 
     fun deleteEntireAccount(context: android.content.Context? = null) {
-        val classRoom = _uiState.value.activeClassRoom
-        _uiState.value = _uiState.value.copy(isDeleting = true)
+        if (_uiState.value.isDeleting) return
+        val prevState = _uiState.value
+        val prevClassId = resolveActiveClassId()
+        val prevBoardCode = prevState.connectedBoardSessionCode
+        val cleanupCtx = context ?: appContext
+
+        refreshUserJob?.cancel()
+        refreshUserJob = null
+        activeResolvingUid = null
+        clearAllListenersAndSessionCaches()
+        disconnectSmartBoard()
+
+        _uiState.value = prevState.copy(
+            isDeleting = true,
+            deletingStatusMessage = "Hesabınız, bulut kayıtları ve tüm cihaz izleriniz kalıcı olarak siliniyor..."
+        )
+
         viewModelScope.launch {
             try {
-                repository.deleteEntireAccount(classRoom?.id)
-                signOut(context)
-                _uiState.value = _uiState.value.copy(
-                    isDeleting = false,
-                    snackbarMessage = "Hesabınız ve tüm verileriniz kalıcı olarak silindi."
+                repository.deleteEntireAccount(
+                    context = cleanupCtx,
+                    currentRole = prevState.currentRole,
+                    activeClassId = prevClassId,
+                    activeBoardSessionCode = prevBoardCode
+                )
+                clearAllListenersAndSessionCaches()
+                repository.clearSessionCaches()
+                if (cleanupCtx != null) {
+                    com.example.auth.GoogleAuthHelper.launchClearCredentialState(viewModelScope, cleanupCtx)
+                }
+                try {
+                    Firebase.auth.signOut()
+                } catch (_: Exception) {}
+
+                _uiState.value = BirizUiState(
+                    currentScreen = ScreenState.GOOGLE_SIGN_IN,
+                    isDarkTheme = prevState.isDarkTheme,
+                    availableUpdateInfo = prevState.availableUpdateInfo,
+                    isUpdateBannerDismissed = prevState.isUpdateBannerDismissed,
+                    snackbarMessage = "Hesabınız, bulut kayıtlarınız ve tüm cihaz izleriniz kalıcı olarak silindi."
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isDeleting = false,
-                    snackbarMessage = e.message ?: "Hesap silinirken hata oluştu"
+                    snackbarMessage = e.message ?: "Hesap silinirken hata oluştu."
                 )
+                if (Firebase.auth.currentUser != null) {
+                    refreshCurrentUser()
+                }
             }
         }
     }
@@ -4943,42 +5058,27 @@ class BirizViewModel(
 
     fun signOut(context: android.content.Context? = null) {
         val prevState = _uiState.value
-        if (prevState.currentRole == UserRole.PARENT && prevState.linkedParentStudentIds.isNotEmpty()) {
-            val cid = resolveActiveClassId()
-            val email = prevState.currentUser.email.ifBlank { "veli@biriz.app" }
-            val name = prevState.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
-            viewModelScope.launch {
-                try {
-                    repository.updateParentPresence(
-                        classroomId = cid,
-                        studentIds = prevState.linkedParentStudentIds,
-                        parentEmail = email,
-                        parentName = name,
-                        isOnline = false
-                    )
-                } catch (_: Exception) {}
-                Firebase.auth.signOut()
-            }
-        } else if (prevState.currentRole == UserRole.TEACHER && prevState.activeClassRoom != null) {
-            val cid = prevState.activeClassRoom.id
-            viewModelScope.launch {
-                try {
-                    repository.updateTeacherPresence(
-                        classroomId = cid,
-                        isOnline = false
-                    )
-                } catch (_: Exception) {}
-                Firebase.auth.signOut()
-            }
-        } else {
-            Firebase.auth.signOut()
-        }
+        val prevClassId = resolveActiveClassId()
+
+        refreshUserJob?.cancel()
+        refreshUserJob = null
+        activeResolvingUid = null
+        clearAllListenersAndSessionCaches()
+        repository.clearSessionCaches()
         disconnectSmartBoard()
-        repository.disableTestMode()
-        clearActivityListeners()
-        observedNotificationClassId = null
-        loadedActivityStateKey = null
-        previousActivitySnapshot = null
+
+        if (prevState.currentRole == UserRole.PARENT && prevState.linkedParentStudentIds.isNotEmpty()) {
+            repository.markParentOfflineFireAndForget(
+                classroomId = prevClassId,
+                studentIds = prevState.linkedParentStudentIds,
+                parentEmail = prevState.currentUser.email.ifBlank { "veli@biriz.app" }
+            )
+        } else if (prevState.currentRole == UserRole.TEACHER && prevState.activeClassRoom != null) {
+            repository.markTeacherOfflineFireAndForget(prevState.activeClassRoom.id)
+        }
+
+        Firebase.auth.signOut()
+
         val cleanupCtx = context ?: appContext
         cleanupCtx?.let { ctx ->
             ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE).edit()
@@ -4990,25 +5090,14 @@ class BirizViewModel(
                 .remove("key_user_name")
                 .apply()
             BackgroundNotificationSyncHelper.cancelAllBackgroundSync(ctx)
+            com.example.auth.GoogleAuthHelper.launchClearCredentialState(viewModelScope, ctx)
         }
-        context?.let { ctx ->
-            viewModelScope.launch {
-                com.example.auth.GoogleAuthHelper.clearCredentialState(ctx)
-            }
-        }
-        _uiState.value = _uiState.value.copy(
+
+        _uiState.value = BirizUiState(
             currentScreen = ScreenState.GOOGLE_SIGN_IN,
-            isTestMode = false,
-            isKvkkAccepted = false,
-            activeClassRoom = null,
-            currentRole = UserRole.MEMBER,
-            selectedCity = null,
-            selectedDistrict = null,
-            rawSchoolInput = "",
-            uppercaseSchoolName = "",
-            selectedSchool = null,
-            selectedGradeLevel = null,
-            selectedSection = null
+            isDarkTheme = prevState.isDarkTheme,
+            availableUpdateInfo = prevState.availableUpdateInfo,
+            isUpdateBannerDismissed = prevState.isUpdateBannerDismissed
         )
     }
 

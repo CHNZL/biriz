@@ -98,6 +98,13 @@ class SmartBoardScreenCastService : Service() {
                 SmartBoardHelper.stopBoardCast(context, classId, sessionCode)
             }
         }
+
+        fun stopServiceOnly(context: Context) {
+            try {
+                context.stopService(Intent(context, SmartBoardScreenCastService::class.java))
+            } catch (_: Exception) {}
+            _status.value = ScreenMirrorStatus()
+        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

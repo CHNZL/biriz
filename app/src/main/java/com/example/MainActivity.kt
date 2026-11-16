@@ -18,7 +18,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -335,7 +338,8 @@ fun BirizApp(viewModel: BirizViewModel) {
                             viewModel.launchTestSignIn()
                         },
                         isDarkTheme = uiState.isDarkTheme,
-                        onToggleTheme = { viewModel.toggleTheme() }
+                        onToggleTheme = { viewModel.toggleTheme() },
+                        isAuthResolving = uiState.isAuthResolving
                     )
                 }
 
@@ -932,6 +936,54 @@ fun BirizApp(viewModel: BirizViewModel) {
                     onUpdateDiscovered = { viewModel.onManualUpdateDiscovered(it) },
                     onDismiss = { viewModel.dismissGlobalUpdateDialog() }
                 )
+            }
+
+            // Global Kalıcı Hesap Silme İlerleme Kaplaması (tüm ekranlarda görünür, dokunuşları engeller)
+            if (uiState.isDeleting) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0x99020617))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (uiState.isDarkTheme) Color(0xFF0F172A) else Color.White,
+                        border = BorderStroke(1.dp, Color(0xFFDC2626).copy(alpha = 0.5f)),
+                        shadowElevation = 16.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color(0xFFDC2626),
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                text = "Hesap Kalıcı Olarak Siliniyor",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (uiState.isDarkTheme) Color.White else BirizNavyPrimary
+                            )
+                            Text(
+                                text = uiState.deletingStatusMessage,
+                                fontSize = 12.5.sp,
+                                color = if (uiState.isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
         }
     }

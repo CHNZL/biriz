@@ -1,7 +1,9 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.R
+import com.example.auth.GoogleAuthHelper
 import com.example.data.model.BranchStatus
 import com.example.data.model.City
 import com.example.data.model.ClassRoom
@@ -10,16 +12,24 @@ import com.example.data.model.LinkedParentAccount
 import com.example.data.model.School
 import com.example.data.model.SchoolDocument
 import com.example.data.model.Student
+import com.example.data.model.UserRole
+import com.example.util.AppDataWipeHelper
+import com.example.util.ChatVisibilityHelper
 import com.example.util.OperationType
+import com.example.util.SmartBoardHelper
 import com.example.util.TurkishTextHelper
 import com.example.util.handleFirestoreError
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +38,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 class ClassRegistryRepository(
     private val firestoreInstance: FirebaseFirestore? = null,
@@ -168,6 +179,14 @@ class ClassRegistryRepository(
     fun disableTestMode() {
         isTestMode = false
         testUserId = null
+    }
+
+    fun clearSessionCaches() {
+        studentsJob?.cancel()
+        studentsJob = null
+        _students.value = emptyList()
+        _registeredClasses.value = emptyList()
+        disableTestMode()
     }
 
     val defaultSampleClass: ClassRoom = ClassRoom(
@@ -1258,41 +1277,371 @@ class ClassRegistryRepository(
         _students.value = emptyList()
     }
 
-    suspend fun deleteEntireAccount(classroomId: String?) {
-        val uid = requireUserId()
-        if (Firebase.auth.currentUser != null) {
-            if (!classroomId.isNullOrBlank()) {
+    fun markTeacherOfflineFireAndForget(classroomId: String?) {
+        val cid = classroomId?.trim().orEmpty()
+        if (cid.isBlank() || cid == "default") return
+        val nowMillis = System.currentTimeMillis()
+        scope.launch {
+            withContext(NonCancellable) {
                 try {
-                    val studentSnapshots = db.collection("classrooms").document(classroomId)
-                        .collection("students").get().await()
-                    for (doc in studentSnapshots.documents) {
-                        doc.reference.delete().await()
+                    db.collection("classrooms").document(cid)
+                        .update(
+                            mapOf(
+                                "teacherIsOnline" to false,
+                                "teacherLastActiveMillis" to nowMillis,
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun markParentOfflineFireAndForget(
+        classroomId: String?,
+        studentIds: List<String>,
+        parentEmail: String
+    ) {
+        val cid = classroomId?.trim().orEmpty()
+        if (cid.isBlank() || cid == "default" || studentIds.isEmpty()) return
+        val nowMillis = System.currentTimeMillis()
+        val nowFormatted = java.text.SimpleDateFormat("dd MMMM yyyy, HH:mm", java.util.Locale("tr"))
+            .format(java.util.Date(nowMillis))
+        val cleanEmail = parentEmail.trim()
+        scope.launch {
+            withContext(NonCancellable) {
+                for (sId in studentIds) {
+                    try {
+                        val sRef = db.collection("classrooms").document(cid).collection("students").document(sId)
+                        val snap = sRef.get().await()
+                        if (!snap.exists()) continue
+                        val existingParents = parseLinkedParentsFromDoc(snap, includeLegacyFallback = true)
+                        if (existingParents.isEmpty()) continue
+                        val updatedParents = existingParents.map { p ->
+                            if (cleanEmail.isBlank() || p.email.trim().equals(cleanEmail, ignoreCase = true)) {
+                                p.copy(
+                                    lastLoginAt = nowFormatted,
+                                    isOnline = false,
+                                    lastActiveMillis = nowMillis
+                                )
+                            } else p
+                        }
+                        val anyOnline = updatedParents.any { it.isCurrentlyActive(nowMillis) }
+                        sRef.update(
+                            mapOf(
+                                "parentLastLoginAt" to nowFormatted,
+                                "parentIsOnline" to anyOnline,
+                                "parentLastActiveMillis" to nowMillis,
+                                "linkedParents" to updatedParents.map { p ->
+                                    mapOf(
+                                        "email" to p.email,
+                                        "name" to p.name,
+                                        "phone" to p.phone,
+                                        "relationship" to p.relationship,
+                                        "linkedAt" to p.linkedAt,
+                                        "lastLoginAt" to (p.lastLoginAt ?: nowFormatted),
+                                        "isOnline" to p.isOnline,
+                                        "lastActiveMillis" to (p.lastActiveMillis ?: nowMillis)
+                                    )
+                                },
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private suspend fun deleteAllDocsInCollection(collectionRef: CollectionReference) {
+        try {
+            val snap = collectionRef.get().await()
+            if (snap != null && !snap.isEmpty) {
+                snap.documents.chunked(400).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { doc -> batch.delete(doc.reference) }
+                    batch.commit().await()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun deleteOwnedClassroomCompletely(classroomId: String) {
+        val classRef = db.collection("classrooms").document(classroomId)
+
+        // 1. Sınıfın tüm alt koleksiyonlarını temizle
+        val subcollections = listOf(
+            "students",
+            "announcements",
+            "messages",
+            "chat_clear_state",
+            "groups",
+            "library_books",
+            "reading_records",
+            "lucky_student",
+            "schedule",
+            "seating",
+            "stars",
+            "live_board"
+        )
+        for (sub in subcollections) {
+            deleteAllDocsInCollection(classRef.collection(sub))
+        }
+
+        // 2. Turnuvalar ve kök tournaments/{tid}/matches alt koleksiyonlarını temizle
+        try {
+            val tournamentsSnap = classRef.collection("tournaments").get().await()
+            for (tDoc in tournamentsSnap.documents) {
+                deleteAllDocsInCollection(db.collection("tournaments").document(tDoc.id).collection("matches"))
+                try {
+                    db.collection("tournaments").document(tDoc.id).delete().await()
+                } catch (_: Exception) {}
+                try {
+                    tDoc.reference.delete().await()
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+
+        // 3. classes/{classroomId}/live_board alt koleksiyonunu ve belgeyi temizle
+        try {
+            val classesDocRef = db.collection("classes").document(classroomId)
+            deleteAllDocsInCollection(classesDocRef.collection("live_board"))
+            classesDocRef.delete().await()
+        } catch (_: Exception) {}
+
+        // 4. Ana sınıf belgesini sil
+        try {
+            classRef.delete().await()
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, classRef.path)
+            throw e
+        }
+    }
+
+    private suspend fun purgeParentAndUserTracesInOtherClassrooms(
+        otherClassroomIds: List<String>,
+        userEmail: String,
+        uid: String
+    ) {
+        val cleanEmail = userEmail.trim()
+        val parentClearKey = if (cleanEmail.isNotBlank()) {
+            ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher = false, userEmail = cleanEmail)
+        } else ""
+
+        for (cid in otherClassroomIds) {
+            val classRef = db.collection("classrooms").document(cid)
+
+            // 1. Öğrencilerden veli e-postasını/profilini temizle (diğer veliler varsa koru)
+            if (cleanEmail.isNotBlank()) {
+                try {
+                    val studentSnaps = classRef.collection("students").get().await()
+                    for (sDoc in studentSnaps.documents) {
+                        val sParentEmail = sDoc.getString("parentEmail")?.trim().orEmpty()
+                        val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
+                        val hasEmail = sParentEmail.equals(cleanEmail, ignoreCase = true) ||
+                            existingParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+
+                        if (hasEmail) {
+                            val remainingParents = existingParents.filterNot {
+                                it.email.trim().equals(cleanEmail, ignoreCase = true)
+                            }
+                            if (remainingParents.isEmpty()) {
+                                sDoc.reference.update(
+                                    mapOf<String, Any?>(
+                                        "parentName" to null,
+                                        "parentEmail" to null,
+                                        "parentLinkedAt" to null,
+                                        "parentLastLoginAt" to null,
+                                        "parentIsOnline" to false,
+                                        "parentLastActiveMillis" to null,
+                                        "linkedParents" to emptyList<Any>(),
+                                        "updatedAt" to FieldValue.serverTimestamp()
+                                    )
+                                ).await()
+                            } else {
+                                val primary = remainingParents.first()
+                                sDoc.reference.update(
+                                    mapOf<String, Any?>(
+                                        "parentName" to primary.name,
+                                        "parentEmail" to primary.email,
+                                        "parentLinkedAt" to primary.linkedAt,
+                                        "parentLastLoginAt" to primary.lastLoginAt,
+                                        "parentIsOnline" to remainingParents.any { it.isOnline },
+                                        "parentLastActiveMillis" to primary.lastActiveMillis,
+                                        "linkedParents" to remainingParents.map { p ->
+                                            mapOf(
+                                                "email" to p.email,
+                                                "name" to p.name,
+                                                "phone" to p.phone,
+                                                "relationship" to p.relationship,
+                                                "linkedAt" to p.linkedAt,
+                                                "lastLoginAt" to p.lastLoginAt,
+                                                "isOnline" to p.isOnline,
+                                                "lastActiveMillis" to p.lastActiveMillis
+                                            )
+                                        },
+                                        "updatedAt" to FieldValue.serverTimestamp()
+                                    )
+                                ).await()
+                            }
+                        }
                     }
-                    db.collection("classrooms").document(classroomId).delete().await()
-                } catch (e: Exception) {
-                    // ignore
+                } catch (_: Exception) {}
+
+                // 2. Bu velinin gönderdiği bireysel sohbet mesajlarını temizle
+                try {
+                    val msgSnaps = classRef.collection("messages")
+                        .whereEqualTo("parentEmail", cleanEmail)
+                        .get()
+                        .await()
+                    val toDelete = msgSnaps.documents.filter { d ->
+                        val isFromTeacher = d.getBoolean("isFromTeacher") ?: false
+                        !isFromTeacher
+                    }
+                    toDelete.chunked(400).forEach { chunk ->
+                        val batch = db.batch()
+                        chunk.forEach { batch.delete(it.reference) }
+                        batch.commit().await()
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 3. Kullanıcının chat_clear_state kayıtlarını temizle
+            val clearDocKeys = listOfNotNull(
+                parentClearKey.takeIf { it.isNotBlank() },
+                uid.takeIf { it.isNotBlank() }
+            ).distinct()
+            for (key in clearDocKeys) {
+                try {
+                    classRef.collection("chat_clear_state").document(key).delete().await()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun deleteEntireAccount(
+        context: Context? = null,
+        currentRole: UserRole = UserRole.MEMBER,
+        activeClassId: String? = null,
+        activeBoardSessionCode: String? = null
+    ) {
+        val fbUser = Firebase.auth.currentUser
+        val uid = fbUser?.uid ?: if (isTestMode) (testUserId ?: "test_uid") else requireUserId()
+        val userEmail = fbUser?.email?.trim().orEmpty()
+
+        // 1. Oturum süresi eskidiyse (4 dk+) veritabanını silmeden önce güvenli Google doğrulaması iste.
+        // Böylece kullanıcı doğrulamayı iptal ederse veriler yarım silinmez.
+        if (fbUser != null && context != null) {
+            val lastSignIn = fbUser.metadata?.lastSignInTimestamp ?: 0L
+            if (lastSignIn > 0L && (System.currentTimeMillis() - lastSignIn) > 4L * 60L * 1000L) {
+                val reauthed = GoogleAuthHelper.reauthenticateCurrentUser(context)
+                if (!reauthed) {
+                    throw IllegalStateException("Güvenlik doğrulaması iptal edildiği için hesabınız silinmedi.")
+                }
+            }
+        }
+
+        if (fbUser != null) {
+            // 2. Sahip olunan sınıfları ve paylaşılan sınıfları ayır (Veli asla öğretmenin sınıfını silemez!)
+            val allClassDocs = try {
+                db.collection("classrooms").get().await().documents
+            } catch (e: Exception) {
+                emptyList()
+            }
+
+            val ownedClassIds = linkedSetOf<String>()
+            val otherClassIds = mutableListOf<String>()
+
+            for (cDoc in allClassDocs) {
+                val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
+                val docTeacherEmail = cDoc.getString("teacherEmail")?.trim().orEmpty()
+                val isOwnerMatch = (uid.isNotBlank() && docTeacherId == uid) ||
+                    (userEmail.isNotBlank() && docTeacherEmail.equals(userEmail, ignoreCase = true))
+                val isFallbackActiveTeacherClass = currentRole == UserRole.TEACHER &&
+                    !activeClassId.isNullOrBlank() &&
+                    activeClassId != "default" &&
+                    cDoc.id == activeClassId &&
+                    (docTeacherId.isBlank() || docTeacherId == uid || docTeacherEmail.equals(userEmail, ignoreCase = true))
+
+                if (isOwnerMatch || isFallbackActiveTeacherClass) {
+                    ownedClassIds.add(cDoc.id)
+                } else {
+                    otherClassIds.add(cDoc.id)
                 }
             }
 
+            if (currentRole == UserRole.TEACHER &&
+                !activeClassId.isNullOrBlank() &&
+                activeClassId != "default" &&
+                activeClassId !in ownedClassIds &&
+                activeClassId !in otherClassIds
+            ) {
+                ownedClassIds.add(activeClassId)
+            }
+
+            // 3. Akıllı Tahta oturumlarını ve chunk verilerini sil
+            if (context != null) {
+                try {
+                    SmartBoardHelper.deleteUserSmartBoardTraces(
+                        context = context,
+                        ownedClassIds = ownedClassIds,
+                        teacherEmail = userEmail,
+                        activeSessionCode = activeBoardSessionCode
+                    )
+                } catch (e: Exception) {
+                    Log.w("ClassRegistryRepo", "Failed clearing SmartBoard traces", e)
+                }
+            }
+
+            // 4. Öğretmene ait tüm sınıfları ve alt koleksiyonlarını eksiksiz sil
+            for (ownedId in ownedClassIds) {
+                try {
+                    deleteOwnedClassroomCompletely(ownedId)
+                } catch (e: Exception) {
+                    Log.w("ClassRegistryRepo", "Failed deleting owned classroom $ownedId", e)
+                }
+            }
+
+            // 5. Diğer sınıflardaki veli/mesaj/temizleme izlerini temizle
+            purgeParentAndUserTracesInOtherClassrooms(
+                otherClassroomIds = otherClassIds,
+                userEmail = userEmail,
+                uid = uid
+            )
+
+            // 6. Kullanıcı profil belgesini ve FCM push tokenını sil
             val userRef = db.collection("users").document(uid)
             try {
                 userRef.delete().await()
             } catch (e: Exception) {
                 handleFirestoreError(e, OperationType.DELETE, userRef.path)
             }
-
             try {
-                Firebase.auth.currentUser?.delete()?.await()
-            } catch (e: Exception) {
-                // ignore
+                FirebaseMessaging.getInstance().deleteToken().await()
+            } catch (_: Exception) {}
+
+            // 7. Firebase Auth kullanıcı kaydını kalıcı olarak sil
+            try {
+                fbUser.delete().await()
+            } catch (e: FirebaseAuthRecentLoginRequiredException) {
+                if (context != null) {
+                    val reauthed = GoogleAuthHelper.reauthenticateCurrentUser(context)
+                    if (!reauthed) {
+                        throw IllegalStateException("Verileriniz temizlendi; ancak kimlik kaydının silinmesi için Google doğrulaması gerekiyor.")
+                    }
+                    fbUser.delete().await()
+                } else {
+                    throw e
+                }
             }
         }
 
-        if (!classroomId.isNullOrBlank()) {
-            _registeredClasses.value = _registeredClasses.value.filter { it.id != classroomId }
+        // 8. Cihazdaki tüm yerel BİRİZ dosyalarını, bildirimleri, WorkManager işlerini ve önbelleği sil
+        if (context != null) {
+            AppDataWipeHelper.wipeAllLocalAppData(context)
         }
-        _students.value = emptyList()
-        disableTestMode()
+
+        clearSessionCaches()
     }
 
     suspend fun ensureUserProfile(uid: String, fullName: String, email: String): com.example.data.model.UserProfile {

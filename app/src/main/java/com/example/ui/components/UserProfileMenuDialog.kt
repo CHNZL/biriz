@@ -120,7 +120,9 @@ private enum class ProfileMenuScreen {
     PROFILE_INFO,
     NOTIFICATION_PREFS,
     VERSION_INFO,
-    EXIT_OPTIONS
+    EXIT_OPTIONS,
+    CONFIRM_DELETE_ROLE,
+    CONFIRM_DELETE_ACCOUNT
 }
 
 private fun exitAppGracefully(context: Context) {
@@ -220,8 +222,6 @@ fun UserProfileMenuDialog(
 ) {
     val context = LocalContext.current
     var activeScreen by remember { mutableStateOf(ProfileMenuScreen.DROPDOWN_MENU) }
-    var showDeleteRoleConfirm by remember { mutableStateOf(false) }
-    var showDeleteAccountConfirm by remember { mutableStateOf(false) }
     var showParentQrDialog by remember { mutableStateOf(false) }
     var isExitQuickExpanded by remember { mutableStateOf(false) }
 
@@ -1036,7 +1036,7 @@ fun UserProfileMenuDialog(
 
                 // Rol Sil Butonu (Öğretmen Rolünü Sil / Veli Rolünü Sil)
                 Surface(
-                    onClick = { showDeleteRoleConfirm = true },
+                    onClick = { activeScreen = ProfileMenuScreen.CONFIRM_DELETE_ROLE },
                     shape = RoundedCornerShape(14.dp),
                     color = if (isDarkTheme) Color(0xFF2B1D12) else Color(0xFFFFF7ED),
                     border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF9A3412) else Color(0xFFFED7AA)),
@@ -1093,7 +1093,7 @@ fun UserProfileMenuDialog(
 
                 // Hesabımı Sil Butonu
                 Surface(
-                    onClick = { showDeleteAccountConfirm = true },
+                    onClick = { activeScreen = ProfileMenuScreen.CONFIRM_DELETE_ACCOUNT },
                     shape = RoundedCornerShape(14.dp),
                     color = if (isDarkTheme) Color(0xFF2A1215) else Color(0xFFFEF2F2),
                     border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF991B1B) else Color(0xFFFECACA)),
@@ -1517,96 +1517,175 @@ fun UserProfileMenuDialog(
                 }
             }
         }
-    }
 
-    // --- ROL SİLME ONAY DİYALOĞU ---
-    if (showDeleteRoleConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteRoleConfirm = false },
-            containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
-            title = {
-                Text(
-                    text = if (currentRole == UserRole.TEACHER) "⚠️ Öğretmen Rolünü Sil" else "⚠️ Veli Rolünü Sil",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
-                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                )
-            },
-            text = {
-                Text(
-                    text = if (currentRole == UserRole.TEACHER) {
-                        "Öğretmen rolünüzü ve oluşturduğunuz sınıfı sildiğinizde tekrar Rol Seçimi ekranına dönersiniz. Devam etmek istiyor musunuz?"
-                    } else {
-                        "Veli rolünüzü ve bağlı tüm öğrenci bağlantılarınızı sildiğinizde tekrar Rol Seçimi ekranına dönersiniz. Devam etmek istiyor musunuz?"
-                    },
-                    fontSize = 13.sp,
-                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteRoleConfirm = false
-                        onDismissRequest()
-                        onDeleteRole()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
-                    shape = RoundedCornerShape(10.dp)
+        // =========================================================================
+        // 6. ROL SİLME ONAY EKRANI (AYNI DİYALOG İÇİNDE)
+        // =========================================================================
+        ProfileMenuScreen.CONFIRM_DELETE_ROLE -> {
+            ProfileSubModalScaffold(
+                title = if (currentRole == UserRole.TEACHER) "Öğretmen Rolünü Sil" else "Veli Rolünü Sil",
+                subtitle = "Onayladığınızda rolünüz sıfırlanır ve Rol Seçimine dönersiniz",
+                isDarkTheme = isDarkTheme,
+                onBackToMenu = { activeScreen = ProfileMenuScreen.PROFILE_INFO },
+                onCloseAll = onDismissRequest
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDarkTheme) Color(0xFF2B1D12) else Color(0xFFFFF7ED),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF9A3412) else Color(0xFFFED7AA)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = if (currentRole == UserRole.TEACHER) "Evet, Öğretmen Rolümü Sil" else "Evet, Veli Rolümü Sil",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.PersonRemove,
+                                contentDescription = null,
+                                tint = Color(0xFFEA580C),
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (currentRole == UserRole.TEACHER) "⚠️ Öğretmen Rolü Silinecek" else "⚠️ Veli Rolü Silinecek",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.5.sp,
+                                color = if (isDarkTheme) Color(0xFFFDBA74) else Color(0xFFC2410C)
+                            )
+                        }
+                        Text(
+                            text = if (currentRole == UserRole.TEACHER) {
+                                "Öğretmen rolünüz ve oluşturduğunuz sınıf kalıcı olarak kaldırılır. Google oturumunuz açık kalır ve Rol Seçimi ekranına dönersiniz."
+                            } else {
+                                "Veli rolünüz ve bağlı tüm öğrenci bağlantılarınız kaldırılır. Google oturumunuz açık kalır ve Rol Seçimi ekranına dönersiniz."
+                            },
+                            fontSize = 12.5.sp,
+                            color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
+                        )
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteRoleConfirm = false }) {
-                    Text("Vazgeç")
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { activeScreen = ProfileMenuScreen.PROFILE_INFO },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Vazgeç", fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = {
+                            onDismissRequest()
+                            onDeleteRole()
+                        },
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .testTag("confirm_delete_role_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "Evet, Rolümü Sil",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
-        )
-    }
+        }
 
-    // --- HESAP SİLME ONAY DİYALOĞU ---
-    if (showDeleteAccountConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAccountConfirm = false },
-            containerColor = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
-            title = {
-                Text(
-                    text = "💥 Hesabımı Kalıcı Olarak Sil",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
-                    color = Color(0xFFDC2626)
-                )
-            },
-            text = {
-                Text(
-                    text = "Bu işlem geri alınamaz! Veritabanındaki hesabınız, kimlik bilgileriniz ve tüm bağlı kayıtlarınız kalıcı olarak silinecektir.",
-                    fontSize = 13.sp,
-                    color = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteAccountConfirm = false
-                        onDismissRequest()
-                        onDeleteEntireAccount()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                    shape = RoundedCornerShape(10.dp)
+        // =========================================================================
+        // 7. HESABIMI KALICI OLARAK SİLME ONAY EKRANI (AYNI DİYALOG İÇİNDE)
+        // =========================================================================
+        ProfileMenuScreen.CONFIRM_DELETE_ACCOUNT -> {
+            ProfileSubModalScaffold(
+                title = "Hesabımı Kalıcı Olarak Sil",
+                subtitle = "Bu işlem geri alınamaz • Tüm bulut ve cihaz verileriniz temizlenir",
+                isDarkTheme = isDarkTheme,
+                onBackToMenu = { activeScreen = ProfileMenuScreen.PROFILE_INFO },
+                onCloseAll = onDismissRequest
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDarkTheme) Color(0xFF2A1215) else Color(0xFFFEF2F2),
+                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF991B1B) else Color(0xFFFECACA)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Evet, Hesabımı Sil", color = Color.White, fontWeight = FontWeight.Bold)
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteForever,
+                                contentDescription = null,
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "💥 Sistemdeki Tüm İzleriniz Silinecek",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.5.sp,
+                                color = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
+                            )
+                        }
+                        Text(
+                            text = if (currentRole == UserRole.TEACHER) {
+                                "• Kullanıcı profiliniz, bildirim tokenınız ve Google/Firebase kimlik kaydınız\n• Sahip olduğunuz sınıf, öğrenciler, yıldızlar, kitaplık, turnuvalar, ders ve oturma planları\n• Duyuru, mesajlar ve aktif Akıllı Tahta oturumları\n• Cihazdaki tüm yerel BİRİZ dosyaları ve önbellek\n\nkalıcı olarak silinecektir."
+                            } else {
+                                "• Kullanıcı profiliniz, bildirim tokenınız ve Google/Firebase kimlik kaydınız\n• Tüm öğrenci bağlantılarınız, gönderdiğiniz veli mesajları ve sohbet geçmişiniz\n• Cihazdaki tüm yerel BİRİZ ayarları, bildirimler ve önbellek\n\nkalıcı olarak silinecektir."
+                            },
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            color = if (isDarkTheme) Color(0xFFFECACA) else Color(0xFF7F1D1D)
+                        )
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAccountConfirm = false }) {
-                    Text("Vazgeç")
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            onDismissRequest()
+                            onDeleteEntireAccount()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("confirm_delete_account_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Evet, Hesabımı ve Tüm Verilerimi Sil",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { activeScreen = ProfileMenuScreen.PROFILE_INFO },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Vazgeç ve Profilime Dön", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-        )
+        }
     }
 
     if (showParentQrDialog) {
