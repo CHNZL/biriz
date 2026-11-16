@@ -1712,17 +1712,15 @@ private fun ParentStarsDetailView(
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0 = Yıldız Geçmişi, 1 = Sınıf Sıralaması
 
-    // Sınıftaki TÜM öğrencilerin yıldız sıralaması (Diğer öğrenciler KVKK gereği 'Öğrenci' olarak maskelenir)
+    // Sınıf sıralamasında yalnızca İLK 10 öğrenci gösterilir (Kendi çocuğu ilk 10'daysa ismiyle, diğerleri 'Öğrenci' olarak maskelenir)
     val rankedStudents = remember(allStudents, allClassStars, linkedStudentIds, student.id) {
         ParentPrivacyHelper.buildMaskedClassStarRanking(
             allStudents = allStudents,
             allClassStars = allClassStars,
             linkedStudentIds = linkedStudentIds,
-            activeStudentId = student.id
+            activeStudentId = student.id,
+            maxLimit = 10
         )
-    }
-    val studentRank = remember(rankedStudents, student.id) {
-        rankedStudents.firstOrNull { it.studentId == student.id }?.rank ?: 1
     }
     val sortedStarHistory = remember(stars) {
         stars.sortedByDescending { it.timestamp }
@@ -1760,18 +1758,12 @@ private fun ParentStarsDetailView(
                             fontWeight = FontWeight.Black,
                             color = primaryText
                         )
-                        Text(
-                            text = "🏆 Sınıfta $studentRank. / ${maxOf(1, rankedStudents.size)} Öğrenci (İlk %${(studentRank * 100 / maxOf(1, rankedStudents.size))} dilim)",
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryText
-                        )
                     }
                     Text(text = "🌟", fontSize = 36.sp)
                 }
             }
 
-            // İki Sekmeli Geçiş Çubuğu: 1. Yıldız Geçmişi | 2. Sınıf Sıralaması
+            // İki Sekmeli Geçiş Çubuğu: 1. Yıldız Geçmişi | 2. Sınıf Sıralaması (İlk 10)
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = if (isDarkTheme) Color(0x301E293B) else Color(0xFFF1F5F9),
@@ -1786,7 +1778,7 @@ private fun ParentStarsDetailView(
                 ) {
                     val tabs = listOf(
                         "📜 Yıldız Geçmişi (${sortedStarHistory.size})" to "tab_star_history",
-                        "🏆 Sınıf Sıralaması (${rankedStudents.size})" to "tab_class_ranking"
+                        "🏆 İlk 10 Sıralaması" to "tab_class_ranking"
                     )
                     tabs.forEachIndexed { index, (label, tag) ->
                         val isSelected = selectedSubTab == index
@@ -1902,7 +1894,7 @@ private fun ParentStarsDetailView(
                 }
             }
         } else {
-            // SEKME 2: SINIF BAŞARI SIRALAMASI (Sınıftaki TÜM Öğrenciler - KVKK Korumalı)
+            // SEKME 2: SINIF BAŞARI SIRALAMASI (Yalnızca İlk 10 Öğrenci - KVKK Korumalı)
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -1929,7 +1921,7 @@ private fun ParentStarsDetailView(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "KVKK gereği sınıftaki tüm ${rankedStudents.size} öğrencinin yıldız sayısı gösterilir; diğer öğrenciler anonim olarak listelenir.",
+                                text = "Pedagojik hassasiyet ve KVKK gereği yalnızca sınıftaki ilk 10 sıra listelenir; çocuğunuz ilk 10'daysa ismiyle, diğer öğrenciler ise anonim ('Öğrenci') olarak gösterilir.",
                                 fontSize = 11.5.sp,
                                 color = if (isDarkTheme) BirizDarkTextSecondary else Color(0xFF0369A1),
                                 lineHeight = 15.sp

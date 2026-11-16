@@ -1,23 +1,23 @@
 {
-  "versionCode": 1138,
-  "versionName": "1.01.38",
-  "tag": "v1.01.38",
+  "versionCode": 1140,
+  "versionName": "1.01.40",
+  "tag": "v1.01.40",
   "apkUrl": "https://github.com/CHNZL/biriz/releases/latest/download/Biriz.apk",
   "appName": "BİRİZ",
-  "releaseTitle": "Güncellenmiş KVKK & Kullanım Şartları ve Her İki Rol İçin Zorunlu Onay",
+  "releaseTitle": "Veli Yıldızlar Ekranında Pedagojik İlk 10 Sıralaması ve Sadeleştirilmiş Rol Seçimi",
   "releaseItems": [
     {
-      "title": "Yenilenen KVKK Aydınlatma Metni ve Kullanım Şartları",
-      "summary": "KVKK Aydınlatma Metni ve BİRİZ Kullanım Şartları; Öğretmen/Veli sorumlulukları, Akıllı Tahta güvenliği ve kalıcı hesap/veri silme haklarını kapsayacak şekilde tamamen güncellendi."
+      "title": "Veli Yıldızlar Modülünde Pedagojik İlk 10 Sıralaması",
+      "summary": "Alt sıralardaki öğrencilerin ve ailelerin üzülmemesi için Toplam Yıldız kartındaki sıra/yüzdelik dilim ibaresi kaldırıldı; Sınıf Sıralaması sekmesinde yalnızca ilk 10 öğrenci (çocuğunuz ilk 10'daysa ismiyle, diğerleri anonim olarak) gösterilir."
     },
     {
-      "title": "Öğretmen ve Veli Rollerinin Her İkisi İçin Zorunlu Onay",
-      "summary": "Rol Seçim ekranında hem Öğretmen hem de Veli rolünü seçebilmek için KVKK ve Kullanım Şartları onay kutusunun işaretlenmesi zorunlu hale getirildi ve onay durumu Firestore profiline kaydedilir."
+      "title": "Sade ve Tek Adımlı Rol Seçim Ekranı",
+      "summary": "Rol Seçim ekranındaki gereksiz alt butonlar kaldırıldı; yenilenen KVKK ve Kullanım Şartları kutusu işaretlendiğinde doğrudan Öğretmen veya Veli kartına dokunularak geçiş yapılır."
     },
     {
       "title": "Firestore 'users' Koleksiyonu Kalıcı Silme ve Yetim Kayıt Temizliği",
       "summary": "Hesap silindiğinde 'users/{uid}' belgesi hem Firestore SDK hem doğrudan HTTPS REST ile silinir; önceki sürümlerden kalan yetim kayıtlar otomatik temizlenir."
     }
   ],
-  "releaseNotes": "• Yenilenen KVKK Aydınlatma Metni ve Kullanım Şartları: KVKK Aydınlatma Metni ve BİRİZ Kullanım Şartları; Öğretmen/Veli sorumlulukları, Akıllı Tahta güvenliği ve kalıcı hesap/veri silme haklarını kapsayacak şekilde tamamen güncellendi.\n• Öğretmen ve Veli Rollerinin Her İkisi İçin Zorunlu Onay: Rol Seçim ekranında hem Öğretmen hem de Veli rolünü seçebilmek için KVKK ve Kullanım Şartları onay kutusunun işaretlenmesi zorunlu hale getirildi ve onay durumu Firestore profiline kaydedilir.\n• Firestore 'users' Koleksiyonu Kalıcı Silme ve Yetim Kayıt Temizliği: Hesap silindiğinde 'users/{uid}' belgesi hem Firestore SDK hem doğrudan HTTPS REST ile silinir; önceki sürümlerden kalan yetim kayıtlar otomatik temizlenir."
+  "releaseNotes": "• Veli Yıldızlar Modülünde Pedagojik İlk 10 Sıralaması: Alt sıralardaki öğrencilerin ve ailelerin üzülmemesi için Toplam Yıldız kartındaki sıra/yüzdelik dilim ibaresi kaldırıldı; Sınıf Sıralaması sekmesinde yalnızca ilk 10 öğrenci (çocuğunuz ilk 10'daysa ismiyle, diğerleri anonim olarak) gösterilir.\n• Sade ve Tek Adımlı Rol Seçim Ekranı: Rol Seçim ekranındaki gereksiz alt butonlar kaldırıldı; yenilenen KVKK ve Kullanım Şartları kutusu işaretlendiğinde doğrudan Öğretmen veya Veli kartına dokunularak geçiş yapılır.\n• Firestore 'users' Koleksiyonu Kalıcı Silme ve Yetim Kayıt Temizliği: Hesap silindiğinde 'users/{uid}' belgesi hem Firestore SDK hem doğrudan HTTPS REST ile silinir; önceki sürümlerden kalan yetim kayıtlar otomatik temizlenir."
 }

@@ -494,26 +494,13 @@ fun RoleSelectionScreen(
             Spacer(modifier = Modifier.height(22.dp))
 
             // ROL SEÇİMİ (BENTO GRID - YAN YANA İKİ KART, HER İKİSİ DE KVKK ONAYINA BAĞLI)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Rolünüzü Seçin",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = textColorPrimary
-                )
-                Text(
-                    text = if (isKvkkAccepted) "Bir role dokunarak başlayın" else "Önce KVKK ve Şartları onaylayın",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isKvkkAccepted) BirizSuccess else BirizAmber
-                )
-            }
+            Text(
+                text = "Rolünüzü Seçin",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColorPrimary,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -583,7 +570,7 @@ fun RoleSelectionScreen(
                             }
                         ) {
                             Text(
-                                text = if (isKvkkAccepted) "Aktif & Hazır" else "Onay Zorunlu 🔒",
+                                text = if (isKvkkAccepted) "Aktif & Hazır" else "Kilitli",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isKvkkAccepted) {
@@ -657,7 +644,7 @@ fun RoleSelectionScreen(
                             }
                         ) {
                             Text(
-                                text = if (isKvkkAccepted) "Aktif & Hazır" else "Onay Zorunlu 🔒",
+                                text = if (isKvkkAccepted) "Aktif & Hazır" else "Kilitli",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = if (isKvkkAccepted) {
@@ -672,114 +659,7 @@ fun RoleSelectionScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
-
-            // DEVAM ET BUTONLARI (Her ikisi de KVKK ve Kullanım Şartları onayına bağlıdır)
-            Button(
-                onClick = onSelectTeacher,
-                enabled = isKvkkAccepted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .shadow(
-                        elevation = if (isKvkkAccepted) 8.dp else 0.dp,
-                        shape = RoundedCornerShape(26.dp),
-                        spotColor = if (isDarkTheme) BirizTurquoise else Color(0x3013294B)
-                    )
-                    .testTag("select_teacher_button"),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                    contentColor = if (isDarkTheme) BirizNavyDark else Color.White,
-                    disabledContainerColor = if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0),
-                    disabledContentColor = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                ),
-                border = BorderStroke(
-                    1.5.dp,
-                    if (isKvkkAccepted) BirizTurquoise else Color.Transparent
-                )
-            ) {
-                val continueContentColor = if (isKvkkAccepted) {
-                    if (isDarkTheme) BirizNavyDark else Color.White
-                } else {
-                    if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                }
-                Icon(
-                    imageVector = if (isKvkkAccepted) Icons.Default.School else Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = continueContentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isKvkkAccepted) {
-                        "Öğretmen Olarak Kuruluma Başla"
-                    } else {
-                        "Önce KVKK ve Kullanım Şartlarını Onaylayın"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.5.sp,
-                    color = continueContentColor
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = continueContentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedButton(
-                onClick = onSelectParentAttempt,
-                enabled = isKvkkAccepted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("select_parent_button"),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (isKvkkAccepted) {
-                        if (isDarkTheme) Color(0x22E67E22) else Color(0xFFFFF8F1)
-                    } else {
-                        Color.Transparent
-                    },
-                    contentColor = if (isKvkkAccepted) BirizAmber else textColorSecondary,
-                    disabledContentColor = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-                ),
-                border = BorderStroke(
-                    1.5.dp,
-                    if (isKvkkAccepted) BirizAmber else Color(0x4564748B)
-                )
-            ) {
-                val parentContentColor = if (isKvkkAccepted) {
-                    BirizAmber
-                } else {
-                    if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-                }
-                Icon(
-                    imageVector = if (isKvkkAccepted) Icons.Default.FamilyRestroom else Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = parentContentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isKvkkAccepted) {
-                        "Veli Olarak Öğrenciye Bağlan"
-                    } else {
-                        "Veli Girişi İçin KVKK ve Şartlar Onayı Zorunludur"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = parentContentColor,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Box(
                 modifier = Modifier.fillMaxWidth(),

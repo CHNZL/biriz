@@ -32,7 +32,8 @@ object ParentPrivacyHelper {
         allStudents: List<Student>,
         allClassStars: List<StarRewardRecord>,
         linkedStudentIds: Set<String>,
-        activeStudentId: String
+        activeStudentId: String,
+        maxLimit: Int = Int.MAX_VALUE
     ): List<MaskedClassStarRank> {
         val starSumByStudent = allClassStars.groupBy { it.studentId }
             .mapValues { (_, list) -> list.sumOf { it.starCount } }
@@ -41,7 +42,7 @@ object ParentPrivacyHelper {
                 .thenByDescending { it.id == activeStudentId }
                 .thenByDescending { linkedStudentIds.contains(it.id) }
         )
-        return sorted.mapIndexed { index, s ->
+        return sorted.take(maxLimit.coerceAtLeast(0)).mapIndexed { index, s ->
             val isMine = linkedStudentIds.contains(s.id)
             MaskedClassStarRank(
                 rank = index + 1,
