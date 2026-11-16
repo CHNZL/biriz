@@ -1,36 +1,48 @@
 package com.example.ui.components
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +50,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,11 +61,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ui.theme.BirizAmber
 import com.example.ui.theme.BirizBorder
 import com.example.ui.theme.BirizDarkCardBorder
@@ -62,6 +80,8 @@ import com.example.ui.theme.BirizError
 import com.example.ui.theme.BirizNavyPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
+import com.example.util.InstalledAppInfo
+import com.example.util.InstalledAppsHelper
 
 private data class QuickEduProgram(
     val emoji: String,
@@ -95,15 +115,67 @@ fun SmartBoardCastSection(
     isBroadcasting: Boolean,
     uploadProgress: Float,
     statusMessage: String?,
+    isScreenMirrorPaused: Boolean = false,
+    screenMirrorPauseReason: String? = null,
+    screenMirrorPackageName: String? = null,
     onCastFile: (Uri) -> Unit,
     onCastUrlOrProgram: (url: String, title: String, isProgram: Boolean) -> Unit,
+    onStartAppMirror: (packageName: String, appName: String, resultCode: Int, data: Intent) -> Unit = { _, _, _, _ -> },
     onStopCast: () -> Unit
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var selectedTab by remember { mutableIntStateOf(0) }
     var urlInput by remember { mutableStateOf("") }
     var urlTitleInput by remember { mutableStateOf("") }
     var programUrlInput by remember { mutableStateOf("") }
     var programNameInput by remember { mutableStateOf("") }
+
+    var installedApps by remember { mutableStateOf<List<InstalledAppInfo>>(emptyList()) }
+    var isLoadingApps by remember { mutableStateOf(false) }
+    var appSearchQuery by remember { mutableStateOf("") }
+    var hasUsageAccess by remember { mutableStateOf(InstalledAppsHelper.hasUsageStatsPermission(context)) }
+    var showWebToolsSection by remember { mutableStateOf(false) }
+
+    var pendingMirrorTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasUsageAccess = InstalledAppsHelper.hasUsageStatsPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 2 && installedApps.isEmpty() && !isLoadingApps) {
+            isLoadingApps = true
+            installedApps = InstalledAppsHelper.loadLaunchableApps(context)
+            isLoadingApps = false
+        }
+    }
+
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val target = pendingMirrorTarget
+        pendingMirrorTarget = null
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null && target != null) {
+            onStartAppMirror(target.first, target.second, result.resultCode, data)
+        }
+    }
+
+    val requestScreenMirrorForApp: (String, String) -> Unit = { pkg, appName ->
+        val pm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+        if (pm != null) {
+            pendingMirrorTarget = pkg to appName
+            screenCaptureLauncher.launch(pm.createScreenCaptureIntent())
+        }
+    }
 
     // Sıfır izinli dosya seçici (SAF OpenDocument)
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -145,14 +217,14 @@ fun SmartBoardCastSection(
                     Text("📡", fontSize = 16.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Tahtaya İçerik Yayınla",
+                        text = "Tahtaya Paylaşım Gönder",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.5.sp,
                         color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                     )
                 }
                 Text(
-                    text = "Dosya • URL • Program",
+                    text = "Paylaşım Sayfası",
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = BirizTurquoise
@@ -162,60 +234,116 @@ fun SmartBoardCastSection(
             // Aktif Yayın Bannerı
             if (!activeCastTitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
+                val isMirror = activeCastType == "SCREEN_MIRROR"
+                val bannerColor = when {
+                    isMirror && isScreenMirrorPaused -> BirizAmber.copy(alpha = 0.18f)
+                    isMirror -> Color(0xFF059669).copy(alpha = 0.14f)
+                    else -> BirizAmber.copy(alpha = 0.16f)
+                }
+                val bannerBorder = when {
+                    isMirror && isScreenMirrorPaused -> BirizAmber.copy(alpha = 0.65f)
+                    isMirror -> Color(0xFF059669).copy(alpha = 0.55f)
+                    else -> BirizAmber.copy(alpha = 0.55f)
+                }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    color = BirizAmber.copy(alpha = 0.16f),
-                    border = BorderStroke(1.dp, BirizAmber.copy(alpha = 0.55f))
+                    color = bannerColor,
+                    border = BorderStroke(1.dp, bannerBorder)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            val typeBadge = when (activeCastType) {
-                                "FILE" -> "📄 Dosya Yayında"
-                                "PROGRAM" -> "🧩 Program Yayında"
-                                else -> "🌐 URL Yayında"
-                            }
-                            Text(
-                                text = typeBadge,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFFB45309)
-                            )
-                            Text(
-                                text = activeCastTitle,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = if (isDarkTheme) Color.White else BirizNavyPrimary
-                            )
-                        }
-                        Button(
-                            onClick = onStopCast,
-                            modifier = Modifier.testTag("smart_board_stop_cast_button"),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = BirizError,
-                                contentColor = Color.White
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 10.dp,
-                                vertical = 6.dp
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Yayını Durdur",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Durdur", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                val typeBadge = when {
+                                    isMirror && isScreenMirrorPaused -> "⏸️ Son Görüntü Tahtada Sabit"
+                                    isMirror -> "📱 Canlı Uygulama Paylaşımı"
+                                    activeCastType == "FILE" -> "📄 Dosya Paylaşımda"
+                                    activeCastType == "PROGRAM" -> "🧩 Web Program Paylaşımda"
+                                    else -> "🌐 URL Paylaşımda"
+                                }
+                                Text(
+                                    text = typeBadge,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when {
+                                        isMirror && !isScreenMirrorPaused -> if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857)
+                                        else -> if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFFB45309)
+                                    }
+                                )
+                                Text(
+                                    text = activeCastTitle,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary
+                                )
+                            }
+                            Button(
+                                onClick = onStopCast,
+                                modifier = Modifier.testTag("smart_board_stop_cast_button"),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BirizError,
+                                    contentColor = Color.White
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = "Paylaşımı Durdur",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Durdur", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (isMirror && isScreenMirrorPaused) {
+                            if (!screenMirrorPauseReason.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = screenMirrorPauseReason,
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 14.sp,
+                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                )
+                            }
+                            if (!screenMirrorPackageName.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            requestScreenMirrorForApp(screenMirrorPackageName, activeCastTitle)
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        border = BorderStroke(1.dp, BirizTurquoise)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Yeniden Yansıt",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = BirizTurquoise
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Uygulamayı Yeniden Yansıt",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BirizTurquoise
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -283,7 +411,7 @@ fun SmartBoardCastSection(
                     onClick = { selectedTab = 1 }
                 )
                 CastTabChip(
-                    label = "🧩 Program",
+                    label = "📱 Program",
                     selected = selectedTab == 2,
                     isDarkTheme = isDarkTheme,
                     modifier = Modifier
@@ -357,7 +485,7 @@ fun SmartBoardCastSection(
 
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "PDF, resim, ses, video, HTML etkinlik veya program dosyalarını (12 MB'a kadar) tahtada açar ya da indirmenizi sağlar.",
+                        text = "Seçilen dosya tahtadaki 'Paylaşım' sayfasında açılır. PDF, resim, ses, video veya diğer dosyaları destekler.",
                         fontSize = 10.5.sp,
                         lineHeight = 14.sp,
                         color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
@@ -452,51 +580,207 @@ fun SmartBoardCastSection(
                 }
 
                 else -> {
-                    // TAB 3: Eğitim Programı / Web Uygulaması Yayınla
-                    Text(
-                        text = "Hızlı Eğitim Programları (Tek Tıkla Tahtada Aç)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // 2 sütunlu hızlı program gridi
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PRESET_EDU_PROGRAMS.chunked(2).forEach { rowItems ->
+                    // TAB 3: Telefon Program Menüsünden Uygulama Seç ve Canlı Yansıt + Web Eğitim Araçları
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (hasUsageAccess) Color(0xFF059669).copy(alpha = 0.10f) else BirizAmber.copy(alpha = 0.12f),
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasUsageAccess) Color(0xFF059669).copy(alpha = 0.35f) else BirizAmber.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.weight(1f).padding(end = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                rowItems.forEach { prog ->
-                                    Surface(
+                                Icon(
+                                    imageVector = Icons.Default.Security,
+                                    contentDescription = "Gizlilik Dondurma Koruması",
+                                    tint = if (hasUsageAccess) Color(0xFF059669) else Color(0xFFD97706),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (hasUsageAccess) {
+                                        "Otomatik Dondurma Açık: Program dışına çıkınca tahta son karede donar."
+                                    } else {
+                                        "Programdan çıkınca tahtayı dondurmak için Kullanım Erişimi verebilirsiniz."
+                                    },
+                                    fontSize = 10.5.sp,
+                                    lineHeight = 13.5.sp,
+                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                )
+                            }
+                            if (!hasUsageAccess) {
+                                OutlinedButton(
+                                    onClick = { InstalledAppsHelper.openUsageStatsSettings(context) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFD97706))
+                                ) {
+                                    Text(
+                                        text = "İzin Ver",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFB45309)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = appSearchQuery,
+                        onValueChange = { appSearchQuery = it },
+                        placeholder = { Text("Telefondaki programlarda ara...") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Program Ara",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("cast_app_search_input"),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val filteredApps = remember(installedApps, appSearchQuery) {
+                        val q = appSearchQuery.trim().lowercase()
+                        if (q.isBlank()) installedApps
+                        else installedApps.filter {
+                            it.appName.lowercase().contains(q) || it.packageName.lowercase().contains(q)
+                        }
+                    }
+
+                    if (isLoadingApps) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = BirizTurquoise
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Telefon uygulamaları yükleniyor...",
+                                fontSize = 11.5.sp,
+                                color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                            )
+                        }
+                    } else if (filteredApps.isEmpty()) {
+                        Text(
+                            text = "Eşleşen uygulama bulunamadı.",
+                            fontSize = 11.5.sp,
+                            color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary,
+                            modifier = Modifier.padding(vertical = 10.dp)
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            filteredApps.forEach { app ->
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(enabled = !isBroadcasting) {
+                                            requestScreenMirrorForApp(app.packageName, app.appName)
+                                        }
+                                        .testTag("cast_installed_app_${app.packageName}"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isDarkTheme) Color(0x22FFFFFF) else Color.White,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                                    )
+                                ) {
+                                    Row(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .clickable(enabled = !isBroadcasting) {
-                                                onCastUrlOrProgram(prog.url, prog.title, true)
-                                            }
-                                            .testTag("cast_preset_${prog.title}"),
-                                        shape = RoundedCornerShape(9.dp),
-                                        color = if (isDarkTheme) Color(0x2000B4D8) else Color.White,
-                                        border = BorderStroke(
-                                            1.dp,
-                                            if (isDarkTheme) BirizDarkCardBorder else BirizBorder
-                                        )
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                            modifier = Modifier.weight(1f).padding(end = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(prog.emoji, fontSize = 14.sp)
-                                            Spacer(modifier = Modifier.width(5.dp))
+                                            if (app.icon != null) {
+                                                Image(
+                                                    bitmap = app.icon,
+                                                    contentDescription = app.appName,
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .clip(RoundedCornerShape(7.dp))
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .clip(RoundedCornerShape(7.dp))
+                                                        .background(BirizTurquoise.copy(alpha = 0.15f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Apps,
+                                                        contentDescription = app.appName,
+                                                        tint = BirizTurquoise,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = app.appName,
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                                )
+                                                Text(
+                                                    text = "Aç & Yansıt (Çıkınca Dondur)",
+                                                    fontSize = 10.sp,
+                                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                                )
+                                            }
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = BirizTurquoise.copy(alpha = 0.14f)
+                                        ) {
                                             Text(
-                                                text = prog.title,
-                                                fontSize = 11.5.sp,
+                                                text = "Yansıt",
+                                                fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                                color = BirizTurquoise,
+                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                             )
                                         }
                                     }
@@ -507,45 +791,119 @@ fun SmartBoardCastSection(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    OutlinedTextField(
-                        value = programNameInput,
-                        onValueChange = { programNameInput = it },
-                        label = { Text("Program / Uygulama Adı") },
-                        placeholder = { Text("Örn: Zoom, Wordwall Oyunu, HTML Etkinlik") },
-                        singleLine = true,
+                    // Açılır Web Eğitim Araçları bölümü
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("cast_program_name_input"),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    OutlinedTextField(
-                        value = programUrlInput,
-                        onValueChange = { programUrlInput = it },
-                        label = { Text("Program Web Linki veya Protokolü") },
-                        placeholder = { Text("https://... veya zoommtg://...") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("cast_program_url_input"),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .clickable { showWebToolsSection = !showWebToolsSection },
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (isDarkTheme) Color(0x18FFFFFF) else Color(0xFFEFF6FF),
+                        border = BorderStroke(1.dp, BirizTurquoise.copy(alpha = 0.3f))
                     ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "🌐 Hazır Web Eğitim Araçları (GeoGebra, PhET...)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                            )
+                            Text(
+                                text = if (showWebToolsSection) "▲" else "▼",
+                                fontSize = 11.sp,
+                                color = BirizTurquoise
+                            )
+                        }
+                    }
+
+                    if (showWebToolsSection) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PRESET_EDU_PROGRAMS.chunked(2).forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    rowItems.forEach { prog ->
+                                        Surface(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(9.dp))
+                                                .clickable(enabled = !isBroadcasting) {
+                                                    onCastUrlOrProgram(prog.url, prog.title, true)
+                                                }
+                                                .testTag("cast_preset_${prog.title}"),
+                                            shape = RoundedCornerShape(9.dp),
+                                            color = if (isDarkTheme) Color(0x2000B4D8) else Color.White,
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isDarkTheme) BirizDarkCardBorder else BirizBorder
+                                            )
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(prog.emoji, fontSize = 14.sp)
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = prog.title,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = programNameInput,
+                            onValueChange = { programNameInput = it },
+                            label = { Text("Özel Web Programı Adı") },
+                            placeholder = { Text("Örn: Zoom, Wordwall") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("cast_program_name_input"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value = programUrlInput,
+                            onValueChange = { programUrlInput = it },
+                            label = { Text("Program Web Linki") },
+                            placeholder = { Text("https://...") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("cast_program_url_input"),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Button(
                             onClick = {
                                 onCastUrlOrProgram(programUrlInput, programNameInput, true)
                             },
                             enabled = programUrlInput.isNotBlank() && !isBroadcasting,
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .testTag("cast_send_program_button"),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -559,33 +917,7 @@ fun SmartBoardCastSection(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Tahtada Aç", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        OutlinedButton(
-                            onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                            enabled = !isBroadcasting,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("cast_pick_program_file_button"),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.2.dp, BirizTurquoise.copy(alpha = 0.7f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Apps,
-                                contentDescription = "Program Dosyası Seç",
-                                modifier = Modifier.size(15.dp),
-                                tint = BirizTurquoise
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Program Dosyası",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BirizTurquoise,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Text("Web Programını Tahtada Aç", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

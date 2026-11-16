@@ -1,7 +1,9 @@
 package com.example.ui.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -61,6 +63,7 @@ import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
 import com.example.util.QuietHoursConfig
 import com.example.util.SmartBoardHelper
+import com.example.util.SmartBoardScreenCastService
 import com.example.util.SystemActivityNotificationHelper
 import com.example.util.TournamentPersistenceHelper
 import com.example.util.UpdateInfo
@@ -212,6 +215,9 @@ data class BirizUiState(
     val activeBoardCastType: String? = null,
     val isBroadcastingToBoard: Boolean = false,
     val boardCastProgress: Float = 0f,
+    val isScreenMirrorPaused: Boolean = false,
+    val screenMirrorPauseReason: String? = null,
+    val screenMirrorPackageName: String? = null,
 
     // UI Bildirimleri
     val snackbarMessage: String? = null
@@ -798,6 +804,34 @@ class BirizViewModel(
     }
 
     init {
+        viewModelScope.launch {
+            var hadScreenMirrorSession = false
+            SmartBoardScreenCastService.status.collect { mirrorStatus ->
+                if (mirrorStatus.isRunning || mirrorStatus.isStoppedKeepingFrozenFrame) {
+                    hadScreenMirrorSession = true
+                    _uiState.value = _uiState.value.copy(
+                        activeBoardCastTitle = mirrorStatus.targetAppName.ifBlank { _uiState.value.activeBoardCastTitle },
+                        activeBoardCastType = "SCREEN_MIRROR",
+                        screenMirrorPackageName = mirrorStatus.targetPackageName.ifBlank { _uiState.value.screenMirrorPackageName },
+                        isScreenMirrorPaused = mirrorStatus.isPaused,
+                        screenMirrorPauseReason = mirrorStatus.pauseReason.ifBlank { null },
+                        isLiveBoardMirrorActive = true
+                    )
+                } else if (hadScreenMirrorSession) {
+                    hadScreenMirrorSession = false
+                    if (_uiState.value.activeBoardCastType == "SCREEN_MIRROR") {
+                        _uiState.value = _uiState.value.copy(
+                            activeBoardCastTitle = null,
+                            activeBoardCastType = null,
+                            isScreenMirrorPaused = false,
+                            screenMirrorPauseReason = null,
+                            screenMirrorPackageName = null,
+                            smartBoardMessage = null
+                        )
+                    }
+                }
+            }
+        }
         if (appContext != null) {
             val prefs = appContext.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
             val savedDark = prefs.getBoolean("key_is_dark_theme", false)
@@ -3852,6 +3886,7 @@ class BirizViewModel(
         val activeClass = _uiState.value.activeClassRoom
         val code = _uiState.value.connectedBoardSessionCode
         if (activeClass != null) {
+            SmartBoardScreenCastService.stopCast(ctx, activeClass.id, code)
             SmartBoardHelper.disconnectSession(ctx, code, activeClass.id)
         }
         _uiState.value = _uiState.value.copy(
@@ -3863,6 +3898,9 @@ class BirizViewModel(
             activeBoardCastType = null,
             isBroadcastingToBoard = false,
             boardCastProgress = 0f,
+            isScreenMirrorPaused = false,
+            screenMirrorPauseReason = null,
+            screenMirrorPackageName = null,
             snackbarMessage = "Akıllı Tahta Bağlantısı Kesildi 🔌"
         )
     }
@@ -3965,20 +4003,65 @@ class BirizViewModel(
         }
     }
 
+    fun startAppScreenMirror(
+        packageName: String,
+        appName: String,
+        resultCode: Int,
+        resultData: Intent
+    ) {
+        val ctx = appContext ?: return
+        val code = _uiState.value.connectedBoardSessionCode
+        val activeClass = _uiState.value.activeClassRoom
+        if (code.isNullOrBlank() || activeClass == null) {
+            _uiState.value = _uiState.value.copy(
+                smartBoardMessage = "Önce Akıllı Tahta bağlantısı kurun."
+            )
+            return
+        }
+        val cleanCode = SmartBoardHelper.normalizeCode(code)
+        val serviceIntent = Intent(ctx, SmartBoardScreenCastService::class.java).apply {
+            action = SmartBoardScreenCastService.ACTION_START
+            putExtra(SmartBoardScreenCastService.EXTRA_RESULT_CODE, resultCode)
+            putExtra(SmartBoardScreenCastService.EXTRA_RESULT_DATA, resultData)
+            putExtra(SmartBoardScreenCastService.EXTRA_SESSION_CODE, cleanCode)
+            putExtra(SmartBoardScreenCastService.EXTRA_CLASS_ID, activeClass.id)
+            putExtra(SmartBoardScreenCastService.EXTRA_TARGET_PACKAGE, packageName)
+            putExtra(SmartBoardScreenCastService.EXTRA_TARGET_APP_NAME, appName)
+        }
+        ContextCompat.startForegroundService(ctx, serviceIntent)
+        SmartBoardHelper.saveConnectionState(ctx, cleanCode, true)
+        _uiState.value = _uiState.value.copy(
+            isLiveBoardMirrorActive = true,
+            isSmartBoardDialogOpen = false,
+            activeBoardCastTitle = appName,
+            activeBoardCastType = "SCREEN_MIRROR",
+            screenMirrorPackageName = packageName,
+            isScreenMirrorPaused = false,
+            screenMirrorPauseReason = null,
+            smartBoardMessage = null,
+            snackbarMessage = "📡 $appName açılıyor ve Tahta 'Paylaşım' sayfasına yansıtılıyor..."
+        )
+    }
+
     fun stopSmartBoardCast() {
         val ctx = appContext ?: return
         val code = _uiState.value.connectedBoardSessionCode
         val activeClass = _uiState.value.activeClassRoom
         if (activeClass != null) {
-            SmartBoardHelper.stopBoardCast(ctx, activeClass.id, code)
+            SmartBoardScreenCastService.stopCast(ctx, activeClass.id, code)
+        } else {
+            SmartBoardHelper.stopBoardCast(ctx, "default", code)
         }
         _uiState.value = _uiState.value.copy(
             activeBoardCastTitle = null,
             activeBoardCastType = null,
             isBroadcastingToBoard = false,
             boardCastProgress = 0f,
+            isScreenMirrorPaused = false,
+            screenMirrorPauseReason = null,
+            screenMirrorPackageName = null,
             smartBoardMessage = null,
-            snackbarMessage = "⏹️ Özel yayın durduruldu, sınıf ekranına dönüldü."
+            snackbarMessage = "⏹️ Paylaşım durduruldu, tahta BİRİZ menülerine döndü."
         )
     }
 

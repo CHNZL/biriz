@@ -518,6 +518,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                             activeBoardCastType = uiState.activeBoardCastType,
                             isBroadcastingToBoard = uiState.isBroadcastingToBoard,
                             boardCastProgress = uiState.boardCastProgress,
+                            isScreenMirrorPaused = uiState.isScreenMirrorPaused,
+                            screenMirrorPauseReason = uiState.screenMirrorPauseReason,
+                            screenMirrorPackageName = uiState.screenMirrorPackageName,
                             onOpenSmartBoardDialog = { viewModel.openSmartBoardDialog() },
                             onDismissSmartBoardDialog = { viewModel.dismissSmartBoardDialog() },
                             onConnectSmartBoard = { viewModel.connectSmartBoard(it) },
@@ -526,6 +529,9 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onCastFileToBoard = { viewModel.castFileToSmartBoard(it) },
                             onCastUrlOrProgramToBoard = { url, title, isProgram ->
                                 viewModel.castUrlToSmartBoard(url, title, isProgram)
+                            },
+                            onStartAppMirror = { pkg, appName, resCode, resData ->
+                                viewModel.startAppScreenMirror(pkg, appName, resCode, resData)
                             },
                             onStopBoardCast = { viewModel.stopSmartBoardCast() },
                             onDeleteStudent = { viewModel.deleteStudent(it) },

@@ -698,12 +698,17 @@ object SmartBoardHelper {
             )
         }
 
+        val activeCast = lastBoardCast
+        val isCastCurrentlyActive = (activeCast?.get("active") as? Boolean) == true
+        val effectiveBoardSubPage = if (isCastCurrentlyActive) "PAYLASIM" else currentSubPage
+        val effectiveBoardSubPageTitle = if (isCastCurrentlyActive) "📡 Paylaşım" else currentSubPageTitle
+
         val boardSessionUpdate = hashMapOf<String, Any?>(
             "classId" to classId,
-            "activeModule" to currentSubPage,
-            "activeModuleTitle" to currentSubPageTitle,
-            "currentSubPage" to currentSubPage,
-            "currentSubPageTitle" to currentSubPageTitle,
+            "activeModule" to effectiveBoardSubPage,
+            "activeModuleTitle" to effectiveBoardSubPageTitle,
+            "currentSubPage" to effectiveBoardSubPage,
+            "currentSubPageTitle" to effectiveBoardSubPageTitle,
             "isPrivacyMode" to isPrivacyMode,
             "selectedDay" to activeDay,
             "activeScheduleDay" to activeDay,
@@ -727,7 +732,6 @@ object SmartBoardHelper {
         if (groupsData != null) {
             boardSessionUpdate["groups"] = groupsData
         }
-        val activeCast = lastBoardCast
         if (activeCast != null) {
             boardSessionUpdate["boardCast"] = activeCast
         }
@@ -747,10 +751,10 @@ object SmartBoardHelper {
             "status" to if (cleanCode != null) "CONNECTED" else "DISCONNECTED",
             "isLiveMirrorActive" to isLiveMirrorActive,
             "isPrivacyMode" to isPrivacyMode,
-            "currentSubPage" to currentSubPage,
-            "currentSubPageTitle" to currentSubPageTitle,
-            "activeModule" to currentSubPage,
-            "activeModuleTitle" to currentSubPageTitle,
+            "currentSubPage" to effectiveBoardSubPage,
+            "currentSubPageTitle" to effectiveBoardSubPageTitle,
+            "activeModule" to effectiveBoardSubPage,
+            "activeModuleTitle" to effectiveBoardSubPageTitle,
             "activeScheduleDay" to activeDay,
             "selectedDay" to activeDay,
             "recentStars" to recentStars,
@@ -986,6 +990,10 @@ object SmartBoardHelper {
             "isConnected" to true,
             "isLiveMirrorActive" to true,
             "isPrivacyMode" to false,
+            "activeModule" to "PAYLASIM",
+            "activeModuleTitle" to "📡 Paylaşım",
+            "currentSubPage" to "PAYLASIM",
+            "currentSubPageTitle" to "📡 Paylaşım",
             "boardCast" to castMap,
             "updatedAt" to now,
             "serverTimestamp" to FieldValue.serverTimestamp()
@@ -1018,6 +1026,115 @@ object SmartBoardHelper {
                     .set(payload, SetOptions.merge())
             }
         } catch (_: Exception) {}
+    }
+
+    /**
+     * Seçilen telefon uygulamasının canlı ekran karesini Akıllı Tahta 'Paylaşım' sayfasına aktarır.
+     */
+    suspend fun publishScreenMirrorFrame(
+        context: Context,
+        classId: String,
+        sessionCode: String,
+        castId: String,
+        packageName: String,
+        appName: String,
+        frameSeq: Long,
+        base64Jpeg: String
+    ) {
+        val cleanCode = normalizeCode(sessionCode)
+        if (cleanCode.length < 4) return
+        val now = System.currentTimeMillis()
+        val castMap = hashMapOf<String, Any?>(
+            "active" to true,
+            "castId" to castId,
+            "type" to "SCREEN_MIRROR",
+            "title" to appName,
+            "packageName" to packageName,
+            "mimeType" to "image/jpeg",
+            "isPaused" to false,
+            "pauseReason" to "",
+            "frameSeq" to frameSeq,
+            "inlineBase64" to base64Jpeg,
+            "updatedAt" to now
+        )
+        publishBoardCastMap(context, classId, cleanCode, castMap)
+    }
+
+    /**
+     * Uygulamadan çıkıldığında veya ekran kapatıldığında tahtadaki son görüntüyü silmeden dondurur / tekrar açar.
+     */
+    suspend fun updateScreenMirrorPauseState(
+        context: Context,
+        classId: String,
+        sessionCode: String,
+        castId: String,
+        appName: String,
+        packageName: String,
+        isPaused: Boolean,
+        pauseReason: String
+    ) {
+        val cleanCode = normalizeCode(sessionCode)
+        if (cleanCode.length < 4) return
+        val now = System.currentTimeMillis()
+
+        val updatedCached = HashMap(lastBoardCast ?: emptyMap()).apply {
+            put("active", true)
+            put("castId", castId)
+            put("type", "SCREEN_MIRROR")
+            put("title", appName)
+            put("packageName", packageName)
+            put("isPaused", isPaused)
+            put("pauseReason", pauseReason)
+            put("updatedAt", now)
+        }
+        lastBoardCast = updatedCached
+
+        val partialBoardCast = mapOf(
+            "active" to true,
+            "castId" to castId,
+            "type" to "SCREEN_MIRROR",
+            "title" to appName,
+            "packageName" to packageName,
+            "isPaused" to isPaused,
+            "pauseReason" to pauseReason,
+            "updatedAt" to now
+        )
+        val payload = hashMapOf<String, Any?>(
+            "status" to "CONNECTED",
+            "isConnected" to true,
+            "isLiveMirrorActive" to true,
+            "isPrivacyMode" to false,
+            "activeModule" to "PAYLASIM",
+            "activeModuleTitle" to "📡 Paylaşım",
+            "currentSubPage" to "PAYLASIM",
+            "currentSubPageTitle" to "📡 Paylaşım",
+            "boardCast" to partialBoardCast,
+            "updatedAt" to now
+        )
+
+        try {
+            val mainDb = getMainFirestore(context)
+            mainDb.collection("board_sessions")
+                .document(cleanCode)
+                .set(payload, SetOptions.merge())
+                .await()
+
+            if (classId.isNotBlank() && classId != "default") {
+                mainDb.collection("classes")
+                    .document(classId)
+                    .collection("live_board")
+                    .document("state")
+                    .set(payload, SetOptions.merge())
+
+                mainDb.collection("classrooms")
+                    .document(classId)
+                    .collection("live_board")
+                    .document("state")
+                    .set(payload, SetOptions.merge())
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error updating screen mirror pause state: ${e.message}")
+        }
     }
 
     /**
@@ -1187,15 +1304,19 @@ object SmartBoardHelper {
     }
 
     /**
-     * Tahtadaki dosya/URL/program yayınını durdurur ve tahtayı sınıf ekranına döndürür.
+     * Tahtadaki dosya/URL/program/ekran yayınını durdurur ve tahtayı tekrar BİRİZ uygulama menülerine döndürür.
      */
     fun stopBoardCast(context: Context, classId: String, sessionCode: String?) {
         lastBoardCast = null
         val cleanCode = sessionCode?.let { normalizeCode(it) }?.ifEmpty { null } ?: return
         val now = System.currentTimeMillis()
+        val restoreSubPage = lastCurrentSubPage.ifBlank { "SINIF_LISTESI" }
+        val restoreSubPageTitle = lastCurrentSubPageTitle.ifBlank { "Sınıf Listesi" }
         val stopMap = mapOf(
             "active" to false,
             "castId" to "",
+            "isPaused" to false,
+            "inlineBase64" to "",
             "updatedAt" to now
         )
 
@@ -1204,7 +1325,12 @@ object SmartBoardHelper {
                 val mainDb = getMainFirestore(context)
                 val payload = mapOf(
                     "boardCast" to stopMap,
-                    "updatedAt" to now
+                    "activeModule" to restoreSubPage,
+                    "activeModuleTitle" to restoreSubPageTitle,
+                    "currentSubPage" to restoreSubPage,
+                    "currentSubPageTitle" to restoreSubPageTitle,
+                    "updatedAt" to now,
+                    "serverTimestamp" to FieldValue.serverTimestamp()
                 )
                 mainDb.collection("board_sessions")
                     .document(cleanCode)

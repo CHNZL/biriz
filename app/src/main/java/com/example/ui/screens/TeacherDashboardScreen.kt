@@ -4,6 +4,7 @@ import com.example.data.model.UserRole
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -217,6 +218,9 @@ fun TeacherDashboardScreen(
     activeBoardCastType: String? = null,
     isBroadcastingToBoard: Boolean = false,
     boardCastProgress: Float = 0f,
+    isScreenMirrorPaused: Boolean = false,
+    screenMirrorPauseReason: String? = null,
+    screenMirrorPackageName: String? = null,
     onOpenSmartBoardDialog: () -> Unit = {},
     onDismissSmartBoardDialog: () -> Unit = {},
     onConnectSmartBoard: (String) -> Unit = {},
@@ -224,6 +228,7 @@ fun TeacherDashboardScreen(
     onDisconnectSmartBoard: () -> Unit = {},
     onCastFileToBoard: (Uri) -> Unit = {},
     onCastUrlOrProgramToBoard: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    onStartAppMirror: (String, String, Int, Intent) -> Unit = { _, _, _, _ -> },
     onStopBoardCast: () -> Unit = {},
     onDeleteStudent: (Student) -> Unit,
     onDeleteTeacherRoleAndClass: () -> Unit,
@@ -455,11 +460,19 @@ fun TeacherDashboardScreen(
                 }
             }
 
-            // --- 1.1 SABİT AKILLI TAHTA CANLI YANSITMA / GİZLİLİK MODU BARI ---
+            // --- 1.1 SABİT AKILLI TAHTA CANLI YANSITMA / PAYLAŞIM / GİZLİLİK MODU BARI ---
             if (!connectedBoardSessionCode.isNullOrBlank()) {
+                val hasActiveCast = !activeBoardCastTitle.isNullOrBlank()
+                val isMirrorCast = hasActiveCast && activeBoardCastType == "SCREEN_MIRROR"
+                val barColor = when {
+                    !isLiveBoardMirrorActive -> Color(0xFF78350F)
+                    isMirrorCast && isScreenMirrorPaused -> Color(0xFF92400E)
+                    hasActiveCast -> Color(0xFF0C4A6E)
+                    else -> Color(0xFF064E3B)
+                }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (isLiveBoardMirrorActive) Color(0xFF064E3B) else Color(0xFF78350F),
+                    color = barColor,
                     shadowElevation = 2.dp
                 ) {
                     Row(
@@ -471,22 +484,44 @@ fun TeacherDashboardScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onOpenSmartBoardDialog() }
                         ) {
                             Text(
-                                text = if (isLiveBoardMirrorActive) "🟢" else "🔒",
+                                text = when {
+                                    !isLiveBoardMirrorActive -> "🔒"
+                                    isMirrorCast && isScreenMirrorPaused -> "⏸️"
+                                    hasActiveCast -> "📡"
+                                    else -> "🟢"
+                                },
                                 fontSize = 13.sp
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(
-                                    text = if (isLiveBoardMirrorActive) "Canlı Yansıtma Açık" else "Gizlilik Modu (Yayın Duraklatıldı)",
+                                    text = when {
+                                        !isLiveBoardMirrorActive -> "Gizlilik Modu (Yayın Duraklatıldı)"
+                                        isMirrorCast && isScreenMirrorPaused -> "Paylaşım Sabitlendi: $activeBoardCastTitle"
+                                        hasActiveCast -> "Paylaşım Aktif: $activeBoardCastTitle"
+                                        else -> "Canlı Yansıtma Açık"
+                                    },
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isLiveBoardMirrorActive) Color(0xFF6EE7B7) else Color(0xFFFDE68A)
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = when {
+                                        !isLiveBoardMirrorActive || (isMirrorCast && isScreenMirrorPaused) -> Color(0xFFFDE68A)
+                                        hasActiveCast -> Color(0xFF7DD3FC)
+                                        else -> Color(0xFF6EE7B7)
+                                    }
                                 )
                                 Text(
-                                    text = "Tahta: $connectedBoardSessionCode • Sayfa: ${currentSubPage.title}",
+                                    text = if (hasActiveCast && isLiveBoardMirrorActive) {
+                                        "Tahta 'Paylaşım' sayfasında • Durdurunca ${currentSubPage.title} açılır"
+                                    } else {
+                                        "Tahta: $connectedBoardSessionCode • Sayfa: ${currentSubPage.title}"
+                                    },
                                     fontSize = 10.5.sp,
                                     color = Color.White.copy(alpha = 0.85f),
                                     maxLines = 1,
@@ -495,26 +530,50 @@ fun TeacherDashboardScreen(
                             }
                         }
 
-                        // Canlı / Gizlilik Modu Toggle Butonu
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onToggleLiveBoardMirror(!isLiveBoardMirrorActive) }
-                                .testTag("smart_board_mirror_toggle"),
-                            color = if (isLiveBoardMirrorActive) Color(0xFF047857) else Color(0xFFB45309),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        if (hasActiveCast && isLiveBoardMirrorActive) {
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onStopBoardCast() }
+                                    .testTag("smart_board_bar_stop_cast"),
+                                color = Color(0xFFDC2626),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.45f))
                             ) {
-                                Text(
-                                    text = if (isLiveBoardMirrorActive) "🔒 Gizle" else "🟢 Yansıt",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⏹️ Durdur",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        } else {
+                            // Canlı / Gizlilik Modu Toggle Butonu
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onToggleLiveBoardMirror(!isLiveBoardMirrorActive) }
+                                    .testTag("smart_board_mirror_toggle"),
+                                color = if (isLiveBoardMirrorActive) Color(0xFF047857) else Color(0xFFB45309),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isLiveBoardMirrorActive) "🔒 Gizle" else "🟢 Yansıt",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
@@ -1159,6 +1218,9 @@ fun TeacherDashboardScreen(
                 activeBoardCastType = activeBoardCastType,
                 isBroadcastingToBoard = isBroadcastingToBoard,
                 boardCastProgress = boardCastProgress,
+                isScreenMirrorPaused = isScreenMirrorPaused,
+                screenMirrorPauseReason = screenMirrorPauseReason,
+                screenMirrorPackageName = screenMirrorPackageName,
                 isDarkTheme = isDarkTheme,
                 onDismiss = onDismissSmartBoardDialog,
                 onConnect = onConnectSmartBoard,
@@ -1166,6 +1228,7 @@ fun TeacherDashboardScreen(
                 onDisconnect = onDisconnectSmartBoard,
                 onCastFile = onCastFileToBoard,
                 onCastUrlOrProgram = onCastUrlOrProgramToBoard,
+                onStartAppMirror = onStartAppMirror,
                 onStopCast = onStopBoardCast
             )
         }
@@ -1182,6 +1245,9 @@ fun SmartBoardDialog(
     activeBoardCastType: String?,
     isBroadcastingToBoard: Boolean,
     boardCastProgress: Float,
+    isScreenMirrorPaused: Boolean = false,
+    screenMirrorPauseReason: String? = null,
+    screenMirrorPackageName: String? = null,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
     onConnect: (String) -> Unit,
@@ -1189,6 +1255,7 @@ fun SmartBoardDialog(
     onDisconnect: () -> Unit,
     onCastFile: (Uri) -> Unit,
     onCastUrlOrProgram: (String, String, Boolean) -> Unit,
+    onStartAppMirror: (String, String, Int, Intent) -> Unit = { _, _, _, _ -> },
     onStopCast: () -> Unit
 ) {
     var codeInput by remember { mutableStateOf("") }
@@ -1325,8 +1392,12 @@ fun SmartBoardDialog(
                         isBroadcasting = isBroadcastingToBoard,
                         uploadProgress = boardCastProgress,
                         statusMessage = statusMessage,
+                        isScreenMirrorPaused = isScreenMirrorPaused,
+                        screenMirrorPauseReason = screenMirrorPauseReason,
+                        screenMirrorPackageName = screenMirrorPackageName,
                         onCastFile = onCastFile,
                         onCastUrlOrProgram = onCastUrlOrProgram,
+                        onStartAppMirror = onStartAppMirror,
                         onStopCast = onStopCast
                     )
 

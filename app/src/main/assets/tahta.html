@@ -1297,8 +1297,8 @@
       <div id="tournament-stage" style="flex:1; min-height:0; display:flex; flex-direction:column; gap:clamp(5px, 0.85vh, 10px); overflow:hidden;"></div>
     </div>
 
-    <!-- MODÜL 10: CANLI DOSYA / URL / PROGRAM YAYINI -->
-    <div id="mod-BOARD_CAST" class="module-screen">
+    <!-- MODÜL 10: PAYLAŞIM (CANLI UYGULAMA / DOSYA / URL / PROGRAM YAYINI) -->
+    <div id="mod-PAYLASIM" class="module-screen">
       <div class="board-toolbar" id="board-cast-toolbar"></div>
       <div id="board-cast-stage" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:rgba(255,255,255,0.96); border:2.5px solid #CBD5E1; border-bottom:5px solid #94A3B8; border-radius:22px; padding:clamp(8px, 1.2vh, 14px); position:relative;"></div>
     </div>
@@ -1913,6 +1913,7 @@
       function normalizeModuleKey(rawMod) {
         var m = String(rawMod || "SINIF_LISTESI").toUpperCase().trim();
         if (m === "ANA_SAYFA" || m === "SINIF_LISTESI" || m === "PROFIL_AYARLARI") return "SINIF_LISTESI";
+        if (m === "PAYLASIM" || m === "BOARD_CAST") return "PAYLASIM";
         if (m.indexOf("ILETISIM") === 0 || m.indexOf("OGRETMEN_ODASI") === 0) return "SINIF_LISTESI";
         if (m.indexOf("KITAPLIK") === 0) {
           if (m === "KITAPLIK_KAYITLAR") currentLibraryTab = "KAYITLAR";
@@ -1939,7 +1940,8 @@
           "YILDIZLAR_SINIFI": "⭐ Yıldızlar Sınıfı",
           "ZAMANLAYICI": "⏱️ Sınıf Zamanlayıcısı",
           "KITAPLIK": "📚 Sınıf Kitaplığı",
-          "TURNUVA": "🏆 Sınıf Turnuvası"
+          "TURNUVA": "🏆 Sınıf Turnuvası",
+          "PAYLASIM": "📡 Paylaşım"
         };
         return map[key] || "📋 Sınıf Listesi";
       }
@@ -2031,13 +2033,17 @@
         var isPrivateTeacherModule = String(rawModule).toUpperCase().indexOf("ILETISIM") === 0 || String(rawModule).toUpperCase().indexOf("OGRETMEN_ODASI") === 0;
 
         var activeCast = latestStateData.boardCast;
+        if (!activeCast || activeCast.active !== true) {
+          dismissedCastId = "";
+        }
         var isCastShowing = Boolean(activeCast && activeCast.active === true && activeCast.castId && activeCast.castId !== dismissedCastId);
 
         var modBadge = document.getElementById("header-module-badge");
         if (modBadge) {
           modBadge.style.display = "inline-flex";
           if (isCastShowing) {
-            modBadge.textContent = "📡 Canlı Yayın: " + String(activeCast.title || "İçerik");
+            var isMirrorPaused = String(activeCast.type || "").toUpperCase() === "SCREEN_MIRROR" && activeCast.isPaused === true;
+            modBadge.textContent = (isMirrorPaused ? "⏸️ Paylaşım (Sabit) • " : "📡 Paylaşım • ") + String(activeCast.title || "İçerik");
           } else {
             modBadge.textContent = isPrivateTeacherModule
               ? "📋 Sınıf Listesi (Gizlilik Korumalı)"
@@ -2046,14 +2052,16 @@
         }
 
         if (isCastShowing) {
-          switchActiveModuleScreen("BOARD_CAST");
+          switchActiveModuleScreen("PAYLASIM");
           renderBoardCast(activeCast);
         } else {
-          if (activeCastBlobUrl && (!activeCast || activeCast.active !== true)) {
+          if (!activeCast || activeCast.active !== true) {
             revokeActiveCastBlob();
             activeCastRenderKey = "";
+            activeCastMirrorId = "";
           }
-          switchActiveModuleScreen(targetKey);
+          var fallbackTarget = (targetKey === "PAYLASIM") ? "SINIF_LISTESI" : targetKey;
+          switchActiveModuleScreen(fallbackTarget);
         }
 
         var mergedStudents = getMergedStudentsList();
@@ -3357,16 +3365,79 @@
           '</div>';
       }
 
+      var activeCastMirrorId = "";
+
       function renderBoardCast(cast) {
         var toolbar = document.getElementById("board-cast-toolbar");
         var stage = document.getElementById("board-cast-stage");
         if (!toolbar || !stage || !cast) return;
 
+        var castType = String(cast.type || "URL").toUpperCase();
+
+        if (castType === "SCREEN_MIRROR") {
+          revokeActiveCastBlob();
+          var mirrorCastId = String(cast.castId || "");
+          var mirrorTitle = String(cast.title || "Telefon Uygulaması");
+          var mirrorB64 = String(cast.inlineBase64 || "");
+          var isPaused = cast.isPaused === true;
+          var pauseReason = String(cast.pauseReason || "Uygulama dışındasınız — son görüntü tahtada sabitlendi.");
+          var existingImg = document.getElementById("live-mirror-img");
+          var existingPill = document.getElementById("mirror-live-pill");
+          var existingOverlay = document.getElementById("mirror-freeze-overlay");
+
+          if (activeCastMirrorId === mirrorCastId && existingImg && existingPill) {
+            if (mirrorB64) {
+              existingImg.src = "data:image/jpeg;base64," + mirrorB64;
+            }
+            if (isPaused) {
+              existingPill.className = "stat-pill star-stat";
+              existingPill.innerHTML = "⏸️ <strong>Son Görüntüde Sabitlendi</strong>";
+              if (existingOverlay) {
+                existingOverlay.style.display = "flex";
+                var reasonEl = document.getElementById("mirror-freeze-reason");
+                if (reasonEl) reasonEl.textContent = pauseReason;
+              }
+            } else {
+              existingPill.className = "stat-pill book-stat";
+              existingPill.innerHTML = "🟢 <strong>Canlı Yansıtılıyor</strong>";
+              if (existingOverlay) existingOverlay.style.display = "none";
+            }
+            return;
+          }
+
+          activeCastMirrorId = mirrorCastId;
+          activeCastRenderKey = mirrorCastId + "_" + String(cast.updatedAt || "");
+
+          toolbar.innerHTML =
+            '<div class="stats-bar">' +
+              '<div class="stat-pill boy-stat">📱 Uygulama: <strong>' + escapeHtml(mirrorTitle) + '</strong></div>' +
+              '<div id="mirror-live-pill" class="stat-pill ' + (isPaused ? 'star-stat' : 'book-stat') + '">' +
+                (isPaused ? '⏸️ <strong>Son Görüntüde Sabitlendi</strong>' : '🟢 <strong>Canlı Yansıtılıyor</strong>') +
+              '</div>' +
+            '</div>' +
+            '<div class="sort-controls">' +
+              '<button class="sort-btn sort-star active" onclick="returnToClassBoardLocally()">📋 BİRİZ Menüsü</button>' +
+            '</div>';
+
+          var imgSrcAttr = mirrorB64 ? ('data:image/jpeg;base64,' + escapeHtml(mirrorB64)) : '';
+          stage.innerHTML =
+            '<div style="flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#0F172A; border-radius:16px; position:relative;">' +
+              '<img id="live-mirror-img" src="' + imgSrcAttr + '" alt="' + escapeHtml(mirrorTitle) + '" style="width:100%; height:100%; max-width:100%; max-height:100%; object-fit:contain;" />' +
+              '<div id="mirror-freeze-overlay" style="display:' + (isPaused ? 'flex' : 'none') + '; position:absolute; bottom:14px; left:14px; right:auto; max-width:min(580px, 90%); align-items:center; gap:10px; background:rgba(15,23,42,0.9); color:#FDE68A; border:2px solid #F59E0B; border-radius:14px; padding:10px 16px; box-shadow:0 8px 24px rgba(0,0,0,0.45); backdrop-filter:blur(6px);">' +
+                '<span style="font-size:1.5rem;">⏸️</span>' +
+                '<div style="min-width:0;">' +
+                  '<div style="font-family:Fredoka,sans-serif; font-size:1rem; font-weight:700; color:#FCD34D;">Görüntü Sabitlendi</div>' +
+                  '<div id="mirror-freeze-reason" style="font-size:0.86rem; font-weight:700; color:#FEF3C7;">' + escapeHtml(pauseReason) + '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+          return;
+        }
+
+        activeCastMirrorId = "";
         var key = String(cast.castId || "") + "_" + String(cast.updatedAt || "");
         if (activeCastRenderKey === key) return;
         activeCastRenderKey = key;
-
-        var castType = String(cast.type || "URL").toUpperCase();
 
         if (castType === "FILE") {
           revokeActiveCastBlob();
