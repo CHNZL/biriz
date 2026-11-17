@@ -112,7 +112,7 @@ fun TeacherHomeSubScreen(
     // Canlı saat (Veli aktiflik durumunu anlık değerlendirmek için)
     val nowMillis by produceState(initialValue = System.currentTimeMillis()) {
         while (true) {
-            delay(10_000L)
+            delay(3_000L)
             value = System.currentTimeMillis()
         }
     }

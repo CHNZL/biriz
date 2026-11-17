@@ -3011,7 +3011,7 @@ private fun ParentCommunicationDetailView(
                         var presenceClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
                         LaunchedEffect(Unit) {
                             while (true) {
-                                delay(10_000L)
+                                delay(3_000L)
                                 presenceClockMs = System.currentTimeMillis()
                             }
                         }

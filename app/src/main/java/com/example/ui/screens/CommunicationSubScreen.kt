@@ -2313,6 +2313,13 @@ private fun ParentMessagesListView(
     var isAnchorHovered by remember { mutableStateOf(false) }
     var isBubbleHovered by remember { mutableStateOf(false) }
     var bubbleSize by remember { mutableStateOf(IntSize.Zero) }
+    var presenceClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3_000L)
+            presenceClockMs = System.currentTimeMillis()
+        }
+    }
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
@@ -2597,6 +2604,7 @@ private fun ParentMessagesListView(
                                 student = student,
                                 studentMessages = studentMessages,
                                 totalUnread = totalUnread,
+                                presenceClockMs = presenceClockMs,
                                 isDarkTheme = isDarkTheme,
                                 fontOffset = fontOffset,
                                 activeTooltipEmail = if (activeTooltip?.student?.id == student.id) {
@@ -2690,6 +2698,7 @@ private fun ParentMessagesListView(
 
             ParentHoverInfoBubble(
                 tooltip = tooltip,
+                presenceClockMs = presenceClockMs,
                 isDarkTheme = isDarkTheme,
                 modifier = Modifier
                     .zIndex(50f)
@@ -2852,6 +2861,7 @@ private fun ActiveStudentChatCard(
     student: Student,
     studentMessages: List<ChatMessage>,
     totalUnread: Int,
+    presenceClockMs: Long,
     isDarkTheme: Boolean,
     fontOffset: Int,
     activeTooltipEmail: String?,
@@ -2993,6 +3003,7 @@ private fun ActiveStudentChatCard(
                         parentAccount = parentAccount,
                         unreadCount = parentUnread,
                         lastMessage = parentLastMsg,
+                        presenceClockMs = presenceClockMs,
                         isTooltipHighlighted = isThisTooltipOpen,
                         isDarkTheme = isDarkTheme,
                         onHoverChanged = { hovered, anchorRect ->
@@ -3016,6 +3027,7 @@ private fun ParentQuickChatIcon(
     parentAccount: LinkedParentAccount,
     unreadCount: Int,
     lastMessage: ChatMessage?,
+    presenceClockMs: Long,
     isTooltipHighlighted: Boolean,
     isDarkTheme: Boolean,
     onHoverChanged: (Boolean, Rect) -> Unit,
@@ -3106,7 +3118,7 @@ private fun ParentQuickChatIcon(
         }
 
         // Sol alt köşede anlık bağlantı durumu noktası (Bağlı / Bağlı değil)
-        val isParentOnline = parentAccount.isCurrentlyActive()
+        val isParentOnline = parentAccount.isCurrentlyActive(presenceClockMs)
         Surface(
             shape = CircleShape,
             color = if (isParentOnline) Color(0xFF10B981) else Color(0xFF94A3B8),
@@ -3164,6 +3176,7 @@ private fun ParentQuickChatIcon(
 @Composable
 private fun ParentHoverInfoBubble(
     tooltip: HoveredParentTooltipState,
+    presenceClockMs: Long,
     isDarkTheme: Boolean,
     modifier: Modifier = Modifier,
     onBubbleHoverChange: (Boolean) -> Unit,
@@ -3217,7 +3230,7 @@ private fun ParentHoverInfoBubble(
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             // 1. Veli Adı Soyadı, Yakınlık Rozeti ve Anlık Bağlantı Durumu
-            val isParentOnline = parentAccount.isCurrentlyActive()
+            val isParentOnline = parentAccount.isCurrentlyActive(presenceClockMs)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -3512,7 +3525,7 @@ private fun OneOnOneChatView(
     var presenceClockMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(10_000L)
+            delay(3_000L)
             presenceClockMs = System.currentTimeMillis()
         }
     }

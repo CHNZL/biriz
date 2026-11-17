@@ -409,36 +409,19 @@ fun BirizApp(viewModel: BirizViewModel) {
                     val students by viewModel.students.collectAsStateWithLifecycle()
                     if (classRoom != null) {
                         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-                        DisposableEffect(lifecycleOwner, classRoom.id) {
-                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                                viewModel.onAppForegrounded()
-                            }
-                            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                                when (event) {
-                                    androidx.lifecycle.Lifecycle.Event.ON_START,
-                                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                                        viewModel.onAppForegrounded()
-                                    }
-                                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
-                                    androidx.lifecycle.Lifecycle.Event.ON_STOP,
-                                    androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
-                                        viewModel.onAppBackgrounded()
-                                    }
-                                    else -> {}
-                                }
-                            }
-                            lifecycleOwner.lifecycle.addObserver(observer)
+                        DisposableEffect(classRoom.id) {
+                            viewModel.syncLivePresenceSocket()
                             onDispose {
-                                lifecycleOwner.lifecycle.removeObserver(observer)
                                 viewModel.updateTeacherPresence(isOnline = false)
                             }
                         }
 
                         LaunchedEffect(lifecycleOwner, classRoom.id) {
                             lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                                viewModel.syncLivePresenceSocket()
                                 while (true) {
-                                    viewModel.updateTeacherPresence(isOnline = true)
-                                    kotlinx.coroutines.delay(60_000L)
+                                    kotlinx.coroutines.delay(75_000L)
+                                    viewModel.sendTeacherPresenceHeartbeatIfNeeded()
                                 }
                             }
                         }
@@ -591,36 +574,19 @@ fun BirizApp(viewModel: BirizViewModel) {
                     val activeStudent = linkedStudents.firstOrNull { it.id == uiState.activeParentStudentId } ?: linkedStudents.firstOrNull()
 
                     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-                    DisposableEffect(lifecycleOwner, uiState.linkedParentStudentIds) {
-                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                            viewModel.onAppForegrounded()
-                        }
-                        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                            when (event) {
-                                androidx.lifecycle.Lifecycle.Event.ON_START,
-                                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                                    viewModel.onAppForegrounded()
-                                }
-                                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
-                                androidx.lifecycle.Lifecycle.Event.ON_STOP,
-                                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
-                                    viewModel.onAppBackgrounded()
-                                }
-                                else -> {}
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
+                    DisposableEffect(uiState.linkedParentStudentIds) {
+                        viewModel.syncLivePresenceSocket()
                         onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
                             viewModel.updateParentPresence(isOnline = false)
                         }
                     }
 
                     LaunchedEffect(lifecycleOwner, uiState.linkedParentStudentIds) {
                         lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                            viewModel.syncLivePresenceSocket()
                             while (true) {
-                                viewModel.updateParentPresence(isOnline = true)
-                                kotlinx.coroutines.delay(60_000L)
+                                kotlinx.coroutines.delay(75_000L)
+                                viewModel.sendParentPresenceHeartbeatIfNeeded()
                             }
                         }
                     }

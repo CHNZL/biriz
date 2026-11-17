@@ -56,11 +56,13 @@ import com.example.util.AppUpdateManager
 import com.example.util.AppUpdateNotificationHelper
 import com.example.util.BackgroundNotificationSyncHelper
 import com.example.util.BackgroundUpdateState
+import com.example.util.ClassroomPresenceSnapshot
 import com.example.util.DeferredSystemNotification
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.PresenceSocketManager
 import com.example.util.QuietHoursConfig
 import com.example.util.SmartBoardHelper
 import com.example.util.SmartBoardScreenCastService
@@ -235,7 +237,17 @@ class BirizViewModel(
     val uiState: StateFlow<BirizUiState> = _uiState.asStateFlow()
 
     val cities: List<City> = repository.cities
-    val students: StateFlow<List<com.example.data.model.Student>> = repository.students
+    val students: StateFlow<List<com.example.data.model.Student>> = combine(
+        repository.students,
+        PresenceSocketManager.snapshot,
+        _uiState
+    ) { list, wsSnap, state ->
+        mergePresenceIntoStudents(list, wsSnap, state.activeClassRoom?.id)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = repository.students.value
+    )
 
     private var updateCheckJob: Job? = null
     private var scheduleListenerRegistration: ListenerRegistration? = null
@@ -251,6 +263,12 @@ class BirizViewModel(
     private var groupMakerListenerRegistration: ListenerRegistration? = null
     private var parentPresenceJob: Job? = null
     private var teacherPresenceJob: Job? = null
+    private var lastForegroundPresenceMs: Long = 0L
+    private var lastBackgroundPresenceMs: Long = 0L
+    private var lastTeacherPresenceWriteKey: String? = null
+    private var lastTeacherPresenceWriteMs: Long = 0L
+    private var lastParentPresenceWriteKey: String? = null
+    private var lastParentPresenceWriteMs: Long = 0L
     private var refreshUserJob: Job? = null
     private var activeResolvingUid: String? = null
     private var lastResolvedUid: String? = null
@@ -1029,14 +1047,32 @@ class BirizViewModel(
             }
         }
 
-        // Aktif sınıftaki öğretmen canlı bağlantı durumunu anlık olarak yansıt
+        // Aktif sınıftaki öğretmen canlı bağlantı durumunu (WebSocket + Firestore fallback) anlık yansıt
         viewModelScope.launch {
-            repository.registeredClasses.collect { classes ->
+            combine(
+                repository.registeredClasses,
+                PresenceSocketManager.snapshot
+            ) { classes, wsSnap ->
+                Pair(classes, wsSnap)
+            }.collect { (classes, wsSnap) ->
                 if (_uiState.value.isDeleting || repository.isAccountDeleting) return@collect
                 val currentActive = _uiState.value.activeClassRoom ?: return@collect
-                val updated = classes.firstOrNull { it.id == currentActive.id } ?: return@collect
-                if (updated != currentActive) {
-                    _uiState.value = _uiState.value.copy(activeClassRoom = updated)
+                val baseUpdated = classes.firstOrNull { it.id == currentActive.id } ?: currentActive
+                val cleanId = baseUpdated.id.trim().replace(Regex("[^A-Za-z0-9_-]"), "")
+                val finalRoom = if (wsSnap != null && wsSnap.isConnected && cleanId.isNotBlank() && wsSnap.classId == cleanId) {
+                    baseUpdated.copy(
+                        teacherIsOnline = wsSnap.teacherOnline,
+                        teacherLastActiveMillis = if (wsSnap.teacherOnline) {
+                            wsSnap.receivedAtLocalMs
+                        } else {
+                            wsSnap.teacherLastActiveMillis ?: baseUpdated.teacherLastActiveMillis
+                        }
+                    )
+                } else {
+                    baseUpdated
+                }
+                if (finalRoom != currentActive) {
+                    _uiState.value = _uiState.value.copy(activeClassRoom = finalRoom)
                 }
             }
         }
@@ -1047,12 +1083,108 @@ class BirizViewModel(
 
     private var lastOrphanPurgeAttemptMillis: Long = 0L
 
+    private fun mergePresenceIntoStudents(
+        list: List<Student>,
+        wsSnap: ClassroomPresenceSnapshot?,
+        activeClassId: String?
+    ): List<Student> {
+        val cleanActiveId = activeClassId?.trim()?.replace(Regex("[^A-Za-z0-9_-]"), "").orEmpty()
+        if (wsSnap == null || !wsSnap.isConnected || cleanActiveId.isBlank() || cleanActiveId == "default" || wsSnap.classId != cleanActiveId) {
+            return list
+        }
+        val clockBase = wsSnap.receivedAtLocalMs
+        return list.map { student ->
+            val baseParents = student.allLinkedParents
+            if (baseParents.isEmpty()) return@map student
+
+            val onlineMatches = wsSnap.onlineParents.filter { student.id in it.studentIds }
+            val offlineMatches = wsSnap.offlineParents.filter { student.id in it.studentIds }
+            if (onlineMatches.isEmpty() && offlineMatches.isEmpty()) return@map student
+
+            var changed = false
+            val updatedParents = baseParents.map { p ->
+                val emailLower = p.email.trim().lowercase()
+                val onlineHit = onlineMatches.firstOrNull { it.email == emailLower }
+                if (onlineHit != null) {
+                    changed = true
+                    p.copy(
+                        isOnline = true,
+                        lastActiveMillis = clockBase
+                    )
+                } else {
+                    val offlineHit = offlineMatches.firstOrNull { it.email == emailLower }
+                    val existingTs = p.lastActiveMillis ?: student.parentLastActiveMillis ?: 0L
+                    if (offlineHit != null && offlineHit.lastActiveMillis >= existingTs - 5_000L) {
+                        changed = true
+                        p.copy(
+                            isOnline = false,
+                            lastActiveMillis = maxOf(existingTs, offlineHit.lastActiveMillis)
+                        )
+                    } else p
+                }
+            }
+
+            if (!changed) return@map student
+
+            val anyOnline = updatedParents.any { it.isOnline }
+            val primaryOnline = updatedParents.firstOrNull()?.isOnline ?: anyOnline
+            val latestActiveTs = updatedParents.mapNotNull { it.lastActiveMillis }.maxOrNull()
+                ?: student.parentLastActiveMillis
+
+            student.copy(
+                parentIsOnline = anyOnline || primaryOnline,
+                parentLastActiveMillis = latestActiveTs,
+                linkedParents = updatedParents
+            )
+        }
+    }
+
+    fun syncLivePresenceSocket(state: BirizUiState = _uiState.value) {
+        if (!isAppInForeground || state.isDeleting || repository.isAccountDeleting) {
+            PresenceSocketManager.disconnect()
+            return
+        }
+        val classId = state.activeClassRoom?.id?.takeIf { it.isNotBlank() && it != "default" }
+            ?: resolveActiveClassId().takeIf { it.isNotBlank() && it != "default" }
+        if (classId.isNullOrBlank()) {
+            PresenceSocketManager.disconnect()
+            return
+        }
+        when {
+            state.currentScreen == ScreenState.TEACHER_DASHBOARD && state.currentRole == UserRole.TEACHER -> {
+                PresenceSocketManager.connect(
+                    classId = classId,
+                    role = "teacher",
+                    email = state.currentUser.email,
+                    name = state.currentUser.fullName.ifBlank { "Sınıf Öğretmeni" },
+                    studentIds = emptyList()
+                )
+            }
+            state.currentScreen == ScreenState.PARENT_PORTAL && state.currentRole == UserRole.PARENT && state.linkedParentStudentIds.isNotEmpty() -> {
+                PresenceSocketManager.connect(
+                    classId = classId,
+                    role = "parent",
+                    email = state.currentUser.email.ifBlank { "veli@biriz.app" },
+                    name = state.currentUser.fullName.ifBlank { "Öğrenci Velisi" },
+                    studentIds = state.linkedParentStudentIds
+                )
+            }
+            else -> {
+                PresenceSocketManager.disconnect()
+            }
+        }
+    }
+
     fun onAppForegrounded() {
+        val wasInForeground = isAppInForeground
         isAppInForeground = true
         val state = _uiState.value
         if (state.isDeleting || repository.isAccountDeleting) return
         val now = System.currentTimeMillis()
-        if (now - lastOrphanPurgeAttemptMillis > 180_000L) {
+        syncLivePresenceSocket(state)
+
+        // Yetim kullanıcı temizliği yalnızca oturumda 30 dakikada bir çalışsın (Firestore okuma/yazma kotasını korur)
+        if (now - lastOrphanPurgeAttemptMillis > 1_800_000L) {
             val activeFbUser = try { Firebase.auth.currentUser } catch (_: Throwable) { null }
             if (activeFbUser != null) {
                 lastOrphanPurgeAttemptMillis = now
@@ -1068,13 +1200,22 @@ class BirizViewModel(
             flushPendingMorningDigest(ctx, currentViewerKey(state), forceEvenIfWithinWindow = false)
         }
         evaluateDueScheduledMessages()
+
+        // onStart + onResume ardışık geldiğinde aynı online yazmasını 15 sn içinde tekrarlama
+        val shouldSyncPresenceWrite = !wasInForeground || (now - lastForegroundPresenceMs > 15_000L)
         if (state.currentRole == UserRole.PARENT) {
-            updateParentPresence(isOnline = true)
+            if (shouldSyncPresenceWrite) {
+                lastForegroundPresenceMs = now
+                updateParentPresence(isOnline = true)
+            }
             if (isParentCommunicationTabActive && isParentChatSubTabActive && !state.activeParentStudentId.isNullOrBlank()) {
                 markChatMessagesAsRead(state.activeParentStudentId, viewerIsTeacher = false)
             }
         } else if (state.currentRole == UserRole.TEACHER) {
-            updateTeacherPresence(isOnline = true)
+            if (shouldSyncPresenceWrite) {
+                lastForegroundPresenceMs = now
+                updateTeacherPresence(isOnline = true)
+            }
             if (state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
                 state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
                 !state.activeChatStudentId.isNullOrBlank()
@@ -1085,10 +1226,28 @@ class BirizViewModel(
     }
 
     fun onAppBackgrounded() {
+        val wasInForeground = isAppInForeground
         isAppInForeground = false
+        PresenceSocketManager.disconnect()
         if (_uiState.value.isDeleting || repository.isAccountDeleting) return
+        val now = System.currentTimeMillis()
+        // onPause -> onStop -> onDestroy art arda gelirken offline yazmasını iptal etmeden tek sefer çalıştır
+        if (!wasInForeground && (now - lastBackgroundPresenceMs < 4_000L)) return
+        lastBackgroundPresenceMs = now
         updateParentPresence(isOnline = false)
         updateTeacherPresence(isOnline = false)
+    }
+
+    fun sendTeacherPresenceHeartbeatIfNeeded() {
+        val classId = resolveActiveClassId()
+        if (PresenceSocketManager.isLiveConnected(classId)) return
+        updateTeacherPresence(isOnline = true)
+    }
+
+    fun sendParentPresenceHeartbeatIfNeeded() {
+        val classId = resolveActiveClassId()
+        if (PresenceSocketManager.isLiveConnected(classId)) return
+        updateParentPresence(isOnline = true)
     }
 
     fun updateTeacherPresence(isOnline: Boolean) {
@@ -1096,11 +1255,19 @@ class BirizViewModel(
         if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting || repository.isAccountDeleting) return
         if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.TEACHER && isOnline) return
+        if (!isOnline && state.currentRole != UserRole.TEACHER) return
         val activeClass = state.activeClassRoom ?: return
         val classId = activeClass.id
-        if (classId.isBlank()) return
+        if (classId.isBlank() || classId == "default") return
 
         val nowMillis = System.currentTimeMillis()
+        val writeKey = "$classId|$isOnline"
+        if (lastTeacherPresenceWriteKey == writeKey && (nowMillis - lastTeacherPresenceWriteMs) < if (isOnline) 15_000L else 4_000L) {
+            return
+        }
+        lastTeacherPresenceWriteKey = writeKey
+        lastTeacherPresenceWriteMs = nowMillis
+
         _uiState.value = state.copy(
             activeClassRoom = activeClass.copy(
                 teacherIsOnline = isOnline,
@@ -1108,10 +1275,12 @@ class BirizViewModel(
             )
         )
 
-        teacherPresenceJob?.cancel()
-        teacherPresenceJob = viewModelScope.launch {
-            if (_uiState.value.isDeleting || repository.isAccountDeleting) return@launch
-            if (!isOnline) {
+        if (!isOnline) {
+            // Çıkış yazmasını hiçbir zaman iptal etme; bekleyen online iş varsa durdur
+            if (teacherPresenceJob?.isActive == true) {
+                teacherPresenceJob?.cancel()
+            }
+            teacherPresenceJob = viewModelScope.launch {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     if (!_uiState.value.isDeleting && !repository.isAccountDeleting) {
                         repository.updateTeacherPresence(
@@ -1120,8 +1289,11 @@ class BirizViewModel(
                         )
                     }
                 }
-            } else {
-                if (!isAppInForeground) return@launch
+            }
+        } else {
+            teacherPresenceJob?.cancel()
+            teacherPresenceJob = viewModelScope.launch {
+                if (_uiState.value.isDeleting || repository.isAccountDeleting || !isAppInForeground) return@launch
                 repository.updateTeacherPresence(
                     classroomId = classId,
                     isOnline = true
@@ -1135,16 +1307,27 @@ class BirizViewModel(
         if (state.currentScreen == ScreenState.GOOGLE_SIGN_IN || state.isDeleting || repository.isAccountDeleting) return
         if (isOnline && !isAppInForeground) return
         if (state.currentRole != UserRole.PARENT && isOnline) return
+        if (!isOnline && state.currentRole != UserRole.PARENT) return
         val linkedIds = state.linkedParentStudentIds
         if (linkedIds.isEmpty()) return
         val classId = resolveActiveClassId()
+        if (classId.isBlank() || classId == "default") return
         val email = state.currentUser.email.ifBlank { "veli@biriz.app" }
         val name = state.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
 
-        parentPresenceJob?.cancel()
-        parentPresenceJob = viewModelScope.launch {
-            if (_uiState.value.isDeleting || repository.isAccountDeleting) return@launch
-            if (!isOnline) {
+        val nowMillis = System.currentTimeMillis()
+        val writeKey = "$classId|${linkedIds.sorted().joinToString(",")}|$isOnline"
+        if (lastParentPresenceWriteKey == writeKey && (nowMillis - lastParentPresenceWriteMs) < if (isOnline) 15_000L else 4_000L) {
+            return
+        }
+        lastParentPresenceWriteKey = writeKey
+        lastParentPresenceWriteMs = nowMillis
+
+        if (!isOnline) {
+            if (parentPresenceJob?.isActive == true) {
+                parentPresenceJob?.cancel()
+            }
+            parentPresenceJob = viewModelScope.launch {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     if (!_uiState.value.isDeleting && !repository.isAccountDeleting) {
                         repository.updateParentPresence(
@@ -1156,8 +1339,11 @@ class BirizViewModel(
                         )
                     }
                 }
-            } else {
-                if (!isAppInForeground) return@launch
+            }
+        } else {
+            parentPresenceJob?.cancel()
+            parentPresenceJob = viewModelScope.launch {
+                if (_uiState.value.isDeleting || repository.isAccountDeleting || !isAppInForeground) return@launch
                 repository.updateParentPresence(
                     classroomId = classId,
                     studentIds = linkedIds,
@@ -3312,6 +3498,7 @@ class BirizViewModel(
                             loadSeatingPlanFromStorage(resolvedClass.id)
                             loadCommunicationFromStorage(resolvedClass.id)
                             loadGroupMakerFromStorage(resolvedClass.id)
+                            syncLivePresenceSocket()
                             syncBackgroundWorkersAndPushToken(_uiState.value)
                             return@withTimeoutOrNull true
                         }
@@ -3378,6 +3565,7 @@ class BirizViewModel(
                             reloadNotificationPreferences(_uiState.value)
                             refreshChatClearStateForCurrentViewer(parentClass.id, forceReload = true)
                             saveParentSessionState()
+                            syncLivePresenceSocket()
                             syncBackgroundWorkersAndPushToken(_uiState.value)
 
                             // Yazma işlemlerini geçişi bekletmeden arka planda tamamla
@@ -3718,6 +3906,7 @@ class BirizViewModel(
                 evaluateActivityNotifications(activeClass.id, forceReloadViewerNotifications = true)
                 refreshChatClearStateForCurrentViewer(activeClass.id, forceReload = true)
                 saveParentSessionState()
+                syncLivePresenceSocket()
                 syncBackgroundWorkersAndPushToken(_uiState.value)
             } else {
                 _uiState.value = _uiState.value.copy(
@@ -5173,6 +5362,7 @@ class BirizViewModel(
         refreshUserJob = null
         activeResolvingUid = null
         lastResolvedUid = null
+        PresenceSocketManager.disconnect()
         clearAllListenersAndSessionCaches()
         repository.stopAllListenersForAccountDeletion()
         disconnectSmartBoard()
@@ -5216,6 +5406,7 @@ class BirizViewModel(
 
     fun resetToRoleSelection() {
         if (_uiState.value.isDeleting) return
+        PresenceSocketManager.disconnect()
         _uiState.value = _uiState.value.copy(
             currentScreen = ScreenState.ROLE_AND_KVKK,
             selectedSection = null,
@@ -5253,6 +5444,7 @@ class BirizViewModel(
         refreshUserJob = null
         activeResolvingUid = null
         lastResolvedUid = null
+        PresenceSocketManager.disconnect()
         clearAllListenersAndSessionCaches()
         repository.clearSessionCaches()
         disconnectSmartBoard()

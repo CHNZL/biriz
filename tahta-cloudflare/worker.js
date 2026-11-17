@@ -23,12 +23,186 @@ function cleanSessionCode(raw) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+function cleanPresenceClassId(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, "");
+}
+
+function parseStudentIdsParam(raw) {
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map((s) => String(s || "").trim()).filter(Boolean)));
+  }
+  return Array.from(
+    new Set(
+      String(raw || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 export class BoardRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.sqlReady = false;
     this.cachedState = null;
     this.stateLoaded = false;
+  }
+
+  getPresenceMeta(ws) {
+    try {
+      if (typeof ws.deserializeAttachment === "function") {
+        const att = ws.deserializeAttachment();
+        if (att && att.kind === "presence") return att;
+      }
+    } catch (_e) {}
+    return null;
+  }
+
+  setPresenceMeta(ws, meta) {
+    try {
+      if (typeof ws.serializeAttachment === "function") {
+        ws.serializeAttachment(meta);
+      }
+    } catch (_e) {}
+  }
+
+  loadJsonKv(key, fallback) {
+    const raw = this.getKv(key);
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed ?? fallback;
+    } catch (_e) {
+      return fallback;
+    }
+  }
+
+  buildPresenceSnapshot(classId, excludeSocket = null) {
+    const sockets = this.ctx.getWebSockets("presence") || [];
+    const now = Date.now();
+    let teacherOnline = false;
+    let teacherLastActiveMillis = Number(this.getKv("presence_teacher_last") || 0) || null;
+
+    const onlineParentMap = new Map();
+    for (const ws of sockets) {
+      if (excludeSocket && ws === excludeSocket) continue;
+      const meta = this.getPresenceMeta(ws);
+      if (!meta) continue;
+      const ts = Number(meta.lastSeenAt || meta.connectedAt || now);
+      if (meta.role === "teacher") {
+        teacherOnline = true;
+        if (!teacherLastActiveMillis || ts > teacherLastActiveMillis) {
+          teacherLastActiveMillis = ts;
+        }
+      } else if (meta.role === "parent") {
+        const emailKey = String(meta.email || "").trim().toLowerCase();
+        if (!emailKey) continue;
+        const existing = onlineParentMap.get(emailKey);
+        const sIds = parseStudentIdsParam(meta.studentIds);
+        if (!existing) {
+          onlineParentMap.set(emailKey, {
+            email: emailKey,
+            name: String(meta.name || "Öğrenci Velisi"),
+            studentIds: sIds,
+            lastActiveMillis: ts
+          });
+        } else {
+          const mergedIds = Array.from(new Set([...existing.studentIds, ...sIds]));
+          existing.studentIds = mergedIds;
+          if (meta.name && (!existing.name || existing.name === "Öğrenci Velisi")) {
+            existing.name = String(meta.name);
+          }
+          if (ts > existing.lastActiveMillis) existing.lastActiveMillis = ts;
+        }
+      }
+    }
+
+    const storedOffline = this.loadJsonKv("presence_offline_parents", {});
+    const offlineParents = [];
+    const cutoff = now - 24 * 60 * 60 * 1000;
+    for (const [emailKey, info] of Object.entries(storedOffline || {})) {
+      if (onlineParentMap.has(emailKey)) continue;
+      const ts = Number(info?.lastActiveMillis || 0);
+      if (ts < cutoff) continue;
+      offlineParents.push({
+        email: emailKey,
+        studentIds: parseStudentIdsParam(info?.studentIds),
+        lastActiveMillis: ts
+      });
+    }
+
+    return {
+      type: "presence_snapshot",
+      classId: String(classId || this.getKv("presence_class_id") || ""),
+      serverTs: now,
+      teacherOnline,
+      teacherLastActiveMillis,
+      onlineParents: Array.from(onlineParentMap.values()),
+      offlineParents
+    };
+  }
+
+  broadcastPresenceSnapshot(classId, excludeSocket = null) {
+    const snapshot = this.buildPresenceSnapshot(classId, excludeSocket);
+    const sockets = this.ctx.getWebSockets("presence") || [];
+    const text = JSON.stringify(snapshot);
+    for (const ws of sockets) {
+      if (excludeSocket && ws === excludeSocket) continue;
+      try {
+        ws.send(text);
+      } catch (_e) {
+        try {
+          ws.close(1011, "send_failed");
+        } catch (_e2) {}
+      }
+    }
+    return snapshot;
+  }
+
+  handlePresenceDisconnect(ws) {
+    const meta = this.getPresenceMeta(ws);
+    if (!meta) return false;
+    const now = Date.now();
+    const classId = meta.classId || this.getKv("presence_class_id") || "";
+    const remaining = (this.ctx.getWebSockets("presence") || []).filter((s) => s !== ws);
+
+    if (meta.role === "teacher") {
+      const stillHasTeacher = remaining.some((s) => this.getPresenceMeta(s)?.role === "teacher");
+      if (!stillHasTeacher) {
+        this.setKv("presence_teacher_last", String(now));
+      }
+    } else if (meta.role === "parent") {
+      const emailKey = String(meta.email || "").trim().toLowerCase();
+      if (emailKey) {
+        const stillHasParent = remaining.some(
+          (s) => {
+            const m = this.getPresenceMeta(s);
+            return m && m.role === "parent" && String(m.email || "").trim().toLowerCase() === emailKey;
+          }
+        );
+        if (!stillHasParent) {
+          const offlineMap = this.loadJsonKv("presence_offline_parents", {});
+          offlineMap[emailKey] = {
+            studentIds: parseStudentIdsParam(meta.studentIds),
+            lastActiveMillis: now
+          };
+          const keys = Object.keys(offlineMap);
+          if (keys.length > 100) {
+            keys
+              .sort((a, b) => Number(offlineMap[a]?.lastActiveMillis || 0) - Number(offlineMap[b]?.lastActiveMillis || 0))
+              .slice(0, keys.length - 100)
+              .forEach((k) => delete offlineMap[k]);
+          }
+          this.setKv("presence_offline_parents", JSON.stringify(offlineMap));
+        }
+      }
+    }
+
+    this.broadcastPresenceSnapshot(classId, ws);
+    return true;
   }
 
   ensureTables() {
@@ -178,6 +352,54 @@ export class BoardRoom extends DurableObject {
     const url = new URL(request.url);
     const subPath = url.pathname;
 
+    if (subPath.endsWith("/presence/snapshot")) {
+      const classId = cleanPresenceClassId(url.searchParams.get("classId"));
+      if (classId) this.setKv("presence_class_id", classId);
+      return jsonResponse(this.buildPresenceSnapshot(classId));
+    }
+
+    if (subPath.endsWith("/presence/ws")) {
+      if (request.headers.get("Upgrade") !== "websocket") {
+        return jsonResponse({ ok: false, error: "WebSocket upgrade required" }, 426);
+      }
+      const classId = cleanPresenceClassId(url.searchParams.get("classId"));
+      const role = url.searchParams.get("role") === "teacher" ? "teacher" : "parent";
+      const email = String(url.searchParams.get("email") || "").trim().toLowerCase();
+      const name = String(url.searchParams.get("name") || "").trim();
+      const studentIds = parseStudentIdsParam(url.searchParams.get("studentIds"));
+      const now = Date.now();
+
+      if (classId) this.setKv("presence_class_id", classId);
+
+      const pair = new WebSocketPair();
+      const client = pair[0];
+      const server = pair[1];
+      this.ctx.acceptWebSocket(server, ["presence"]);
+      this.setPresenceMeta(server, {
+        kind: "presence",
+        classId,
+        role,
+        email,
+        name,
+        studentIds,
+        connectedAt: now,
+        lastSeenAt: now
+      });
+
+      if (role === "teacher") {
+        this.setKv("presence_teacher_last", String(now));
+      } else if (role === "parent" && email) {
+        const offlineMap = this.loadJsonKv("presence_offline_parents", {});
+        if (offlineMap[email]) {
+          delete offlineMap[email];
+          this.setKv("presence_offline_parents", JSON.stringify(offlineMap));
+        }
+      }
+
+      this.broadcastPresenceSnapshot(classId);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     if (request.headers.get("Upgrade") === "websocket" || subPath.endsWith("/ws")) {
       if (request.headers.get("Upgrade") !== "websocket") {
         return jsonResponse({ ok: false, error: "WebSocket upgrade required" }, 426);
@@ -324,9 +546,33 @@ export class BoardRoom extends DurableObject {
     if (!msg || !msg.type) return;
 
     if (msg.type === "ping") {
+      const meta = this.getPresenceMeta(ws);
+      if (meta) {
+        meta.lastSeenAt = Date.now();
+        this.setPresenceMeta(ws, meta);
+        if (meta.role === "teacher") {
+          this.setKv("presence_teacher_last", String(meta.lastSeenAt));
+        }
+      }
       try {
         ws.send(JSON.stringify({ type: "pong", ts: Date.now() }));
       } catch (_e) {}
+      return;
+    }
+
+    if (msg.type === "presence_update") {
+      const meta = this.getPresenceMeta(ws);
+      if (meta) {
+        meta.lastSeenAt = Date.now();
+        if (Array.isArray(msg.studentIds)) {
+          meta.studentIds = parseStudentIdsParam(msg.studentIds);
+        }
+        if (typeof msg.name === "string" && msg.name.trim()) {
+          meta.name = msg.name.trim();
+        }
+        this.setPresenceMeta(ws, meta);
+        this.broadcastPresenceSnapshot(meta.classId);
+      }
       return;
     }
 
@@ -359,12 +605,14 @@ export class BoardRoom extends DurableObject {
   }
 
   async webSocketClose(ws, code, reason, _wasClean) {
+    this.handlePresenceDisconnect(ws);
     try {
       ws.close(code || 1000, reason || "closed");
     } catch (_e) {}
   }
 
   async webSocketError(ws, _err) {
+    this.handlePresenceDisconnect(ws);
     try {
       ws.close(1011, "error");
     } catch (_e) {}
@@ -387,6 +635,16 @@ export default {
 
       if (!env.BOARD_ROOMS) {
         return jsonResponse({ ok: false, error: "Durable Object binding missing" }, 503);
+      }
+
+      if (pathname === "/tahta/api/presence/ws" || pathname === "/tahta/api/presence/snapshot") {
+        const classId = cleanPresenceClassId(url.searchParams.get("classId"));
+        if (classId.length < 2) {
+          return jsonResponse({ ok: false, error: "Invalid classId" }, 400);
+        }
+        const id = env.BOARD_ROOMS.idFromName("PRESENCE_" + classId);
+        const stub = env.BOARD_ROOMS.get(id);
+        return stub.fetch(request);
       }
 
       let code = "";

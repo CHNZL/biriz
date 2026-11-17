@@ -469,99 +469,113 @@ class ClassRegistryRepository(
             return Pair(updatedStudent, matchedClass)
         }
 
-        // 2. Firestore üzerinde tüm sınıfları ve altındaki öğrencileri ara
+        // 2. Firestore üzerinde tüm sınıfları ve altındaki öğrencileri paralel ara
         if (Firebase.auth.currentUser != null) {
             try {
-                val classSnap = db.collection("classrooms").get().await()
-                for (cDoc in classSnap.documents) {
-                    val classId = cDoc.id
-                    val studentsSnap = db.collection("classrooms").document(classId)
-                        .collection("students").get().await()
+                val classSnap = withTimeoutOrNull(5000L) {
+                    db.collection("classrooms").get().await()
+                }
+                if (classSnap != null) {
+                    val matchedPair = coroutineScope {
+                        classSnap.documents.map { cDoc ->
+                            async {
+                                val classId = cDoc.id
+                                val studentsSnap = withTimeoutOrNull(4500L) {
+                                    db.collection("classrooms").document(classId)
+                                        .collection("students").get().await()
+                                } ?: return@async null
 
-                    for (sDoc in studentsSnap.documents) {
-                        val studentNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
-                        val fullName = sDoc.getString("fullName") ?: ""
-                        val gender = sDoc.getString("gender") ?: "Erkek"
-                        val rawCode = sDoc.getString("parentCode")
-                            ?: sDoc.getString("parentInviteCode")
-                            ?: sDoc.getString("veliKodu")
-                            ?: sDoc.getString("code")
-                        val normCode = TurkishTextHelper.normalizeVeliKatilimKodu(rawCode ?: "")
-                        val sNoStr = studentNo.toString()
+                                for (sDoc in studentsSnap.documents) {
+                                    val studentNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
+                                    val fullName = sDoc.getString("fullName") ?: ""
+                                    val gender = sDoc.getString("gender") ?: "Erkek"
+                                    val rawCode = sDoc.getString("parentCode")
+                                        ?: sDoc.getString("parentInviteCode")
+                                        ?: sDoc.getString("veliKodu")
+                                        ?: sDoc.getString("code")
+                                    val normCode = TurkishTextHelper.normalizeVeliKatilimKodu(rawCode ?: "")
+                                    val sNoStr = studentNo.toString()
 
-                        val isMatch = (normCode.isNotBlank() && normCode == normTarget) ||
-                                (sNoStr == normTarget) ||
-                                (sDoc.id == normTarget)
+                                    val isMatch = (normCode.isNotBlank() && normCode == normTarget) ||
+                                        (sNoStr == normTarget) ||
+                                        (sDoc.id == normTarget)
 
-                        if (isMatch) {
-                            val finalCode = if (normCode.isNotBlank()) normCode else normTarget
-                            val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
-                            val updatedParents = listOf(newParentAccount) + existingParents.filterNot {
-                                it.email.equals(finalEmail, ignoreCase = true)
+                                    if (isMatch) {
+                                        val finalCode = if (normCode.isNotBlank()) normCode else normTarget
+                                        val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
+                                        val updatedParents = listOf(newParentAccount) + existingParents.filterNot {
+                                            it.email.equals(finalEmail, ignoreCase = true)
+                                        }
+                                        val updatePayload = mapOf<String, Any?>(
+                                            "parentCode" to finalCode,
+                                            "parentInviteCode" to finalCode,
+                                            "parentEmail" to finalEmail,
+                                            "parentName" to finalName,
+                                            "parentLinkedAt" to todayStr,
+                                            "parentLastLoginAt" to lastLoginStr,
+                                            "parentIsOnline" to true,
+                                            "parentLastActiveMillis" to nowMillis,
+                                            "linkedParents" to updatedParents.map { p ->
+                                                mapOf(
+                                                    "email" to p.email,
+                                                    "name" to p.name,
+                                                    "phone" to p.phone,
+                                                    "relationship" to p.relationship,
+                                                    "linkedAt" to p.linkedAt,
+                                                    "lastLoginAt" to p.lastLoginAt,
+                                                    "isOnline" to p.isOnline,
+                                                    "lastActiveMillis" to p.lastActiveMillis
+                                                )
+                                            },
+                                            "updatedAt" to FieldValue.serverTimestamp()
+                                        )
+                                        try {
+                                            sDoc.reference.update(updatePayload).await()
+                                        } catch (_: Exception) {}
+
+                                        val classRoom = ClassRoom(
+                                            id = cDoc.id,
+                                            cityName = cDoc.getString("cityName") ?: "",
+                                            districtName = cDoc.getString("districtName") ?: "",
+                                            schoolName = cDoc.getString("schoolName") ?: "",
+                                            gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
+                                            section = cDoc.getString("section") ?: "A",
+                                            teacherName = cDoc.getString("teacherName") ?: "",
+                                            teacherEmail = cDoc.getString("teacherEmail") ?: "",
+                                            inviteCode = cDoc.getString("inviteCode") ?: "",
+                                            isOccupied = true
+                                        )
+
+                                        val student = Student(
+                                            id = sDoc.id,
+                                            studentNumber = sNoStr,
+                                            fullName = fullName,
+                                            gender = gender,
+                                            parentInviteCode = finalCode,
+                                            parentName = finalName,
+                                            parentEmail = finalEmail,
+                                            parentLinkedAt = todayStr,
+                                            parentLastLoginAt = lastLoginStr,
+                                            parentIsOnline = true,
+                                            parentLastActiveMillis = nowMillis,
+                                            linkedParents = updatedParents
+                                        )
+                                        return@async Pair(student, classRoom)
+                                    }
+                                }
+                                null
                             }
-                            val updatePayload = mapOf<String, Any?>(
-                                "parentCode" to finalCode,
-                                "parentInviteCode" to finalCode,
-                                "parentEmail" to finalEmail,
-                                "parentName" to finalName,
-                                "parentLinkedAt" to todayStr,
-                                "parentLastLoginAt" to lastLoginStr,
-                                "parentIsOnline" to true,
-                                "parentLastActiveMillis" to nowMillis,
-                                "linkedParents" to updatedParents.map { p ->
-                                    mapOf(
-                                        "email" to p.email,
-                                        "name" to p.name,
-                                        "phone" to p.phone,
-                                        "relationship" to p.relationship,
-                                        "linkedAt" to p.linkedAt,
-                                        "lastLoginAt" to p.lastLoginAt,
-                                        "isOnline" to p.isOnline,
-                                        "lastActiveMillis" to p.lastActiveMillis
-                                    )
-                                },
-                                "updatedAt" to FieldValue.serverTimestamp()
-                            )
-                            try {
-                                sDoc.reference.update(updatePayload).await()
-                            } catch (_: Exception) {}
+                        }.awaitAll().firstOrNull { it != null }
+                    }
 
-                            val classRoom = ClassRoom(
-                                id = cDoc.id,
-                                cityName = cDoc.getString("cityName") ?: "",
-                                districtName = cDoc.getString("districtName") ?: "",
-                                schoolName = cDoc.getString("schoolName") ?: "",
-                                gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
-                                section = cDoc.getString("section") ?: "A",
-                                teacherName = cDoc.getString("teacherName") ?: "",
-                                teacherEmail = cDoc.getString("teacherEmail") ?: "",
-                                inviteCode = cDoc.getString("inviteCode") ?: "",
-                                isOccupied = true
-                            )
-
-                            val student = Student(
-                                id = sDoc.id,
-                                studentNumber = sNoStr,
-                                fullName = fullName,
-                                gender = gender,
-                                parentInviteCode = finalCode,
-                                parentName = finalName,
-                                parentEmail = finalEmail,
-                                parentLinkedAt = todayStr,
-                                parentLastLoginAt = lastLoginStr,
-                                parentIsOnline = true,
-                                parentLastActiveMillis = nowMillis,
-                                linkedParents = updatedParents
-                            )
-
-                            // Öğrenci listesini de bu sınıf için gözlemlemeye başla ve StateFlow'u güncelle
-                            _students.value = _students.value.map { if (it.id == student.id) student else it }
-                            if (_students.value.none { it.id == student.id }) {
-                                _students.value = _students.value + student
-                            }
-                            observeStudents(classId)
-                            return Pair(student, classRoom)
+                    if (matchedPair != null) {
+                        val (student, classRoom) = matchedPair
+                        _students.value = _students.value.map { if (it.id == student.id) student else it }
+                        if (_students.value.none { it.id == student.id }) {
+                            _students.value = _students.value + student
                         }
+                        observeStudents(classRoom.id)
+                        return matchedPair
                     }
                 }
             } catch (_: Exception) {}
@@ -773,6 +787,7 @@ class ClassRegistryRepository(
     val students: StateFlow<List<Student>> = _students.asStateFlow()
 
     private var studentsJob: kotlinx.coroutines.Job? = null
+    private val backfilledCodeStudentIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     fun observeStudents(classroomId: String) {
         studentsJob?.cancel()
@@ -793,15 +808,20 @@ class ClassRegistryRepository(
                             rawCode
                         } else {
                             val stable = TurkishTextHelper.generateVeliKatilimKodu()
-                            scope.launch {
-                                try {
-                                    doc.reference.update(
-                                        mapOf(
-                                            "parentCode" to stable,
-                                            "parentInviteCode" to stable
-                                        )
-                                    ).await()
-                                } catch (_: Exception) {}
+                            val docKey = "$classroomId/${doc.id}"
+                            if (backfilledCodeStudentIds.add(docKey)) {
+                                scope.launch {
+                                    try {
+                                        doc.reference.update(
+                                            mapOf(
+                                                "parentCode" to stable,
+                                                "parentInviteCode" to stable
+                                            )
+                                        ).await()
+                                    } catch (_: Exception) {
+                                        backfilledCodeStudentIds.remove(docKey)
+                                    }
+                                }
                             }
                             stable
                         }
@@ -1174,43 +1194,68 @@ class ClassRegistryRepository(
             } else current
         }
 
-        // 2. Sync to Firestore immediately without blocking on a prior network get() so
-        // closing/minimizing the app window instantly updates Teacher's screen in real-time
+        // 2. Sync to Firestore in parallel across all linked students without blocking
         if (isFirebaseAuthAvailable && !isAccountDeleting && !isGlobalAccountDeleting && !classroomId.isNullOrBlank() && classroomId != "default") {
             val currentStudentsSnapshot = _students.value
-            for (sId in studentIds) {
-                try {
-                    val localStudent = currentStudentsSnapshot.find { it.id == sId }
-                    if (localStudent != null && !localStudent.isParentLinked) {
-                        continue
-                    }
+            coroutineScope {
+                studentIds.distinct().map { sId ->
+                    async {
+                        try {
+                            val localStudent = currentStudentsSnapshot.find { it.id == sId }
+                            if (localStudent != null && !localStudent.isParentLinked) {
+                                return@async
+                            }
 
-                    val sRef = db.collection("classrooms").document(classroomId).collection("students").document(sId)
-                    val anyOnline = localStudent?.allLinkedParents?.any { it.isCurrentlyActive(nowMillis) } ?: isOnline
-                    val updates = mutableMapOf<String, Any?>(
-                        "parentLastLoginAt" to nowFormatted,
-                        "parentIsOnline" to anyOnline,
-                        "parentLastActiveMillis" to nowMillis,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
+                            val sRef = db.collection("classrooms").document(classroomId).collection("students").document(sId)
+                            val effectiveLinkedParents = if (localStudent != null && localStudent.allLinkedParents.isNotEmpty()) {
+                                localStudent.allLinkedParents
+                            } else {
+                                val remoteSnap = withTimeoutOrNull(2500L) { sRef.get().await() }
+                                if (remoteSnap != null && remoteSnap.exists()) {
+                                    parseLinkedParentsFromDoc(remoteSnap, includeLegacyFallback = true).map { p ->
+                                        if (p.email.trim().equals(cleanEmail, ignoreCase = true)) {
+                                            p.copy(
+                                                lastLoginAt = nowFormatted,
+                                                isOnline = isOnline,
+                                                lastActiveMillis = nowMillis
+                                            )
+                                        } else p
+                                    }
+                                } else emptyList()
+                            }
 
-                    if (localStudent != null && localStudent.allLinkedParents.isNotEmpty()) {
-                        updates["linkedParents"] = localStudent.allLinkedParents.map { p ->
-                            mapOf(
-                                "email" to p.email,
-                                "name" to p.name,
-                                "phone" to p.phone,
-                                "relationship" to p.relationship,
-                                "linkedAt" to p.linkedAt,
-                                "lastLoginAt" to (p.lastLoginAt ?: nowFormatted),
-                                "isOnline" to p.isOnline,
-                                "lastActiveMillis" to (p.lastActiveMillis ?: nowMillis)
+                            val anyOnline = if (effectiveLinkedParents.isNotEmpty()) {
+                                effectiveLinkedParents.any { it.isCurrentlyActive(nowMillis) }
+                            } else isOnline
+
+                            val updates = mutableMapOf<String, Any?>(
+                                "parentLastLoginAt" to nowFormatted,
+                                "parentIsOnline" to anyOnline,
+                                "parentLastActiveMillis" to nowMillis,
+                                "updatedAt" to FieldValue.serverTimestamp()
                             )
-                        }
-                    }
 
-                    sRef.update(updates).await()
-                } catch (_: Exception) {}
+                            if (effectiveLinkedParents.isNotEmpty()) {
+                                updates["linkedParents"] = effectiveLinkedParents.map { p ->
+                                    mapOf(
+                                        "email" to p.email,
+                                        "name" to p.name,
+                                        "phone" to p.phone,
+                                        "relationship" to p.relationship,
+                                        "linkedAt" to p.linkedAt,
+                                        "lastLoginAt" to (p.lastLoginAt ?: nowFormatted),
+                                        "isOnline" to p.isOnline,
+                                        "lastActiveMillis" to (p.lastActiveMillis ?: nowMillis)
+                                    )
+                                }
+                            }
+
+                            withTimeoutOrNull(3500L) {
+                                sRef.update(updates).await()
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }.awaitAll()
             }
         }
     }
