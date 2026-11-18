@@ -165,6 +165,16 @@ SPECIFIC_DIFF_RULES = [
         "Hesap Silme İşlemi",
         "Hesap silme seçeneğinin kullanıcı, sınıf ve tahta oturum izlerini tüm sistemden temizlemesi sağlandı.",
     ),
+    # --- Performans ve Bulut Verimliliği ---
+    (
+        "cloud_quota_listener_optimization",
+        "performance",
+        False,
+        re.compile(r"(FirestoreListenerHub|FirestoreProvider|ClassRegistryRepository|BackgroundNotificationSyncHelper|CommunicationPersistenceHelper)", re.I),
+        re.compile(r"(FirestoreListenerHub|observeActiveClassroom|startSetupWizardObserving|PersistentCacheSettings|DISPATCHED_READ|DEEP_NIGHT)", re.I),
+        "Hız, Pil ve Bulut Veri Verimliliği",
+        "Paylaşımlı canlı dinleme, büyütülmüş yerel önbellek, sınıf odaklı sorgular ve saatlik akıllı arka plan eşitlemesiyle veri tüketimi ciddi oranda azaltıldı.",
+    ),
     # --- Geniş Alan Yedek Kuralları (Sadece o alanda spesifik kural eşleşmezse çalışır) ---
     (
         "star_rewards",

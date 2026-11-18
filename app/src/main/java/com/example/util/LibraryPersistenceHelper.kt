@@ -1479,108 +1479,115 @@ object LibraryPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId).collection("library_books")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    try {
-                        val knownUserIds = getUserAddedBookIds(context, classId)
-                        val rawDocs = mutableListOf<Pair<Book, Boolean>>()
-                        val invalidDocIds = mutableSetOf<String>()
-
-                        for (doc in snapshot.documents) {
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "books:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId).collection("library_books")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
                             try {
-                                val docExplicitlyAdded = safeDocBoolean(doc, "explicitlyAddedByTeacher", false)
-                                val jsonStr = safeDocString(doc, "json", "")
-                                if (jsonStr.isNotBlank()) {
-                                    val obj = JSONObject(jsonStr)
-                                    val book = deserializeBook(obj, fallbackId = doc.id)
-                                    val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
-                                    rawDocs.add(book to isUserCreated)
-                                } else {
-                                    val regNo = safeDocLong(doc, "registrationNo", 1L).toInt()
-                                    val name = safeDocString(doc, "name", "Kitap")
-                                    val author = safeDocString(doc, "author", "")
-                                    val pageCount = safeDocLong(doc, "pageCount", 0L).toInt()
-                                    val status = safeDocString(doc, "status", "Rafta")
-                                    val sId = safeDocString(doc, "currentStudentId", "").trim().takeIf { it.isNotEmpty() }
-                                    val sName = safeDocString(doc, "currentStudentName", "").trim().takeIf { it.isNotEmpty() }
-                                    val assignments = if (sId != null && sName != null) {
-                                        listOf(ActiveAssignment(sId, sName, System.currentTimeMillis()))
-                                    } else emptyList()
-                                    val book = normalizeBookState(
-                                        Book(
-                                            id = doc.id,
-                                            registrationNo = regNo,
-                                            name = name,
-                                            author = author,
-                                            pageCount = pageCount,
-                                            status = status,
-                                            activeAssignments = assignments,
-                                            currentStudentId = sId,
-                                            currentStudentName = sName
-                                        )
-                                    )
-                                    val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
-                                    rawDocs.add(book to isUserCreated)
+                                val knownUserIds = getUserAddedBookIds(appCtx, classId)
+                                val rawDocs = mutableListOf<Pair<Book, Boolean>>()
+                                val invalidDocIds = mutableSetOf<String>()
+
+                                for (doc in snapshot.documents) {
+                                    try {
+                                        val docExplicitlyAdded = safeDocBoolean(doc, "explicitlyAddedByTeacher", false)
+                                        val jsonStr = safeDocString(doc, "json", "")
+                                        if (jsonStr.isNotBlank()) {
+                                            val obj = JSONObject(jsonStr)
+                                            val book = deserializeBook(obj, fallbackId = doc.id)
+                                            val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
+                                            rawDocs.add(book to isUserCreated)
+                                        } else {
+                                            val regNo = safeDocLong(doc, "registrationNo", 1L).toInt()
+                                            val name = safeDocString(doc, "name", "Kitap")
+                                            val author = safeDocString(doc, "author", "")
+                                            val pageCount = safeDocLong(doc, "pageCount", 0L).toInt()
+                                            val status = safeDocString(doc, "status", "Rafta")
+                                            val sId = safeDocString(doc, "currentStudentId", "").trim().takeIf { it.isNotEmpty() }
+                                            val sName = safeDocString(doc, "currentStudentName", "").trim().takeIf { it.isNotEmpty() }
+                                            val assignments = if (sId != null && sName != null) {
+                                                listOf(ActiveAssignment(sId, sName, System.currentTimeMillis()))
+                                            } else emptyList()
+                                            val book = normalizeBookState(
+                                                Book(
+                                                    id = doc.id,
+                                                    registrationNo = regNo,
+                                                    name = name,
+                                                    author = author,
+                                                    pageCount = pageCount,
+                                                    status = status,
+                                                    activeAssignments = assignments,
+                                                    currentStudentId = sId,
+                                                    currentStudentName = sName
+                                                )
+                                            )
+                                            val isUserCreated = docExplicitlyAdded || knownUserIds.contains(book.id)
+                                            rawDocs.add(book to isUserCreated)
+                                        }
+                                    } catch (docErr: Exception) {
+                                        Log.w(TAG, "Skipping malformed Firestore book doc ${doc.id}", docErr)
+                                        invalidDocIds.add(doc.id)
+                                    }
                                 }
-                            } catch (docErr: Exception) {
-                                Log.w(TAG, "Skipping malformed Firestore book doc ${doc.id}", docErr)
-                                invalidDocIds.add(doc.id)
+
+                                val cleanList = mutableListOf<Book>()
+                                val seenNames = mutableSetOf<String>()
+                                val seenIds = mutableSetOf<String>()
+
+                                val sortedCandidates = rawDocs.sortedWith(
+                                    compareByDescending<Pair<Book, Boolean>> { it.second || knownUserIds.contains(it.first.id) }
+                                        .thenByDescending { it.first.activeAssignments.isNotEmpty() }
+                                        .thenByDescending { it.first.updatedAt }
+                                )
+
+                                for ((book, isUserCreated) in sortedCandidates) {
+                                    if (isVirtualOrCorruptBook(book, isUserCreated, knownUserIds)) {
+                                        invalidDocIds.add(book.id)
+                                        continue
+                                    }
+                                    val normName = TurkishTextHelper.toTurkishUpperCase(book.name.trim())
+                                    if (!seenIds.add(book.id) || !seenNames.add(normName)) {
+                                        invalidDocIds.add(book.id)
+                                        continue
+                                    }
+                                    if (isUserCreated && !knownUserIds.contains(book.id)) {
+                                        markBookAsUserAdded(appCtx, classId, book.id)
+                                    }
+                                    cleanList.add(normalizeBookState(book))
+                                }
+
+                                if (invalidDocIds.isNotEmpty()) {
+                                    deleteBookDocsFromFirestore(appCtx, classId, invalidDocIds)
+                                }
+
+                                val dedupedSorted = cleanList.distinctBy { it.id }.sortedBy { it.registrationNo }
+                                if (dedupedSorted.isEmpty() &&
+                                    WebDataMigrationHelper.shouldPreserveLocalMigratedBooks(appCtx, classId)
+                                ) {
+                                    val localMigrated = loadBooks(appCtx, classId)
+                                    if (localMigrated.isNotEmpty()) {
+                                        uploadBooksToFirestore(appCtx, classId, localMigrated)
+                                        dispatch(localMigrated)
+                                        return@addSnapshotListener
+                                    }
+                                }
+                                // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (eski silinmiş kitapları geri yükleme!)
+                                saveBooksToLocalPrefsOnly(appCtx, classId, dedupedSorted)
+                                dispatch(dedupedSorted)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error in observeFirestoreBooks", e)
                             }
                         }
-
-                        val cleanList = mutableListOf<Book>()
-                        val seenNames = mutableSetOf<String>()
-                        val seenIds = mutableSetOf<String>()
-
-                        val sortedCandidates = rawDocs.sortedWith(
-                            compareByDescending<Pair<Book, Boolean>> { it.second || knownUserIds.contains(it.first.id) }
-                                .thenByDescending { it.first.activeAssignments.isNotEmpty() }
-                                .thenByDescending { it.first.updatedAt }
-                        )
-
-                        for ((book, isUserCreated) in sortedCandidates) {
-                            if (isVirtualOrCorruptBook(book, isUserCreated, knownUserIds)) {
-                                invalidDocIds.add(book.id)
-                                continue
-                            }
-                            val normName = TurkishTextHelper.toTurkishUpperCase(book.name.trim())
-                            if (!seenIds.add(book.id) || !seenNames.add(normName)) {
-                                invalidDocIds.add(book.id)
-                                continue
-                            }
-                            if (isUserCreated && !knownUserIds.contains(book.id)) {
-                                markBookAsUserAdded(context, classId, book.id)
-                            }
-                            cleanList.add(normalizeBookState(book))
-                        }
-
-                        if (invalidDocIds.isNotEmpty()) {
-                            deleteBookDocsFromFirestore(context, classId, invalidDocIds)
-                        }
-
-                        val dedupedSorted = cleanList.distinctBy { it.id }.sortedBy { it.registrationNo }
-                        if (dedupedSorted.isEmpty() &&
-                            WebDataMigrationHelper.shouldPreserveLocalMigratedBooks(context, classId)
-                        ) {
-                            val localMigrated = loadBooks(context, classId)
-                            if (localMigrated.isNotEmpty()) {
-                                uploadBooksToFirestore(context, classId, localMigrated)
-                                onUpdate(localMigrated)
-                                return@addSnapshotListener
-                            }
-                        }
-                        // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (eski silinmiş kitapları geri yükleme!)
-                        saveBooksToLocalPrefsOnly(context, classId, dedupedSorted)
-                        onUpdate(dedupedSorted)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in observeFirestoreBooks", e)
-                    }
+                } catch (_: Exception) {
+                    null
                 }
-        } catch (_: Exception) {
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 
     fun observeFirestoreReadingRecords(
@@ -1590,96 +1597,103 @@ object LibraryPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId).collection("reading_records")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    try {
-                        val knownUserIds = getUserAddedBookIds(context, classId)
-                        val validBookIds = loadBooks(context, classId).map { it.id }.toSet()
-                        val list = mutableListOf<ReadingRecord>()
-                        val invalidRecordIds = mutableSetOf<String>()
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "reading:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId).collection("reading_records")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
+                            try {
+                                val knownUserIds = getUserAddedBookIds(appCtx, classId)
+                                val validBookIds = loadBooks(appCtx, classId).map { it.id }.toSet()
+                                val list = mutableListOf<ReadingRecord>()
+                                val invalidRecordIds = mutableSetOf<String>()
 
-                        for (doc in snapshot.documents) {
-                            val record = try {
-                                val jsonStr = safeDocString(doc, "json", "")
-                                if (jsonStr.isNotBlank()) {
-                                    val obj = JSONObject(jsonStr)
-                                    val docStudentNum = safeDocString(doc, "studentNumber", "")
-                                    val docTeacherUid = safeDocString(doc, "teacherUid", "")
-                                    deserializeReadingRecord(obj, fallbackId = doc.id).let { base ->
-                                        base.copy(
-                                            studentNumber = docStudentNum.ifBlank { base.studentNumber },
-                                            teacherUid = docTeacherUid.ifBlank { base.teacherUid }
-                                        )
+                                for (doc in snapshot.documents) {
+                                    val record = try {
+                                        val jsonStr = safeDocString(doc, "json", "")
+                                        if (jsonStr.isNotBlank()) {
+                                            val obj = JSONObject(jsonStr)
+                                            val docStudentNum = safeDocString(doc, "studentNumber", "")
+                                            val docTeacherUid = safeDocString(doc, "teacherUid", "")
+                                            deserializeReadingRecord(obj, fallbackId = doc.id).let { base ->
+                                                base.copy(
+                                                    studentNumber = docStudentNum.ifBlank { base.studentNumber },
+                                                    teacherUid = docTeacherUid.ifBlank { base.teacherUid }
+                                                )
+                                            }
+                                        } else {
+                                            val bId = safeDocString(doc, "bookId", "")
+                                            val bName = safeDocString(doc, "bookName", "")
+                                            val page = safeDocLong(doc, "pageCount", 0L).toInt()
+                                            val sId = safeDocString(doc, "studentId", "")
+                                            val sName = safeDocString(doc, "studentName", "")
+                                            val sNumber = safeDocString(doc, "studentNumber", "")
+                                            val sDate = safeDocLong(doc, "startDate", System.currentTimeMillis())
+                                            val eDate = safeDocLong(doc, "endDate", System.currentTimeMillis())
+                                            val stars = safeDocLong(doc, "earnedStars", 1L).toInt()
+                                            ReadingRecord(
+                                                id = doc.id,
+                                                bookId = bId,
+                                                bookName = bName,
+                                                pageCount = page,
+                                                studentId = sId,
+                                                studentName = sName,
+                                                studentNumber = sNumber,
+                                                startDate = sDate,
+                                                endDate = eDate,
+                                                earnedStars = stars
+                                            )
+                                        }
+                                    } catch (docErr: Exception) {
+                                        Log.w(TAG, "Skipping malformed Firestore reading record ${doc.id}", docErr)
+                                        null
                                     }
-                                } else {
-                                    val bId = safeDocString(doc, "bookId", "")
-                                    val bName = safeDocString(doc, "bookName", "")
-                                    val page = safeDocLong(doc, "pageCount", 0L).toInt()
-                                    val sId = safeDocString(doc, "studentId", "")
-                                    val sName = safeDocString(doc, "studentName", "")
-                                    val sNumber = safeDocString(doc, "studentNumber", "")
-                                    val sDate = safeDocLong(doc, "startDate", System.currentTimeMillis())
-                                    val eDate = safeDocLong(doc, "endDate", System.currentTimeMillis())
-                                    val stars = safeDocLong(doc, "earnedStars", 1L).toInt()
-                                    ReadingRecord(
-                                        id = doc.id,
-                                        bookId = bId,
-                                        bookName = bName,
-                                        pageCount = page,
-                                        studentId = sId,
-                                        studentName = sName,
-                                        studentNumber = sNumber,
-                                        startDate = sDate,
-                                        endDate = eDate,
-                                        earnedStars = stars
-                                    )
+
+                                    if (record == null || record.bookName.isBlank() || record.studentId.isBlank()) {
+                                        invalidRecordIds.add(doc.id)
+                                        continue
+                                    }
+
+                                    val upperBookName = TurkishTextHelper.toTurkishUpperCase(record.bookName.trim())
+                                    val isTeacherBook = record.bookId in knownUserIds || record.bookId in validBookIds
+                                    if (upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && !isTeacherBook) {
+                                        invalidRecordIds.add(doc.id)
+                                        continue
+                                    }
+
+                                    list.add(record)
                                 }
-                            } catch (docErr: Exception) {
-                                Log.w(TAG, "Skipping malformed Firestore reading record ${doc.id}", docErr)
-                                null
-                            }
 
-                            if (record == null || record.bookName.isBlank() || record.studentId.isBlank()) {
-                                invalidRecordIds.add(doc.id)
-                                continue
-                            }
+                                if (invalidRecordIds.isNotEmpty()) {
+                                    deleteRecordDocsFromFirestore(appCtx, classId, invalidRecordIds)
+                                }
 
-                            val upperBookName = TurkishTextHelper.toTurkishUpperCase(record.bookName.trim())
-                            val isTeacherBook = record.bookId in knownUserIds || record.bookId in validBookIds
-                            if (upperBookName in LEGACY_SAMPLE_BOOK_NAMES_UPPER && !isTeacherBook) {
-                                invalidRecordIds.add(doc.id)
-                                continue
-                            }
-
-                            list.add(record)
-                        }
-
-                        if (invalidRecordIds.isNotEmpty()) {
-                            deleteRecordDocsFromFirestore(context, classId, invalidRecordIds)
-                        }
-
-                        val cleanSorted = list.distinctBy { it.id }.sortedByDescending { it.endDate }
-                        if (cleanSorted.isEmpty() &&
-                            WebDataMigrationHelper.shouldPreserveLocalMigratedReadingRecords(context, classId)
-                        ) {
-                            val localMigrated = loadReadingRecords(context, classId)
-                            if (localMigrated.isNotEmpty()) {
-                                uploadRecordsToFirestore(context, classId, localMigrated)
-                                onUpdate(localMigrated)
-                                return@addSnapshotListener
+                                val cleanSorted = list.distinctBy { it.id }.sortedByDescending { it.endDate }
+                                if (cleanSorted.isEmpty() &&
+                                    WebDataMigrationHelper.shouldPreserveLocalMigratedReadingRecords(appCtx, classId)
+                                ) {
+                                    val localMigrated = loadReadingRecords(appCtx, classId)
+                                    if (localMigrated.isNotEmpty()) {
+                                        uploadRecordsToFirestore(appCtx, classId, localMigrated)
+                                        dispatch(localMigrated)
+                                        return@addSnapshotListener
+                                    }
+                                }
+                                // Firestore SSOT: Yerel önbelleği Firestore ile birebir eşitle
+                                saveRecordsToLocalPrefsOnly(appCtx, classId, cleanSorted)
+                                dispatch(cleanSorted)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error in observeFirestoreReadingRecords", e)
                             }
                         }
-                        // Firestore SSOT: Yerel önbelleği Firestore ile birebir eşitle
-                        saveRecordsToLocalPrefsOnly(context, classId, cleanSorted)
-                        onUpdate(cleanSorted)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in observeFirestoreReadingRecords", e)
-                    }
+                } catch (_: Exception) {
+                    null
                 }
-        } catch (_: Exception) {
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 }

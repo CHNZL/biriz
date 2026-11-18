@@ -47,18 +47,20 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class ClassRegistryRepository(
     private val firestoreInstance: FirebaseFirestore? = null,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    private val appContext: Context? = null
 ) {
     private val db: FirebaseFirestore
         get() = firestoreInstance ?: FirebaseFirestore.getInstance()
 
     // Secondary constructor using centralized FirestoreProvider
     constructor(context: Context) : this(
-        try {
+        firestoreInstance = try {
             com.example.util.FirestoreProvider.get(context)
         } catch (_: Exception) {
             null
-        }
+        },
+        appContext = context.applicationContext
     )
 
     val cities: List<City> = TurkeyGeoRepository.allCities
@@ -73,6 +75,9 @@ class ClassRegistryRepository(
 
     private var classroomsJob: kotlinx.coroutines.Job? = null
     private var schoolsJob: kotlinx.coroutines.Job? = null
+    private var activeClassroomJob: kotlinx.coroutines.Job? = null
+    private var activeClassroomId: String? = null
+    private var setupWizardCityId: String? = null
 
     @Volatile
     var isAccountDeleting: Boolean = false
@@ -82,96 +87,167 @@ class ClassRegistryRepository(
         try {
             Firebase.auth.addAuthStateListener { auth ->
                 val user = auth.currentUser
-                if (user != null && !isAccountDeleting && !isGlobalAccountDeleting) {
-                    startObserving()
-                } else if (user == null) {
+                if (user == null) {
                     stopObserving()
                 }
-            }
-            if (Firebase.auth.currentUser != null && !isAccountDeleting && !isGlobalAccountDeleting) {
-                startObserving()
             }
         } catch (_: Exception) {}
     }
 
-    private fun startObserving() {
-        if (isAccountDeleting || isGlobalAccountDeleting) return
-        if (classroomsJob == null || classroomsJob?.isActive == false) {
-            classroomsJob = db.collection("classrooms")
-                .snapshots()
-                .onEach { snapshot ->
-                    val list = snapshot.documents.mapNotNull { doc ->
-                        val cityName = doc.getString("cityName") ?: return@mapNotNull null
-                        val districtName = doc.getString("districtName") ?: return@mapNotNull null
-                        val schoolName = doc.getString("schoolName") ?: return@mapNotNull null
-                        val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
-                        val section = doc.getString("section") ?: return@mapNotNull null
-                        val teacherId = doc.getString("teacherId") ?: ""
-                        val teacherName = doc.getString("teacherName") ?: ""
-                        val teacherEmail = doc.getString("teacherEmail") ?: ""
-                        val inviteCode = doc.getString("inviteCode") ?: ""
-                        val teacherIsOnline = doc.getBoolean("teacherIsOnline") ?: false
-                        val teacherLastActiveMillis = doc.getLong("teacherLastActiveMillis")
+    private fun parseClassRoomFromDoc(doc: com.google.firebase.firestore.DocumentSnapshot): ClassRoom? {
+        if (!doc.exists()) return null
+        val cityName = doc.getString("cityName") ?: return null
+        val districtName = doc.getString("districtName") ?: return null
+        val schoolName = doc.getString("schoolName") ?: return null
+        val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
+        val section = doc.getString("section") ?: return null
+        val teacherId = doc.getString("teacherId") ?: ""
+        val teacherName = doc.getString("teacherName") ?: ""
+        val teacherEmail = doc.getString("teacherEmail") ?: ""
+        val inviteCode = doc.getString("inviteCode") ?: ""
+        val teacherIsOnline = doc.getBoolean("teacherIsOnline") ?: false
+        val teacherLastActiveMillis = doc.getLong("teacherLastActiveMillis")
 
-                        ClassRoom(
-                            id = doc.id,
-                            cityName = cityName,
-                            districtName = districtName,
-                            schoolName = schoolName,
-                            gradeLevel = gradeLevel,
-                            section = section,
-                            teacherId = teacherId,
-                            teacherName = teacherName,
-                            teacherEmail = teacherEmail,
-                            inviteCode = inviteCode,
-                            isOccupied = true,
-                            teacherIsOnline = teacherIsOnline,
-                            teacherLastActiveMillis = teacherLastActiveMillis
-                        )
-                    }
-                    _registeredClasses.value = list
-                }
-                .catch { error ->
-                    if (error is Exception) {
-                        handleFirestoreError(error, OperationType.LIST, "classrooms")
-                    }
-                }
-                .launchIn(scope)
-        }
-
-        if (schoolsJob == null || schoolsJob?.isActive == false) {
-            schoolsJob = db.collection("schools")
-                .snapshots()
-                .onEach { snapshot ->
-                    val list = snapshot.documents.mapNotNull { doc ->
-                        val cityId = doc.getString("cityId") ?: return@mapNotNull null
-                        val districtName = doc.getString("districtName") ?: return@mapNotNull null
-                        val name = doc.getString("name") ?: return@mapNotNull null
-
-                        School(
-                            id = doc.id,
-                            name = name,
-                            cityName = doc.getString("cityName") ?: "",
-                            districtName = districtName,
-                            cityId = cityId
-                        )
-                    }
-                    _schools.value = list
-                }
-                .catch { error ->
-                    if (error is Exception) {
-                        handleFirestoreError(error, OperationType.LIST, "schools")
-                    }
-                }
-                .launchIn(scope)
-        }
+        return ClassRoom(
+            id = doc.id,
+            cityName = cityName,
+            districtName = districtName,
+            schoolName = schoolName,
+            gradeLevel = gradeLevel,
+            section = section,
+            teacherId = teacherId,
+            teacherName = teacherName,
+            teacherEmail = teacherEmail,
+            inviteCode = inviteCode,
+            isOccupied = true,
+            teacherIsOnline = teacherIsOnline,
+            teacherLastActiveMillis = teacherLastActiveMillis
+        )
     }
 
-    private fun stopObserving() {
+    /**
+     * Yalnızca kullanıcının aktif sınıf belgesini tekil olarak dinler.
+     * Tüm Türkiye'deki sınıfları dinleyen global koleksiyon dinleyicisi yerine geçer.
+     */
+    fun observeActiveClassroom(classroomId: String) {
+        val cleanId = classroomId.trim()
+        if (cleanId.isBlank() || cleanId == "default") return
+        if (isAccountDeleting || isGlobalAccountDeleting) return
+        if (activeClassroomId == cleanId && activeClassroomJob?.isActive == true) return
+
+        activeClassroomJob?.cancel()
+        activeClassroomId = cleanId
+        if (!isFirebaseAuthAvailable) return
+
+        activeClassroomJob = db.collection("classrooms").document(cleanId)
+            .snapshots()
+            .onEach { doc ->
+                val room = parseClassRoomFromDoc(doc)
+                if (room != null) {
+                    _registeredClasses.value = _registeredClasses.value.filterNot { it.id == cleanId } + room
+                } else {
+                    _registeredClasses.value = _registeredClasses.value.filterNot { it.id == cleanId }
+                }
+            }
+            .catch { error ->
+                if (error is Exception) {
+                    handleFirestoreError(error, OperationType.GET, "classrooms/$cleanId")
+                }
+            }
+            .launchIn(scope)
+    }
+
+    fun stopActiveClassroom() {
+        activeClassroomJob?.cancel()
+        activeClassroomJob = null
+        activeClassroomId = null
+    }
+
+    /**
+     * Yalnızca sınıf kurulum sihirbazı açıkken ve seçilen il (`cityId`) belli olduğunda
+     * o ile ait okulları ve şubeleri dinler; sihirbaz kapandığında dinleyiciyi kapatır.
+     */
+    fun startSetupWizardObserving(cityId: String? = null) {
+        if (isAccountDeleting || isGlobalAccountDeleting || !isFirebaseAuthAvailable) return
+        val normalizedCityId = cityId?.trim()?.takeIf { it.isNotBlank() }
+        if (normalizedCityId == null) {
+            // İl seçilmeden gereksiz koleksiyon dinleyicisi açma
+            stopSetupWizardObserving()
+            return
+        }
+        if (setupWizardCityId == normalizedCityId &&
+            classroomsJob?.isActive == true &&
+            schoolsJob?.isActive == true
+        ) {
+            return
+        }
+
+        classroomsJob?.cancel()
+        schoolsJob?.cancel()
+        setupWizardCityId = normalizedCityId
+
+        classroomsJob = db.collection("classrooms")
+            .whereEqualTo("cityId", normalizedCityId)
+            .snapshots()
+            .onEach { snapshot ->
+                val list = snapshot.documents.mapNotNull { parseClassRoomFromDoc(it) }
+                val activeOnly = activeClassroomId?.let { cid ->
+                    _registeredClasses.value.firstOrNull { it.id == cid && list.none { r -> r.id == cid } }
+                }
+                _registeredClasses.value = if (activeOnly != null) list + activeOnly else list
+            }
+            .catch { error ->
+                if (error is Exception) {
+                    handleFirestoreError(error, OperationType.LIST, "classrooms")
+                }
+            }
+            .launchIn(scope)
+
+        schoolsJob = db.collection("schools")
+            .whereEqualTo("cityId", normalizedCityId)
+            .snapshots()
+            .onEach { snapshot ->
+                val list = snapshot.documents.mapNotNull { doc ->
+                    val cid = doc.getString("cityId") ?: return@mapNotNull null
+                    val districtName = doc.getString("districtName") ?: return@mapNotNull null
+                    val name = doc.getString("name") ?: return@mapNotNull null
+
+                    School(
+                        id = doc.id,
+                        name = name,
+                        cityName = doc.getString("cityName") ?: "",
+                        districtName = districtName,
+                        cityId = cid
+                    )
+                }
+                _schools.value = list
+            }
+            .catch { error ->
+                if (error is Exception) {
+                    handleFirestoreError(error, OperationType.LIST, "schools")
+                }
+            }
+            .launchIn(scope)
+    }
+
+    fun stopSetupWizardObserving() {
         classroomsJob?.cancel()
         classroomsJob = null
         schoolsJob?.cancel()
         schoolsJob = null
+        setupWizardCityId = null
+        _schools.value = emptyList()
+        val cid = activeClassroomId
+        _registeredClasses.value = if (!cid.isNullOrBlank()) {
+            _registeredClasses.value.filter { it.id == cid }
+        } else {
+            emptyList()
+        }
+    }
+
+    private fun stopObserving() {
+        stopSetupWizardObserving()
+        stopActiveClassroom()
         _registeredClasses.value = emptyList()
         _schools.value = emptyList()
     }
@@ -199,6 +275,7 @@ class ClassRegistryRepository(
         studentsJob = null
         _students.value = emptyList()
         _registeredClasses.value = emptyList()
+        com.example.util.FirestoreListenerHub.clearAll()
     }
 
     fun clearSessionCaches() {
@@ -207,6 +284,7 @@ class ClassRegistryRepository(
         studentsJob = null
         _students.value = emptyList()
         _registeredClasses.value = emptyList()
+        com.example.util.FirestoreListenerHub.clearAll()
         disableTestMode()
     }
 
@@ -469,8 +547,120 @@ class ClassRegistryRepository(
             return Pair(updatedStudent, matchedClass)
         }
 
-        // 2. Firestore üzerinde tüm sınıfları ve altındaki öğrencileri paralel ara
+        // 2. Önce collectionGroup indeksi ile doğrudan ilgili öğrenci belgesini ara (O(1) okuma)
         if (Firebase.auth.currentUser != null) {
+            val uid = Firebase.auth.currentUser?.uid
+            suspend fun linkMatchedStudentDoc(sDoc: com.google.firebase.firestore.DocumentSnapshot): Pair<Student, ClassRoom>? {
+                val cDoc = withTimeoutOrNull(3500L) {
+                    sDoc.reference.parent.parent?.get()?.await()
+                } ?: return null
+                if (!cDoc.exists()) return null
+
+                val studentNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
+                val fullName = sDoc.getString("fullName") ?: ""
+                val gender = sDoc.getString("gender") ?: "Erkek"
+                val rawCode = sDoc.getString("parentCode")
+                    ?: sDoc.getString("parentInviteCode")
+                    ?: sDoc.getString("veliKodu")
+                    ?: sDoc.getString("code")
+                val normCode = TurkishTextHelper.normalizeVeliKatilimKodu(rawCode ?: "")
+                val finalCode = if (normCode.isNotBlank()) normCode else normTarget
+                val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
+                val updatedParents = listOf(newParentAccount) + existingParents.filterNot {
+                    it.email.equals(finalEmail, ignoreCase = true)
+                }
+                val updatePayload = mapOf<String, Any?>(
+                    "parentCode" to finalCode,
+                    "parentInviteCode" to finalCode,
+                    "parentEmail" to finalEmail,
+                    "parentName" to finalName,
+                    "parentLinkedAt" to todayStr,
+                    "parentLastLoginAt" to lastLoginStr,
+                    "parentIsOnline" to true,
+                    "parentLastActiveMillis" to nowMillis,
+                    "linkedParents" to updatedParents.map { p ->
+                        mapOf(
+                            "email" to p.email,
+                            "name" to p.name,
+                            "phone" to p.phone,
+                            "relationship" to p.relationship,
+                            "linkedAt" to p.linkedAt,
+                            "lastLoginAt" to p.lastLoginAt,
+                            "isOnline" to p.isOnline,
+                            "lastActiveMillis" to p.lastActiveMillis
+                        )
+                    },
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                try {
+                    sDoc.reference.update(updatePayload).await()
+                } catch (_: Exception) {}
+
+                val classRoom = ClassRoom(
+                    id = cDoc.id,
+                    cityName = cDoc.getString("cityName") ?: "",
+                    districtName = cDoc.getString("districtName") ?: "",
+                    schoolName = cDoc.getString("schoolName") ?: "",
+                    gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
+                    section = cDoc.getString("section") ?: "A",
+                    teacherName = cDoc.getString("teacherName") ?: "",
+                    teacherEmail = cDoc.getString("teacherEmail") ?: "",
+                    inviteCode = cDoc.getString("inviteCode") ?: "",
+                    isOccupied = true
+                )
+                val student = Student(
+                    id = sDoc.id,
+                    studentNumber = studentNo.toString(),
+                    fullName = fullName,
+                    gender = gender,
+                    parentInviteCode = finalCode,
+                    parentName = finalName,
+                    parentEmail = finalEmail,
+                    parentLinkedAt = todayStr,
+                    parentLastLoginAt = lastLoginStr,
+                    parentIsOnline = true,
+                    parentLastActiveMillis = nowMillis,
+                    linkedParents = updatedParents
+                )
+                _students.value = _students.value.map { if (it.id == student.id) student else it }
+                if (_students.value.none { it.id == student.id }) {
+                    _students.value = _students.value + student
+                }
+                if (!uid.isNullOrBlank()) {
+                    scope.launch {
+                        saveParentLinkMetadataOnUserDoc(uid, classRoom.id, listOf(student.id), appendStudentIds = true)
+                    }
+                }
+                observeActiveClassroom(classRoom.id)
+                observeStudents(classRoom.id)
+                return Pair(student, classRoom)
+            }
+
+            try {
+                val cgMatch = withTimeoutOrNull(3500L) {
+                    db.collectionGroup("students")
+                        .whereEqualTo("parentCode", normTarget)
+                        .limit(1)
+                        .get()
+                        .await()
+                }?.documents?.firstOrNull()
+                    ?: withTimeoutOrNull(3500L) {
+                        db.collectionGroup("students")
+                            .whereEqualTo("parentInviteCode", normTarget)
+                            .limit(1)
+                            .get()
+                            .await()
+                    }?.documents?.firstOrNull()
+
+                if (cgMatch != null) {
+                    val fastResult = linkMatchedStudentDoc(cgMatch)
+                    if (fastResult != null) return fastResult
+                }
+            } catch (_: Exception) {
+                // Collection group index yoksa yedek sınıf taramasına düş
+            }
+
+            // 3. Yedek: Eski/indekssiz öğrenci kayıtları için sınıfları tara
             try {
                 val classSnap = withTimeoutOrNull(5000L) {
                     db.collection("classrooms").get().await()
@@ -487,8 +677,6 @@ class ClassRegistryRepository(
 
                                 for (sDoc in studentsSnap.documents) {
                                     val studentNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
-                                    val fullName = sDoc.getString("fullName") ?: ""
-                                    val gender = sDoc.getString("gender") ?: "Erkek"
                                     val rawCode = sDoc.getString("parentCode")
                                         ?: sDoc.getString("parentInviteCode")
                                         ?: sDoc.getString("veliKodu")
@@ -501,66 +689,7 @@ class ClassRegistryRepository(
                                         (sDoc.id == normTarget)
 
                                     if (isMatch) {
-                                        val finalCode = if (normCode.isNotBlank()) normCode else normTarget
-                                        val existingParents = parseLinkedParentsFromDoc(sDoc, includeLegacyFallback = true)
-                                        val updatedParents = listOf(newParentAccount) + existingParents.filterNot {
-                                            it.email.equals(finalEmail, ignoreCase = true)
-                                        }
-                                        val updatePayload = mapOf<String, Any?>(
-                                            "parentCode" to finalCode,
-                                            "parentInviteCode" to finalCode,
-                                            "parentEmail" to finalEmail,
-                                            "parentName" to finalName,
-                                            "parentLinkedAt" to todayStr,
-                                            "parentLastLoginAt" to lastLoginStr,
-                                            "parentIsOnline" to true,
-                                            "parentLastActiveMillis" to nowMillis,
-                                            "linkedParents" to updatedParents.map { p ->
-                                                mapOf(
-                                                    "email" to p.email,
-                                                    "name" to p.name,
-                                                    "phone" to p.phone,
-                                                    "relationship" to p.relationship,
-                                                    "linkedAt" to p.linkedAt,
-                                                    "lastLoginAt" to p.lastLoginAt,
-                                                    "isOnline" to p.isOnline,
-                                                    "lastActiveMillis" to p.lastActiveMillis
-                                                )
-                                            },
-                                            "updatedAt" to FieldValue.serverTimestamp()
-                                        )
-                                        try {
-                                            sDoc.reference.update(updatePayload).await()
-                                        } catch (_: Exception) {}
-
-                                        val classRoom = ClassRoom(
-                                            id = cDoc.id,
-                                            cityName = cDoc.getString("cityName") ?: "",
-                                            districtName = cDoc.getString("districtName") ?: "",
-                                            schoolName = cDoc.getString("schoolName") ?: "",
-                                            gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
-                                            section = cDoc.getString("section") ?: "A",
-                                            teacherName = cDoc.getString("teacherName") ?: "",
-                                            teacherEmail = cDoc.getString("teacherEmail") ?: "",
-                                            inviteCode = cDoc.getString("inviteCode") ?: "",
-                                            isOccupied = true
-                                        )
-
-                                        val student = Student(
-                                            id = sDoc.id,
-                                            studentNumber = sNoStr,
-                                            fullName = fullName,
-                                            gender = gender,
-                                            parentInviteCode = finalCode,
-                                            parentName = finalName,
-                                            parentEmail = finalEmail,
-                                            parentLinkedAt = todayStr,
-                                            parentLastLoginAt = lastLoginStr,
-                                            parentIsOnline = true,
-                                            parentLastActiveMillis = nowMillis,
-                                            linkedParents = updatedParents
-                                        )
-                                        return@async Pair(student, classRoom)
+                                        return@async linkMatchedStudentDoc(sDoc)
                                     }
                                 }
                                 null
@@ -569,19 +698,13 @@ class ClassRegistryRepository(
                     }
 
                     if (matchedPair != null) {
-                        val (student, classRoom) = matchedPair
-                        _students.value = _students.value.map { if (it.id == student.id) student else it }
-                        if (_students.value.none { it.id == student.id }) {
-                            _students.value = _students.value + student
-                        }
-                        observeStudents(classRoom.id)
                         return matchedPair
                     }
                 }
             } catch (_: Exception) {}
         }
 
-        // 3. Bulunamazsa örnek öğrenci listesinden kontrol et
+        // 4. Bulunamazsa örnek öğrenci listesinden kontrol et
         return findInSampleStudents(normTarget, currentUserEmail, currentUserFullName)
     }
 
@@ -733,6 +856,19 @@ class ClassRegistryRepository(
         )
 
         if (Firebase.auth.currentUser != null) {
+            val docRef = db.collection("classrooms").document(docId)
+            try {
+                val remoteExisting = withTimeoutOrNull(3000L) { docRef.get().await() }
+                if (remoteExisting != null && remoteExisting.exists()) {
+                    val existingTeacher = remoteExisting.getString("teacherName")?.takeIf { it.isNotBlank() } ?: "başka bir"
+                    throw IllegalStateException(
+                        "Bu şube (${normalizedCity} / ${normalizedSchool} / ${gradeLevel}-${normalizedSection}) zaten $existingTeacher adlı öğretmene atanmıştır!"
+                    )
+                }
+            } catch (e: IllegalStateException) {
+                throw e
+            } catch (_: Exception) {}
+
             val classroomPayload = mapOf(
                 "cityId" to city.id,
                 "cityName" to normalizedCity,
@@ -749,7 +885,6 @@ class ClassRegistryRepository(
                 "updatedAt" to FieldValue.serverTimestamp()
             )
 
-            val docRef = db.collection("classrooms").document(docId)
             try {
                 docRef.set(classroomPayload).await()
             } catch (e: Exception) {
@@ -778,6 +913,8 @@ class ClassRegistryRepository(
         }
 
         _registeredClasses.value = _registeredClasses.value.filter { it.id != docId } + classRoom
+        observeActiveClassroom(docId)
+        stopSetupWizardObserving()
         return classRoom
     }
 
@@ -1737,12 +1874,31 @@ class ClassRegistryRepository(
 
     /**
      * Firebase Authentication'dan silinmiş olduğu halde Firestore `users` koleksiyonunda
-     * kalmış olan geçersiz/yetim (orphaned) kullanıcı belgelerini ve aynı e-postaya ait
-     * eski UID kayıtlarını otomatik olarak tespit edip kalıcı olarak siler.
+     * kalmış olan aynı kullanıcıya ait eski UID/mezar taşı kayıtlarını kapsamlı ve kota dostu
+     * (24 saatte bir / e-posta bazlı sorgu ile) temizler. Tüm `users` veya `classrooms`
+     * koleksiyonunu taramaz.
      */
-    suspend fun purgeStaleAndOrphanedUserDocuments(activeUid: String, activeEmail: String) {
+    suspend fun purgeStaleAndOrphanedUserDocuments(
+        activeUid: String,
+        activeEmail: String,
+        force: Boolean = false
+    ) {
         if (isAccountDeleting || isGlobalAccountDeleting || !isFirebaseAuthAvailable) return
-        val cleanActiveEmail = activeEmail.trim().lowercase(java.util.Locale.ROOT)
+        val rawEmail = activeEmail.trim()
+        val cleanActiveEmail = rawEmail.lowercase(java.util.Locale.ROOT)
+        if (activeUid.isBlank() && cleanActiveEmail.isBlank()) return
+
+        // Olağan oturum açılışlarında en fazla 24 saatte bir çalışsın
+        val prefs = appContext?.getSharedPreferences("biriz_repo_opt_prefs", Context.MODE_PRIVATE)
+        val throttleKey = "last_orphan_purge_uid_$activeUid"
+        val nowMs = System.currentTimeMillis()
+        if (!force && prefs != null) {
+            val lastRun = prefs.getLong(throttleKey, 0L)
+            if (nowMs - lastRun < 24L * 60L * 60L * 1000L) {
+                return
+            }
+        }
+
         val bearerToken = try {
             withTimeoutOrNull(2000L) {
                 Firebase.auth.currentUser?.getIdToken(false)?.await()?.token
@@ -1755,76 +1911,70 @@ class ClassRegistryRepository(
         val orphanEmailsToUnlink = linkedSetOf<String>()
         val orphanClassIdsToDelete = linkedSetOf<String>()
 
-        // 1. Önce bilinen geçersiz/silinmiş UID kayıtlarını hedef listesine ekle (aktif kullanıcı hariç)
-        KNOWN_ORPHANED_USER_DOC_IDS.forEach { orphanId ->
-            if (orphanId != activeUid) {
-                orphanUserIdsToDelete.add(orphanId)
+        // 1. Sadece bu kullanıcının olası mezar taşını tek belge olarak oku
+        val ownTombstoneId = deletedAccountTombstoneId(cleanActiveEmail, activeUid)
+        val tombstoneDoc = try {
+            withTimeoutOrNull(3000L) {
+                db.collection("deleted_accounts").document(ownTombstoneId).get(Source.SERVER).await()
             }
-        }
-
-        // 2. Varsa deleted_accounts mezar taşlarını oku
-        val tombstoneDocs = try {
-            withTimeoutOrNull(3500L) {
-                db.collection("deleted_accounts").get(Source.SERVER).await().documents
-            } ?: emptyList()
         } catch (_: Exception) {
-            emptyList()
+            null
         }
-        val tombstonedEmails = linkedSetOf<String>()
-        for (tDoc in tombstoneDocs) {
-            tDoc.getString("uid")?.trim()?.takeIf { it.isNotBlank() && it != activeUid }?.let {
+        if (tombstoneDoc != null && tombstoneDoc.exists()) {
+            tombstoneDoc.getString("uid")?.trim()?.takeIf { it.isNotBlank() && it != activeUid }?.let {
                 orphanUserIdsToDelete.add(it)
             }
-            tDoc.getString("email")?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf {
+            tombstoneDoc.getString("email")?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf {
                 it.isNotBlank() && it != cleanActiveEmail
             }?.let {
-                tombstonedEmails.add(it)
                 orphanEmailsToUnlink.add(it)
             }
             @Suppress("UNCHECKED_CAST")
-            (tDoc.get("deletedUserDocIds") as? List<String>)?.forEach { id ->
+            (tombstoneDoc.get("deletedUserDocIds") as? List<String>)?.forEach { id ->
                 if (id.isNotBlank() && id != activeUid) orphanUserIdsToDelete.add(id)
             }
             @Suppress("UNCHECKED_CAST")
-            (tDoc.get("deletedClassIds") as? List<String>)?.forEach { cid ->
+            (tombstoneDoc.get("deletedClassIds") as? List<String>)?.forEach { cid ->
                 if (cid.isNotBlank() && cid != "default") orphanClassIdsToDelete.add(cid)
             }
         }
 
-        // 3. Firestore `users` koleksiyonunu sunucudan tara
-        try {
-            val usersSnap = withTimeoutOrNull(5000L) {
-                db.collection("users").get(Source.SERVER).await()
-            } ?: withTimeoutOrNull(3500L) {
-                db.collection("users").get().await()
-            }
-            usersSnap?.documents?.forEach { uDoc ->
-                val docId = uDoc.id
-                if (docId == activeUid) return@forEach
-
-                val docEmail = uDoc.getString("email")?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
-                val docUserId = uDoc.getString("userId")?.trim().orEmpty()
-                val docAssignedClassId = uDoc.getString("assignedClassId")?.trim().orEmpty()
-
-                val isKnownOrphan = docId in KNOWN_ORPHANED_USER_DOC_IDS
-                val isDuplicateOldUidForActiveUser = cleanActiveEmail.isNotBlank() && docEmail == cleanActiveEmail
-                val isSameUidMismatch = docUserId == activeUid
-                val isTombstoned = docId in orphanUserIdsToDelete || (docEmail.isNotBlank() && docEmail in tombstonedEmails)
-                val isGhostIncompleteDoc = docEmail.isBlank() && docUserId.isBlank()
-
-                if (isKnownOrphan || isDuplicateOldUidForActiveUser || isSameUidMismatch || isTombstoned || isGhostIncompleteDoc) {
-                    orphanUserIdsToDelete.add(docId)
-                    if (docEmail.isNotBlank() && docEmail != cleanActiveEmail) {
-                        orphanEmailsToUnlink.add(docEmail)
-                    }
-                    if (docAssignedClassId.isNotBlank() && docAssignedClassId != "default" && !isDuplicateOldUidForActiveUser) {
-                        orphanClassIdsToDelete.add(docAssignedClassId)
-                    }
+        // 2. Yalnızca aynı e-posta veya aynı userId'ye sahip eski duplicate users kayıtlarını sorgula
+        val userDocCandidates = linkedMapOf<String, com.google.firebase.firestore.DocumentSnapshot>()
+        val emailVariants = listOfNotNull(
+            rawEmail.takeIf { it.isNotBlank() },
+            cleanActiveEmail.takeIf { it.isNotBlank() }
+        ).distinct()
+        for (emailVariant in emailVariants) {
+            try {
+                val snap = withTimeoutOrNull(3500L) {
+                    db.collection("users").whereEqualTo("email", emailVariant).limit(10).get().await()
                 }
-            }
-        } catch (_: Exception) {}
+                snap?.documents?.forEach { userDocCandidates[it.id] = it }
+            } catch (_: Exception) {}
+        }
+        if (activeUid.isNotBlank()) {
+            try {
+                val snap = withTimeoutOrNull(3000L) {
+                    db.collection("users").whereEqualTo("userId", activeUid).limit(10).get().await()
+                }
+                snap?.documents?.forEach { userDocCandidates[it.id] = it }
+            } catch (_: Exception) {}
+        }
 
-        // 4. Tespit edilen tüm geçersiz `users` belgelerini hem SDK hem REST üzerinden paralel sil
+        userDocCandidates.values.forEach { uDoc ->
+            val docId = uDoc.id
+            if (docId == activeUid) return@forEach
+            val docEmail = uDoc.getString("email")?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+            val docUserId = uDoc.getString("userId")?.trim().orEmpty()
+            val isDuplicateOldUidForActiveUser = cleanActiveEmail.isNotBlank() && docEmail == cleanActiveEmail
+            val isSameUidMismatch = docUserId == activeUid
+            if (isDuplicateOldUidForActiveUser || isSameUidMismatch || docId in orphanUserIdsToDelete) {
+                orphanUserIdsToDelete.add(docId)
+            }
+        }
+
+        // 3. Tespit edilen aynı kullanıcıya ait eski duplicate users belgelerini sil
         if (orphanUserIdsToDelete.isNotEmpty()) {
             coroutineScope {
                 orphanUserIdsToDelete.map { orphanId ->
@@ -1835,32 +1985,17 @@ class ClassRegistryRepository(
             }
         }
 
-        // 5. Silinmiş veli hesaplarının öğrenciler üzerindeki eski bağlantılarını kaldır
-        if (orphanEmailsToUnlink.isNotEmpty()) {
-            try {
-                val allClassIds = withTimeoutOrNull(4000L) {
-                    db.collection("classrooms").get().await().documents.map { it.id }
-                } ?: emptyList()
-                for (orphanEmail in orphanEmailsToUnlink) {
-                    purgeParentAndUserTracesInOtherClassrooms(
-                        otherClassroomIds = allClassIds,
-                        userEmail = orphanEmail,
-                        uid = ""
-                    )
-                }
-            } catch (_: Exception) {}
-        }
-
-        // 6. Varsa mezar taşlarını da temizle
-        for (tDoc in tombstoneDocs) {
-            val tEmail = tDoc.getString("email")?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
-            if (tEmail != cleanActiveEmail) {
-                try {
-                    withTimeoutOrNull(2500L) { tDoc.reference.delete().await() }
-                } catch (_: Exception) {}
-                deleteFirestoreDocDirectRest("deleted_accounts/${tDoc.id}", bearerToken)
+        if (orphanEmailsToUnlink.isNotEmpty() && orphanClassIdsToDelete.isNotEmpty()) {
+            for (orphanEmail in orphanEmailsToUnlink) {
+                purgeParentAndUserTracesInOtherClassrooms(
+                    otherClassroomIds = orphanClassIdsToDelete.toList(),
+                    userEmail = orphanEmail,
+                    uid = ""
+                )
             }
         }
+
+        prefs?.edit()?.putLong(throttleKey, nowMs)?.apply()
     }
 
     suspend fun deleteEntireAccount(
@@ -1905,11 +2040,11 @@ class ClassRegistryRepository(
                     withTimeoutOrNull(2500L) { FirebaseMessaging.getInstance().deleteToken().await() }
                 } catch (_: Exception) {}
 
-                // 4. Bu kullanıcıya veya e-postasına ait TÜM users belgelerini ve atanmış sınıfları tespit et
+                // 4. Bu kullanıcıya veya e-postasına ait users belgelerini ve atanmış sınıfları kapsamlı ama hedefli sorgularla tespit et
                 val matchedUserDocIds = linkedSetOf<String>()
                 val assignedClassIdsFromUsers = linkedSetOf<String>()
+                val linkedParentClassIdsFromUser = linkedSetOf<String>()
                 if (uid.isNotBlank()) matchedUserDocIds.add(uid)
-                matchedUserDocIds.addAll(KNOWN_ORPHANED_USER_DOC_IDS)
 
                 try {
                     val directUserDoc = withTimeoutOrNull(4500L) {
@@ -1921,59 +2056,63 @@ class ClassRegistryRepository(
                         directUserDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
                             assignedClassIdsFromUsers.add(it)
                         }
-                    }
-                } catch (_: Exception) {}
-
-                try {
-                    val allUsersSnap = withTimeoutOrNull(5000L) {
-                        db.collection("users").get(Source.SERVER).await()
-                    } ?: withTimeoutOrNull(3500L) {
-                        db.collection("users").get().await()
-                    }
-                    allUsersSnap?.documents?.forEach { uDoc ->
-                        val docEmail = uDoc.getString("email")?.trim().orEmpty()
-                        val docUserId = uDoc.getString("userId")?.trim().orEmpty()
-                        if (uDoc.id == uid ||
-                            docUserId == uid ||
-                            (cleanEmail.isNotBlank() && docEmail.equals(cleanEmail, ignoreCase = true))
-                        ) {
-                            matchedUserDocIds.add(uDoc.id)
-                            uDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
-                                assignedClassIdsFromUsers.add(it)
-                            }
+                        directUserDoc.getString("linkedClassroomId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                            linkedParentClassIdsFromUser.add(it)
                         }
                     }
                 } catch (_: Exception) {}
 
-                // 5. Sahip olunan sınıfları ve paylaşılan sınıfları ayır (Veli asla öğretmenin sınıfını silemez!)
-                val allClassDocs = try {
-                    withTimeoutOrNull(6000L) {
-                        db.collection("classrooms").get(Source.SERVER).await().documents
-                    } ?: withTimeoutOrNull(4000L) {
-                        db.collection("classrooms").get().await().documents
-                    } ?: emptyList()
-                } catch (_: Exception) {
-                    emptyList()
+                val emailVariants = listOfNotNull(
+                    userEmail.takeIf { it.isNotBlank() },
+                    cleanEmail.takeIf { it.isNotBlank() }
+                ).distinct()
+                for (emailVar in emailVariants) {
+                    try {
+                        val snap = withTimeoutOrNull(3500L) {
+                            db.collection("users").whereEqualTo("email", emailVar).limit(10).get().await()
+                        }
+                        snap?.documents?.forEach { uDoc ->
+                            matchedUserDocIds.add(uDoc.id)
+                            uDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                                assignedClassIdsFromUsers.add(it)
+                            }
+                            uDoc.getString("linkedClassroomId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                                linkedParentClassIdsFromUser.add(it)
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
 
+                // 5. Sahip olunan sınıfları ve paylaşılan sınıfları hedefli sorgularla ayır (Veli asla öğretmenin sınıfını silemez!)
                 val ownedClassIds = linkedSetOf<String>()
                 val otherClassIds = linkedSetOf<String>()
-
                 ownedClassIds.addAll(assignedClassIdsFromUsers)
 
-                for (cDoc in allClassDocs) {
+                val candidateOwnedDocs = linkedMapOf<String, com.google.firebase.firestore.DocumentSnapshot>()
+                for (ownerUid in matchedUserDocIds) {
+                    try {
+                        val snap = withTimeoutOrNull(3500L) {
+                            db.collection("classrooms").whereEqualTo("teacherId", ownerUid).limit(10).get().await()
+                        }
+                        snap?.documents?.forEach { candidateOwnedDocs[it.id] = it }
+                    } catch (_: Exception) {}
+                }
+                for (emailVar in emailVariants) {
+                    try {
+                        val snap = withTimeoutOrNull(3500L) {
+                            db.collection("classrooms").whereEqualTo("teacherEmail", emailVar).limit(10).get().await()
+                        }
+                        snap?.documents?.forEach { candidateOwnedDocs[it.id] = it }
+                    } catch (_: Exception) {}
+                }
+
+                for (cDoc in candidateOwnedDocs.values) {
                     val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
                     val docTeacherEmail = cDoc.getString("teacherEmail")?.trim().orEmpty()
                     val isOwnerMatch = (docTeacherId.isNotBlank() && docTeacherId in matchedUserDocIds) ||
                         (cleanEmail.isNotBlank() && docTeacherEmail.equals(cleanEmail, ignoreCase = true)) ||
                         (cDoc.id in assignedClassIdsFromUsers)
-                    val isFallbackActiveTeacherClass = currentRole == UserRole.TEACHER &&
-                        !activeClassId.isNullOrBlank() &&
-                        activeClassId != "default" &&
-                        cDoc.id == activeClassId &&
-                        (docTeacherId.isBlank() || docTeacherId in matchedUserDocIds || docTeacherEmail.equals(cleanEmail, ignoreCase = true))
-
-                    if (isOwnerMatch || isFallbackActiveTeacherClass) {
+                    if (isOwnerMatch) {
                         ownedClassIds.add(cDoc.id)
                     } else {
                         otherClassIds.add(cDoc.id)
@@ -1992,6 +2131,25 @@ class ClassRegistryRepository(
                     defaultSampleClass.id !in otherClassIds
                 ) {
                     ownedClassIds.add(defaultSampleClass.id)
+                }
+
+                // Veli bağlantısı olan diğer sınıfları tespit et
+                otherClassIds.addAll(linkedParentClassIdsFromUser.filterNot { it in ownedClassIds })
+                if (!activeClassId.isNullOrBlank() && activeClassId != "default" && activeClassId !in ownedClassIds) {
+                    otherClassIds.add(activeClassId)
+                }
+                for (emailVar in emailVariants) {
+                    try {
+                        val cgSnap = withTimeoutOrNull(3500L) {
+                            db.collectionGroup("students").whereEqualTo("parentEmail", emailVar).limit(20).get().await()
+                        }
+                        cgSnap?.documents?.forEach { sDoc ->
+                            val cid = sDoc.reference.parent.parent?.id
+                            if (!cid.isNullOrBlank() && cid !in ownedClassIds) {
+                                otherClassIds.add(cid)
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
 
                 // 6. KÖK (users + classrooms) belgelerini İLK ADIMDA (kota harcamadan doğrudan) hem SDK hem REST ile sil!
@@ -2126,19 +2284,21 @@ class ClassRegistryRepository(
      * Kullanıcı hesabını sildikten sonra aynı Google hesabıyla tekrar üye olduğunda
      * (yeni bir Firebase Auth UID aldığında veya deleted_accounts mezar taşı bulunduğunda),
      * önceki silinmiş hesaptan kalmış olabilecek tüm yetim (orphaned) Firestore verilerini
-     * otomatik olarak temizler. Böylece kullanıcı %100 sıfır ve temiz bir hesapla başlar.
+     * yalnızca ilgili kullanıcı/sınıf sorgularıyla temizler.
      */
     private suspend fun purgeOrphanedDataOnFreshRegistration(
         newUid: String,
         email: String,
         tombstoneDoc: com.google.firebase.firestore.DocumentSnapshot?
     ) {
-        val cleanEmail = email.trim().lowercase(java.util.Locale.ROOT)
+        val rawEmail = email.trim()
+        val cleanEmail = rawEmail.lowercase(java.util.Locale.ROOT)
         if (cleanEmail.isBlank() && tombstoneDoc == null) return
 
         val hasTombstone = tombstoneDoc != null && tombstoneDoc.exists()
         val oldUids = linkedSetOf<String>()
         val tombstoneClassIds = linkedSetOf<String>()
+        val linkedParentClassIds = linkedSetOf<String>()
 
         if (hasTombstone && tombstoneDoc != null) {
             tombstoneDoc.getString("uid")?.trim()?.takeIf { it.isNotBlank() }?.let { oldUids.add(it) }
@@ -2152,76 +2312,95 @@ class ClassRegistryRepository(
             }
         }
 
-        // 1. E-postası eşleşen eski users belgelerini ve bilinen yetim kayıtları bul ve sil
-        try {
-            val usersSnap = withTimeoutOrNull(4500L) {
-                db.collection("users").get(Source.SERVER).await()
-            } ?: withTimeoutOrNull(3000L) {
-                db.collection("users").get().await()
-            }
-            usersSnap?.documents?.forEach { uDoc ->
-                val docEmail = uDoc.getString("email")?.trim().orEmpty()
-                val isSameEmail = cleanEmail.isNotBlank() && docEmail.equals(cleanEmail, ignoreCase = true) && (uDoc.id != newUid || hasTombstone)
-                val isKnownOrphan = uDoc.id in KNOWN_ORPHANED_USER_DOC_IDS && uDoc.id != newUid
-                if (isSameEmail || isKnownOrphan) {
-                    oldUids.add(uDoc.id)
+        val emailVariants = listOfNotNull(
+            rawEmail.takeIf { it.isNotBlank() },
+            cleanEmail.takeIf { it.isNotBlank() }
+        ).distinct()
+
+        // 1. Sadece e-postası eşleşen eski users belgelerini sorgula ve sil (tüm users koleksiyonunu okuma!)
+        for (emailVar in emailVariants) {
+            try {
+                val usersSnap = withTimeoutOrNull(3500L) {
+                    db.collection("users").whereEqualTo("email", emailVar).limit(10).get().await()
+                }
+                usersSnap?.documents?.forEach { uDoc ->
+                    val docEmail = uDoc.getString("email")?.trim().orEmpty()
+                    val isSameEmail = cleanEmail.isNotBlank() && docEmail.equals(cleanEmail, ignoreCase = true) && (uDoc.id != newUid || hasTombstone)
                     if (isSameEmail) {
+                        oldUids.add(uDoc.id)
                         uDoc.getString("assignedClassId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
                             tombstoneClassIds.add(it)
                         }
-                    }
-                    deleteUserDocumentEverywhere(uDoc.id)
-                }
-            }
-        } catch (_: Exception) {}
-
-        // 2. E-postası veya eski UID'si eşleşen yetim sınıfları ve alt koleksiyonlarını tamamen sil
-        try {
-            val allClassDocs = withTimeoutOrNull(5000L) {
-                db.collection("classrooms").get(Source.SERVER).await().documents
-            } ?: withTimeoutOrNull(3500L) {
-                db.collection("classrooms").get().await().documents
-            } ?: emptyList()
-
-            val orphanOwnedClassIds = linkedSetOf<String>()
-            val otherClassIds = linkedSetOf<String>()
-            orphanOwnedClassIds.addAll(tombstoneClassIds)
-
-            for (cDoc in allClassDocs) {
-                val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
-                val docTeacherEmail = cDoc.getString("teacherEmail")?.trim().orEmpty()
-                val matchesEmail = cleanEmail.isNotBlank() && docTeacherEmail.equals(cleanEmail, ignoreCase = true)
-                val matchesOldUid = docTeacherId.isNotBlank() && docTeacherId in oldUids
-                val isDifferentUidForSameEmail = matchesEmail && (docTeacherId != newUid || hasTombstone)
-
-                if (matchesOldUid || isDifferentUidForSameEmail || cDoc.id in tombstoneClassIds) {
-                    orphanOwnedClassIds.add(cDoc.id)
-                } else {
-                    otherClassIds.add(cDoc.id)
-                }
-            }
-
-            if (orphanOwnedClassIds.isNotEmpty()) {
-                coroutineScope {
-                    orphanOwnedClassIds.map { cid ->
-                        async {
-                            try {
-                                deleteOwnedClassroomCompletely(cid)
-                            } catch (_: Exception) {}
+                        uDoc.getString("linkedClassroomId")?.trim()?.takeIf { it.isNotBlank() && it != "default" }?.let {
+                            linkedParentClassIds.add(it)
                         }
-                    }.awaitAll()
+                        deleteUserDocumentEverywhere(uDoc.id)
+                    }
                 }
-            }
+            } catch (_: Exception) {}
+        }
 
-            // 3. Diğer sınıflardaki eski veli bağlantılarını temizle
-            if (otherClassIds.isNotEmpty() && cleanEmail.isNotBlank()) {
+        // 2. E-postası veya eski UID'si eşleşen yetim sınıfları hedefli sorguyla bul ve tamamen sil
+        val orphanOwnedClassIds = linkedSetOf<String>()
+        orphanOwnedClassIds.addAll(tombstoneClassIds)
+        for (oldUid in oldUids) {
+            try {
+                val snap = withTimeoutOrNull(3500L) {
+                    db.collection("classrooms").whereEqualTo("teacherId", oldUid).limit(10).get().await()
+                }
+                snap?.documents?.forEach { orphanOwnedClassIds.add(it.id) }
+            } catch (_: Exception) {}
+        }
+        for (emailVar in emailVariants) {
+            try {
+                val snap = withTimeoutOrNull(3500L) {
+                    db.collection("classrooms").whereEqualTo("teacherEmail", emailVar).limit(10).get().await()
+                }
+                snap?.documents?.forEach { cDoc ->
+                    val docTeacherId = cDoc.getString("teacherId")?.trim().orEmpty()
+                    if (docTeacherId in oldUids || docTeacherId != newUid || hasTombstone) {
+                        orphanOwnedClassIds.add(cDoc.id)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (orphanOwnedClassIds.isNotEmpty()) {
+            coroutineScope {
+                orphanOwnedClassIds.map { cid ->
+                    async {
+                        try {
+                            deleteOwnedClassroomCompletely(cid)
+                        } catch (_: Exception) {}
+                    }
+                }.awaitAll()
+            }
+        }
+
+        // 3. Diğer sınıflardaki eski veli bağlantılarını collectionGroup + known class ile temizle
+        if (cleanEmail.isNotBlank()) {
+            for (emailVar in emailVariants) {
+                try {
+                    val cgSnap = withTimeoutOrNull(3500L) {
+                        db.collectionGroup("students").whereEqualTo("parentEmail", emailVar).limit(20).get().await()
+                    }
+                    cgSnap?.documents?.forEach { sDoc ->
+                        val cid = sDoc.reference.parent.parent?.id
+                        if (!cid.isNullOrBlank() && cid !in orphanOwnedClassIds) {
+                            linkedParentClassIds.add(cid)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            val otherClassIds = linkedParentClassIds.filterNot { it in orphanOwnedClassIds }
+            if (otherClassIds.isNotEmpty()) {
                 purgeParentAndUserTracesInOtherClassrooms(
-                    otherClassroomIds = otherClassIds.toList(),
+                    otherClassroomIds = otherClassIds,
                     userEmail = cleanEmail,
                     uid = newUid
                 )
             }
-        } catch (_: Exception) {}
+        }
 
         // 4. Mezar taşını temizle
         if (hasTombstone && tombstoneDoc != null) {
@@ -2300,7 +2479,7 @@ class ClassRegistryRepository(
                 tombstoneDoc = tombstoneSnap
             )
             scope.launch {
-                purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail)
+                purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail, force = true)
             }
 
             if (isAccountDeleting || isGlobalAccountDeleting || Firebase.auth.currentUser?.uid != uid) {
@@ -2334,10 +2513,6 @@ class ClassRegistryRepository(
                 handleFirestoreError(e, OperationType.CREATE, userRef.path)
             }
 
-            if (Firebase.auth.currentUser != null && !isAccountDeleting && !isGlobalAccountDeleting) {
-                startObserving()
-            }
-
             return com.example.data.model.UserProfile(
                 id = uid,
                 userId = uid,
@@ -2351,15 +2526,17 @@ class ClassRegistryRepository(
             )
         }
 
-        // Mevcut kullanıcı girişinde de arka planda geçersiz/silinmiş diğer users belgelerini temizle
+        // Mevcut kullanıcı girişinde en fazla 24 saatte bir aynı kullanıcıya ait duplicate kontrolü çalıştır
         scope.launch {
-            purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail)
+            purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail, force = false)
         }
 
         if (snapshot != null && snapshot.exists()) {
-            if (Firebase.auth.currentUser != null && !isAccountDeleting && !isGlobalAccountDeleting) {
-                startObserving()
-            }
+            @Suppress("UNCHECKED_CAST")
+            val rawLinkedStudentIds = (snapshot.get("linkedStudentIds") as? List<*>)
+                ?.mapNotNull { it as? String }
+                ?.filter { it.isNotBlank() }
+                .orEmpty()
             return com.example.data.model.UserProfile(
                 id = snapshot.id,
                 userId = snapshot.getString("userId") ?: uid,
@@ -2369,6 +2546,8 @@ class ClassRegistryRepository(
                 kvkkAccepted = snapshot.getBoolean("kvkkAccepted") ?: false,
                 assignedClassId = snapshot.getString("assignedClassId"),
                 assignedSchoolId = snapshot.getString("assignedSchoolId"),
+                linkedClassroomId = snapshot.getString("linkedClassroomId"),
+                linkedStudentIds = rawLinkedStudentIds,
                 isFreshRegistration = false
             )
         }
@@ -2590,32 +2769,244 @@ class ClassRegistryRepository(
         }
     }
 
-    suspend fun findStudentsLinkedToParent(userEmail: String): List<Pair<Student, ClassRoom>> {
+    suspend fun saveParentLinkMetadataOnUserDoc(
+        uid: String,
+        classroomId: String?,
+        studentIds: List<String>,
+        appendStudentIds: Boolean = false
+    ) {
+        if (isAccountDeleting || isGlobalAccountDeleting || !isFirebaseAuthAvailable) return
+        if (uid.isBlank()) return
+        val cleanIds = studentIds.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val payload = mutableMapOf<String, Any?>(
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (!classroomId.isNullOrBlank() && classroomId != "default") {
+            payload["linkedClassroomId"] = classroomId.trim()
+        }
+        if (cleanIds.isNotEmpty()) {
+            payload["linkedStudentIds"] = if (appendStudentIds) {
+                FieldValue.arrayUnion(*cleanIds.toTypedArray())
+            } else {
+                cleanIds
+            }
+        } else if (!appendStudentIds) {
+            payload["linkedStudentIds"] = emptyList<String>()
+            if (classroomId.isNullOrBlank()) {
+                payload["linkedClassroomId"] = null
+            }
+        }
+        try {
+            db.collection("users").document(uid).update(payload).await()
+        } catch (_: Exception) {}
+    }
+
+    private fun parseStudentAndRoomPair(
+        sDoc: com.google.firebase.firestore.DocumentSnapshot,
+        cDoc: com.google.firebase.firestore.DocumentSnapshot,
+        cleanEmail: String
+    ): Pair<Student, ClassRoom>? {
+        if (!sDoc.exists() || !cDoc.exists()) return null
+        val sParentEmail = sDoc.getString("parentEmail")
+        @Suppress("UNCHECKED_CAST")
+        val rawLinked = sDoc.get("linkedParents") as? List<Map<String, Any?>>
+        val anyLinkedEmail = rawLinked?.any {
+            (it["email"] as? String)?.trim().equals(cleanEmail, ignoreCase = true)
+        } == true
+
+        if (!sParentEmail?.trim().equals(cleanEmail, ignoreCase = true) && !anyLinkedEmail) {
+            return null
+        }
+
+        val sNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
+        val fullName = sDoc.getString("fullName") ?: ""
+        val gender = sDoc.getString("gender") ?: "Erkek"
+        val pCode = sDoc.getString("parentCode")
+            ?: sDoc.getString("parentInviteCode")
+            ?: ""
+        val pName = sDoc.getString("parentName")
+        val pLinkedAt = sDoc.getString("parentLinkedAt")
+        val pLastLoginAt = sDoc.getString("parentLastLoginAt")
+        val pIsOnline = sDoc.getBoolean("parentIsOnline") ?: false
+        val pLastActiveMillis = sDoc.getLong("parentLastActiveMillis")
+
+        val parsedLinked = rawLinked?.mapNotNull { map ->
+            val e = map["email"] as? String
+            val n = map["name"] as? String
+            if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
+                LinkedParentAccount(
+                    email = e,
+                    name = n,
+                    phone = (map["phone"] as? String) ?: "",
+                    relationship = (map["relationship"] as? String) ?: "Veli",
+                    linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
+                    lastLoginAt = map["lastLoginAt"] as? String,
+                    isOnline = (map["isOnline"] as? Boolean) ?: pIsOnline,
+                    lastActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong() ?: pLastActiveMillis
+                )
+            } else null
+        } ?: emptyList()
+
+        val student = Student(
+            id = sDoc.id,
+            studentNumber = sNo.toString(),
+            fullName = fullName,
+            gender = gender,
+            parentInviteCode = pCode,
+            parentName = pName,
+            parentEmail = sParentEmail,
+            parentLinkedAt = pLinkedAt,
+            parentLastLoginAt = pLastLoginAt,
+            parentIsOnline = pIsOnline,
+            parentLastActiveMillis = pLastActiveMillis,
+            linkedParents = parsedLinked
+        )
+        val classRoom = ClassRoom(
+            id = cDoc.id,
+            cityName = cDoc.getString("cityName") ?: "",
+            districtName = cDoc.getString("districtName") ?: "",
+            schoolName = cDoc.getString("schoolName") ?: "",
+            gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
+            section = cDoc.getString("section") ?: "A",
+            teacherName = cDoc.getString("teacherName") ?: "",
+            teacherEmail = cDoc.getString("teacherEmail") ?: "",
+            inviteCode = cDoc.getString("inviteCode") ?: "",
+            isOccupied = true
+        )
+        return Pair(student, classRoom)
+    }
+
+    suspend fun findStudentsLinkedToParent(
+        userEmail: String,
+        preferredClassId: String? = null,
+        preferredStudentIds: List<String> = emptyList()
+    ): List<Pair<Student, ClassRoom>> {
         val results = mutableListOf<Pair<Student, ClassRoom>>()
         val cleanEmail = userEmail.trim()
+        val lowerEmail = cleanEmail.lowercase(java.util.Locale.ROOT)
         if (cleanEmail.isBlank()) return results
 
-        // 1. Check in-memory students
+        // 1. Hafızadaki öğrencilerden kontrol et
         val currentRoom = _registeredClasses.value.firstOrNull() ?: defaultSampleClass
         for (s in _students.value) {
             val matches = s.parentEmail?.trim().equals(cleanEmail, ignoreCase = true) ||
-                    s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+                s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
             if (matches) {
                 results.add(Pair(s, currentRoom))
             }
         }
 
-        // 2. Check sample students if not yet loaded in _students
+        // 2. Örnek öğrencilerden kontrol et
         for (s in defaultSampleStudents) {
             val matches = s.parentEmail?.trim().equals(cleanEmail, ignoreCase = true) ||
-                    s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+                s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
             if (matches && results.none { it.first.id == s.id }) {
                 results.add(Pair(s, defaultSampleClass))
             }
         }
 
-        // 3. Check Firestore classrooms and students in parallel with bounded timeout
         if (isFirebaseAuthAvailable) {
+            val uid = Firebase.auth.currentUser?.uid
+            val cleanPreferredClassId = preferredClassId?.trim()?.takeIf { it.isNotBlank() && it != "default" }
+            val cleanPreferredStudentIds = preferredStudentIds.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+
+            // 3A. Hızlı Yol 1: Kullanıcının kayıtlı linkedClassroomId + linkedStudentIds bilgisiyle doğrudan 2-3 belge oku
+            if (cleanPreferredClassId != null) {
+                try {
+                    val classDoc = withTimeoutOrNull(3500L) {
+                        db.collection("classrooms").document(cleanPreferredClassId).get().await()
+                    }
+                    if (classDoc != null && classDoc.exists()) {
+                        if (cleanPreferredStudentIds.isNotEmpty()) {
+                            val directMatches = coroutineScope {
+                                cleanPreferredStudentIds.map { sId ->
+                                    async {
+                                        val sDoc = withTimeoutOrNull(3000L) {
+                                            classDoc.reference.collection("students").document(sId).get().await()
+                                        }
+                                        if (sDoc != null) parseStudentAndRoomPair(sDoc, classDoc, cleanEmail) else null
+                                    }
+                                }.awaitAll().filterNotNull()
+                            }
+                            if (directMatches.isNotEmpty()) {
+                                directMatches.forEach { pair ->
+                                    if (results.none { it.first.id == pair.first.id }) {
+                                        results.add(pair)
+                                    }
+                                }
+                                observeActiveClassroom(cleanPreferredClassId)
+                                return results
+                            }
+                        } else {
+                            // Yalnızca bu sınıfın öğrencilerini kontrol et (tüm okulları tarama)
+                            val studentsSnap = withTimeoutOrNull(3500L) {
+                                classDoc.reference.collection("students").get().await()
+                            }
+                            val classMatches = studentsSnap?.documents?.mapNotNull { sDoc ->
+                                parseStudentAndRoomPair(sDoc, classDoc, cleanEmail)
+                            }.orEmpty()
+                            if (classMatches.isNotEmpty()) {
+                                classMatches.forEach { pair ->
+                                    if (results.none { it.first.id == pair.first.id }) {
+                                        results.add(pair)
+                                    }
+                                }
+                                if (!uid.isNullOrBlank()) {
+                                    scope.launch {
+                                        saveParentLinkMetadataOnUserDoc(uid, cleanPreferredClassId, classMatches.map { it.first.id })
+                                    }
+                                }
+                                observeActiveClassroom(cleanPreferredClassId)
+                                return results
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 3B. Hızlı Yol 2: collectionGroup("students") sorgusu ile parentEmail üzerinden doğrudan bul
+            try {
+                val emailVariants = listOfNotNull(cleanEmail, lowerEmail.takeIf { it != cleanEmail }).distinct()
+                val matchedStudentDocs = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
+                for (emailVar in emailVariants) {
+                    val cgSnap = withTimeoutOrNull(3500L) {
+                        db.collectionGroup("students").whereEqualTo("parentEmail", emailVar).limit(10).get().await()
+                    }
+                    cgSnap?.documents?.forEach { doc ->
+                        if (matchedStudentDocs.none { it.reference.path == doc.reference.path }) {
+                            matchedStudentDocs.add(doc)
+                        }
+                    }
+                }
+                if (matchedStudentDocs.isNotEmpty()) {
+                    val classCache = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot?>()
+                    val cgPairs = mutableListOf<Pair<Student, ClassRoom>>()
+                    for (sDoc in matchedStudentDocs) {
+                        val cRef = sDoc.reference.parent.parent ?: continue
+                        val cDoc = classCache.getOrPut(cRef.id) {
+                            withTimeoutOrNull(3000L) { cRef.get().await() }
+                        } ?: continue
+                        parseStudentAndRoomPair(sDoc, cDoc, cleanEmail)?.let { cgPairs.add(it) }
+                    }
+                    if (cgPairs.isNotEmpty()) {
+                        cgPairs.forEach { pair ->
+                            if (results.none { it.first.id == pair.first.id }) {
+                                results.add(pair)
+                            }
+                        }
+                        val firstCid = cgPairs.first().second.id
+                        if (!uid.isNullOrBlank()) {
+                            scope.launch {
+                                saveParentLinkMetadataOnUserDoc(uid, firstCid, cgPairs.map { it.first.id })
+                            }
+                        }
+                        observeActiveClassroom(firstCid)
+                        return results
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 3C. Yedek Tarama: İkinci veli (linkedParents dizisi) veya indeks dışı ilk kurulumlar için
             try {
                 withTimeoutOrNull(6500L) {
                     val classSnap = withTimeoutOrNull(4000L) {
@@ -2633,84 +3024,27 @@ class ClassRegistryRepository(
                                         .collection("students").get().await()
                                 } ?: return@async emptyList<Pair<Student, ClassRoom>>()
 
-                                val matched = mutableListOf<Pair<Student, ClassRoom>>()
-                                for (sDoc in studentsSnap.documents) {
-                                    val sParentEmail = sDoc.getString("parentEmail")
-                                    @Suppress("UNCHECKED_CAST")
-                                    val rawLinked = sDoc.get("linkedParents") as? List<Map<String, Any?>>
-                                    val anyLinkedEmail = rawLinked?.any {
-                                        (it["email"] as? String)?.trim().equals(cleanEmail, ignoreCase = true)
-                                    } == true
-
-                                    if (sParentEmail?.trim().equals(cleanEmail, ignoreCase = true) || anyLinkedEmail) {
-                                        val sNo = (sDoc.getLong("studentNo") ?: 0L).toInt()
-                                        val fullName = sDoc.getString("fullName") ?: ""
-                                        val gender = sDoc.getString("gender") ?: "Erkek"
-                                        val pCode = sDoc.getString("parentCode")
-                                            ?: sDoc.getString("parentInviteCode")
-                                            ?: ""
-                                        val pName = sDoc.getString("parentName")
-                                        val pLinkedAt = sDoc.getString("parentLinkedAt")
-                                        val pLastLoginAt = sDoc.getString("parentLastLoginAt")
-                                        val pIsOnline = sDoc.getBoolean("parentIsOnline") ?: false
-                                        val pLastActiveMillis = sDoc.getLong("parentLastActiveMillis")
-
-                                        val parsedLinked = rawLinked?.mapNotNull { map ->
-                                            val e = map["email"] as? String
-                                            val n = map["name"] as? String
-                                            if (!e.isNullOrBlank() && !n.isNullOrBlank()) {
-                                                LinkedParentAccount(
-                                                    email = e,
-                                                    name = n,
-                                                    phone = (map["phone"] as? String) ?: "",
-                                                    relationship = (map["relationship"] as? String) ?: "Veli",
-                                                    linkedAt = (map["linkedAt"] as? String) ?: "Bağlandı",
-                                                    lastLoginAt = map["lastLoginAt"] as? String,
-                                                    isOnline = (map["isOnline"] as? Boolean) ?: pIsOnline,
-                                                    lastActiveMillis = (map["lastActiveMillis"] as? Number)?.toLong() ?: pLastActiveMillis
-                                                )
-                                            } else null
-                                        } ?: emptyList()
-
-                                        val student = Student(
-                                            id = sDoc.id,
-                                            studentNumber = sNo.toString(),
-                                            fullName = fullName,
-                                            gender = gender,
-                                            parentInviteCode = pCode,
-                                            parentName = pName,
-                                            parentEmail = sParentEmail,
-                                            parentLinkedAt = pLinkedAt,
-                                            parentLastLoginAt = pLastLoginAt,
-                                            parentIsOnline = pIsOnline,
-                                            parentLastActiveMillis = pLastActiveMillis,
-                                            linkedParents = parsedLinked
-                                        )
-
-                                        val classRoom = ClassRoom(
-                                            id = cDoc.id,
-                                            cityName = cDoc.getString("cityName") ?: "",
-                                            districtName = cDoc.getString("districtName") ?: "",
-                                            schoolName = cDoc.getString("schoolName") ?: "",
-                                            gradeLevel = (cDoc.getLong("gradeLevel") ?: 1L).toInt(),
-                                            section = cDoc.getString("section") ?: "A",
-                                            teacherName = cDoc.getString("teacherName") ?: "",
-                                            teacherEmail = cDoc.getString("teacherEmail") ?: "",
-                                            inviteCode = cDoc.getString("inviteCode") ?: "",
-                                            isOccupied = true
-                                        )
-                                        matched.add(Pair(student, classRoom))
-                                    }
+                                studentsSnap.documents.mapNotNull { sDoc ->
+                                    parseStudentAndRoomPair(sDoc, cDoc, cleanEmail)
                                 }
-                                matched
                             }
                         }.awaitAll()
                     }
 
-                    matchesPerClass.flatten().forEach { pair ->
+                    val discovered = matchesPerClass.flatten()
+                    discovered.forEach { pair ->
                         if (results.none { it.first.id == pair.first.id }) {
                             results.add(pair)
                         }
+                    }
+                    if (discovered.isNotEmpty()) {
+                        val firstCid = discovered.first().second.id
+                        if (!uid.isNullOrBlank()) {
+                            scope.launch {
+                                saveParentLinkMetadataOnUserDoc(uid, firstCid, discovered.map { it.first.id })
+                            }
+                        }
+                        observeActiveClassroom(firstCid)
                     }
                 }
             } catch (_: Exception) {}

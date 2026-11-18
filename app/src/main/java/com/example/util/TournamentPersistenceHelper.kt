@@ -909,46 +909,53 @@ object TournamentPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId).collection("tournaments")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    try {
-                        val list = mutableListOf<Tournament>()
-                        val invalidDocIds = mutableSetOf<String>()
-                        for (doc in snapshot.documents) {
-                            val jsonStr = doc.getString("json")
-                            if (!jsonStr.isNullOrBlank()) {
-                                try {
-                                    val t = deserializeTournament(JSONObject(jsonStr), classId)
-                                    if (t.id.isBlank() || t.name.isBlank() || t.participants.isEmpty()) {
-                                        invalidDocIds.add(doc.id)
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "tournaments:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId).collection("tournaments")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
+                            try {
+                                val list = mutableListOf<Tournament>()
+                                val invalidDocIds = mutableSetOf<String>()
+                                for (doc in snapshot.documents) {
+                                    val jsonStr = doc.getString("json")
+                                    if (!jsonStr.isNullOrBlank()) {
+                                        try {
+                                            val t = deserializeTournament(JSONObject(jsonStr), classId)
+                                            if (t.id.isBlank() || t.name.isBlank() || t.participants.isEmpty()) {
+                                                invalidDocIds.add(doc.id)
+                                            } else {
+                                                list.add(t)
+                                            }
+                                        } catch (_: Exception) {
+                                            invalidDocIds.add(doc.id)
+                                        }
                                     } else {
-                                        list.add(t)
+                                        invalidDocIds.add(doc.id)
                                     }
-                                } catch (_: Exception) {
-                                    invalidDocIds.add(doc.id)
                                 }
-                            } else {
-                                invalidDocIds.add(doc.id)
+                                if (invalidDocIds.isNotEmpty()) {
+                                    deleteTournamentDocsFromFirestore(appCtx, classId, invalidDocIds)
+                                }
+
+                                val sorted = list.distinctBy { it.id }.sortedByDescending { it.createdAt }
+                                // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan turnuvaları geri yükleme!)
+                                saveTournamentsToLocalPrefsOnly(appCtx, classId, sorted)
+                                cleanupStaleAndOrphanedTournamentData(appCtx, classId)
+                                dispatch(sorted)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error in observeFirestoreTournaments", e)
                             }
                         }
-                        if (invalidDocIds.isNotEmpty()) {
-                            deleteTournamentDocsFromFirestore(context, classId, invalidDocIds)
-                        }
-
-                        val sorted = list.distinctBy { it.id }.sortedByDescending { it.createdAt }
-                        // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan turnuvaları geri yükleme!)
-                        saveTournamentsToLocalPrefsOnly(context, classId, sorted)
-                        cleanupStaleAndOrphanedTournamentData(context, classId)
-                        onUpdate(sorted)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in observeFirestoreTournaments", e)
-                    }
+                } catch (_: Exception) {
+                    null
                 }
-        } catch (_: Exception) {
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 
     fun observeFirestoreMatches(
@@ -958,30 +965,37 @@ object TournamentPersistenceHelper {
     ): ListenerRegistration? {
         if (tournamentId.isBlank()) return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("tournaments").document(tournamentId).collection("matches")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    try {
-                        val list = mutableListOf<TournamentMatch>()
-                        for (doc in snapshot.documents) {
-                            val jsonStr = doc.getString("json")
-                            if (!jsonStr.isNullOrBlank()) {
-                                try {
-                                    list.add(deserializeMatch(JSONObject(jsonStr), tournamentId))
-                                } catch (_: Exception) {}
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "matches:$tournamentId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("tournaments").document(tournamentId).collection("matches")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
+                            try {
+                                val list = mutableListOf<TournamentMatch>()
+                                for (doc in snapshot.documents) {
+                                    val jsonStr = doc.getString("json")
+                                    if (!jsonStr.isNullOrBlank()) {
+                                        try {
+                                            list.add(deserializeMatch(JSONObject(jsonStr), tournamentId))
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                                val sorted = list.distinctBy { it.id }.sortedWith(compareBy({ it.round }, { it.matchCode }))
+                                // Firestore SSOT: Boş olsa bile yerel önbelleği güncelle
+                                saveMatchesToLocalPrefsOnly(appCtx, tournamentId, sorted)
+                                dispatch(sorted)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error in observeFirestoreMatches", e)
                             }
                         }
-                        val sorted = list.distinctBy { it.id }.sortedWith(compareBy({ it.round }, { it.matchCode }))
-                        // Firestore SSOT: Boş olsa bile yerel önbelleği güncelle
-                        saveMatchesToLocalPrefsOnly(context, tournamentId, sorted)
-                        onUpdate(sorted)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in observeFirestoreMatches", e)
-                    }
+                } catch (_: Exception) {
+                    null
                 }
-        } catch (_: Exception) {
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 }

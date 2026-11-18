@@ -43,6 +43,7 @@ import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
 import com.example.data.model.Tournament
 import com.example.data.model.TournamentMatch
+import com.example.data.model.TournamentStatus
 import com.example.data.repository.StarRewardPersistenceHelper
 import com.example.BuildConfig
 import com.example.util.ActivityNotificationHelper
@@ -58,6 +59,7 @@ import com.example.util.BackgroundNotificationSyncHelper
 import com.example.util.BackgroundUpdateState
 import com.example.util.ClassroomPresenceSnapshot
 import com.example.util.DeferredSystemNotification
+import com.example.util.FirestoreListenerHub
 import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationLifecycleHelper
@@ -530,7 +532,13 @@ class BirizViewModel(
         teacherPresenceJob = null
         parentPresenceJob?.cancel()
         parentPresenceJob = null
+        foregroundPresenceFallbackJob?.cancel()
+        foregroundPresenceFallbackJob = null
+        wroteFirestorePresenceThisSession = false
         clearActivityListeners()
+        repository.stopSetupWizardObserving()
+        repository.stopActiveClassroom()
+        FirestoreListenerHub.clearAll()
 
         observedNotificationClassId = null
         loadedNotifiedClassId = null
@@ -603,8 +611,9 @@ class BirizViewModel(
         cloudTournaments: List<Tournament>
     ) {
         val activeIds = cloudTournaments
+            .filter { it.status == TournamentStatus.DEVAM_EDIYOR }
             .sortedByDescending { it.updatedAt }
-            .take(15)
+            .take(5)
             .map { it.id }
             .toSet()
 
@@ -975,6 +984,7 @@ class BirizViewModel(
 
             val targetClassId = if (!savedClassroomId.isNullOrBlank()) savedClassroomId else "default"
             if (targetClassId != "default") {
+                repository.observeActiveClassroom(targetClassId)
                 repository.observeStudents(targetClassId)
             }
             loadScheduleFromStorage(targetClassId)
@@ -1081,7 +1091,9 @@ class BirizViewModel(
         startPeriodicUpdateChecker()
     }
 
-    private var lastOrphanPurgeAttemptMillis: Long = 0L
+    private var foregroundPresenceFallbackJob: kotlinx.coroutines.Job? = null
+    @Volatile
+    private var wroteFirestorePresenceThisSession: Boolean = false
 
     private fun mergePresenceIntoStudents(
         list: List<Student>,
@@ -1183,38 +1195,49 @@ class BirizViewModel(
         val now = System.currentTimeMillis()
         syncLivePresenceSocket(state)
 
-        // Yetim kullanıcı temizliği yalnızca oturumda 30 dakikada bir çalışsın (Firestore okuma/yazma kotasını korur)
-        if (now - lastOrphanPurgeAttemptMillis > 1_800_000L) {
-            val activeFbUser = try { Firebase.auth.currentUser } catch (_: Throwable) { null }
-            if (activeFbUser != null) {
-                lastOrphanPurgeAttemptMillis = now
-                viewModelScope.launch {
-                    repository.purgeStaleAndOrphanedUserDocuments(
-                        activeUid = activeFbUser.uid,
-                        activeEmail = activeFbUser.email.orEmpty()
-                    )
-                }
-            }
-        }
         appContext?.let { ctx ->
             flushPendingMorningDigest(ctx, currentViewerKey(state), forceEvenIfWithinWindow = false)
         }
         evaluateDueScheduledMessages()
 
-        // onStart + onResume ardışık geldiğinde aynı online yazmasını 15 sn içinde tekrarlama
+        // WebSocket bağlıysa Firestore'a hiç presence yazması yapma; bağlı değilse WS el sıkışması için 2.5 sn bekle
+        foregroundPresenceFallbackJob?.cancel()
+        val activeClassId = resolveActiveClassId()
         val shouldSyncPresenceWrite = !wasInForeground || (now - lastForegroundPresenceMs > 15_000L)
         if (state.currentRole == UserRole.PARENT) {
-            if (shouldSyncPresenceWrite) {
-                lastForegroundPresenceMs = now
-                updateParentPresence(isOnline = true)
+            if (shouldSyncPresenceWrite && !PresenceSocketManager.isLiveConnected(activeClassId)) {
+                foregroundPresenceFallbackJob = viewModelScope.launch {
+                    kotlinx.coroutines.delay(2_500L)
+                    if (isAppInForeground &&
+                        !_uiState.value.isDeleting &&
+                        !repository.isAccountDeleting &&
+                        _uiState.value.currentRole == UserRole.PARENT &&
+                        !PresenceSocketManager.isLiveConnected(resolveActiveClassId())
+                    ) {
+                        lastForegroundPresenceMs = System.currentTimeMillis()
+                        wroteFirestorePresenceThisSession = true
+                        updateParentPresence(isOnline = true)
+                    }
+                }
             }
             if (isParentCommunicationTabActive && isParentChatSubTabActive && !state.activeParentStudentId.isNullOrBlank()) {
                 markChatMessagesAsRead(state.activeParentStudentId, viewerIsTeacher = false)
             }
         } else if (state.currentRole == UserRole.TEACHER) {
-            if (shouldSyncPresenceWrite) {
-                lastForegroundPresenceMs = now
-                updateTeacherPresence(isOnline = true)
+            if (shouldSyncPresenceWrite && !PresenceSocketManager.isLiveConnected(activeClassId)) {
+                foregroundPresenceFallbackJob = viewModelScope.launch {
+                    kotlinx.coroutines.delay(2_500L)
+                    if (isAppInForeground &&
+                        !_uiState.value.isDeleting &&
+                        !repository.isAccountDeleting &&
+                        _uiState.value.currentRole == UserRole.TEACHER &&
+                        !PresenceSocketManager.isLiveConnected(resolveActiveClassId())
+                    ) {
+                        lastForegroundPresenceMs = System.currentTimeMillis()
+                        wroteFirestorePresenceThisSession = true
+                        updateTeacherPresence(isOnline = true)
+                    }
+                }
             }
             if (state.currentScreen == ScreenState.TEACHER_DASHBOARD &&
                 state.currentSubPage == DashboardSubPage.ILETISIM_MESAJLAR &&
@@ -1228,14 +1251,21 @@ class BirizViewModel(
     fun onAppBackgrounded() {
         val wasInForeground = isAppInForeground
         isAppInForeground = false
+        foregroundPresenceFallbackJob?.cancel()
+        foregroundPresenceFallbackJob = null
+        val wasWsLive = PresenceSocketManager.isLiveConnected(resolveActiveClassId())
         PresenceSocketManager.disconnect()
         if (_uiState.value.isDeleting || repository.isAccountDeleting) return
         val now = System.currentTimeMillis()
         // onPause -> onStop -> onDestroy art arda gelirken offline yazmasını iptal etmeden tek sefer çalıştır
         if (!wasInForeground && (now - lastBackgroundPresenceMs < 4_000L)) return
         lastBackgroundPresenceMs = now
-        updateParentPresence(isOnline = false)
-        updateTeacherPresence(isOnline = false)
+        val hadFirestorePresenceWrite = wroteFirestorePresenceThisSession
+        wroteFirestorePresenceThisSession = false
+        if (!wasWsLive || hadFirestorePresenceWrite) {
+            updateParentPresence(isOnline = false)
+            updateTeacherPresence(isOnline = false)
+        }
     }
 
     fun sendTeacherPresenceHeartbeatIfNeeded() {
@@ -3483,6 +3513,8 @@ class BirizViewModel(
 
                         if (resolvedClass != null) {
                             lastResolvedUid = fbUser.uid
+                            repository.stopSetupWizardObserving()
+                            repository.observeActiveClassroom(resolvedClass.id)
                             _uiState.value = _uiState.value.copy(
                                 activeClassRoom = resolvedClass,
                                 currentRole = UserRole.TEACHER,
@@ -3506,6 +3538,9 @@ class BirizViewModel(
                         // 2. Veli Rolü veya Öğrenci Bağlantısı Kontrolü
                         val prefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
                         val savedRole = prefs?.getString("key_saved_role", "") ?: ""
+                        val savedLinkedClassId = prefs?.getString("key_linked_classroom_id", "")?.takeIf {
+                            it.isNotBlank() && it != "default"
+                        }
                         val savedLinkedIdsStr = prefs?.getString("key_linked_student_ids", "") ?: ""
                         val savedLinkedIds = if (savedLinkedIdsStr.isNotBlank()) {
                             savedLinkedIdsStr.split(",").filter { it.isNotBlank() }
@@ -3516,9 +3551,20 @@ class BirizViewModel(
                         val hasLocalParentRole = !isExplicitlyMember && (savedRole == UserRole.PARENT.code || _uiState.value.currentRole == UserRole.PARENT)
                         val hasLocalLinkedStudents = !isExplicitlyMember && (_uiState.value.linkedParentStudentIds.isNotEmpty() || savedLinkedIds.isNotEmpty())
 
+                        val preferredClassId = profile.linkedClassroomId?.takeIf { it.isNotBlank() && it != "default" }
+                            ?: savedLinkedClassId
+                        val preferredStudentIds = (profile.linkedStudentIds + savedLinkedIds + _uiState.value.linkedParentStudentIds)
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .distinct()
+
                         // Yalnızca profil veli ise veya açıkça UYE değilse bağlı öğrencileri ara
                         val parentLinkedMatches = if (isProfileParent || !isExplicitlyMember) {
-                            repository.findStudentsLinkedToParent(userEmail)
+                            repository.findStudentsLinkedToParent(
+                                userEmail = userEmail,
+                                preferredClassId = preferredClassId,
+                                preferredStudentIds = preferredStudentIds
+                            )
                         } else {
                             emptyList()
                         }
@@ -3547,6 +3593,8 @@ class BirizViewModel(
                                 ?: repository.defaultSampleClass
 
                             lastResolvedUid = fbUser.uid
+                            repository.stopSetupWizardObserving()
+                            repository.observeActiveClassroom(parentClass.id)
                             _uiState.value = _uiState.value.copy(
                                 activeClassRoom = parentClass,
                                 currentRole = UserRole.PARENT,
@@ -3568,10 +3616,15 @@ class BirizViewModel(
                             syncLivePresenceSocket()
                             syncBackgroundWorkersAndPushToken(_uiState.value)
 
-                            // Yazma işlemlerini geçişi bekletmeden arka planda tamamla
+                            // WebSocket 2.5 sn içinde bağlanamazsa yedek Firestore presence yazması yap
                             viewModelScope.launch {
                                 try {
-                                    if (combinedLinkedStudentIds.isNotEmpty()) {
+                                    kotlinx.coroutines.delay(2_500L)
+                                    if (isAppInForeground &&
+                                        combinedLinkedStudentIds.isNotEmpty() &&
+                                        !PresenceSocketManager.isLiveConnected(parentClass.id)
+                                    ) {
+                                        wroteFirestorePresenceThisSession = true
                                         repository.updateParentPresence(
                                             classroomId = parentClass.id,
                                             studentIds = combinedLinkedStudentIds,
@@ -3591,6 +3644,9 @@ class BirizViewModel(
                         // 3. Öğretmen olarak kayıtlı olup henüz sınıf oluşturmamış olanlar
                         if (isTeacher) {
                             lastResolvedUid = fbUser.uid
+                            _uiState.value.selectedCity?.id?.let { cid ->
+                                repository.startSetupWizardObserving(cid)
+                            }
                             _uiState.value = _uiState.value.copy(
                                 currentRole = UserRole.TEACHER,
                                 isKvkkAccepted = true,
@@ -3775,6 +3831,9 @@ class BirizViewModel(
             currentRole = UserRole.TEACHER,
             currentScreen = ScreenState.TEACHER_SETUP
         )
+        _uiState.value.selectedCity?.id?.let { cid ->
+            repository.startSetupWizardObserving(cid)
+        }
         refreshChatClearStateForCurrentViewer(forceReload = true)
     }
 
@@ -3795,6 +3854,7 @@ class BirizViewModel(
             )
             return
         }
+        repository.stopSetupWizardObserving()
         val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
         val email = _uiState.value.currentUser.email
         if (uid != null) {
@@ -3807,6 +3867,7 @@ class BirizViewModel(
         if (_uiState.value.activeClassRoom == null) {
             _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
         }
+        repository.observeActiveClassroom(targetClass.id)
         repository.observeStudents(targetClass.id)
         loadScheduleFromStorage(targetClass.id)
         loadSeatingPlanFromStorage(targetClass.id)
@@ -3884,6 +3945,8 @@ class BirizViewModel(
                 if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != activeClass.id) {
                     _uiState.value = _uiState.value.copy(activeClassRoom = activeClass)
                 }
+                repository.stopSetupWizardObserving()
+                repository.observeActiveClassroom(activeClass.id)
                 repository.observeStudents(activeClass.id)
                 loadScheduleFromStorage(activeClass.id)
                 loadSeatingPlanFromStorage(activeClass.id)
@@ -3893,6 +3956,7 @@ class BirizViewModel(
                 val uid = Firebase.auth.currentUser?.uid
                 if (uid != null) {
                     repository.updateUserRole(uid, "PARENT")
+                    repository.saveParentLinkMetadataOnUserDoc(uid, activeClass.id, currentList)
                 }
 
                 _uiState.value = _uiState.value.copy(
@@ -3928,6 +3992,7 @@ class BirizViewModel(
             _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
         }
         if (loadedNotifiedClassId != targetClass.id || communicationMessagesListener == null) {
+            repository.observeActiveClassroom(targetClass.id)
             repository.observeStudents(targetClass.id)
             loadScheduleFromStorage(targetClass.id)
             loadSeatingPlanFromStorage(targetClass.id)
@@ -3966,12 +4031,17 @@ class BirizViewModel(
                 studentId = studentId,
                 parentEmail = _uiState.value.currentUser.email
             )
+            val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null }
+            if (!uid.isNullOrBlank()) {
+                repository.saveParentLinkMetadataOnUserDoc(uid, classId, currentList)
+            }
         }
     }
 
     // --- Öğretmen Form Adımları ---
 
     fun onCitySelected(city: City) {
+        repository.startSetupWizardObserving(city.id)
         _uiState.value = _uiState.value.copy(
             selectedCity = city,
             selectedDistrict = null,
@@ -4138,8 +4208,10 @@ class BirizViewModel(
     }
 
     fun navigateToTeacherDashboard() {
+        repository.stopSetupWizardObserving()
         val classId = resolveActiveClassId()
         if (classId != "default") {
+            repository.observeActiveClassroom(classId)
             repository.observeStudents(classId)
             loadScheduleFromStorage(classId)
             loadSeatingPlanFromStorage(classId)
@@ -5406,6 +5478,7 @@ class BirizViewModel(
 
     fun resetToRoleSelection() {
         if (_uiState.value.isDeleting) return
+        repository.stopSetupWizardObserving()
         PresenceSocketManager.disconnect()
         _uiState.value = _uiState.value.copy(
             currentScreen = ScreenState.ROLE_AND_KVKK,
@@ -5416,6 +5489,9 @@ class BirizViewModel(
     }
 
     fun testAnotherClass() {
+        _uiState.value.selectedCity?.id?.let { cid ->
+            repository.startSetupWizardObserving(cid)
+        }
         _uiState.value = _uiState.value.copy(
             currentScreen = ScreenState.TEACHER_SETUP,
             selectedSection = null,

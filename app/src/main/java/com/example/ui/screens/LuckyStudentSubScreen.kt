@@ -156,9 +156,10 @@ fun LuckyStudentSubScreen(
         )
     }
 
-    androidx.compose.runtime.DisposableEffect(classRoom.id, students) {
+    val latestStudents by androidx.compose.runtime.rememberUpdatedState(students)
+    androidx.compose.runtime.DisposableEffect(classRoom.id) {
         val listener = LuckyStudentPersistenceHelper.observeFirestoreLuckyState(context, classRoom.id) { cloudState ->
-            val studentMap = students.associateBy { it.id }
+            val studentMap = latestStudents.associateBy { it.id }
             drawnStudentsHistory.clear()
             cloudState.drawnStudentIds.mapNotNull { studentMap[it] }.forEach { drawnStudentsHistory.add(it) }
             excludedStudentIds.clear()

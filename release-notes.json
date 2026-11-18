@@ -1,9 +1,17 @@
 {
-  "title": "Veli Tanıtım Kartlarında Kod Düzenlemesi",
+  "title": "Hız, Pil ve Bulut Veri Verimliliği",
   "items": [
     {
-      "title": "Kopyala-Yapıştır Uyumlu Veli Kodları",
-      "summary": "Veli katılım kartlarındaki ve belgelerdeki katılım kodlarının karakterleri arasındaki boşluklar kaldırılarak tek hamlede kopyalanıp yapıştırılabilmesi sağlandı."
+      "title": "Paylaşımlı Canlı Dinleme ve Yerel Önbellek",
+      "summary": "Aynı sınıf verileri tek bağlantı üzerinden paylaşıldı ve yerel önbellek kapasitesi artırılarak tekrarlayan veri indirmeleri önlendi."
+    },
+    {
+      "title": "Sınıf ve İl Odaklı Hızlı Yükleme",
+      "summary": "Açılış ve girişteki geniş veritabanı taramaları kaldırılarak yalnızca kullanıcının sınıfına ve seçilen ile ait kayıtların yüklenmesi sağlandı."
+    },
+    {
+      "title": "Akıllı Arka Plan ve Mesaj Eşitlemesi",
+      "summary": "Arka plan bildirim denetimi saatlik ve gece dinlenmeli düzene geçirildi; mesaj okundu kayıtları toplu ve tekrarsız hale getirildi."
     }
   ]
 }

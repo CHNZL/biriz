@@ -152,33 +152,40 @@ object LuckyStudentPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId)
-                .collection("lucky_student").document("current")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    if (!snapshot.exists()) {
-                        val local = loadState(context, classId)
-                        if (local != null && (local.drawnStudentIds.isNotEmpty() || local.excludedStudentIds.isNotEmpty())) {
-                            saveState(context, classId, local.drawnStudentIds, local.excludedStudentIds, local.selectedModeName)
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "lucky:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId)
+                        .collection("lucky_student").document("current")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
+                            if (!snapshot.exists()) {
+                                val local = loadState(appCtx, classId)
+                                if (local != null && (local.drawnStudentIds.isNotEmpty() || local.excludedStudentIds.isNotEmpty())) {
+                                    saveState(appCtx, classId, local.drawnStudentIds, local.excludedStudentIds, local.selectedModeName)
+                                }
+                                return@addSnapshotListener
+                            }
+                            try {
+                                val luckyJson = snapshot.getString("luckyJson")
+                                if (!luckyJson.isNullOrBlank()) {
+                                    val parsed = deserializeJson(luckyJson)
+                                    val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                    prefs.edit()
+                                        .putString(KEY_PREFIX + classId, luckyJson)
+                                        .putString(KEY_PREFIX + "default", luckyJson)
+                                        .apply()
+                                    dispatch(parsed)
+                                }
+                            } catch (_: Exception) {}
                         }
-                        return@addSnapshotListener
-                    }
-                    try {
-                        val luckyJson = snapshot.getString("luckyJson")
-                        if (!luckyJson.isNullOrBlank()) {
-                            val parsed = deserializeJson(luckyJson)
-                            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            prefs.edit()
-                                .putString(KEY_PREFIX + classId, luckyJson)
-                                .putString(KEY_PREFIX + "default", luckyJson)
-                                .apply()
-                            onUpdate(parsed)
-                        }
-                    } catch (_: Exception) {}
+                } catch (_: Exception) {
+                    null
                 }
-        } catch (_: Exception) {
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 }

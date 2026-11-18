@@ -17,6 +17,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,9 @@ object CommunicationPersistenceHelper {
     private const val KEY_PARENT_FONT_OFFSET = "key_parent_communication_font_offset"
     private val syncScope = CoroutineScope(Dispatchers.IO)
     private val deletedAnnouncementIdsByClass = ConcurrentHashMap<String, MutableSet<String>>()
+    private val dispatchedReadMessageKeys: MutableSet<String> =
+        java.util.Collections.synchronizedSet(mutableSetOf())
+    private const val LIVE_CHAT_WINDOW_LIMIT = 250L
 
     private fun getFirestore(context: Context): FirebaseFirestore? {
         return try {
@@ -358,45 +362,52 @@ object CommunicationPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId)
-                .collection("announcements")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    try {
-                        val deletedIds = getDeletedIdsForClass(context, classId)
-                        val isServerConfirmed = !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()
-                        val list = mutableListOf<Announcement>()
-                        for (doc in snapshot.documents) {
-                            val jsonStr = doc.getString("json")
-                            if (!jsonStr.isNullOrBlank()) {
-                                try {
-                                    val ann = parseAnnouncementJson(JSONObject(jsonStr))
-                                    if (ann.id == "ann_1" || ann.id == "ann_2") continue
-                                    if (ann.id in deletedIds) {
-                                        // Öğretmenin sildiği duyuru eşzamanlı yazma nedeniyle sunucuda kaldıysa tekrar sil
-                                        if (isServerConfirmed) {
-                                            doc.reference.delete()
-                                        }
-                                        continue
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "announcements:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId)
+                        .collection("announcements")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) return@addSnapshotListener
+                            try {
+                                val deletedIds = getDeletedIdsForClass(appCtx, classId)
+                                val isServerConfirmed = !snapshot.metadata.isFromCache && !snapshot.metadata.hasPendingWrites()
+                                val list = mutableListOf<Announcement>()
+                                for (doc in snapshot.documents) {
+                                    val jsonStr = doc.getString("json")
+                                    if (!jsonStr.isNullOrBlank()) {
+                                        try {
+                                            val ann = parseAnnouncementJson(JSONObject(jsonStr))
+                                            if (ann.id == "ann_1" || ann.id == "ann_2") continue
+                                            if (ann.id in deletedIds) {
+                                                // Öğretmenin sildiği duyuru eşzamanlı yazma nedeniyle sunucuda kaldıysa tekrar sil
+                                                if (isServerConfirmed) {
+                                                    doc.reference.delete()
+                                                }
+                                                continue
+                                            }
+                                            list.add(ann)
+                                        } catch (_: Exception) {}
                                     }
-                                    list.add(ann)
-                                } catch (_: Exception) {}
+                                }
+                                list.sortByDescending { it.createdAt }
+                                if (!snapshot.metadata.isFromCache || list.isNotEmpty()) {
+                                    saveAnnouncementsLocalOnly(appCtx, classId, list)
+                                }
+                                dispatch(list)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed parsing announcements snapshot", e)
                             }
                         }
-                        list.sortByDescending { it.createdAt }
-                        if (!snapshot.metadata.isFromCache || list.isNotEmpty()) {
-                            saveAnnouncementsLocalOnly(context, classId, list)
-                        }
-                        onUpdate(list)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed parsing announcements snapshot", e)
-                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to register announcements snapshot listener", e)
+                    null
                 }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to register announcements snapshot listener", e)
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 
     private val SAMPLE_MESSAGE_IDS = setOf("msg_1", "msg_2", "msg_3", "msg_4", "msg_5")
@@ -614,34 +625,50 @@ object CommunicationPersistenceHelper {
     fun markChatMessagesReadInFirestore(context: Context, classId: String, readMessages: List<ChatMessage>) {
         if (classId.isBlank() || classId == "default" || readMessages.isEmpty()) return
         val db = getFirestore(context) ?: return
+        val pendingMessages = readMessages.filter { msg ->
+            msg.id.isNotBlank() && dispatchedReadMessageKeys.add("$classId|${msg.id}")
+        }
+        if (pendingMessages.isEmpty()) return
+
         syncScope.launch {
             try {
                 val now = System.currentTimeMillis()
-                readMessages.forEach { msg ->
-                    val readMsg = msg.copy(
-                        classId = classId,
-                        status = MessageStatus.READ,
-                        deliveredAt = msg.deliveredAt ?: msg.timestamp,
-                        readAt = msg.readAt ?: now
-                    )
-                    val data = hashMapOf<String, Any?>(
-                        "id" to readMsg.id,
-                        "classId" to classId,
-                        "studentId" to readMsg.studentId,
-                        "parentEmail" to readMsg.parentEmail,
-                        "isFromTeacher" to readMsg.isFromTeacher,
-                        "timestamp" to readMsg.timestamp,
-                        "status" to MessageStatus.READ.name,
-                        "deliveredAt" to readMsg.deliveredAt,
-                        "readAt" to readMsg.readAt,
-                        "json" to serializeChatMessageJson(readMsg).toString(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                    db.collection("classrooms").document(classId)
-                        .collection("messages").document(readMsg.id)
-                        .set(data, SetOptions.merge())
+                val colRef = db.collection("classrooms").document(classId).collection("messages")
+                pendingMessages.chunked(400).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { msg ->
+                        val readMsg = msg.copy(
+                            classId = classId,
+                            status = MessageStatus.READ,
+                            deliveredAt = msg.deliveredAt ?: msg.timestamp,
+                            readAt = msg.readAt ?: now
+                        )
+                        val data = hashMapOf<String, Any?>(
+                            "id" to readMsg.id,
+                            "classId" to classId,
+                            "studentId" to readMsg.studentId,
+                            "parentEmail" to readMsg.parentEmail,
+                            "isFromTeacher" to readMsg.isFromTeacher,
+                            "timestamp" to readMsg.timestamp,
+                            "status" to MessageStatus.READ.name,
+                            "deliveredAt" to readMsg.deliveredAt,
+                            "readAt" to readMsg.readAt,
+                            "json" to serializeChatMessageJson(readMsg).toString(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        batch.set(colRef.document(readMsg.id), data, SetOptions.merge())
+                    }
+                    batch.commit().await()
+                }
+                synchronized(dispatchedReadMessageKeys) {
+                    if (dispatchedReadMessageKeys.size > 1200) {
+                        val keep = dispatchedReadMessageKeys.toList().takeLast(600)
+                        dispatchedReadMessageKeys.clear()
+                        dispatchedReadMessageKeys.addAll(keep)
+                    }
                 }
             } catch (e: Exception) {
+                pendingMessages.forEach { dispatchedReadMessageKeys.remove("$classId|${it.id}") }
                 Log.e(TAG, "Failed to mark chat messages read in Firestore", e)
             }
         }
@@ -707,95 +734,104 @@ object CommunicationPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-        return try {
-            db.collection("classrooms").document(classId)
-                .collection("messages")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) {
-                        if (error != null) Log.e(TAG, "Chat messages snapshot error", error)
-                        return@addSnapshotListener
-                    }
-                    try {
-                        val list = mutableListOf<ChatMessage>()
-                        for (doc in snapshot.documents) {
-                            val jsonStr = doc.getString("json")
-                            if (!jsonStr.isNullOrBlank()) {
-                                try {
-                                    val msg = parseChatMessageJson(JSONObject(jsonStr))
-                                    val statusOverride = doc.getString("status")?.let {
-                                        try { MessageStatus.valueOf(it) } catch (_: Exception) { null }
-                                    }
-                                    val hiddenForTeacherOverride = doc.getBoolean("hiddenForTeacher")
-                                    val hiddenForParentsOverride = (doc.get("hiddenForParents") as? List<*>)
-                                        ?.mapNotNull { it?.toString() }
-                                    val deletedForEveryoneOverride = doc.getBoolean("isDeletedForEveryone")
-                                    val deliveredAtOverride = if (doc.contains("deliveredAt")) {
-                                        doc.getLong("deliveredAt")?.takeIf { it > 0L }
-                                    } else {
-                                        msg.deliveredAt
-                                    }
-                                    val readAtOverride = if (doc.contains("readAt")) {
-                                        doc.getLong("readAt")?.takeIf { it > 0L }
-                                    } else {
-                                        msg.readAt
-                                    }
-                                    val scheduledForOverride = if (doc.contains("scheduledFor")) {
-                                        doc.getLong("scheduledFor")?.takeIf { it > 0L }
-                                    } else {
-                                        msg.scheduledFor
-                                    }
-                                    val timestampOverride = doc.getLong("timestamp")?.takeIf { it > 0L } ?: msg.timestamp
-                                    val reactionsOverride = (doc.get("reactions") as? Map<*, *>)?.let { rawMap ->
-                                        rawMap.entries.mapNotNull { (k, v) ->
-                                            val keyStr = k?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                                            val valStr = v?.toString()?.trim().orEmpty()
-                                            if (valStr.isNotBlank()) keyStr to valStr else null
-                                        }.toMap()
-                                    } ?: msg.reactions
-
-                                    val mergedHiddenParents = if (hiddenForParentsOverride != null) {
-                                        (msg.hiddenForParentEmails + hiddenForParentsOverride).distinct()
-                                    } else {
-                                        msg.hiddenForParentEmails
-                                    }
-                                    val resolvedDeleted = deletedForEveryoneOverride ?: msg.isDeletedForEveryone
-                                    val resolved = msg.copy(
-                                        timestamp = timestampOverride,
-                                        status = statusOverride ?: msg.status,
-                                        text = if (resolvedDeleted) "" else msg.text,
-                                        hiddenForTeacher = hiddenForTeacherOverride ?: msg.hiddenForTeacher,
-                                        hiddenForParentEmails = mergedHiddenParents,
-                                        isDeletedForEveryone = resolvedDeleted,
-                                        reactions = reactionsOverride,
-                                        deliveredAt = deliveredAtOverride,
-                                        readAt = readAtOverride,
-                                        scheduledFor = scheduledForOverride
-                                    )
-                                    if (!isSampleChatMessage(resolved)) {
-                                        list.add(resolved)
-                                    }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                        if (list.isEmpty() && !snapshot.metadata.isFromCache) {
-                            val localMessages = loadChatMessages(context, classId, emptyList(), allowDefaultFallback = false)
-                            if (localMessages.isNotEmpty()) {
-                                localMessages.forEach { uploadChatMessageToFirestore(context, classId, it) }
-                                onUpdate(localMessages)
+        val appCtx = context.applicationContext ?: context
+        return FirestoreListenerHub.subscribe(
+            key = "messages:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId)
+                        .collection("messages")
+                        .orderBy("timestamp", Query.Direction.DESCENDING)
+                        .limit(LIVE_CHAT_WINDOW_LIMIT)
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null || snapshot == null) {
+                                if (error != null) Log.e(TAG, "Chat messages snapshot error", error)
                                 return@addSnapshotListener
                             }
+                            try {
+                                val list = mutableListOf<ChatMessage>()
+                                for (doc in snapshot.documents) {
+                                    val jsonStr = doc.getString("json")
+                                    if (!jsonStr.isNullOrBlank()) {
+                                        try {
+                                            val msg = parseChatMessageJson(JSONObject(jsonStr))
+                                            val statusOverride = doc.getString("status")?.let {
+                                                try { MessageStatus.valueOf(it) } catch (_: Exception) { null }
+                                            }
+                                            val hiddenForTeacherOverride = doc.getBoolean("hiddenForTeacher")
+                                            val hiddenForParentsOverride = (doc.get("hiddenForParents") as? List<*>)
+                                                ?.mapNotNull { it?.toString() }
+                                            val deletedForEveryoneOverride = doc.getBoolean("isDeletedForEveryone")
+                                            val deliveredAtOverride = if (doc.contains("deliveredAt")) {
+                                                doc.getLong("deliveredAt")?.takeIf { it > 0L }
+                                            } else {
+                                                msg.deliveredAt
+                                            }
+                                            val readAtOverride = if (doc.contains("readAt")) {
+                                                doc.getLong("readAt")?.takeIf { it > 0L }
+                                            } else {
+                                                msg.readAt
+                                            }
+                                            val scheduledForOverride = if (doc.contains("scheduledFor")) {
+                                                doc.getLong("scheduledFor")?.takeIf { it > 0L }
+                                            } else {
+                                                msg.scheduledFor
+                                            }
+                                            val timestampOverride = doc.getLong("timestamp")?.takeIf { it > 0L } ?: msg.timestamp
+                                            val reactionsOverride = (doc.get("reactions") as? Map<*, *>)?.let { rawMap ->
+                                                rawMap.entries.mapNotNull { (k, v) ->
+                                                    val keyStr = k?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                                    val valStr = v?.toString()?.trim().orEmpty()
+                                                    if (valStr.isNotBlank()) keyStr to valStr else null
+                                                }.toMap()
+                                            } ?: msg.reactions
+
+                                            val mergedHiddenParents = if (hiddenForParentsOverride != null) {
+                                                (msg.hiddenForParentEmails + hiddenForParentsOverride).distinct()
+                                            } else {
+                                                msg.hiddenForParentEmails
+                                            }
+                                            val resolvedDeleted = deletedForEveryoneOverride ?: msg.isDeletedForEveryone
+                                            val resolved = msg.copy(
+                                                timestamp = timestampOverride,
+                                                status = statusOverride ?: msg.status,
+                                                text = if (resolvedDeleted) "" else msg.text,
+                                                hiddenForTeacher = hiddenForTeacherOverride ?: msg.hiddenForTeacher,
+                                                hiddenForParentEmails = mergedHiddenParents,
+                                                isDeletedForEveryone = resolvedDeleted,
+                                                reactions = reactionsOverride,
+                                                deliveredAt = deliveredAtOverride,
+                                                readAt = readAtOverride,
+                                                scheduledFor = scheduledForOverride
+                                            )
+                                            if (!isSampleChatMessage(resolved)) {
+                                                list.add(resolved)
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                                if (list.isEmpty() && !snapshot.metadata.isFromCache) {
+                                    val localMessages = loadChatMessages(appCtx, classId, emptyList(), allowDefaultFallback = false)
+                                    if (localMessages.isNotEmpty()) {
+                                        uploadChatMessagesBatchToFirestore(appCtx, classId, localMessages)
+                                        dispatch(localMessages)
+                                        return@addSnapshotListener
+                                    }
+                                }
+                                list.sortBy { it.timestamp }
+                                saveChatMessagesLocal(appCtx, classId, list)
+                                dispatch(list)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed parsing chat messages snapshot", e)
+                            }
                         }
-                        list.sortBy { it.timestamp }
-                        saveChatMessagesLocal(context, classId, list)
-                        onUpdate(list)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed parsing chat messages snapshot", e)
-                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to register chat messages snapshot listener", e)
+                    null
                 }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to register chat messages snapshot listener", e)
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 
     /**

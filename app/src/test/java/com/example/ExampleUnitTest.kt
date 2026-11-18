@@ -3125,13 +3125,13 @@ class ExampleUnitTest {
 
     val staleClass = offlineClass.copy(
       teacherIsOnline = true,
-      teacherLastActiveMillis = now - 40_000L
+      teacherLastActiveMillis = now - 120_000L
     )
     assertFalse(staleClass.isTeacherCurrentlyActive(now))
 
     val connectedClass = offlineClass.copy(
       teacherIsOnline = true,
-      teacherLastActiveMillis = now - 10_000L
+      teacherLastActiveMillis = now - 40_000L
     )
     assertTrue(connectedClass.isTeacherCurrentlyActive(now))
 
@@ -3804,5 +3804,131 @@ class ExampleUnitTest {
     assertEquals(2, items.size)
     assertEquals("Okuma İstatistikleri Sıralaması", items[0].title)
     assertEquals("Veli Mesajları", items[1].title)
+  }
+
+  @Test
+  fun testFirestoreListenerHubMultiplexingAndRefCounting() {
+    val hub = com.example.util.FirestoreListenerHub
+    hub.clearAll()
+
+    var upstreamCreations = 0
+    var upstreamRemovals = 0
+    var emitter: ((List<String>) -> Unit)? = null
+
+    val received1 = mutableListOf<List<String>>()
+    val received2 = mutableListOf<List<String>>()
+
+    val reg1 = hub.subscribe<List<String>>(
+      key = "stars:class_opt_1",
+      createUpstream = { emit ->
+        upstreamCreations++
+        emitter = emit
+        com.google.firebase.firestore.ListenerRegistration {
+          upstreamRemovals++
+        }
+      },
+      onUpdate = { received1.add(it) }
+    )
+    assertNotNull(reg1)
+    assertEquals(1, upstreamCreations)
+    assertEquals(1, hub.activeChannelCount())
+    assertEquals(1, hub.subscriberCount("stars:class_opt_1"))
+
+    // Emit initial snapshot
+    emitter?.invoke(listOf("Ali:+5", "Ayşe:+3"))
+    assertEquals(1, received1.size)
+
+    // Second subscriber on the exact same channel should NOT open a second upstream listener
+    // and must immediately receive the latest cached snapshot.
+    val reg2 = hub.subscribe<List<String>>(
+      key = "stars:class_opt_1",
+      createUpstream = {
+        upstreamCreations++
+        com.google.firebase.firestore.ListenerRegistration { upstreamRemovals++ }
+      },
+      onUpdate = { received2.add(it) }
+    )
+    assertNotNull(reg2)
+    assertEquals(1, upstreamCreations)
+    assertEquals(2, hub.subscriberCount("stars:class_opt_1"))
+    assertEquals(1, received2.size)
+    assertEquals(listOf("Ali:+5", "Ayşe:+3"), received2.first())
+
+    // Subsequent upstream emission must reach both subscribers
+    emitter?.invoke(listOf("Ali:+5", "Ayşe:+3", "Can:+2"))
+    assertEquals(2, received1.size)
+    assertEquals(2, received2.size)
+
+    // Removing first subscriber keeps upstream alive
+    reg1?.remove()
+    assertEquals(0, upstreamRemovals)
+    assertEquals(1, hub.subscriberCount("stars:class_opt_1"))
+
+    // Removing last subscriber closes upstream and cleans channel
+    reg2?.remove()
+    assertEquals(1, upstreamRemovals)
+    assertEquals(0, hub.subscriberCount("stars:class_opt_1"))
+    assertEquals(0, hub.activeChannelCount())
+  }
+
+  @Test
+  fun testFirestoreListenerHubClearClassAndBlankKey() {
+    val hub = com.example.util.FirestoreListenerHub
+    hub.clearAll()
+
+    val nullReg = hub.subscribe<String>(
+      key = "   ",
+      createUpstream = { com.google.firebase.firestore.ListenerRegistration { } },
+      onUpdate = { }
+    )
+    assertNull(nullReg)
+
+    var class1Removed = 0
+    var class2Removed = 0
+
+    hub.subscribe<String>(
+      key = "books:class_1",
+      createUpstream = { com.google.firebase.firestore.ListenerRegistration { class1Removed++ } },
+      onUpdate = { }
+    )
+    hub.subscribe<String>(
+      key = "reading:class_1",
+      createUpstream = { com.google.firebase.firestore.ListenerRegistration { class1Removed++ } },
+      onUpdate = { }
+    )
+    hub.subscribe<String>(
+      key = "books:class_2",
+      createUpstream = { com.google.firebase.firestore.ListenerRegistration { class2Removed++ } },
+      onUpdate = { }
+    )
+
+    assertEquals(3, hub.activeChannelCount())
+    hub.clearClass("class_1")
+    assertEquals(2, class1Removed)
+    assertEquals(0, class2Removed)
+    assertEquals(1, hub.activeChannelCount())
+
+    hub.clearAll()
+    assertEquals(1, class2Removed)
+    assertEquals(0, hub.activeChannelCount())
+  }
+
+  @Test
+  fun testUserProfileLinkedClassroomFieldsDefaults() {
+    val profile = com.example.data.model.UserProfile(
+      id = "u1",
+      userId = "u1",
+      email = "veli@example.com",
+      role = "PARENT"
+    )
+    assertNull(profile.linkedClassroomId)
+    assertTrue(profile.linkedStudentIds.isEmpty())
+
+    val linked = profile.copy(
+      linkedClassroomId = "c_3a",
+      linkedStudentIds = listOf("s1", "s2")
+    )
+    assertEquals("c_3a", linked.linkedClassroomId)
+    assertEquals(2, linked.linkedStudentIds.size)
   }
 }

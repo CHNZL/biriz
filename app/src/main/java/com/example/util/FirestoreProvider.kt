@@ -5,6 +5,8 @@ import android.util.Log
 import com.example.R
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.PersistentCacheSettings
 
 /**
  * BİRİZ Uygulaması için Merkezi ve Güvenilir Firestore Sağlayıcısı.
@@ -15,6 +17,7 @@ import com.google.firebase.firestore.FirebaseFirestore
  */
 object FirestoreProvider {
     private const val TAG = "FirestoreProvider"
+    private const val LOCAL_CACHE_SIZE_BYTES = 100L * 1024L * 1024L
 
     @Volatile
     private var cachedInstance: FirebaseFirestore? = null
@@ -41,6 +44,18 @@ object FirestoreProvider {
                     Log.e(TAG, "Failed to get default Firestore instance", ex)
                     throw ex
                 }
+            }
+
+            try {
+                val cacheSettings = PersistentCacheSettings.newBuilder()
+                    .setSizeBytes(LOCAL_CACHE_SIZE_BYTES)
+                    .build()
+                val settings = FirebaseFirestoreSettings.Builder()
+                    .setLocalCacheSettings(cacheSettings)
+                    .build()
+                instance.firestoreSettings = settings
+            } catch (_: Exception) {
+                // Firestore ayarları önceki erişimde dondurulmuşsa sessizce mevcut ayarı koru
             }
 
             cachedInstance = instance

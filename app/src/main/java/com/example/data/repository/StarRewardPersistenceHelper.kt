@@ -287,76 +287,82 @@ object StarRewardPersistenceHelper {
     ): ListenerRegistration? {
         if (classId.isBlank() || classId == "default") return null
         val db = getFirestore(context) ?: return null
-
+        val appCtx = context.applicationContext ?: context
         val path = "classrooms/$classId/stars"
-        return try {
-            db.collection("classrooms").document(classId).collection("stars")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        handleFirestoreError(error, OperationType.LIST, path)
-                        return@addSnapshotListener
-                    }
-                    if (snapshot != null) {
-                        val invalidDocIds = mutableSetOf<String>()
-                        val cloudRecords = snapshot.documents.mapNotNull { doc ->
-                            val sId = doc.getString("studentId")?.trim()
-                            val sName = doc.getString("studentName") ?: ""
-                            val sNum = doc.getString("studentNumber") ?: ""
-                            val catId = doc.getString("categoryId") ?: ""
-                            val catName = doc.getString("categoryName") ?: ""
-                            val count = (doc.getLong("starCount") ?: 0L).toInt()
-                            val note = doc.getString("note") ?: ""
-                            val isLucky = doc.getBoolean("isLuckyBonus") ?: false
-                            val ts = doc.getLong("timestamp") ?: System.currentTimeMillis()
-
-                            if (sId.isNullOrBlank() || count <= 0) {
-                                invalidDocIds.add(doc.id)
-                                return@mapNotNull null
-                            }
-
-                            StarRewardRecord(
-                                id = doc.id,
-                                classId = classId,
-                                studentId = sId,
-                                studentName = sName,
-                                studentNumber = sNum,
-                                categoryId = catId,
-                                categoryName = catName,
-                                starCount = count,
-                                note = note,
-                                isLuckyBonus = isLucky,
-                                timestamp = ts
-                            )
-                        }.sortedByDescending { it.timestamp }
-
-                        if (invalidDocIds.isNotEmpty()) {
-                            syncScope.launch {
-                                deleteRecordIdsBatchFromFirestore(context, classId, invalidDocIds)
-                            }
-                        }
-
-                        if (cloudRecords.isEmpty() &&
-                            com.example.util.WebDataMigrationHelper.shouldPreserveLocalMigratedStars(context, classId)
-                        ) {
-                            val localMigrated = loadStarRecords(context, classId)
-                            if (localMigrated.isNotEmpty()) {
-                                syncScope.launch {
-                                    uploadRecordsBatchToFirestore(context, classId, localMigrated)
-                                }
-                                onUpdate(localMigrated)
+        return com.example.util.FirestoreListenerHub.subscribe(
+            key = "stars:$classId",
+            createUpstream = { dispatch ->
+                try {
+                    db.collection("classrooms").document(classId).collection("stars")
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null) {
+                                handleFirestoreError(error, OperationType.LIST, path)
                                 return@addSnapshotListener
                             }
-                        }
+                            if (snapshot != null) {
+                                val invalidDocIds = mutableSetOf<String>()
+                                val cloudRecords = snapshot.documents.mapNotNull { doc ->
+                                    val sId = doc.getString("studentId")?.trim()
+                                    val sName = doc.getString("studentName") ?: ""
+                                    val sNum = doc.getString("studentNumber") ?: ""
+                                    val catId = doc.getString("categoryId") ?: ""
+                                    val catName = doc.getString("categoryName") ?: ""
+                                    val count = (doc.getLong("starCount") ?: 0L).toInt()
+                                    val note = doc.getString("note") ?: ""
+                                    val isLucky = doc.getBoolean("isLuckyBonus") ?: false
+                                    val ts = doc.getLong("timestamp") ?: System.currentTimeMillis()
 
-                        // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan yıldızları geri yükleme!)
-                        saveStarRecords(context, classId, cloudRecords)
-                        onUpdate(cloudRecords)
-                    }
+                                    if (sId.isNullOrBlank() || count <= 0) {
+                                        invalidDocIds.add(doc.id)
+                                        return@mapNotNull null
+                                    }
+
+                                    StarRewardRecord(
+                                        id = doc.id,
+                                        classId = classId,
+                                        studentId = sId,
+                                        studentName = sName,
+                                        studentNumber = sNum,
+                                        categoryId = catId,
+                                        categoryName = catName,
+                                        starCount = count,
+                                        note = note,
+                                        isLuckyBonus = isLucky,
+                                        timestamp = ts
+                                    )
+                                }.sortedByDescending { it.timestamp }
+
+                                if (invalidDocIds.isNotEmpty()) {
+                                    syncScope.launch {
+                                        deleteRecordIdsBatchFromFirestore(appCtx, classId, invalidDocIds)
+                                    }
+                                }
+
+                                if (cloudRecords.isEmpty() &&
+                                    com.example.util.WebDataMigrationHelper.shouldPreserveLocalMigratedStars(appCtx, classId)
+                                ) {
+                                    val localMigrated = loadStarRecords(appCtx, classId)
+                                    if (localMigrated.isNotEmpty()) {
+                                        syncScope.launch {
+                                            uploadRecordsBatchToFirestore(appCtx, classId, localMigrated)
+                                        }
+                                        dispatch(localMigrated)
+                                        return@addSnapshotListener
+                                    }
+                                }
+
+                                // Firestore SSOT: Boş olsa bile yerel önbelleği Firestore ile birebir eşitle (sıfırlanan yıldızları geri yükleme!)
+                                saveStarRecords(appCtx, classId, cloudRecords)
+                                dispatch(cloudRecords)
+                            }
+                        }
+                } catch (e: Exception) {
+                    handleFirestoreError(e, OperationType.LIST, path)
+                    null
                 }
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.LIST, path)
-            null
-        }
+            },
+            onUpdate = onUpdate
+        )
     }
 
     private fun uploadRecordToFirestore(context: Context, classId: String, record: StarRewardRecord) {

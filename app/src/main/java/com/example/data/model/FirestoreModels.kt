@@ -15,6 +15,8 @@ data class UserProfile(
     val kvkkAccepted: Boolean = false,
     val assignedSchoolId: String? = null,
     val assignedClassId: String? = null,
+    val linkedClassroomId: String? = null,
+    val linkedStudentIds: List<String> = emptyList(),
     val isFreshRegistration: Boolean = false,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null

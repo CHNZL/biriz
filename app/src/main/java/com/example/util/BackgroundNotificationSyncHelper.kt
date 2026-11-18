@@ -28,14 +28,17 @@ import com.example.data.model.StarRewardRecord
 import com.example.data.model.Student
 import com.example.data.model.Tournament
 import com.example.data.model.TournamentMatch
+import com.example.data.model.TournamentStatus
 import com.example.data.model.UserRole
 import com.example.data.repository.ClassRegistryRepository
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 /**
@@ -48,6 +51,7 @@ object BackgroundNotificationSyncHelper {
     private const val TAG = "BirizBgNotifSync"
     private const val PERIODIC_WORK_NAME = "biriz_bg_notification_sync"
     private const val QUIET_FLUSH_WORK_NAME = "biriz_quiet_hours_digest_flush"
+    private const val PERIODIC_INTERVAL_MINUTES = 60L
     internal const val INPUT_VIEWER_KEY = "input_viewer_key"
 
     fun schedulePeriodicSync(context: Context) {
@@ -56,16 +60,16 @@ object BackgroundNotificationSyncHelper {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = PeriodicWorkRequestBuilder<BirizBackgroundNotificationWorker>(
-            15, TimeUnit.MINUTES
+            PERIODIC_INTERVAL_MINUTES, TimeUnit.MINUTES
         )
             .setConstraints(constraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 2, TimeUnit.MINUTES)
             .build()
 
         try {
             WorkManager.getInstance(appCtx).enqueueUniquePeriodicWork(
                 PERIODIC_WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
         } catch (e: Exception) {
@@ -186,6 +190,14 @@ object BackgroundNotificationSyncHelper {
         val nowMs = System.currentTimeMillis()
         flushQuietHoursDigestIfDue(appCtx, viewerKey, nowMillis = nowMs)
 
+        // Gece 00:00 - 06:59 arasında arka plan Firestore sorgulaması yapma (kota ve pil tasarrufu)
+        if (!allowWhenForeground) {
+            val hour = Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.HOUR_OF_DAY)
+            if (hour in 0..6) {
+                return
+            }
+        }
+
         val db = try {
             FirestoreProvider.get(appCtx)
         } catch (_: Exception) {
@@ -201,7 +213,11 @@ object BackgroundNotificationSyncHelper {
         )
         var updatedSeenKeys = seenKeysInitial
 
-        val students = fetchStudents(db, classId)
+        val students = if (role == UserRole.PARENT && linkedIds.isNotEmpty()) {
+            fetchLinkedStudentsOnly(db, classId, linkedIds)
+        } else {
+            fetchStudents(db, classId)
+        }
         val announcements = fetchAnnouncements(db, classId)
         val clearDocKey = ChatVisibilityHelper.viewerDocumentKey(
             viewerIsTeacher = role == UserRole.TEACHER,
@@ -213,7 +229,7 @@ object BackgroundNotificationSyncHelper {
         val generatedNotifications = mutableListOf<BirizNotification>()
 
         if (role == UserRole.TEACHER) {
-            val books = fetchBooks(db, classId)
+            val books = fetchBorrowedBooks(db, classId)
             if (students.isNotEmpty()) {
                 val teacherRes = ActivityNotificationHelper.evaluateTeacherNotifications(
                     previousStudents = null,
@@ -236,12 +252,18 @@ object BackgroundNotificationSyncHelper {
             generatedNotifications.addAll(opRes.newNotifications)
             updatedSeenKeys = opRes.updatedSeenKeys
         } else {
-            val books = fetchBooks(db, classId)
-            val stars = fetchStars(db, classId)
-            val readingRecords = fetchReadingRecords(db, classId)
+            val books = fetchBorrowedBooks(db, classId)
+            val stars = fetchStarsForStudents(db, classId, linkedIds)
+            val readingRecords = fetchReadingRecordsForStudents(db, classId, linkedIds)
             val tournaments = fetchTournaments(db, classId)
             val matchesByTournament = mutableMapOf<String, List<TournamentMatch>>()
-            tournaments.forEach { t ->
+            val tournamentsNeedingMatches = tournaments.filter { t ->
+                val isOngoing = t.status == TournamentStatus.DEVAM_EDIYOR
+                val needsFinishNotif = t.status == TournamentStatus.TAMAMLANDI &&
+                    linkedIds.any { sId -> sId in t.participants && "tourney_finish_${t.id}_$sId" !in updatedSeenKeys }
+                isOngoing || needsFinishNotif
+            }.sortedByDescending { it.updatedAt }.take(4)
+            tournamentsNeedingMatches.forEach { t ->
                 matchesByTournament[t.id] = fetchTournamentMatches(db, t.id)
             }
             val (schedConfig, schedLessons, schedUpdatedAt) = fetchSchedule(db, classId)
@@ -447,9 +469,34 @@ object BackgroundNotificationSyncHelper {
         }
     }
 
+    private suspend fun fetchLinkedStudentsOnly(
+        db: FirebaseFirestore,
+        classId: String,
+        linkedIds: Set<String>
+    ): List<Student> {
+        if (linkedIds.isEmpty()) return emptyList()
+        return try {
+            val studentsCol = db.collection("classrooms").document(classId).collection("students")
+            linkedIds.mapNotNull { sId ->
+                try {
+                    val doc = studentsCol.document(sId).get().await()
+                    if (doc.exists()) ClassRegistryRepository.parseStudentFromDoc(doc) else null
+                } catch (_: Exception) {
+                    null
+                }
+            }.sortedBy { it.studentNumber.toIntOrNull() ?: 9999 }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private suspend fun fetchAnnouncements(db: FirebaseFirestore, classId: String): List<Announcement> {
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("announcements").get().await()
+            val snap = db.collection("classrooms").document(classId).collection("announcements")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(15L)
+                .get()
+                .await()
             snap.documents.mapNotNull { doc ->
                 val raw = doc.getString("json") ?: return@mapNotNull null
                 try {
@@ -466,7 +513,11 @@ object BackgroundNotificationSyncHelper {
 
     private suspend fun fetchChatMessages(db: FirebaseFirestore, classId: String): List<ChatMessage> {
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("messages").get().await()
+            val snap = db.collection("classrooms").document(classId).collection("messages")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(40L)
+                .get()
+                .await()
             snap.documents.mapNotNull { doc ->
                 val raw = doc.getString("json") ?: return@mapNotNull null
                 try {
@@ -496,9 +547,12 @@ object BackgroundNotificationSyncHelper {
         }
     }
 
-    private suspend fun fetchBooks(db: FirebaseFirestore, classId: String): List<Book> {
+    private suspend fun fetchBorrowedBooks(db: FirebaseFirestore, classId: String): List<Book> {
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("library_books").get().await()
+            val snap = db.collection("classrooms").document(classId).collection("library_books")
+                .whereEqualTo("status", "Okunuyor")
+                .get()
+                .await()
             snap.documents.mapNotNull { doc ->
                 val raw = doc.getString("json")
                 if (!raw.isNullOrBlank()) {
@@ -514,10 +568,21 @@ object BackgroundNotificationSyncHelper {
         }
     }
 
-    private suspend fun fetchStars(db: FirebaseFirestore, classId: String): List<StarRewardRecord> {
+    private suspend fun fetchStarsForStudents(
+        db: FirebaseFirestore,
+        classId: String,
+        linkedIds: Set<String>
+    ): List<StarRewardRecord> {
+        val col = db.collection("classrooms").document(classId).collection("stars")
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("stars").get().await()
-            snap.documents.mapNotNull { doc ->
+            val docs = if (linkedIds.isNotEmpty()) {
+                linkedIds.toList().chunked(10).flatMap { chunk ->
+                    col.whereIn("studentId", chunk).get().await().documents
+                }
+            } else {
+                col.orderBy("timestamp", Query.Direction.DESCENDING).limit(40L).get().await().documents
+            }
+            docs.mapNotNull { doc ->
                 val sId = doc.getString("studentId")?.trim() ?: return@mapNotNull null
                 val count = (doc.getLong("starCount") ?: 0L).toInt()
                 if (sId.isBlank() || count == 0) return@mapNotNull null
@@ -540,10 +605,21 @@ object BackgroundNotificationSyncHelper {
         }
     }
 
-    private suspend fun fetchReadingRecords(db: FirebaseFirestore, classId: String): List<ReadingRecord> {
+    private suspend fun fetchReadingRecordsForStudents(
+        db: FirebaseFirestore,
+        classId: String,
+        linkedIds: Set<String>
+    ): List<ReadingRecord> {
+        val col = db.collection("classrooms").document(classId).collection("reading_records")
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("reading_records").get().await()
-            snap.documents.mapNotNull { doc ->
+            val docs = if (linkedIds.isNotEmpty()) {
+                linkedIds.toList().chunked(10).flatMap { chunk ->
+                    col.whereIn("studentId", chunk).get().await().documents
+                }
+            } else {
+                col.orderBy("endDate", Query.Direction.DESCENDING).limit(30L).get().await().documents
+            }
+            docs.mapNotNull { doc ->
                 val raw = doc.getString("json") ?: return@mapNotNull null
                 try {
                     LibraryPersistenceHelper.deserializeReadingRecord(JSONObject(raw), fallbackId = doc.id)
@@ -558,7 +634,11 @@ object BackgroundNotificationSyncHelper {
 
     private suspend fun fetchTournaments(db: FirebaseFirestore, classId: String): List<Tournament> {
         return try {
-            val snap = db.collection("classrooms").document(classId).collection("tournaments").get().await()
+            val snap = db.collection("classrooms").document(classId).collection("tournaments")
+                .orderBy("updatedAt", Query.Direction.DESCENDING)
+                .limit(10L)
+                .get()
+                .await()
             snap.documents.mapNotNull { doc ->
                 val raw = doc.getString("json") ?: return@mapNotNull null
                 try {
