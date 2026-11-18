@@ -2400,7 +2400,17 @@ private fun ReadingAnalyticsView(
             val stars = stRecords.sumOf { LibraryPersistenceHelper.calculateReadingStars(it.pageCount) }
             val isCurrentlyReading = books.any { b -> b.activeAssignments.any { it.studentId == student.id } }
             Triple(student, readCount, Pair(pages, stars)) to isCurrentlyReading
-        }.sortedByDescending { it.first.second } // okunan kitap sayısına göre sırala
+        }.sortedWith(
+            compareByDescending<Pair<Triple<Student, Int, Pair<Int, Int>>, Boolean>> { it.first.second }
+                .thenByDescending { it.first.third.first }
+                .thenBy { it.first.first.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE }
+                .thenBy { it.first.first.studentNumber.trim() }
+                .thenBy { it.first.first.fullName.lowercase(Locale("tr")) }
+        )
+    }
+
+    val sortedStudents = remember(students) {
+        students.sortedWith(studentNumberComparator)
     }
 
     Column(
@@ -2445,8 +2455,8 @@ private fun ReadingAnalyticsView(
                 )
             }
 
-            // Öğrenci Butonları
-            students.sortedBy { it.studentNumber }.forEach { student ->
+            // Öğrenci Butonları (Öğrenci numarasına göre sayısal sıralı)
+            sortedStudents.forEach { student ->
                 val isSelected = selectedStudentId == student.id
                 val readCount = records.count { it.studentId == student.id }
                 val isCurrentlyReading = books.any { b -> b.activeAssignments.any { it.studentId == student.id } }
@@ -3295,11 +3305,13 @@ private fun AddEditBookDialog(
                                                 modifier = Modifier.fillMaxWidth()
                                             )
 
-                                            val filteredSt = students.filter {
-                                                studentFilterText.isBlank() ||
-                                                        it.fullName.contains(studentFilterText, ignoreCase = true) ||
-                                                        it.studentNumber.toString() == studentFilterText
-                                            }
+                                            val filteredSt = students
+                                                .filter {
+                                                    studentFilterText.isBlank() ||
+                                                            it.fullName.contains(studentFilterText, ignoreCase = true) ||
+                                                            it.studentNumber.trim() == studentFilterText.trim()
+                                                }
+                                                .sortedWith(studentNumberComparator)
 
                                             Spacer(modifier = Modifier.height(4.dp))
 
@@ -3484,12 +3496,13 @@ private fun BorrowBookDialog(
     val earnedStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
 
     val filteredStudents = remember(students, searchQuery) {
-        if (searchQuery.isBlank()) students else {
+        val base = if (searchQuery.isBlank()) students else {
             students.filter {
                 it.fullName.contains(searchQuery, ignoreCase = true) ||
-                        it.studentNumber.toString() == searchQuery
+                        it.studentNumber.trim() == searchQuery.trim()
             }
         }
+        base.sortedWith(studentNumberComparator)
     }
 
     AlertDialog(
@@ -4359,6 +4372,12 @@ private fun calculateDateDiffDays(startDate: Long, endDate: Long): Int {
     val diffMs = endDate - startDate
     return ((diffMs / (1000 * 60 * 60 * 24)).toInt()).coerceAtLeast(1)
 }
+
+private val studentNumberComparator = compareBy<Student>(
+    { it.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE },
+    { it.studentNumber.trim() },
+    { it.fullName.lowercase(Locale("tr")) }
+)
 
 private fun formatTimestamp(timestamp: Long?): String {
     if (timestamp == null || timestamp <= 0L) return "-"

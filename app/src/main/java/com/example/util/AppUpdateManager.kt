@@ -397,20 +397,34 @@ object AppUpdateManager {
 
     /**
      * Ham sürüm notlarını veya JSON listesini kısa Türkçe başlık + tek cümle açıklama maddelerine dönüştürür.
+     * Tekrarlanan maddeleri ve araya karışabilecek İngilizce/şablon satırları eler.
      */
     fun parseReleaseNotes(rawNotes: String, itemsJson: JSONArray? = null): List<UpdateReleaseItem> {
+        val seenKeys = mutableSetOf<String>()
         val parsedFromJson = mutableListOf<UpdateReleaseItem>()
+
+        fun addUniqueItem(target: MutableList<UpdateReleaseItem>, title: String, summary: String) {
+            val cleanTitle = title.trim()
+            val cleanSummary = summary.trim()
+            if (cleanTitle.isEmpty() || cleanSummary.isEmpty()) return
+            if (looksLikeNonTurkishNoise("$cleanTitle $cleanSummary")) return
+            val key = "${cleanTitle.lowercase()}::${cleanSummary.lowercase()}"
+            if (seenKeys.add(key)) {
+                target.add(UpdateReleaseItem(title = cleanTitle, summary = cleanSummary))
+            }
+        }
+
         if (itemsJson != null) {
             for (i in 0 until itemsJson.length()) {
                 val obj = itemsJson.optJSONObject(i) ?: continue
-                val title = obj.optString("title", "").trim()
-                val summary = obj.optString("summary", "").trim()
-                if (title.isNotEmpty() && summary.isNotEmpty()) {
-                    parsedFromJson.add(UpdateReleaseItem(title = title, summary = summary))
-                }
+                addUniqueItem(
+                    parsedFromJson,
+                    obj.optString("title", ""),
+                    obj.optString("summary", "")
+                )
             }
         }
-        if (parsedFromJson.isNotEmpty()) return parsedFromJson
+        if (parsedFromJson.isNotEmpty()) return parsedFromJson.take(6)
 
         if (rawNotes.isBlank()) return emptyList()
 
@@ -422,7 +436,11 @@ object AppUpdateManager {
             "uygulamayı açtığınızda",
             "bu sürüm github senkronizasyonu",
             "otomatik derlemesi oluşturuldu",
-            "yeni sürümü kullanıma hazır"
+            "yeni sürümü kullanıma hazır",
+            "bu sürümde neler değişti",
+            "release notes",
+            "full changelog",
+            "merge pull request"
         )
 
         for (rawLine in rawNotes.lines()) {
@@ -439,19 +457,35 @@ object AppUpdateManager {
                 .replace("*", "")
                 .trim()
             if (clean.isBlank()) continue
+            if (looksLikeNonTurkishNoise(clean)) continue
 
             val colonIdx = clean.indexOf(':')
-            if (colonIdx in 2..42) {
+            if (colonIdx in 2..48) {
                 val head = clean.substring(0, colonIdx).trim()
                 val body = clean.substring(colonIdx + 1).trim()
                 if (head.isNotBlank() && body.isNotBlank()) {
-                    result.add(UpdateReleaseItem(title = head, summary = body))
+                    addUniqueItem(result, head, body)
                     continue
                 }
             }
-            result.add(UpdateReleaseItem(title = "Yenilik", summary = clean))
+            addUniqueItem(result, "Yenilik", clean)
         }
         return result.take(6)
+    }
+
+    private fun looksLikeNonTurkishNoise(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return true
+        val lower = trimmed.lowercase()
+        val conventionalPrefix = Regex("""^(feat|fix|chore|refactor|style|docs|ci|build|perf|test|revert|merge|sync|update|add|remove|wip)(\([^)]+\))?:""")
+        if (conventionalPrefix.containsMatchIn(lower)) return true
+
+        val hasTurkishChar = trimmed.any { it in "çğıöşüÇĞİÖŞÜ" }
+        if (!hasTurkishChar) {
+            val englishCue = Regex("""\b(fix|fixed|add|added|update|updated|remove|removed|refactor|feature|bug|issue|crash|sync|merge|commit|branch|release|changelog|support|improve|improved|files)\b""")
+            if (englishCue.containsMatchIn(lower)) return true
+        }
+        return false
     }
 
     internal fun extractVersionCode(versionName: String): Int {

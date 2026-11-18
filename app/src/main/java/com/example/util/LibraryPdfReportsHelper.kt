@@ -271,7 +271,13 @@ object LibraryPdfReportsHelper {
     ): Uri {
         val file = createPdfFile(context, "Bireysel_Kitap_Okuma_Takip_Defteri", classRoom)
         val pdf = PdfDocument()
-        val sortedStudents = students.sortedBy { it.studentNumber.toIntOrNull() ?: 999 }
+        val sortedStudents = students.sortedWith(
+            compareBy<Student>(
+                { it.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE },
+                { it.studentNumber.trim() },
+                { it.fullName.lowercase(Locale("tr")) }
+            )
+        )
         val totalPages = sortedStudents.size.coerceAtLeast(1)
 
         sortedStudents.forEachIndexed { idx, st ->
@@ -693,7 +699,13 @@ object LibraryPdfReportsHelper {
         val pdf = PdfDocument()
 
         val recordsByStudent = records.groupBy { it.studentId }
-        val sortedStudents = students.sortedBy { it.studentNumber.toIntOrNull() ?: 999 }
+        val sortedStudents = students.sortedWith(
+            compareBy<Student>(
+                { it.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE },
+                { it.studentNumber.trim() },
+                { it.fullName.lowercase(Locale("tr")) }
+            )
+        )
 
         var globalPage = 1
 
@@ -1046,7 +1058,12 @@ object LibraryPdfReportsHelper {
         val ranking = students.map { st ->
             val stRecords = records.filter { it.studentId == st.id }
             Triple(st, stRecords.size, stRecords.sumOf { it.pageCount })
-        }.sortedByDescending { it.second } // Okunan kitap sayısına göre azalan
+        }.sortedWith(
+            compareByDescending<Triple<Student, Int, Int>> { it.second }
+                .thenByDescending { it.third }
+                .thenBy { it.first.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE }
+                .thenBy { it.first.studentNumber.trim() }
+        ) // Okunan kitap sayısına göre azalan, eşitlikte sayfa ve öğrenci no
 
         val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
         val page = pdf.startPage(pageInfo)
@@ -1109,7 +1126,12 @@ object LibraryPdfReportsHelper {
         val ranking = students.map { st ->
             val stRecords = records.filter { it.studentId == st.id }
             Triple(st, stRecords.sumOf { it.pageCount }, stRecords.size)
-        }.sortedByDescending { it.second } // Toplam okunan sayfaya göre azalan
+        }.sortedWith(
+            compareByDescending<Triple<Student, Int, Int>> { it.second }
+                .thenByDescending { it.third }
+                .thenBy { it.first.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE }
+                .thenBy { it.first.studentNumber.trim() }
+        ) // Toplam okunan sayfaya göre azalan, eşitlikte kitap sayısı ve öğrenci no
 
         val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
         val page = pdf.startPage(pageInfo)
@@ -1180,7 +1202,12 @@ object LibraryPdfReportsHelper {
 
             val dailyAvg = if (stRecords.isNotEmpty()) totalPages.toDouble() / totalDays.toDouble() else 0.0
             DailyAvgItem(st, dailyAvg, totalPages, totalDays, stRecords.size)
-        }.sortedByDescending { it.dailyAverage }
+        }.sortedWith(
+            compareByDescending<DailyAvgItem> { it.dailyAverage }
+                .thenByDescending { it.totalPages }
+                .thenBy { it.student.studentNumber.trim().toIntOrNull() ?: Int.MAX_VALUE }
+                .thenBy { it.student.studentNumber.trim() }
+        )
 
         val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
         val page = pdf.startPage(pageInfo)

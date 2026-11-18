@@ -1,17 +1,29 @@
 {
-  "title": "Veli Yıldızlar Ekranında Pedagojik İlk 10 Sıralaması ve Sadeleştirilmiş Rol Seçimi",
+  "title": "Kitaplık Sıralaması ve Türkçe Sürüm Açıklamaları",
   "items": [
     {
-      "title": "Veli Yıldızlar Modülünde Pedagojik İlk 10 Sıralaması",
-      "summary": "Alt sıralardaki öğrencilerin ve ailelerin üzülmemesi için Toplam Yıldız kartındaki sıra/yüzdelik dilim ibaresi kaldırıldı; Sınıf Sıralaması sekmesinde yalnızca ilk 10 öğrenci (çocuğunuz ilk 10'daysa ismiyle, diğerleri anonim olarak) gösterilir."
+      "title": "Okuma İstatistiklerinde Öğrenci Numarası Sıralaması",
+      "summary": "Öğretmen kitaplığındaki okuma istatistiklerinde öğrencilerin öğrenci numarasına göre sayısal ve doğru sırada listelenmesi sağlandı."
     },
     {
-      "title": "Sade ve Tek Adımlı Rol Seçim Ekranı",
-      "summary": "Rol Seçim ekranındaki gereksiz alt butonlar kaldırıldı; yenilenen KVKK ve Kullanım Şartları kutusu işaretlendiğinde doğrudan Öğretmen veya Veli kartına dokunularak geçiş yapılır."
+      "title": "Kitap Şeklinde Kitaplık Kartları",
+      "summary": "Öğretmen kitaplığındaki kutu görünümü, kitap sırtı ve ayraç detaylarına sahip kitap formunda kartlarla yenilendi."
     },
     {
-      "title": "Firestore 'users' Koleksiyonu Kalıcı Silme ve Yetim Kayıt Temizliği",
-      "summary": "Hesap silindiğinde 'users/{uid}' belgesi hem Firestore SDK hem doğrudan HTTPS REST ile silinir; önceki sürümlerden kalan yetim kayıtlar otomatik temizlenir."
+      "title": "Veli Mesaj ve Duyurularda Yazı Boyutu Ayarı",
+      "summary": "Veli mesajlar ve duyurular ekranlarına yazıları büyütüp küçültme çubuğu eklendi."
+    },
+    {
+      "title": "Sade Veli Üst Çubuğu ve Karttan Kardeş Yönetimi",
+      "summary": "Üst çubuk sadeleştirilerek ek ekran alanı açıldı; kardeş değiştirme ve yeni kardeş ekleme işlemi ana sayfadaki öğrenci kartına taşındı."
+    },
+    {
+      "title": "Veli Ders Programında Aktif Ders Vurgusu",
+      "summary": "Veli ders programında o an işlenen aktif ders doğrudan ders kutusu üzerinde ve bitişe kalan süresiyle birlikte gösterildi."
+    },
+    {
+      "title": "Türkçe ve Yalnızca Güncel Sürüm Açıklamaları",
+      "summary": "Güncelleme açıklamalarındaki İngilizce ifadeler ve önceki sürümlerden kalan tekrarlar temizlenerek yalnızca mevcut sürümün Türkçe özeti gösterilmeye başlandı."
     }
   ]
 }

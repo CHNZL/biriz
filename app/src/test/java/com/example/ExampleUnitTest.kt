@@ -3785,4 +3785,24 @@ class ExampleUnitTest {
     assertTrue(com.example.util.WebDataMigrationHelper.isTargetTeacherEmail("  CIHAN.OZEL10@gmail.com "))
     assertFalse(com.example.util.WebDataMigrationHelper.isTargetTeacherEmail("other@gmail.com"))
   }
+
+  @Test
+  fun testAppUpdateReleaseNotesTurkishAndDeduplication() {
+    val raw = """
+      ### 🚀 BİRİZ v1.01.41 — Yeni Güncelleme
+      #### ✨ Bu Sürümde Neler Değişti?
+      - **Okuma İstatistikleri Sıralaması:** Öğrenci numarasına göre doğru sıralama sağlandı.
+      - **Okuma İstatistikleri Sıralaması:** Öğrenci numarasına göre doğru sıralama sağlandı.
+      - fix: update library sorting
+      - feat(ui): add dark mode toggle
+      - **Veli Mesajları:** Yazı büyütme ve küçültme çubuğu eklendi.
+      #### 📲 İndirme Seçenekleri
+      - **Doğrudan APK İndir:** [Biriz.apk](https://github.com/test/repo/releases/download/v1.01.41/Biriz.apk)
+    """.trimIndent()
+
+    val items = com.example.util.AppUpdateManager.parseReleaseNotes(raw)
+    assertEquals(2, items.size)
+    assertEquals("Okuma İstatistikleri Sıralaması", items[0].title)
+    assertEquals("Veli Mesajları", items[1].title)
+  }
 }

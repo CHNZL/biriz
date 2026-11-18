@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-BİRİZ GitHub Release ve version.json için dinamik, değişiklik odaklı Türkçe sürüm notu üreticisi.
-Her sürümde sabit metinleri tekrarlamak yerine gerçekten değişen kod, diff ve commit geçmişinden
-özgün Türkçe başlıklar üretir.
+BİRİZ GitHub Release ve version.json için değişiklik odaklı, yalnızca Türkçe sürüm notu üreticisi.
+- Yalnızca mevcut güncellemedeki gerçek değişiklikleri baz alır (önceki sürümlerden tekrar etmez).
+- İngilizce commit mesajları, teknik dosya adları veya şablon tekrarları asla çıktıya girmez.
 """
 
 import argparse
@@ -12,88 +12,164 @@ import subprocess
 from pathlib import Path
 
 
-# Öncelikli ince taneli özellik/düzeltme algılayıcıları:
-# (id, dosya_regex, diff_veya_commit_regex_yoksa_None, baslik, aciklama)
+# (kural_id, alan_grubu, genis_yedek_mi, dosya_regex, diff_veya_commit_regex_yoksa_None, baslik, aciklama)
+# Önemli: İnce taneli kurallar (genis_yedek_mi=False) önce değerlendirilir; aynı alan grubunda
+# spesifik bir kural eşleştiyse o alanın genel/yedek kuralı tekrar üretilmez.
 SPECIFIC_DIFF_RULES = [
+    # --- Kitaplık ve Okuma İstatistikleri ---
+    (
+        "library_analytics_student_sort",
+        "library",
+        False,
+        re.compile(r"(LibrarySubScreen|LibraryPdfReportsHelper)", re.I),
+        re.compile(r"(studentNumberComparator|studentNumber\.trim\(\)\.toIntOrNull|ReadingAnalyticsView)", re.I),
+        "Okuma İstatistiklerinde Öğrenci Sıralaması",
+        "Öğretmen kitaplığındaki okuma istatistiklerinde öğrencilerin öğrenci numarasına göre sayısal ve doğru sıralanması sağlandı.",
+    ),
+    (
+        "library_3d_book_cards",
+        "library",
+        False,
+        re.compile(r"(LibrarySubScreen)", re.I),
+        re.compile(r"(BookCardGridItem|bookmarkRibbon|spineColor|bookCover|sayfa kalınlığı|3 boyutlu kitap)", re.I),
+        "Kitap Şeklinde Kitaplık Kartları",
+        "Öğretmen kitaplığındaki kutu görünümü, kitap sırtı ve ayraç detaylarına sahip kitap formunda kartlarla yenilendi.",
+    ),
+    # --- Veli Portalı ve İletişim ---
+    (
+        "parent_comm_font_size",
+        "communication",
+        False,
+        re.compile(r"(ParentPortalSubScreen|CommunicationPersistenceHelper)", re.I),
+        re.compile(r"(ParentCommunicationPuntoBar|loadParentFontOffset|saveParentFontOffset|fontOffset)", re.I),
+        "Veli Mesaj ve Duyurularda Yazı Boyutu Ayarı",
+        "Veli mesajlar ve duyurular ekranlarına yazıları büyütüp küçültme çubuğu eklendi.",
+    ),
+    (
+        "parent_hero_sibling",
+        "parent_portal",
+        False,
+        re.compile(r"(ParentPortalSubScreen)", re.I),
+        re.compile(r"(parent_hero_student_switcher|parent_hero_add_sibling_button|KARDEŞ SEÇİCİ)", re.I),
+        "Sade Veli Üst Çubuğu ve Karttan Kardeş Ekleme",
+        "Üst çubuk sadeleştirilerek ek alan açıldı; kardeş değiştirme ve kardeş ekleme işlemi ana sayfadaki öğrenci kartına taşındı.",
+    ),
+    (
+        "parent_schedule_live",
+        "schedule",
+        False,
+        re.compile(r"(ParentPortalSubScreen)", re.I),
+        re.compile(r"(ŞU AN İŞLENİYOR|Bitişe .* dk|kalan dakika)", re.I),
+        "Veli Ders Programında Aktif Ders Vurgusu",
+        "Veli ders programında o an işlenen aktif ders doğrudan ders kutusu üzerinde ve bitişe kalan süresiyle birlikte gösterildi.",
+    ),
+    # --- Akıllı Tahta ---
     (
         "smartboard_hybrid_cf_webrtc",
+        "smartboard",
+        False,
         re.compile(r"(SmartBoardHelper|SmartBoardRtcManager|SmartBoardScreenCastService|worker\.js|wrangler\.toml|tahta\.html)", re.I),
         re.compile(r"(CLOUDFLARE_API_BASE|BoardRoom|SmartBoardRtcManager|DataChannel|BRZF|cfPatchSession)", re.I),
-        "Hibrit Tahta Altyapısı (Cloudflare + WebRTC)",
-        "Akıllı tahta bağlantısı kotasız Cloudflare sunucusuna taşındı ve aynı Wi-Fi ağında WebRTC P2P doğrudan ekran yansıtma eklendi.",
+        "Gelişmiş Akıllı Tahta Altyapısı",
+        "Akıllı tahta bağlantısı daha hızlı ve kesintisiz sunucu yapısına taşındı; aynı ağda doğrudan ekran yansıtma desteği eklendi.",
     ),
     (
         "smartboard_quota_429",
+        "smartboard",
+        False,
         re.compile(r"(SmartBoardHelper|SmartBoardScreenCastService|TimerSubScreen|LuckyStudentSubScreen|tahta\.html)", re.I),
         re.compile(r"(isQuotaCooldownActive|quotaCooldownUntilMs|clearDeltaSyncCache|429)", re.I),
-        "Tahta Yazma Kota Optimizasyonu",
-        "Akıllı tahta bağlantısı ve yansıtma sırasındaki gereksiz sunucu yazmaları azaltılarak HTTP 429 kota hatası önlendi.",
+        "Tahta Bağlantı Hızı İyileştirmesi",
+        "Akıllı tahta bağlantısı ve ekran yansıtma sırasındaki gereksiz veri yazmaları azaltılarak bağlantı kararlılığı artırıldı.",
     ),
     (
         "smartboard_rest_connect",
+        "smartboard",
+        False,
         re.compile(r"(SmartBoardHelper|tahta\.html)", re.I),
         re.compile(r"(restPatchDocument|restHttpClient|restGetDocument|writeDocumentRestFirst|startWaitingRestPoll)", re.I),
         "Hızlı Akıllı Tahta Bağlantısı",
-        "Tahta eşleştirme ve canlı veri aktarımı REST protokolüne geçirilerek zaman aşımı hatası giderildi.",
+        "Tahta eşleştirme ve canlı veri aktarımı hızlandırılarak zaman aşımı sorunları giderildi.",
     ),
     (
         "smartboard_disconnect",
+        "smartboard",
+        False,
         re.compile(r"(SmartBoardHelper|tahta\.html|BirizViewModel)", re.I),
         re.compile(r"(disconnectSession|forceDisconnectToWaiting|disconnectedConnectionId|startConnectedHeartbeat|verifySessionStillConnected)", re.I),
-        "Bağlantı Kesme Senkronizasyonu",
+        "Bağlantı Kesme Eşitlemesi",
         "Telefondan akıllı tahta bağlantısı kesildiğinde tahta ekranının anında bekleme moduna dönmesi sağlandı.",
     ),
     (
         "smartboard_qr",
+        "smartboard",
+        False,
         re.compile(r"(QrScannerDialog)", re.I),
         None,
         "Karekod Okuma Hızı",
-        "Kamera ile karekod tarama hızı ve ters renkli QR algılama kararlılığı artırıldı.",
+        "Kamera ile karekod tarama hızı ve algılama kararlılığı artırıldı.",
     ),
     (
         "smartboard_cast_mirror",
+        "smartboard",
+        False,
         re.compile(r"(SmartBoardHelper|tahta\.html|InstalledApps|ScreenMirror|Share)", re.I),
         re.compile(r"(boardCast|SCREEN_MIRROR|castFileToBoard|publishScreenMirrorFrame|updateScreenMirrorPauseState)", re.I),
         "Tahtada Ekran ve Dosya Paylaşımı",
-        "Seçilen uygulama, dosya veya bağlantıların akıllı tahta paylaşım sayfasına yansıtılması iyileştirildi.",
+        "Seçilen uygulama, dosya veya bağlantıların akıllı tahta ekranına yansıtılması iyileştirildi.",
     ),
+    # --- Güncelleme Sistemi ---
     (
-        "release_notes_dynamic",
-        re.compile(r"(generate_release_notes\.py|AppUpdateManager\.kt|AppUpdateDialog\.kt)", re.I),
-        re.compile(r"(SPECIFIC_DIFF_RULES|is_release_notes_json_fresh|fetchFromReleasesApi|releaseItems|infer_notes_from_git)", re.I),
-        "Dinamik Sürüm Notları",
-        "Her yeni güncellemede yalnızca o sürümde yapılan gerçek değişikliklerin başlıklarla listelenmesi sağlandı.",
+        "release_notes_turkish_only",
+        "app_update",
+        False,
+        re.compile(r"(generate_release_notes\.py|AppUpdateManager\.kt|AppUpdateDialog\.kt|release-notes\.json)", re.I),
+        re.compile(r"(is_valid_turkish_note|looksLikeNonTurkishNoise|SPECIFIC_DIFF_RULES|get_fresh_json_release_notes)", re.I),
+        "Türkçe ve Güncel Sürüm Açıklamaları",
+        "Güncelleme açıklamalarının tamamen Türkçe olması ve yalnızca mevcut sürüme ait yenilikleri göstermesi sağlandı.",
     ),
     (
         "app_update_installer",
+        "app_update",
+        True,
         re.compile(r"(AppUpdate|AppUpdateDownload|AppUpdateInstall|AppUpdateNotification)", re.I),
         None,
-        "Tek Tıkla Güncelleme",
+        "Tek Dokunuşla Güncelleme",
         "Güncelleme indirme, doğrulama ve tek dokunuşla kurulum akışı iyileştirildi.",
     ),
+    # --- Hesap İşlemleri ---
     (
         "auth_account_switch",
+        "auth",
+        False,
         re.compile(r"(GoogleAuth|GoogleSignIn|MainActivity\.kt$|BirizViewModel\.kt$)", re.I),
         re.compile(r"(signOut|CredentialManager|switchAccount|handleGoogleSignIn|clearCredentialState)", re.I),
-        "Google Hesap Geçişi",
-        "Çıkış yaptıktan sonra uygulamayı kapatmadan farklı Google hesabıyla giriş yapabilme sorunu düzeltildi.",
+        "Hesap Değiştirme Kolaylığı",
+        "Çıkış yaptıktan sonra uygulamayı kapatmadan farklı bir hesapla giriş yapabilme sorunu düzeltildi.",
     ),
     (
         "auth_account_delete",
+        "auth",
+        False,
         re.compile(r"(UserProfileMenu|MainActivity\.kt$|BirizViewModel\.kt$|ClassRegistryRepository|SmartBoardHelper)", re.I),
         re.compile(r"(deleteAccount|deleteUserSmartBoardTraces|Hesabımı Sil|hesap sil|purgeUser)", re.I),
-        "Hesabımı Sil İşlemi",
+        "Hesap Silme İşlemi",
         "Hesap silme seçeneğinin kullanıcı, sınıf ve tahta oturum izlerini tüm sistemden temizlemesi sağlandı.",
     ),
+    # --- Geniş Alan Yedek Kuralları (Sadece o alanda spesifik kural eşleşmezse çalışır) ---
     (
         "star_rewards",
+        "stars",
+        True,
         re.compile(r"(StarReward|StarsClassroom)", re.I),
         None,
         "Yıldız ve Ödül Takibi",
-        "Öğrenci yıldız puanları ve ödül ekranlarındaki veri senkronizasyonu güncellendi.",
+        "Öğrenci yıldız puanları ve ödül ekranlarındaki veri eşitlemesi güncellendi.",
     ),
     (
         "class_list_students",
+        "students",
+        True,
         re.compile(r"(ClassList|Student|ClassRegistry)", re.I),
         None,
         "Sınıf Listesi Yönetimi",
@@ -101,6 +177,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "tournament",
+        "tournament",
+        True,
         re.compile(r"(Tournament)", re.I),
         None,
         "Sınıf Turnuvası",
@@ -108,13 +186,17 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "library_reading",
+        "library",
+        True,
         re.compile(r"(Library|Kitaplik)", re.I),
         None,
         "Kitaplık ve Okuma Takibi",
-        "Sınıf kitaplığı ve okuma kayıtları deneyimi iyileştirildi.",
+        "Sınıf kitaplığı ve okuma kayıtları ekranı güncellendi.",
     ),
     (
         "seating_plan",
+        "seating",
+        True,
         re.compile(r"(SeatingPlan|PlannedSeating)", re.I),
         None,
         "Oturma Planı",
@@ -122,6 +204,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "schedule_lessons",
+        "schedule",
+        True,
         re.compile(r"(Schedule)", re.I),
         None,
         "Ders Programı",
@@ -129,6 +213,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "communication_chat",
+        "communication",
+        True,
         re.compile(r"(Communication|Chat|BulkMessage|Messaging)", re.I),
         None,
         "Veli İletişimi ve Duyurular",
@@ -136,6 +222,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "class_tools",
+        "tools",
+        True,
         re.compile(r"(Timer|LuckyStudent|GroupMaker)", re.I),
         None,
         "Sınıf İçi Etkinlik Araçları",
@@ -143,6 +231,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "notifications_quiet",
+        "notifications",
+        True,
         re.compile(r"(Notification|QuietHours)", re.I),
         None,
         "Bildirim ve Sessiz Saatler",
@@ -150,6 +240,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "portal_dashboard",
+        "parent_portal",
+        True,
         re.compile(r"(ParentPortal|TeacherRoom|TeacherDashboard|TeacherHome)", re.I),
         None,
         "Öğretmen ve Veli Arayüzü",
@@ -157,6 +249,8 @@ SPECIFIC_DIFF_RULES = [
     ),
     (
         "ui_theme_assets",
+        "theme",
+        True,
         re.compile(r"(ui/theme/|res/font|res/drawable|res/mipmap|res/values)", re.I),
         None,
         "Tasarım ve Görünüm",
@@ -168,6 +262,42 @@ GENERIC_COMMIT_RE = re.compile(
     r"^(update|sync|auto|chore|wip|fix|test|merge|commit|push|aistudio|initial|minor|build|release|update files|sync from ai studio)[\s:._-]*$",
     re.I,
 )
+
+CONVENTIONAL_ENGLISH_PREFIX_RE = re.compile(
+    r"^(feat|fix|chore|refactor|style|docs|ci|build|perf|test|revert|merge|sync|update|add|remove|cleanup|wip)(\([^)]*\))?[:\s]",
+    re.I,
+)
+
+ENGLISH_WORD_CUE_RE = re.compile(
+    r"\b(fix|fixed|fixes|add|added|adds|update|updated|updates|remove|removed|refactor|refactored|feature|features|bug|bugs|issue|issues|crash|sync|synced|merge|merged|pull|request|branch|commit|commits|release|changelog|support|improve|improved|improves|change|changed|changes|clean|cleanup|file|files|screen|screens|button|dialog|from|with|into|for|the|and|when|after|before)\b",
+    re.I,
+)
+
+CODE_OR_TECH_NOISE_RE = re.compile(
+    r"(\.(kt|java|py|json|xml|yml|yaml|html|js|gradle|kts)\b|pull request #|co-authored-by|signed-off-by)",
+    re.I,
+)
+
+TURKISH_CHAR_RE = re.compile(r"[çğıöşüÇĞİÖŞÜ]")
+
+
+def is_valid_turkish_note(text: str) -> bool:
+    """Commit veya ham metnin gerçekten kullanıcıya dönük Türkçe bir cümle olduğunu doğrular."""
+    cleaned = text.strip()
+    if len(cleaned) < 8:
+        return False
+    if GENERIC_COMMIT_RE.match(cleaned):
+        return False
+    if CONVENTIONAL_ENGLISH_PREFIX_RE.match(cleaned):
+        return False
+    if CODE_OR_TECH_NOISE_RE.search(cleaned):
+        return False
+    if ENGLISH_WORD_CUE_RE.search(cleaned):
+        return False
+    if not TURKISH_CHAR_RE.search(cleaned):
+        # Türkçe özel harf içermiyorsa İngilizce olma ihtimali yüksektir; güvenli tarafta kalıp reddet
+        return False
+    return True
 
 
 def run_git(args: list[str]) -> str:
@@ -212,31 +342,55 @@ def get_previous_tag() -> str:
     if other_candidates:
         return other_candidates[-1]
 
-    # Tek etiket varsa ve HEAD üzerindeyse son çare boş dönüp HEAD~1..HEAD kullanılmasını sağla
     return ""
 
 
-def clean_bullet_line(line: str) -> tuple[str, str] | None:
+def clean_bullet_line(line: str, require_turkish: bool = True) -> tuple[str, str] | None:
     text = re.sub(r"^[\s\-*•]+", "", line).strip()
     if not text:
         return None
     text = text.replace("**", "").strip()
+    if require_turkish and not is_valid_turkish_note(text):
+        return None
     if ":" in text:
         head, body = text.split(":", 1)
         head = head.strip()
         body = body.strip()
-        if head and body and 2 <= len(head) <= 45:
+        if head and body and 2 <= len(head) <= 48:
+            if require_turkish and (ENGLISH_WORD_CUE_RE.search(head) or ENGLISH_WORD_CUE_RE.search(body)):
+                return None
             return head, body
     return "Yenilik", text
+
+
+def deduplicate_items(items: list[dict[str, str]], limit: int = 6) -> list[dict[str, str]]:
+    unique: list[dict[str, str]] = []
+    seen_titles: set[str] = set()
+    seen_summaries: set[str] = set()
+    for it in items:
+        t = it.get("title", "").strip()
+        s = it.get("summary", "").strip()
+        if not t or not s:
+            continue
+        norm_t = re.sub(r"\s+", " ", t.lower())
+        norm_s = re.sub(r"\s+", " ", s.lower())
+        if norm_t in seen_titles or norm_s in seen_summaries:
+            continue
+        seen_titles.add(norm_t)
+        seen_summaries.add(norm_s)
+        unique.append({"title": t, "summary": s})
+        if len(unique) >= limit:
+            break
+    return unique
 
 
 def parse_manual_notes(raw: str) -> tuple[str, list[dict[str, str]]]:
     items: list[dict[str, str]] = []
     for line in raw.splitlines():
-        parsed = clean_bullet_line(line)
+        parsed = clean_bullet_line(line, require_turkish=False)
         if parsed:
             items.append({"title": parsed[0], "summary": parsed[1]})
-    items = items[:6]
+    items = deduplicate_items(items, limit=6)
     title = items[0]["title"] if len(items) == 1 else "Yeni Güncelleme ve İyileştirmeler"
     return title, items
 
@@ -252,10 +406,11 @@ def load_json_release_notes(raw_text: str) -> tuple[str, list[dict[str, str]], s
             if isinstance(entry, dict):
                 t = str(entry.get("title", "")).strip()
                 s = str(entry.get("summary", "")).strip()
-                if t and s:
+                if t and s and not CODE_OR_TECH_NOISE_RE.search(f"{t} {s}"):
                     items.append({"title": t, "summary": s})
+        items = deduplicate_items(items, limit=6)
         if items:
-            return (title or "Yeni Güncelleme ve İyileştirmeler"), items[:6], target_version
+            return (title or "Yeni Güncelleme ve İyileştirmeler"), items, target_version
     except Exception:
         pass
     return None
@@ -287,8 +442,18 @@ def get_fresh_json_release_notes(
                 # Önceki sürümle birebir aynı release-notes.json taşınmış; yeni sürümde tekrar etme!
                 return None
     else:
-        changed_recent = run_git(["diff", "--name-only", "HEAD~1..HEAD", "--", filepath])
-        if not changed_recent:
+        # Etiket bulunamazsa yalnızca son commit içinde release-notes.json gerçekten güncellendiyse kullan
+        has_parent = bool(run_git(["rev-parse", "--verify", "HEAD~1"]))
+        if has_parent:
+            changed_recent = run_git(["diff", "--name-only", "HEAD~1..HEAD", "--", filepath])
+            if not changed_recent:
+                return None
+            prev_raw = run_git(["show", f"HEAD~1:{filepath}"])
+            if prev_raw:
+                prev_loaded = load_json_release_notes(prev_raw)
+                if prev_loaded and prev_loaded[0] == title and prev_loaded[1] == items:
+                    return None
+        else:
             return None
 
     return title, items
@@ -329,32 +494,37 @@ def infer_notes_from_git(prev_tag: str) -> tuple[str, list[dict[str, str]]]:
         changed_files = run_git(["diff", "--name-only", "HEAD~1..HEAD"]).splitlines()
         churn_map = {p: 10 for p in changed_files}
 
+    # Önceki sürümlere ait commitlerin karışmaması için yalnızca güncel aralıktaki commitleri al
     log_args = (
         ["log", rev_range, "--no-merges", "--pretty=format:%s"]
         if rev_range
-        else ["log", "-n", "5", "--no-merges", "--pretty=format:%s"]
+        else ["log", "-n", "1", "--no-merges", "--pretty=format:%s"]
     )
     commit_msgs = [m.strip() for m in run_git(log_args).splitlines() if m.strip()]
 
-    # Önce gerçek commit mesajlarında anlamlı başlık: açıklama varsa topla
     scored_items: list[tuple[int, str, str]] = []
     seen_titles: set[str] = set()
+    matched_specific_areas: set[str] = set()
 
+    # 1. Geçerli, tamamen Türkçe ve "Başlık: Açıklama" biçimli güncel commit mesajları
     for msg in commit_msgs:
-        if len(msg) < 10 or GENERIC_COMMIT_RE.match(msg):
-            continue
-        # İngilizce/generic oto commitleri atla, Türkçe veya colon formatlı anlamlı notları al
-        if ":" in msg:
-            parsed = clean_bullet_line(msg)
+        if ":" in msg and is_valid_turkish_note(msg):
+            parsed = clean_bullet_line(msg, require_turkish=True)
             if parsed and parsed[0] not in seen_titles:
                 seen_titles.add(parsed[0])
                 scored_items.append((10_000, parsed[0], parsed[1]))
 
-    # Diff tabanlı ince taneli analiz
+    # 2. Diff tabanlı ince taneli analiz (spesifik kurallar önce, geniş yedekler sonra)
     diff_cache: dict[str, str] = {}
-    for _rule_id, file_re, diff_re, title, summary in SPECIFIC_DIFF_RULES:
+    ordered_rules = [r for r in SPECIFIC_DIFF_RULES if not r[2]] + [r for r in SPECIFIC_DIFF_RULES if r[2]]
+
+    for _rule_id, area_group, is_broad, file_re, diff_re, title, summary in ordered_rules:
         if title in seen_titles:
             continue
+        if is_broad and area_group in matched_specific_areas:
+            # Aynı alanda spesifik bir değişiklik zaten yakalandı; genel ifadeyi tekrar etme
+            continue
+
         matched_files = [p for p in changed_files if file_re.search(p)]
         if not matched_files:
             continue
@@ -368,46 +538,34 @@ def infer_notes_from_git(prev_tag: str) -> tuple[str, list[dict[str, str]]]:
             haystack = "\n".join(combined_diff) + "\n" + "\n".join(commit_msgs)
             if not diff_re.search(haystack):
                 continue
-            weight += 50  # Özgün içerik eşleşmesine öncelik ver
+            weight += 120  # Özgün içerik eşleşmesine öncelik ver
 
+        if not is_broad:
+            matched_specific_areas.add(area_group)
         seen_titles.add(title)
         scored_items.append((weight, title, summary))
 
     scored_items.sort(key=lambda x: x[0], reverse=True)
-    items = [{"title": t, "summary": s} for _, t, s in scored_items[:5]]
+    items = deduplicate_items([{"title": t, "summary": s} for _, t, s in scored_items], limit=5)
 
-    # Eğer hâlâ boşsa kalan anlamlı commit mesajlarını veya dosya isimlerini kullan
+    # 3. Eğer hâlâ boşsa yalnızca geçerli Türkçe commit mesajlarına bak
     if not items:
+        fallback_commits: list[dict[str, str]] = []
         for msg in commit_msgs:
-            if len(msg) >= 10 and not GENERIC_COMMIT_RE.match(msg):
-                parsed = clean_bullet_line(msg)
-                if parsed and parsed[0] not in seen_titles:
-                    seen_titles.add(parsed[0])
-                    items.append({"title": parsed[0], "summary": parsed[1]})
-            if len(items) >= 4:
-                break
+            if is_valid_turkish_note(msg):
+                parsed = clean_bullet_line(msg, require_turkish=True)
+                if parsed:
+                    fallback_commits.append({"title": parsed[0], "summary": parsed[1]})
+        items = deduplicate_items(fallback_commits, limit=4)
 
+    # 4. Son çare: Dosya adı veya İngilizce terim içermeyen temiz Türkçe genel özet
     if not items:
-        readable_modules = []
-        for path in changed_files:
-            stem = Path(path).stem
-            if stem and stem not in readable_modules and not stem.startswith("."):
-                readable_modules.append(stem)
-        if readable_modules:
-            sample = ", ".join(readable_modules[:3])
-            items = [
-                {
-                    "title": "Sistem Güncellemesi",
-                    "summary": f"{sample} bileşenlerinde iyileştirmeler ve kararlılık düzenlemeleri yapıldı.",
-                }
-            ]
-        else:
-            items = [
-                {
-                    "title": "Performans ve Kararlılık",
-                    "summary": "Genel hız iyileştirmeleri ve hata düzeltmeleri yapıldı.",
-                }
-            ]
+        items = [
+            {
+                "title": "Performans ve Kararlılık İyileştirmeleri",
+                "summary": "Uygulama hızı, ekran geçişleri ve genel kullanım kararlılığı iyileştirildi.",
+            }
+        ]
 
     if len(items) == 1:
         headline = items[0]["title"]
@@ -445,6 +603,7 @@ def main() -> None:
     if not items:
         title, items = infer_notes_from_git(prev_tag)
 
+    items = deduplicate_items(items, limit=6)
     release_notes_text = "\n".join(f"• {it['title']}: {it['summary']}" for it in items)
 
     out_dir = Path(args.output_dir)
