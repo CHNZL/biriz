@@ -2943,6 +2943,16 @@ private fun ParentCommunicationDetailView(
     var chatText by remember { mutableStateOf(TextFieldValue("")) }
     val chatListState = rememberLazyListState()
 
+    // Veli iletişim yazı boyutu ayarı (-2, 0, +2, +4, +6)
+    var fontOffset by remember {
+        mutableIntStateOf(CommunicationPersistenceHelper.loadParentFontOffset(context))
+    }
+    val updateFontOffset: (Int) -> Unit = { next ->
+        val clamped = next.coerceIn(-2, 6)
+        fontOffset = clamped
+        CommunicationPersistenceHelper.saveParentFontOffset(context, clamped)
+    }
+
     var isSearchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isSelectionMode by remember { mutableStateOf(false) }
@@ -3420,6 +3430,15 @@ private fun ParentCommunicationDetailView(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ParentCommunicationPuntoBar(
+                        fontOffset = fontOffset,
+                        isDarkTheme = isDarkTheme,
+                        onDecrease = { if (fontOffset > -2) updateFontOffset(fontOffset - 2) },
+                        onIncrease = { if (fontOffset < 6) updateFontOffset(fontOffset + 2) }
+                    )
                 }
             }
         }
@@ -3477,10 +3496,10 @@ private fun ParentCommunicationDetailView(
                                         } else {
                                             "💬 Öğretmeniniz ile gösterilecek mesaj bulunmuyor.\nAşağıdan mesaj yazarak anlık sohbeti başlatabilirsiniz."
                                         },
-                                        fontSize = 12.5.sp,
+                                        fontSize = (12.5 + (fontOffset / 2)).sp,
                                         color = secondaryText,
                                         textAlign = TextAlign.Center,
-                                        lineHeight = 18.sp,
+                                        lineHeight = (18 + (fontOffset / 2)).sp,
                                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
                                     )
                                 }
@@ -3504,7 +3523,7 @@ private fun ParentCommunicationDetailView(
                                     ) {
                                         Text(
                                             text = ChatVisibilityHelper.formatChatDateDivider(msg.timestamp),
-                                            fontSize = 10.5.sp,
+                                            fontSize = (10.5 + (fontOffset / 2).coerceAtLeast(0)).sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF334155),
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
@@ -3518,7 +3537,7 @@ private fun ParentCommunicationDetailView(
                                 message = msg,
                                 isMe = !msg.isFromTeacher,
                                 isDarkTheme = isDarkTheme,
-                                fontOffset = 0,
+                                fontOffset = fontOffset,
                                 isSelected = msg.id in selectedMessageIds,
                                 isHighlighted = highlightedMessageId == msg.id,
                                 isSelectionMode = isSelectionMode,
@@ -3727,6 +3746,7 @@ private fun ParentCommunicationDetailView(
                     parentDisplayName = parentDisplayName,
                     voterAccountKeys = voterAccountKeys,
                     isDarkTheme = isDarkTheme,
+                    fontOffset = fontOffset,
                     onBack = { selectedAnnouncementId = null },
                     onVotePoll = { optionId -> onVotePoll(selectedAnnouncement.id, optionId) }
                 )
@@ -3738,8 +3758,119 @@ private fun ParentCommunicationDetailView(
                     parentDisplayName = parentDisplayName,
                     voterAccountKeys = voterAccountKeys,
                     isDarkTheme = isDarkTheme,
+                    fontOffset = fontOffset,
                     onAnnouncementClick = { ann -> selectedAnnouncementId = ann.id }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParentCommunicationPuntoBar(
+    fontOffset: Int,
+    isDarkTheme: Boolean,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = if (isDarkTheme) Color(0x351E293B) else Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "🔍 Yazı Boyutu",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    onClick = onDecrease,
+                    enabled = fontOffset > -2,
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (fontOffset > -2) {
+                        if (isDarkTheme) Color(0x551E293B) else Color.White
+                    } else {
+                        if (isDarkTheme) Color(0x201E293B) else Color(0xFFE2E8F0)
+                    },
+                    border = BorderStroke(
+                        0.8.dp,
+                        if (fontOffset > -2) (if (isDarkTheme) BirizDarkCardBorder else BirizBorder) else Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .size(width = 38.dp, height = 32.dp)
+                        .testTag("btn_parent_font_decrease")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "A⁻",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (fontOffset > -2) (if (isDarkTheme) Color.White else BirizNavyPrimary) else Color.Gray
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isDarkTheme) Color(0x400284C7) else Color(0xFFE0F2FE),
+                    border = BorderStroke(0.8.dp, if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF7DD3FC)),
+                    modifier = Modifier.testTag("badge_parent_font_level")
+                ) {
+                    Text(
+                        text = when (fontOffset) {
+                            -2 -> "Küçük"
+                            0 -> "Standart"
+                            2 -> "Büyük (+2)"
+                            4 -> "Çok Büyük (+4)"
+                            else -> "Ekstra (+$fontOffset)"
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) Color(0xFF38BDF8) else Color(0xFF0369A1),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Surface(
+                    onClick = onIncrease,
+                    enabled = fontOffset < 6,
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (fontOffset < 6) {
+                        if (isDarkTheme) Color(0x551E293B) else Color.White
+                    } else {
+                        if (isDarkTheme) Color(0x201E293B) else Color(0xFFE2E8F0)
+                    },
+                    border = BorderStroke(
+                        0.8.dp,
+                        if (fontOffset < 6) (if (isDarkTheme) BirizDarkCardBorder else BirizBorder) else Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .size(width = 38.dp, height = 32.dp)
+                        .testTag("btn_parent_font_increase")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "A⁺",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (fontOffset < 6) (if (isDarkTheme) Color.White else BirizNavyPrimary) else Color.Gray
+                        )
+                    }
+                }
             }
         }
     }
@@ -3753,6 +3884,7 @@ private fun ParentAnnouncementsListView(
     parentDisplayName: String,
     voterAccountKeys: Set<String> = emptySet(),
     isDarkTheme: Boolean,
+    fontOffset: Int,
     onAnnouncementClick: (Announcement) -> Unit
 ) {
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
@@ -3814,15 +3946,15 @@ private fun ParentAnnouncementsListView(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "📢 Sınıf Duyuruları & Anketler",
-                            fontSize = 14.5.sp,
+                            fontSize = (14.5 + (fontOffset / 2)).sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                         )
                         Text(
                             text = "İçeriği okumak ve anketlere oy vermek için duyuru satırına dokunun.",
-                            fontSize = 11.5.sp,
+                            fontSize = (11.5 + (fontOffset / 2)).sp,
                             color = secondaryText,
-                            lineHeight = 15.sp
+                            lineHeight = (15 + (fontOffset / 2)).sp
                         )
                     }
                 }
@@ -3894,7 +4026,7 @@ private fun ParentAnnouncementsListView(
                             } else {
                                 "Bu filtreye uygun duyuru bulunmuyor."
                             },
-                            fontSize = 13.sp,
+                            fontSize = (13 + (fontOffset / 2)).sp,
                             color = secondaryText,
                             textAlign = TextAlign.Center
                         )
@@ -3912,6 +4044,7 @@ private fun ParentAnnouncementsListView(
                     isRead = isRead,
                     hasVoted = hasVoted,
                     isDarkTheme = isDarkTheme,
+                    fontOffset = fontOffset,
                     onClick = { onAnnouncementClick(ann) }
                 )
             }
@@ -3925,6 +4058,7 @@ private fun ParentAnnouncementSummaryRowCard(
     isRead: Boolean,
     hasVoted: Boolean,
     isDarkTheme: Boolean,
+    fontOffset: Int,
     onClick: () -> Unit
 ) {
     val isAll = announcement.targetType == AnnouncementTargetType.ALL_CLASS
@@ -4061,12 +4195,12 @@ private fun ParentAnnouncementSummaryRowCard(
                 // Ana Duyuru Başlığı
                 Text(
                     text = announcement.title,
-                    fontSize = 14.5.sp,
+                    fontSize = (14.5 + fontOffset).sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 19.sp
+                    lineHeight = (19 + fontOffset).sp
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -4086,7 +4220,7 @@ private fun ParentAnnouncementSummaryRowCard(
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = if (isRead) "Okundu" else "Okunmadı • Açmak için dokunun",
-                            fontSize = 10.5.sp,
+                            fontSize = (10.5 + (fontOffset / 2).coerceAtLeast(0)).sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (isRead) {
                                 if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
@@ -4097,7 +4231,7 @@ private fun ParentAnnouncementSummaryRowCard(
                     announcement.poll?.takeIf { it.options.isNotEmpty() }?.let { poll ->
                         Text(
                             text = "• 🗳️ ${poll.totalVotes} Oy" + if (hasVoted) " (Oylandı)" else "",
-                            fontSize = 10.5.sp,
+                            fontSize = (10.5 + (fontOffset / 2).coerceAtLeast(0)).sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF059669)
                         )
@@ -4125,6 +4259,7 @@ private fun ParentAnnouncementDetailView(
     parentDisplayName: String,
     voterAccountKeys: Set<String> = emptySet(),
     isDarkTheme: Boolean,
+    fontOffset: Int,
     onBack: () -> Unit,
     onVotePoll: (String) -> Unit
 ) {
@@ -4287,10 +4422,10 @@ private fun ParentAnnouncementDetailView(
                     // 2. Duyuru Başlığı
                     Text(
                         text = announcement.title,
-                        fontSize = 16.5.sp,
+                        fontSize = (16.5 + fontOffset).sp,
                         fontWeight = FontWeight.Black,
                         color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary,
-                        lineHeight = 22.sp
+                        lineHeight = (22 + fontOffset).sp
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -4298,9 +4433,9 @@ private fun ParentAnnouncementDetailView(
                     // 3. Duyuru Metni
                     Text(
                         text = announcement.content,
-                        fontSize = 13.5.sp,
+                        fontSize = (13.5 + fontOffset).sp,
                         color = secondaryText,
-                        lineHeight = 20.sp
+                        lineHeight = (20 + fontOffset).sp
                     )
 
                     // 4. Anket Bölümü (Tek Oy Kısıtlamalı & KVKK Korumalı)
@@ -4372,15 +4507,16 @@ private fun ParentAnnouncementDetailView(
 
                                 Text(
                                     text = poll.question.ifBlank { "Veli Anketi" },
-                                    fontSize = 13.5.sp,
+                                    fontSize = (13.5 + fontOffset).sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = primaryText
+                                    color = primaryText,
+                                    lineHeight = (19 + fontOffset).sp
                                 )
 
                                 if (!isPollLocked) {
                                     Text(
                                         text = "Tercihinizi seçin (oy verdikten sonra cevap değiştirilemez):",
-                                        fontSize = 11.5.sp,
+                                        fontSize = (11.5 + (fontOffset / 2)).sp,
                                         color = secondaryText,
                                         modifier = Modifier.padding(top = 3.dp)
                                     )
@@ -4419,7 +4555,7 @@ private fun ParentAnnouncementDetailView(
                                                     }
                                                     Text(
                                                         text = opt.text,
-                                                        fontSize = 13.sp,
+                                                        fontSize = (13 + fontOffset).sp,
                                                         fontWeight = if (isVotedByMe) FontWeight.Bold else FontWeight.SemiBold,
                                                         color = if (isPollLocked && !isVotedByMe) secondaryText else primaryText
                                                     )
@@ -4427,7 +4563,7 @@ private fun ParentAnnouncementDetailView(
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
                                                     text = "%$percent (${opt.voteCount} Oy)",
-                                                    fontSize = 11.5.sp,
+                                                    fontSize = (11.5 + (fontOffset / 2).coerceAtLeast(0)).sp,
                                                     color = if (isVotedByMe) BirizTurquoise else Color(0xFF10B981),
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -4486,7 +4622,7 @@ private fun ParentAnnouncementDetailView(
                                     } else {
                                         "Toplam ${poll.totalVotes} oy kullanıldı."
                                     },
-                                    fontSize = 11.sp,
+                                    fontSize = (11 + (fontOffset / 2).coerceAtLeast(0)).sp,
                                     fontWeight = FontWeight.Medium,
                                     color = secondaryText
                                 )

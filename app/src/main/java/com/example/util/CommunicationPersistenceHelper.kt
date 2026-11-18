@@ -38,6 +38,7 @@ object CommunicationPersistenceHelper {
     private const val KEY_CHAT_MESSAGES_PREFIX = "chat_messages_"
     private const val KEY_NOTIFICATIONS_PREFIX = "notifications_"
     private const val KEY_FONT_OFFSET = "key_communication_font_offset"
+    private const val KEY_PARENT_FONT_OFFSET = "key_parent_communication_font_offset"
     private val syncScope = CoroutineScope(Dispatchers.IO)
     private val deletedAnnouncementIdsByClass = ConcurrentHashMap<String, MutableSet<String>>()
 
@@ -67,6 +68,16 @@ object CommunicationPersistenceHelper {
     fun saveFontOffset(context: Context, offset: Int) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putInt(KEY_FONT_OFFSET, offset).apply()
+    }
+
+    fun loadParentFontOffset(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_PARENT_FONT_OFFSET, 0).coerceIn(-2, 6)
+    }
+
+    fun saveParentFontOffset(context: Context, offset: Int) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(KEY_PARENT_FONT_OFFSET, offset.coerceIn(-2, 6)).apply()
     }
 
     fun formatTime(timestamp: Long): String = (timeFormat.get() ?: SimpleDateFormat("HH:mm", Locale("tr", "TR"))).format(Date(timestamp))
