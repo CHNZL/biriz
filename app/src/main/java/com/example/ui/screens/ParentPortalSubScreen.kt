@@ -2090,6 +2090,34 @@ private fun ParentScheduleDetailView(
         ScheduleHelper.calculateTimeline(scheduleConfig, dayLessons)
     }
 
+    var tickerTime by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5000L)
+            tickerTime++
+        }
+    }
+    val realTodayDayCode = remember(tickerTime) {
+        when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "PZT"
+            Calendar.TUESDAY -> "SAL"
+            Calendar.WEDNESDAY -> "ÇAR"
+            Calendar.THURSDAY -> "PER"
+            Calendar.FRIDAY -> "CUM"
+            else -> null
+        }
+    }
+    val isViewingToday = realTodayDayCode != null && (
+        selectedDay == realTodayDayCode ||
+            (realTodayDayCode == "ÇAR" && selectedDay in listOf("ÇAR", "CAR"))
+    )
+    val liveStatus = remember(scheduleConfig, scheduleLessons, tickerTime) {
+        val normalized = scheduleLessons.map {
+            if (it.dayOfWeek == "CAR") it.copy(dayOfWeek = "ÇAR") else it
+        }
+        ScheduleHelper.calculateLiveScheduleStatus(scheduleConfig, normalized)
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -2183,21 +2211,45 @@ private fun ParentScheduleDetailView(
                 val slot = timeline.filterIsInstance<ScheduleTimelineItem.LessonSlot>()
                     .firstOrNull { it.lessonIndex == lesson.lessonIndex }
                 val timeRange = if (slot != null) "${slot.startTime} - ${slot.endTime}" else "${lesson.lessonIndex}. Ders"
+                val isLiveActive = isViewingToday &&
+                    liveStatus.isLive &&
+                    liveStatus.activeLessonIndex != null &&
+                    liveStatus.activeLessonIndex == lesson.lessonIndex
+                val remainingMinutes = if (isLiveActive) (liveStatus.remainingMinutes ?: 0) else 0
+
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
-                    modifier = Modifier.fillMaxWidth()
+                    color = if (isLiveActive) {
+                        if (isDarkTheme) Color(0x2810B981) else Color(0xFFF0FDF4)
+                    } else {
+                        if (isDarkTheme) BirizDarkCardGlass else Color.White
+                    },
+                    border = if (isLiveActive) {
+                        BorderStroke(2.2.dp, Color(0xFF22C55E))
+                    } else {
+                        BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
+                    },
+                    shadowElevation = if (isLiveActive) 4.dp else 0.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("parent_lesson_card_${lesson.lessonIndex}")
                 ) {
                     Row(
                         modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = BirizTurquoise.copy(alpha = 0.2f),
+                                color = if (isLiveActive) {
+                                    Color(0xFF16A34A)
+                                } else {
+                                    BirizTurquoise.copy(alpha = 0.2f)
+                                },
                                 modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -2205,29 +2257,66 @@ private fun ParentScheduleDetailView(
                                         text = "${lesson.lessonIndex}",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 15.sp,
-                                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                        color = if (isLiveActive) {
+                                            Color.White
+                                        } else if (isDarkTheme) {
+                                            BirizTurquoise
+                                        } else {
+                                            BirizNavyPrimary
+                                        }
                                     )
                                 }
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text(text = lesson.subjectName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = primaryText)
+                                Text(
+                                    text = lesson.subjectName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = primaryText
+                                )
                                 Text(
                                     text = lesson.teacherName.ifBlank { "Sınıf Öğretmeni" },
                                     fontSize = 12.5.sp,
                                     color = secondaryText
                                 )
+                                if (isLiveActive) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF15803D),
+                                        modifier = Modifier
+                                            .padding(top = 5.dp)
+                                            .testTag("parent_active_lesson_badge_${lesson.lessonIndex}")
+                                    ) {
+                                        Text(
+                                            text = "🟢 ŞU AN İŞLENİYOR • Bitişe $remainingMinutes dk",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
+                            color = if (isLiveActive) {
+                                if (isDarkTheme) Color(0x4016A34A) else Color(0xFFDCFCE7)
+                            } else {
+                                if (isDarkTheme) Color(0x30334E68) else Color(0xFFF1F5F9)
+                            }
                         ) {
                             Text(
                                 text = timeRange,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = primaryText,
+                                color = if (isLiveActive) {
+                                    if (isDarkTheme) Color(0xFF86EFAC) else Color(0xFF15803D)
+                                } else {
+                                    primaryText
+                                },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             )
                         }
