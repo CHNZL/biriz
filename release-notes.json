@@ -1,29 +1,9 @@
 {
-  "title": "Kitaplık Sıralaması ve Türkçe Sürüm Açıklamaları",
+  "title": "Öğretmenler Odası Hazırlık Görünümü",
   "items": [
     {
-      "title": "Okuma İstatistiklerinde Öğrenci Numarası Sıralaması",
-      "summary": "Öğretmen kitaplığındaki okuma istatistiklerinde öğrencilerin öğrenci numarasına göre sayısal ve doğru sırada listelenmesi sağlandı."
-    },
-    {
-      "title": "Kitap Şeklinde Kitaplık Kartları",
-      "summary": "Öğretmen kitaplığındaki kutu görünümü, kitap sırtı ve ayraç detaylarına sahip kitap formunda kartlarla yenilendi."
-    },
-    {
-      "title": "Veli Mesaj ve Duyurularda Yazı Boyutu Ayarı",
-      "summary": "Veli mesajlar ve duyurular ekranlarına yazıları büyütüp küçültme çubuğu eklendi."
-    },
-    {
-      "title": "Sade Veli Üst Çubuğu ve Karttan Kardeş Yönetimi",
-      "summary": "Üst çubuk sadeleştirilerek ek ekran alanı açıldı; kardeş değiştirme ve yeni kardeş ekleme işlemi ana sayfadaki öğrenci kartına taşındı."
-    },
-    {
-      "title": "Veli Ders Programında Aktif Ders Vurgusu",
-      "summary": "Veli ders programında o an işlenen aktif ders doğrudan ders kutusu üzerinde ve bitişe kalan süresiyle birlikte gösterildi."
-    },
-    {
-      "title": "Türkçe ve Yalnızca Güncel Sürüm Açıklamaları",
-      "summary": "Güncelleme açıklamalarındaki İngilizce ifadeler ve önceki sürümlerden kalan tekrarlar temizlenerek yalnızca mevcut sürümün Türkçe özeti gösterilmeye başlandı."
+      "title": "Öğretmenler Odası Hazırlık Aşamasında",
+      "summary": "Öğretmenler Odası bölümü, yakında eklenecek resmî evrak ve tutanak araçlarını tanıtan hazırlık aşamasında görünümüyle güncellendi."
     }
   ]
 }

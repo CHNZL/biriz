@@ -957,12 +957,13 @@ fun TeacherHomeSubScreen(
             }
         }
 
-        // --- 6. ÖĞRETMEN ODASI & RESMİ EVRAK MERKEZİ ---
+        // --- 6. ÖĞRETMENLER ODASI (HAZIRLIK AŞAMASINDA) ---
         item {
-            val roomAccent = Color(0xFF4F46E5)
+            val roomAccent = Color(0xFFD97706)
             DistinctTeacherCard(
                 accentColor = roomAccent,
                 isDark = isDarkTheme,
+                onClick = { onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE) },
                 testTag = "teacher_home_teacher_room_card"
             ) {
                 Row(
@@ -982,42 +983,31 @@ fun TeacherHomeSubScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Öğretmen Odası & Evraklar",
+                            text = "Öğretmenler Odası",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = if (isDarkTheme) BirizDarkTextPrimary else BirizNavyPrimary
                         )
                         Text(
-                            text = "Tutanak, gezi planı ve hazır dilekçeler",
+                            text = "Evrak ve tutanak araçları yakında burada",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    TeacherDocQuickChip("📋 Zümre Toplantısı", roomAccent, isDarkTheme) {
-                        onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_ZUMRE)
-                    }
-                    TeacherDocQuickChip("👨‍👩‍👧 Veli Toplantısı", roomAccent, isDarkTheme) {
-                        onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_VELI)
-                    }
-                    TeacherDocQuickChip("🎭 Sosyal Kulüp", roomAccent, isDarkTheme) {
-                        onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_KULUP)
-                    }
-                    TeacherDocQuickChip("🚌 Okul Gezisi", roomAccent, isDarkTheme) {
-                        onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_GEZI)
-                    }
-                    TeacherDocQuickChip("📄 Dilekçe & Formlar", roomAccent, isDarkTheme) {
-                        onSelectSubPage(DashboardSubPage.OGRETMEN_ODASI_DILEKCE)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
+                        border = BorderStroke(1.dp, roomAccent.copy(alpha = 0.55f))
+                    ) {
+                        Text(
+                            text = "Hazırlık Aşamasında",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
             }
@@ -1294,40 +1284,6 @@ private fun TeacherModuleBentoTile(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun TeacherDocQuickChip(
-    label: String,
-    accentColor: Color,
-    isDark: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(9.dp),
-        color = if (isDark) Color(0x451E293B) else Color.White,
-        border = BorderStroke(1.dp, if (isDark) accentColor.copy(alpha = 0.45f) else accentColor.copy(alpha = 0.30f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDark) Color.White else BirizNavyPrimary
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = if (isDark) BirizTurquoise else accentColor,
-                modifier = Modifier.size(12.dp)
-            )
         }
     }
 }

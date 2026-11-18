@@ -63,6 +63,15 @@ SPECIFIC_DIFF_RULES = [
         "Veli Ders Programında Aktif Ders Vurgusu",
         "Veli ders programında o an işlenen aktif ders doğrudan ders kutusu üzerinde ve bitişe kalan süresiyle birlikte gösterildi.",
     ),
+    (
+        "teacher_room_coming_soon",
+        "parent_portal",
+        False,
+        re.compile(r"(TeacherRoomSubScreen|TeacherHomeSubScreen|TeacherDashboardScreen)", re.I),
+        re.compile(r"(HAZIRLIK AŞAMASINDA|teacher_room_coming_soon_card|Öğretmenler Odası)", re.I),
+        "Öğretmenler Odası Hazırlık Ekranı",
+        "Öğretmenler Odası bölümü hazırlık aşamasında bilgilendirme görünümüyle güncellendi.",
+    ),
     # --- Akıllı Tahta ---
     (
         "smartboard_hybrid_cf_webrtc",

@@ -617,68 +617,70 @@ fun TeacherDashboardScreen(
                 else -> listOf(DashboardSubPage.PROFIL_AYARLARI)
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (isDarkTheme) Color(0x800B162C) else Color(0xCCFFFFFF),
-                border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (selectedDockId != "OGRETMEN_ODASI") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (isDarkTheme) Color(0x800B162C) else Color(0xCCFFFFFF),
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder)
                 ) {
-                    activeCategorySubPages.forEach { subPage ->
-                        val isSelected = currentSubPage == subPage
-                        val isLocked = !hasStudents &&
-                                subPage != DashboardSubPage.ANA_SAYFA &&
-                                subPage != DashboardSubPage.SINIF_LISTESI &&
-                                subPage != DashboardSubPage.PROFIL_AYARLARI &&
-                                subPage.category != "ÖĞRETMEN ODASI"
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        activeCategorySubPages.forEach { subPage ->
+                            val isSelected = currentSubPage == subPage
+                            val isLocked = !hasStudents &&
+                                    subPage != DashboardSubPage.ANA_SAYFA &&
+                                    subPage != DashboardSubPage.SINIF_LISTESI &&
+                                    subPage != DashboardSubPage.PROFIL_AYARLARI &&
+                                    subPage.category != "ÖĞRETMEN ODASI"
 
-                        Surface(
-                            onClick = { onSelectSubPage(subPage) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = when {
-                                isSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                isLocked -> if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0)
-                                else -> if (isDarkTheme) Color(0x40172649) else Color(0xFFF1F5F9)
-                            },
-                            border = BorderStroke(
-                                1.dp,
-                                when {
+                            Surface(
+                                onClick = { onSelectSubPage(subPage) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = when {
                                     isSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                                    isLocked -> if (isDarkTheme) Color(0x3564748B) else Color(0xFFCBD5E1)
-                                    else -> if (isDarkTheme) Color(0x5064748B) else BirizBorder
-                                }
-                            ),
-                            modifier = Modifier.testTag("menu_tab_${subPage.name.lowercase()}")
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                if (isLocked) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "Kilitli",
-                                        tint = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                }
-                                Text(
-                                    text = subPage.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    color = when {
-                                        isSelected -> if (isDarkTheme) BirizNavyDark else Color.White
-                                        isLocked -> if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
-                                        else -> if (isDarkTheme) Color.White else BirizNavyPrimary
+                                    isLocked -> if (isDarkTheme) Color(0x35334E68) else Color(0xFFE2E8F0)
+                                    else -> if (isDarkTheme) Color(0x40172649) else Color(0xFFF1F5F9)
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    when {
+                                        isSelected -> if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                        isLocked -> if (isDarkTheme) Color(0x3564748B) else Color(0xFFCBD5E1)
+                                        else -> if (isDarkTheme) Color(0x5064748B) else BirizBorder
                                     }
-                                )
+                                ),
+                                modifier = Modifier.testTag("menu_tab_${subPage.name.lowercase()}")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    if (isLocked) {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = "Kilitli",
+                                            tint = if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = subPage.title,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        color = when {
+                                            isSelected -> if (isDarkTheme) BirizNavyDark else Color.White
+                                            isLocked -> if (isDarkTheme) Color(0xFFCBD5E1) else Color(0xFF475569)
+                                            else -> if (isDarkTheme) Color.White else BirizNavyPrimary
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
