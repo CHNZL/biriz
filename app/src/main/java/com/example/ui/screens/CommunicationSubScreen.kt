@@ -3348,7 +3348,7 @@ private fun InactiveStudentCodeDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val spacedCode = student.parentInviteCode.map { "$it " }.joinToString("").trim()
+    val cleanCode = student.parentInviteCode.filter { !it.isWhitespace() }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -3431,7 +3431,7 @@ private fun InactiveStudentCodeDialog(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = spacedCode,
+                            text = cleanCode,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,

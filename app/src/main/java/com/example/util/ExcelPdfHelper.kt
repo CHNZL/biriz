@@ -398,7 +398,7 @@ object ExcelPdfHelper {
             val nameParts = s.fullName.trim().split(" ")
             val firstName = if (nameParts.size > 1) nameParts.dropLast(1).joinToString(" ") else nameParts.firstOrNull() ?: ""
             val lastName = if (nameParts.size > 1) nameParts.last() else ""
-            listOf(s.studentNumber, firstName, lastName, s.gender, s.parentInviteCode)
+            listOf(s.studentNumber, firstName, lastName, s.gender, s.parentInviteCode.filter { !it.isWhitespace() })
         }
 
         writeXlsx(file, headers, dataRows)
@@ -585,7 +585,7 @@ object ExcelPdfHelper {
             paint.color = amber
             paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
             paint.textSize = 10f
-            canvas.drawText(student.parentInviteCode, colX[5] + 14f, currentY + 15.5f, paint)
+            canvas.drawText(student.parentInviteCode.filter { !it.isWhitespace() }, colX[5] + 14f, currentY + 15.5f, paint)
 
             currentY += rowHeight
         }
@@ -809,12 +809,12 @@ object ExcelPdfHelper {
                 paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 canvas.drawText("VELİ KATILIM KODU (8 HANELİ)", cX + 13f, cY + 115f, paint)
 
-                // 8 Haneli Kod (Aralıklı ve Büyük)
-                val spacedCode = student.parentInviteCode.map { "$it " }.joinToString("").trim()
+                // 8 Haneli Kod (Bitişik ve Kopyala-Yapıştır Dostu)
+                val cleanCode = student.parentInviteCode.filter { !it.isWhitespace() }
                 paint.color = amberText
-                paint.textSize = 13.5f
+                paint.textSize = 16f
                 paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-                canvas.drawText(spacedCode, cX + 13f, cY + 135f, paint)
+                canvas.drawText(cleanCode, cX + 13f, cY + 136f, paint)
 
                 paint.color = Color.parseColor("#B45309")
                 paint.textSize = 5.2f

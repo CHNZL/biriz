@@ -2469,10 +2469,10 @@ fun StudentDetailDialog(
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            // Aralıklı 8 Haneli Kod
-                            val spacedCode = student.parentInviteCode.map { "$it " }.joinToString("").trim()
+                            // Bitişik 8 Haneli Kod (Kopyala-Yapıştır Uyumlu)
+                            val cleanCode = student.parentInviteCode.filter { !it.isWhitespace() }
                             Text(
-                                text = spacedCode,
+                                text = cleanCode,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,

@@ -1,9 +1,9 @@
 {
-  "title": "Öğretmenler Odası Hazırlık Görünümü",
+  "title": "Veli Tanıtım Kartlarında Kod Düzenlemesi",
   "items": [
     {
-      "title": "Öğretmenler Odası Hazırlık Aşamasında",
-      "summary": "Öğretmenler Odası bölümü, yakında eklenecek resmî evrak ve tutanak araçlarını tanıtan hazırlık aşamasında görünümüyle güncellendi."
+      "title": "Kopyala-Yapıştır Uyumlu Veli Kodları",
+      "summary": "Veli katılım kartlarındaki ve belgelerdeki katılım kodlarının karakterleri arasındaki boşluklar kaldırılarak tek hamlede kopyalanıp yapıştırılabilmesi sağlandı."
     }
   ]
 }
