@@ -101,10 +101,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -1356,7 +1364,7 @@ private fun LibraryInventoryView(
 }
 
 // -------------------------------------------------------------
-// GRID CARD BİLEŞENİ
+// GRID CARD BİLEŞENİ (3D KİTAP ŞEKLİNDE KART)
 // -------------------------------------------------------------
 @Composable
 private fun BookCardGridItem(
@@ -1371,15 +1379,69 @@ private fun BookCardGridItem(
     onDeleteClick: () -> Unit,
     onCancelAssignment: (String) -> Unit
 ) {
-    val cardBg = if (isDarkTheme) BirizDarkCardGlass else BirizCardBg
-    val cardBorder = if (isDarkTheme) BirizDarkCardBorder else BirizBorder
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
 
     val isReading = book.activeAssignments.isNotEmpty()
     var showMenu by remember { mutableStateOf(false) }
 
-    Card(
+    // Her kitaba demirbaş/kimliğe göre klasik cilt rengi
+    val coverAccent = remember(book.registrationNo, book.id) {
+        val bookSpinePalette = listOf(
+            Color(0xFF1E3A8A), // Klasik Lacivert Cilt
+            Color(0xFF047857), // Zümrüt Yeşili Cilt
+            Color(0xFFB45309), // Kehribar / Tarçın Cilt
+            Color(0xFF0F766E), // Turkuaz / Petrol Cilt
+            Color(0xFF6D28D9), // Mürdüm / Mor Cilt
+            Color(0xFFBE123C)  // Bordo / Yakut Cilt
+        )
+        val seed = if (book.registrationNo > 0) book.registrationNo else kotlin.math.abs(book.id.hashCode())
+        bookSpinePalette[seed % bookSpinePalette.size]
+    }
+    val spineDark = remember(coverAccent) { lerp(coverAccent, Color.Black, 0.34f) }
+    val spineHighlight = remember(coverAccent) { lerp(coverAccent, Color.White, 0.24f) }
+    val ribbonColor = if (isReading) Color(0xFFD97706) else coverAccent
+
+    val bookCoverShape = RoundedCornerShape(
+        topStart = 4.dp,
+        bottomStart = 4.dp,
+        topEnd = 11.dp,
+        bottomEnd = 11.dp
+    )
+    val pageBlockShape = RoundedCornerShape(
+        topStart = 3.dp,
+        bottomStart = 3.dp,
+        topEnd = 10.dp,
+        bottomEnd = 10.dp
+    )
+    val coverGradient = if (isSelected) {
+        Brush.linearGradient(
+            listOf(
+                if (isDarkTheme) Color(0xFF3B151B) else Color(0xFFFEF2F2),
+                if (isDarkTheme) Color(0xFF281116) else Color(0xFFFEE2E2)
+            )
+        )
+    } else if (isDarkTheme) {
+        Brush.linearGradient(
+            listOf(
+                lerp(Color(0xFF132238), coverAccent, 0.24f),
+                lerp(Color(0xFF0D1728), coverAccent, 0.14f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                lerp(Color(0xFFFFFEFA), coverAccent, 0.05f),
+                lerp(Color(0xFFF8F5EE), coverAccent, 0.12f)
+            )
+        )
+    }
+
+    val pagePaperBg = if (isDarkTheme) Color(0xFF334155) else Color(0xFFF4ECDA)
+    val pagePaperBorder = if (isDarkTheme) Color(0xFF475569) else Color(0xFFD6CBB3)
+    val pageLineColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.55f) else Color(0xFFC8B99B).copy(alpha = 0.8f)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -1387,252 +1449,370 @@ private fun BookCardGridItem(
                     Modifier.clickable { onToggleSelect() }
                 } else Modifier
             )
-            .testTag("book_card_${book.registrationNo}"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) BirizError.copy(alpha = 0.12f) else cardBg
-        ),
-        border = BorderStroke(
-            if (isSelected) 1.5.dp else 1.dp,
-            when {
-                isSelected -> BirizError
-                isReading -> Color(0xFFF59E0B).copy(alpha = 0.5f)
-                else -> cardBorder
-            }
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .testTag("book_card_${book.registrationNo}")
     ) {
-        Column(
+        // 1. ARKA KATMAN: KİTABIN SAĞ VE ALT SAYFA KENARLARI (3D SAYFA BLOĞU)
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(start = 6.dp, top = 5.dp)
+                .clip(pageBlockShape)
+                .background(pagePaperBg)
+                .border(1.dp, pagePaperBorder, pageBlockShape)
+                .drawBehind {
+                    val lineStroke = 0.8.dp.toPx()
+                    // Sağ kenarda sayfa katman çizgileri
+                    drawLine(
+                        color = pageLineColor,
+                        start = Offset(size.width - 2.4.dp.toPx(), 4.dp.toPx()),
+                        end = Offset(size.width - 2.4.dp.toPx(), size.height - 4.dp.toPx()),
+                        strokeWidth = lineStroke
+                    )
+                    // Alt kenarda sayfa katman çizgileri
+                    drawLine(
+                        color = pageLineColor,
+                        start = Offset(4.dp.toPx(), size.height - 2.4.dp.toPx()),
+                        end = Offset(size.width - 4.dp.toPx(), size.height - 2.4.dp.toPx()),
+                        strokeWidth = lineStroke
+                    )
+                }
+        )
+
+        // 2. ÖN KATMAN: KİTAP KAPAĞI VE CİLT SIRTI
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp)
+                .padding(end = 5.dp, bottom = 5.dp),
+            shape = bookCoverShape,
+            color = Color.Transparent,
+            border = BorderStroke(
+                if (isSelected) 1.6.dp else 1.1.dp,
+                when {
+                    isSelected -> BirizError
+                    isReading -> Color(0xFFF59E0B).copy(alpha = 0.72f)
+                    else -> coverAccent.copy(alpha = if (isDarkTheme) 0.55f else 0.35f)
+                }
+            ),
+            shadowElevation = if (isDarkTheme) 2.dp else 4.dp
         ) {
-            // Üst Satır: Demirbaş No + Menü / Seçim Kutusu
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isSelectionMode) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = { onToggleSelect() },
-                            modifier = Modifier.size(20.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(coverGradient)
+                    .drawBehind {
+                        val spineW = 13.dp.toPx()
+                        // Sol Cilt Sırtı (Silindirik gölgelendirme)
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(spineDark, coverAccent, spineHighlight, spineDark),
+                                startX = 0f,
+                                endX = spineW
+                            ),
+                            topLeft = Offset.Zero,
+                            size = Size(spineW, size.height)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (isDarkTheme) Color(0x40334E68) else Color(0xFFE2E8F0)
-                    ) {
-                        Text(
-                            text = "#${book.registrationNo}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+
+                        // Sırt üzerindeki yatay dekoratif altın/beyaz şeritler
+                        val bandColor = Color.White.copy(alpha = 0.45f)
+                        val bandH = 2.dp.toPx()
+                        drawRect(
+                            color = bandColor,
+                            topLeft = Offset(1.5.dp.toPx(), size.height * 0.12f),
+                            size = Size(spineW - 3.dp.toPx(), bandH)
                         )
-                    }
-                }
+                        drawRect(
+                            color = bandColor,
+                            topLeft = Offset(1.5.dp.toPx(), size.height * 0.86f),
+                            size = Size(spineW - 3.dp.toPx(), bandH)
+                        )
 
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Text("⋮", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = secondaryText)
-                    }
+                        // Sırt - Kapak birleşim oluğu (Menteşe gölgesi)
+                        drawLine(
+                            color = Color.Black.copy(alpha = if (isDarkTheme) 0.45f else 0.20f),
+                            start = Offset(spineW, 0f),
+                            end = Offset(spineW, size.height),
+                            strokeWidth = 1.5.dp.toPx()
+                        )
+                        drawLine(
+                            color = Color.White.copy(alpha = if (isDarkTheme) 0.14f else 0.65f),
+                            start = Offset(spineW + 1.5.dp.toPx(), 0f),
+                            end = Offset(spineW + 1.5.dp.toPx(), size.height),
+                            strokeWidth = 1.dp.toPx()
+                        )
 
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Düzenle") },
-                            onClick = {
-                                showMenu = false
-                                onEditClick()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        // Kapak içi zarif çerçeve çizgisi
+                        val insetLeft = spineW + 5.dp.toPx()
+                        val insetMargin = 5.dp.toPx()
+                        val frameW = (size.width - insetLeft - insetMargin).coerceAtLeast(10f)
+                        val frameH = (size.height - insetMargin * 2f).coerceAtLeast(10f)
+                        drawRoundRect(
+                            color = coverAccent.copy(alpha = if (isDarkTheme) 0.34f else 0.18f),
+                            topLeft = Offset(insetLeft, insetMargin),
+                            size = Size(frameW, frameH),
+                            cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+                            style = Stroke(width = 0.9.dp.toPx())
+                        )
+
+                        // Üst kenardan sarkan çentikli Kitap Ayracı Şeridi
+                        val ribbonW = 11.dp.toPx()
+                        val ribbonH = 14.dp.toPx()
+                        val ribbonX = (size.width - 46.dp.toPx()).coerceAtLeast(spineW + 40.dp.toPx())
+                        if (ribbonX + ribbonW < size.width - 26.dp.toPx()) {
+                            val ribbonPath = Path().apply {
+                                moveTo(ribbonX, 0f)
+                                lineTo(ribbonX + ribbonW, 0f)
+                                lineTo(ribbonX + ribbonW, ribbonH)
+                                lineTo(ribbonX + ribbonW / 2f, ribbonH - 4.dp.toPx())
+                                lineTo(ribbonX, ribbonH)
+                                close()
                             }
-                        )
-                        if (isReading && book.activeAssignments.isNotEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("Ödünç Kaydını İptal Et (Rafa Al)") },
-                                onClick = {
-                                    showMenu = false
-                                    val firstStudentId = book.activeAssignments.firstOrNull()?.studentId ?: book.currentStudentId.orEmpty()
-                                    onCancelAssignment(firstStudentId)
-                                }
-                            )
+                            drawPath(path = ribbonPath, color = ribbonColor)
                         }
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("Kitabı Sil", color = BirizError) },
-                            onClick = {
-                                showMenu = false
-                                onDeleteClick()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = BirizError, modifier = Modifier.size(16.dp))
-                            }
-                        )
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Kitap Başlığı & Yazar
-            Text(
-                text = TurkishTextHelper.toTurkishTitleCase(book.name),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = primaryText,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 17.sp
-            )
-
-            if (book.author.isNotBlank()) {
-                Text(
-                    text = book.author,
-                    fontSize = 11.sp,
-                    color = secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Sayfa Sayısı & Yıldız Değeri
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (book.pageCount > 0) {
-                    Text(
-                        text = "📄 ${book.pageCount} s.",
-                        fontSize = 10.5.sp,
-                        color = secondaryText
-                    )
-                    Text(
-                        text = "• +${LibraryPersistenceHelper.calculateReadingStars(book.pageCount)} ⭐",
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = BirizGold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Durum Rozeti (Ödünçte ise okuyan(lar), değilse sadece Rafta)
-            val readers = book.activeAssignments
-            val isGivenToStudents = readers.isNotEmpty()
-
-            if (isGivenToStudents) {
-                val isMultiple = readers.size > 1
-                val displayText = when {
-                    isMultiple -> "👥 ${readers.size} Kişide Okunuyor"
-                    readers.size == 1 -> {
-                        val first = readers.first()
-                        val days = calculateDaysAgo(first.assignmentDate)
-                        "👤 ${first.studentName} ($days. gün)"
-                    }
-                    else -> {
-                        val days = calculateDaysAgo(book.assignmentDate)
-                        "👤 ${book.currentStudentName} ($days. gün)"
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFFEF3C7),
-                    border = BorderStroke(1.dp, Color(0xFFFCD34D))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 9.dp, top = 8.dp, bottom = 9.dp)
                 ) {
+                    // Üst Satır: Demirbaş No + Menü / Seçim Kutusu
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = displayText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF92400E),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSelectionMode) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { onToggleSelect() },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = coverAccent.copy(alpha = if (isDarkTheme) 0.35f else 0.14f),
+                                border = BorderStroke(0.7.dp, coverAccent.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = "#${book.registrationNo}",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (isDarkTheme) Color.White else coverAccent,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Text("⋮", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = secondaryText)
+                            }
+
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Düzenle") },
+                                    onClick = {
+                                        showMenu = false
+                                        onEditClick()
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                )
+                                if (isReading && book.activeAssignments.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Ödünç Kaydını İptal Et (Rafa Al)") },
+                                        onClick = {
+                                            showMenu = false
+                                            val firstStudentId = book.activeAssignments.firstOrNull()?.studentId ?: book.currentStudentId.orEmpty()
+                                            onCancelAssignment(firstStudentId)
+                                        }
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Kitabı Sil", color = BirizError) },
+                                    onClick = {
+                                        showMenu = false
+                                        onDeleteClick()
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = BirizError, modifier = Modifier.size(16.dp))
+                                    }
+                                )
+                            }
+                        }
                     }
-                }
-            } else {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isDarkTheme) Color(0x30059669) else Color(0xFFD1FAE5),
-                    border = BorderStroke(1.dp, if (isDarkTheme) Color(0x50059669) else Color(0xFFA7F3D0))
-                ) {
-                    Text(
-                        text = "🟢 Rafta",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF065F46),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
-            // Aksiyon Butonları: Yan yana "Ödünç Ver" ve "İade Al"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = onBorrowClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "Ödünç Ver",
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                    )
-                }
+                    // Kapak İsimlik Alanı (Kitap Adı + Yazar + Sayfa/Yıldız)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 64.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = TurkishTextHelper.toTurkishTitleCase(book.name),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp,
+                                color = primaryText,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = 16.5.sp
+                            )
 
-                Button(
-                    onClick = onReturnClick,
-                    enabled = isReading,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(32.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFD97706),
-                        disabledContainerColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
-                    ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "İade Al",
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isReading) Color.White else Color.Gray
-                    )
+                            if (book.author.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = book.author,
+                                    fontSize = 11.sp,
+                                    fontStyle = FontStyle.Italic,
+                                    color = secondaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        if (book.pageCount > 0) {
+                            Spacer(modifier = Modifier.height(5.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Text(
+                                    text = "📄 ${book.pageCount} s.",
+                                    fontSize = 10.5.sp,
+                                    color = secondaryText
+                                )
+                                Text(
+                                    text = "• +${LibraryPersistenceHelper.calculateReadingStars(book.pageCount)} ⭐",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BirizGold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(7.dp))
+
+                    // Durum Rozeti (Ödünçte ise okuyan(lar), değilse Rafta)
+                    val readers = book.activeAssignments
+                    val isGivenToStudents = readers.isNotEmpty()
+
+                    if (isGivenToStudents) {
+                        val isMultiple = readers.size > 1
+                        val displayText = when {
+                            isMultiple -> "👥 ${readers.size} Kişide Okunuyor"
+                            readers.size == 1 -> {
+                                val first = readers.first()
+                                val days = calculateDaysAgo(first.assignmentDate)
+                                "👤 ${first.studentName} ($days. gün)"
+                            }
+                            else -> {
+                                val days = calculateDaysAgo(book.assignmentDate)
+                                "👤 ${book.currentStudentName} ($days. gün)"
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(7.dp),
+                            color = if (isDarkTheme) Color(0x3878350F) else Color(0xFFFEF3C7),
+                            border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.7f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = displayText,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFF92400E),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(7.dp),
+                            color = if (isDarkTheme) Color(0x30059669) else Color(0xFFD1FAE5),
+                            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x5010B981) else Color(0xFFA7F3D0))
+                        ) {
+                            Text(
+                                text = "🟢 Rafta",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF065F46),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Aksiyon Butonları: Yan yana "Ödünç Ver" ve "İade Al"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = onBorrowClick,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp),
+                            shape = RoundedCornerShape(7.dp),
+                            border = BorderStroke(1.dp, if (isDarkTheme) BirizTurquoise else BirizNavyPrimary),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = "Ödünç Ver",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                            )
+                        }
+
+                        Button(
+                            onClick = onReturnClick,
+                            enabled = isReading,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp),
+                            shape = RoundedCornerShape(7.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFD97706),
+                                disabledContainerColor = if (isDarkTheme) Color(0x3064748B) else Color(0xFFE2E8F0)
+                            ),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = "İade Al",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isReading) Color.White else Color.Gray
+                            )
+                        }
+                    }
                 }
             }
         }
