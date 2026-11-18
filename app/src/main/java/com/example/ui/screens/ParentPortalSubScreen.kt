@@ -56,11 +56,13 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -590,96 +592,6 @@ fun ParentPortalSubScreen(
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // -------------------------------------------------------------
-                        // 2. ÇOCUK / KARDEŞ SEÇİCİ ÇUBUĞU
-                        // -------------------------------------------------------------
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (linkedStudents.isEmpty()) {
-                                Surface(
-                                    onClick = { showLinkCodeDialog = true },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = BirizAmber,
-                                    modifier = Modifier.height(38.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("🔑 8 Haneli Veli Kodunu Gir ve Çocuğunu Bağla", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    }
-                                }
-                            } else {
-                                linkedStudents.forEach { student ->
-                                    val isSelected = activeStudent?.id == student.id
-                                    Surface(
-                                        onClick = { onSelectActiveStudent(student.id) },
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isSelected) BirizTurquoise else Color.White.copy(alpha = 0.15f),
-                                        modifier = Modifier.height(38.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(text = if (student.gender.equals("Kız", ignoreCase = true)) "👧" else "👦", fontSize = 15.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = "${student.fullName} (${student.studentNumber})",
-                                                fontSize = 13.sp,
-                                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-                                                color = if (isSelected) BirizNavyDark else Color.White
-                                            )
-                                            if (isSelected) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(20.dp)
-                                                        .clip(CircleShape)
-                                                        .background(BirizNavyDark.copy(alpha = 0.2f))
-                                                        .clickable { studentToUnlink = student }
-                                                        .testTag("chip_unlink_${student.id}"),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Close,
-                                                        contentDescription = "Öğrenciyi Kaldır",
-                                                        tint = BirizNavyDark,
-                                                        modifier = Modifier.size(13.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Surface(
-                                    onClick = { showLinkCodeDialog = true },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    modifier = Modifier.height(38.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Kardeş Ekle", fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -698,6 +610,7 @@ fun ParentPortalSubScreen(
                         ParentPortalTab.HOME -> {
                             ParentDashboardHomeView(
                                 student = activeStudent,
+                                linkedStudents = linkedStudents,
                                 classRoom = classRoom,
                                 totalStars = totalStars,
                                 lastStarRecord = activeStudentStars.maxByOrNull { it.timestamp },
@@ -711,6 +624,9 @@ fun ParentPortalSubScreen(
                                 lastAnnouncement = parentAnnouncements.firstOrNull(),
                                 lastChatMessage = chatMessages.filter { it.studentId == activeStudent.id }.lastOrNull(),
                                 isDarkTheme = isDarkTheme,
+                                onSelectActiveStudent = onSelectActiveStudent,
+                                onOpenLinkCodeDialog = { showLinkCodeDialog = true },
+                                onUnlinkStudent = { studentToUnlink = it },
                                 onNavigate = { activeTab = it },
                                 onNavigateToCommunication = { openChat ->
                                     isCommChatSubTabActive = openChat
@@ -1148,11 +1064,12 @@ private fun ParentEmptyStateView(
                 Button(
                     onClick = onOpenCodeDialog,
                     colors = ButtonDefaults.buttonColors(containerColor = BirizAmber),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("parent_empty_add_student_button")
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("🔑 8 Haneli Veli Kodunu Gir", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("🔑 8 Haneli Veli Kodunu Gir ve Öğrenci Ekle", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -1165,6 +1082,7 @@ private fun ParentEmptyStateView(
 @Composable
 private fun ParentDashboardHomeView(
     student: Student,
+    linkedStudents: List<Student>,
     classRoom: ClassRoom?,
     totalStars: Int,
     lastStarRecord: StarRewardRecord?,
@@ -1178,6 +1096,9 @@ private fun ParentDashboardHomeView(
     lastAnnouncement: Announcement?,
     lastChatMessage: ChatMessage?,
     isDarkTheme: Boolean,
+    onSelectActiveStudent: (String) -> Unit,
+    onOpenLinkCodeDialog: () -> Unit,
+    onUnlinkStudent: (Student) -> Unit,
     onNavigate: (ParentPortalTab) -> Unit,
     onNavigateToCommunication: (Boolean) -> Unit = { onNavigate(ParentPortalTab.COMMUNICATION) }
 ) {
@@ -1187,6 +1108,7 @@ private fun ParentDashboardHomeView(
             book.activeAssignments.any { it.studentId == student.id } || book.currentStudentId == student.id
         }
     }
+    var showStudentMenu by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -1272,18 +1194,188 @@ private fun ParentDashboardHomeView(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(7.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                    Text(
-                        text = student.fullName,
-                        fontSize = 18.5.sp,
-                        lineHeight = 23.sp,
-                        fontWeight = FontWeight.Black,
-                        color = if (isDarkTheme) Color.White else BirizNavyPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("parent_hero_student_name")
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { showStudentMenu = true }
+                                    .padding(vertical = 4.dp, horizontal = 2.dp)
+                                    .testTag("parent_hero_student_switcher")
+                            ) {
+                                Text(
+                                    text = student.fullName,
+                                    fontSize = 18.5.sp,
+                                    lineHeight = 23.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isDarkTheme) Color.White else BirizNavyPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .testTag("parent_hero_student_name")
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                if (linkedStudents.size > 1) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isDarkTheme) BirizTurquoise.copy(alpha = 0.20f) else Color(0xFFE0F2FE),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isDarkTheme) BirizTurquoise.copy(alpha = 0.55f) else Color(0xFF7DD3FC)
+                                        )
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${linkedStudents.size} Kardeş",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = if (isDarkTheme) BirizTurquoise else Color(0xFF0369A1)
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "Öğrenci Değiştir",
+                                                tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0369A1),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Öğrenci İşlemleri",
+                                        tint = if (isDarkTheme) Color.White.copy(alpha = 0.65f) else BirizNavyPrimary.copy(alpha = 0.55f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showStudentMenu,
+                                onDismissRequest = { showStudentMenu = false }
+                            ) {
+                                linkedStudents.forEach { linkedStudent ->
+                                    val isSelected = linkedStudent.id == student.id
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Text(
+                                                text = if (linkedStudent.gender.equals("Kız", ignoreCase = true)) "👧" else "👦",
+                                                fontSize = 18.sp
+                                            )
+                                        },
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = linkedStudent.fullName,
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = "No: ${linkedStudent.studentNumber}",
+                                                    fontSize = 11.sp,
+                                                    color = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
+                                                )
+                                            }
+                                        },
+                                        trailingIcon = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = "Seçili Öğrenci",
+                                                        tint = BirizTurquoise,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        showStudentMenu = false
+                                                        onUnlinkStudent(linkedStudent)
+                                                    },
+                                                    modifier = Modifier
+                                                        .size(28.dp)
+                                                        .testTag("chip_unlink_${linkedStudent.id}")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Öğrenci Bağlantısını Kaldır",
+                                                        tint = Color(0xFFEF4444),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            onSelectActiveStudent(linkedStudent.id)
+                                            showStudentMenu = false
+                                        }
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            contentDescription = null,
+                                            tint = BirizTurquoise
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = "Kardeş / Öğrenci Ekle",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                    },
+                                    onClick = {
+                                        showStudentMenu = false
+                                        onOpenLinkCodeDialog()
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        IconButton(
+                            onClick = onOpenLinkCodeDialog,
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("parent_hero_add_sibling_button")
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDarkTheme) BirizTurquoise.copy(alpha = 0.22f) else BirizNavyPrimary.copy(alpha = 0.10f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isDarkTheme) BirizTurquoise.copy(alpha = 0.65f) else BirizNavyPrimary.copy(alpha = 0.30f)
+                                ),
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.PersonAdd,
+                                        contentDescription = "Kardeş Ekle",
+                                        tint = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
