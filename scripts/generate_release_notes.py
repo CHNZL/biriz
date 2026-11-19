@@ -55,6 +55,15 @@ SPECIFIC_DIFF_RULES = [
         "Üst çubuk sadeleştirilerek ek alan açıldı; kardeş değiştirme ve kardeş ekleme işlemi ana sayfadaki öğrenci kartına taşındı.",
     ),
     (
+        "teacher_schedule_today_and_live_day",
+        "schedule",
+        False,
+        re.compile(r"(ScheduleSubScreen|ScheduleHelper|BirizViewModel)", re.I),
+        re.compile(r"(isLessonLiveForSelectedDay|getDefaultScheduleDayKey|resetDayToToday|activeDayKey)", re.I),
+        "Öğretmen Ders Programında Gün Bazlı Canlı Ders Gösterimi",
+        "Öğretmen ders programı varsayılan olarak bulunulan günle açılacak şekilde düzenlendi; aktif ders ve bitişe kalan süre bilgisi yalnızca o günün derslerinde gösteriliyor.",
+    ),
+    (
         "parent_schedule_live",
         "schedule",
         False,

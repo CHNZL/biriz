@@ -945,9 +945,9 @@ fun ScheduleTableScreen(
     var editingLessonSlot by remember { mutableStateOf<ScheduleTimelineItem.LessonSlot?>(null) }
     var isShareMenuOpen by remember { mutableStateOf(false) }
 
-    // Seçili günün derslerini filtrele
+    // Seçili günün derslerini filtrele (eski "CAR" yazımı dâhil)
     val currentDayLessons = remember(lessons, activeDay) {
-        lessons.filter { it.dayOfWeek == activeDay }
+        lessons.filter { ScheduleHelper.isSameScheduleDay(it.dayOfWeek, activeDay) }
     }
 
     // Zaman Akışını (Timeline) Hesapla
@@ -1186,7 +1186,11 @@ fun ScheduleTableScreen(
         items(timelineItems) { item ->
             when (item) {
                 is ScheduleTimelineItem.LessonSlot -> {
-                    val isLive = liveStatus.isLive && liveStatus.activeLessonIndex != null && liveStatus.activeLessonIndex == item.lessonIndex
+                    val isLive = ScheduleHelper.isLessonLiveForSelectedDay(
+                        liveStatus = liveStatus,
+                        selectedDay = activeDay,
+                        lessonIndex = item.lessonIndex
+                    )
                     LessonSlotCard(
                         slot = item,
                         isDark = isDarkTheme,
@@ -1197,7 +1201,11 @@ fun ScheduleTableScreen(
                 }
 
                 is ScheduleTimelineItem.RecessSlot -> {
-                    val isLive = liveStatus.isLive && liveStatus.activeRecessIndex != null && liveStatus.activeRecessIndex == item.recessIndex
+                    val isLive = ScheduleHelper.isRecessLiveForSelectedDay(
+                        liveStatus = liveStatus,
+                        selectedDay = activeDay,
+                        recessIndex = item.recessIndex
+                    )
                     RecessSlotBanner(
                         slot = item,
                         isDark = isDarkTheme,
@@ -1207,7 +1215,10 @@ fun ScheduleTableScreen(
                 }
 
                 is ScheduleTimelineItem.LunchBreakSlot -> {
-                    val isLive = liveStatus.isLive && (liveStatus.iconType == "LUNCH" || (liveStatus.activeRecessIndex != null && liveStatus.activeRecessIndex == item.afterLessonIndex))
+                    val isLive = ScheduleHelper.isLunchLiveForSelectedDay(
+                        liveStatus = liveStatus,
+                        selectedDay = activeDay
+                    )
                     LunchBreakBanner(
                         slot = item,
                         isDark = isDarkTheme,
@@ -1315,7 +1326,7 @@ fun LessonSlotCard(
                             modifier = Modifier.padding(top = 2.dp)
                         ) {
                             Text(
-                                text = "🟢 ŞU AN İŞLENİYOR • Teneffüse $remainingMinutes dk",
+                                text = "🟢 ŞU AN İŞLENİYOR • Bitişe $remainingMinutes dk",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White,

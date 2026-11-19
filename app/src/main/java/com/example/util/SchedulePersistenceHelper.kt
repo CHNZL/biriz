@@ -173,18 +173,6 @@ object SchedulePersistenceHelper {
             }
             editor.putString(KEY_ACTIVE_DAY_PREFIX + "default", day)
             editor.apply()
-
-            if (classId.isNotBlank() && classId != "default") {
-                val db = getFirestore(context)
-                if (db != null) {
-                    syncScope.launch {
-                        try {
-                            db.collection("classrooms").document(classId).collection("schedule").document("current")
-                                .set(mapOf("activeDay" to day, "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge())
-                        } catch (_: Exception) {}
-                    }
-                }
-            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

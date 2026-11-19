@@ -1,17 +1,13 @@
 {
-  "title": "Hız, Pil ve Bulut Veri Verimliliği",
+  "title": "Öğretmen Ders Programında Gün Bazlı Canlı Gösterim",
   "items": [
     {
-      "title": "Paylaşımlı Canlı Dinleme ve Yerel Önbellek",
-      "summary": "Aynı sınıf verileri tek bağlantı üzerinden paylaşıldı ve yerel önbellek kapasitesi artırılarak tekrarlayan veri indirmeleri önlendi."
+      "title": "Sadece Bugünün Dersinde Canlı Süre Bilgisi",
+      "summary": "Öğretmen ders programındaki aktif ders, teneffüs ve bitişe kalan süre bilgisi diğer günlere yansımayacak şekilde yalnızca bulunulan gün için sınırlandırıldı."
     },
     {
-      "title": "Sınıf ve İl Odaklı Hızlı Yükleme",
-      "summary": "Açılış ve girişteki geniş veritabanı taramaları kaldırılarak yalnızca kullanıcının sınıfına ve seçilen ile ait kayıtların yüklenmesi sağlandı."
-    },
-    {
-      "title": "Akıllı Arka Plan ve Mesaj Eşitlemesi",
-      "summary": "Arka plan bildirim denetimi saatlik ve gece dinlenmeli düzene geçirildi; mesaj okundu kayıtları toplu ve tekrarsız hale getirildi."
+      "title": "Bulunulan Günle Otomatik Açılış",
+      "summary": "Öğretmen ders programı ekranı açıldığında varsayılan olarak içinde bulunulan günün (hafta sonlarında pazartesinin) programı doğrudan seçili gelir."
     }
   ]
 }

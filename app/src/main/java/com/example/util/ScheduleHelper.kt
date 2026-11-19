@@ -229,15 +229,10 @@ object ScheduleHelper {
     }
 
     /**
-     * Telefonun o anki saatine ve haftanın gününe göre dinamik ders/teneffüs durumunu hesaplar.
+     * Verilen takvim gününün ders programı anahtarını döndürür (Hafta içi: PZT..CUM, Hafta sonu: null).
      */
-    fun calculateLiveScheduleStatus(
-        config: ScheduleConfig,
-        allLessons: List<ScheduleLesson>
-    ): LiveLessonStatus {
-        val cal = java.util.Calendar.getInstance()
-        val dayOfWeekInt = cal.get(java.util.Calendar.DAY_OF_WEEK)
-        val currentDayKey = when (dayOfWeekInt) {
+    fun getTodayScheduleDayKey(cal: java.util.Calendar = java.util.Calendar.getInstance()): String? {
+        return when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
             java.util.Calendar.MONDAY -> "PZT"
             java.util.Calendar.TUESDAY -> "SAL"
             java.util.Calendar.WEDNESDAY -> "ÇAR"
@@ -245,18 +240,79 @@ object ScheduleHelper {
             java.util.Calendar.FRIDAY -> "CUM"
             else -> null
         }
+    }
+
+    /**
+     * Ders programı ekranı açıldığında varsayılan seçilecek günü döndürür.
+     * Hafta içi günlerinde o günü (PZT..CUM), hafta sonunda ise "PZT" gününü döndürür.
+     */
+    fun getDefaultScheduleDayKey(cal: java.util.Calendar = java.util.Calendar.getInstance()): String {
+        return getTodayScheduleDayKey(cal) ?: "PZT"
+    }
+
+    /**
+     * İki ders programı gün anahtarının (eski "CAR" yazımı dâhil) aynı günü gösterip göstermediğini döndürür.
+     */
+    fun isSameScheduleDay(firstDay: String?, secondDay: String?): Boolean {
+        if (firstDay.isNullOrBlank() || secondDay.isNullOrBlank()) return false
+        val normA = firstDay.trim().uppercase(java.util.Locale("tr", "TR")).let { if (it == "CAR") "ÇAR" else it }
+        val normB = secondDay.trim().uppercase(java.util.Locale("tr", "TR")).let { if (it == "CAR") "ÇAR" else it }
+        return normA == normB
+    }
+
+    fun isLessonLiveForSelectedDay(
+        liveStatus: LiveLessonStatus,
+        selectedDay: String,
+        lessonIndex: Int
+    ): Boolean {
+        return liveStatus.isLive &&
+            isSameScheduleDay(selectedDay, liveStatus.activeDayKey) &&
+            liveStatus.activeLessonIndex != null &&
+            liveStatus.activeLessonIndex == lessonIndex
+    }
+
+    fun isRecessLiveForSelectedDay(
+        liveStatus: LiveLessonStatus,
+        selectedDay: String,
+        recessIndex: Int
+    ): Boolean {
+        return liveStatus.isLive &&
+            isSameScheduleDay(selectedDay, liveStatus.activeDayKey) &&
+            liveStatus.activeRecessIndex != null &&
+            liveStatus.activeRecessIndex == recessIndex
+    }
+
+    fun isLunchLiveForSelectedDay(
+        liveStatus: LiveLessonStatus,
+        selectedDay: String
+    ): Boolean {
+        return liveStatus.isLive &&
+            isSameScheduleDay(selectedDay, liveStatus.activeDayKey) &&
+            liveStatus.iconType == "LUNCH"
+    }
+
+    /**
+     * Telefonun o anki saatine ve haftanın gününe göre dinamik ders/teneffüs durumunu hesaplar.
+     */
+    fun calculateLiveScheduleStatus(
+        config: ScheduleConfig,
+        allLessons: List<ScheduleLesson>,
+        cal: java.util.Calendar = java.util.Calendar.getInstance()
+    ): LiveLessonStatus {
+        val currentDayKey = getTodayScheduleDayKey(cal)
 
         if (currentDayKey == null) {
             return LiveLessonStatus(
                 title = "📅 Hafta Sonu Dinlenme Zamanı",
                 subtitle = "Pazartesi günü dersler saat ${config.firstLessonStartTime}'da başlayacaktır.",
                 iconType = "WEEKEND",
-                isLive = false
+                isLive = false,
+                activeDayKey = null
             )
         }
 
         val currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        val todayLessons = allLessons.filter { it.dayOfWeek == currentDayKey }
+        val todayLessons = allLessons.filter { isSameScheduleDay(it.dayOfWeek, currentDayKey) }
         val timeline = calculateTimeline(config, todayLessons)
 
         fun parseTimeToMinutes(timeStr: String): Int {
@@ -275,7 +331,8 @@ object ScheduleHelper {
                 title = "⏰ Derslerin Başlamasına $remaining dk Kaldı",
                 subtitle = "İlk Ders: 1. Ders - $firstLessonName (${config.firstLessonStartTime})",
                 iconType = "LESSON",
-                isLive = true
+                isLive = true,
+                activeDayKey = currentDayKey
             )
         }
 
@@ -284,7 +341,8 @@ object ScheduleHelper {
                 title = "🌙 Bugünlük Dersler Tamamlandı",
                 subtitle = "İyi dinlenmeler dileriz!",
                 iconType = "OUT_OF_SCHOOL",
-                isLive = false
+                isLive = false,
+                activeDayKey = currentDayKey
             )
         }
 
@@ -302,7 +360,8 @@ object ScheduleHelper {
                             iconType = "LESSON",
                             isLive = true,
                             activeLessonIndex = item.lessonIndex,
-                            remainingMinutes = remaining
+                            remainingMinutes = remaining,
+                            activeDayKey = currentDayKey
                         )
                     }
                 }
@@ -319,7 +378,8 @@ object ScheduleHelper {
                             iconType = "RECESS",
                             isLive = true,
                             activeRecessIndex = item.recessIndex,
-                            remainingMinutes = remaining
+                            remainingMinutes = remaining,
+                            activeDayKey = currentDayKey
                         )
                     }
                 }
@@ -335,7 +395,8 @@ object ScheduleHelper {
                             subtitle = "Gelecek Ders: $nextLesson (Giriş Zili: ${item.endTime})",
                             iconType = "LUNCH",
                             isLive = true,
-                            remainingMinutes = remaining
+                            remainingMinutes = remaining,
+                            activeDayKey = currentDayKey
                         )
                     }
                 }
@@ -346,7 +407,8 @@ object ScheduleHelper {
             title = "📚 Ders Programı",
             subtitle = "Günlük ders akışı aktif.",
             iconType = "LESSON",
-            isLive = true
+            isLive = true,
+            activeDayKey = currentDayKey
         )
     }
 }
@@ -358,5 +420,6 @@ data class LiveLessonStatus(
     val isLive: Boolean,
     val activeLessonIndex: Int? = null,
     val activeRecessIndex: Int? = null,
-    val remainingMinutes: Int? = null
+    val remainingMinutes: Int? = null,
+    val activeDayKey: String? = null
 )

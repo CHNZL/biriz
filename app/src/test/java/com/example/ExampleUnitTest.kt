@@ -3931,4 +3931,70 @@ class ExampleUnitTest {
     assertEquals("c_3a", linked.linkedClassroomId)
     assertEquals(2, linked.linkedStudentIds.size)
   }
+
+  @Test
+  fun testScheduleLiveLessonOnlyMatchesCurrentWeekdayAndDefaultDay() {
+    val helper = com.example.util.ScheduleHelper
+    val config = com.example.data.model.ScheduleConfig(
+      dailyLessonCount = 6,
+      firstLessonStartTime = "08:30",
+      lessonDurationMinutes = 40,
+      recessDurations = listOf(15, 15, 10, 15, 15),
+      isLunchBreakActive = true,
+      lunchAfterLessonIndex = 4,
+      lunchDurationMinutes = 50
+    )
+    val allLessons = helper.generateDefaultWeeklySchedule()
+
+    // Thursday (19 Nov 2026) at 09:40 -> 2. Ders (09:25 - 10:05) is active with 25 min remaining
+    val thursdayCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 19, 9, 40, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    assertEquals("PER", helper.getTodayScheduleDayKey(thursdayCal))
+    assertEquals("PER", helper.getDefaultScheduleDayKey(thursdayCal))
+
+    val liveStatus = helper.calculateLiveScheduleStatus(config, allLessons, thursdayCal)
+    assertTrue(liveStatus.isLive)
+    assertEquals("PER", liveStatus.activeDayKey)
+    assertEquals(2, liveStatus.activeLessonIndex)
+    assertEquals(25, liveStatus.remainingMinutes)
+
+    // ONLY Thursday's 2nd lesson must be live; other days' 2nd lessons must NOT be live
+    assertTrue(helper.isLessonLiveForSelectedDay(liveStatus, "PER", 2))
+    assertFalse(helper.isLessonLiveForSelectedDay(liveStatus, "PER", 1))
+    assertFalse(helper.isLessonLiveForSelectedDay(liveStatus, "PZT", 2))
+    assertFalse(helper.isLessonLiveForSelectedDay(liveStatus, "SAL", 2))
+    assertFalse(helper.isLessonLiveForSelectedDay(liveStatus, "ÇAR", 2))
+    assertFalse(helper.isLessonLiveForSelectedDay(liveStatus, "CUM", 2))
+
+    // Recess on Thursday at 09:15 (09:10 - 09:25) -> ONLY Thursday's 1st recess is live
+    val thursdayRecessCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 19, 9, 15, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val recessStatus = helper.calculateLiveScheduleStatus(config, allLessons, thursdayRecessCal)
+    assertTrue(helper.isRecessLiveForSelectedDay(recessStatus, "PER", 1))
+    assertFalse(helper.isRecessLiveForSelectedDay(recessStatus, "PZT", 1))
+
+    // Lunch on Thursday at 12:10 (11:50 - 12:40) -> ONLY Thursday's lunch is live
+    val thursdayLunchCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 19, 12, 10, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val lunchStatus = helper.calculateLiveScheduleStatus(config, allLessons, thursdayLunchCal)
+    assertTrue(helper.isLunchLiveForSelectedDay(lunchStatus, "PER"))
+    assertFalse(helper.isLunchLiveForSelectedDay(lunchStatus, "CUM"))
+
+    // Weekend (Saturday, 21 Nov 2026) -> default day falls back to PZT and nothing is live
+    val saturdayCal = java.util.Calendar.getInstance().apply {
+      set(2026, java.util.Calendar.NOVEMBER, 21, 9, 40, 0)
+      set(java.util.Calendar.MILLISECOND, 0)
+    }
+    assertNull(helper.getTodayScheduleDayKey(saturdayCal))
+    assertEquals("PZT", helper.getDefaultScheduleDayKey(saturdayCal))
+    val weekendStatus = helper.calculateLiveScheduleStatus(config, allLessons, saturdayCal)
+    assertFalse(weekendStatus.isLive)
+    assertFalse(helper.isLessonLiveForSelectedDay(weekendStatus, "PZT", 2))
+  }
 }

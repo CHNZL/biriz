@@ -137,7 +137,7 @@ fun TeacherDashboardScreen(
     scheduleConfig: ScheduleConfig = ScheduleConfig(),
     scheduleLessons: List<ScheduleLesson> = emptyList(),
     isScheduleSettingsActive: Boolean = false,
-    activeScheduleDay: String = "PZT",
+    activeScheduleDay: String = com.example.util.ScheduleHelper.getDefaultScheduleDayKey(),
     seatingPlanState: SeatingPlanState = SeatingPlanState(),
     isSeatingConfigOpen: Boolean = false,
     groupMakerState: GroupMakerState = GroupMakerState(),

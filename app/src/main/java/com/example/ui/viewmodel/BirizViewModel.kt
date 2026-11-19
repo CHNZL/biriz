@@ -185,7 +185,7 @@ data class BirizUiState(
     val scheduleConfig: ScheduleConfig = ScheduleConfig(),
     val scheduleLessons: List<ScheduleLesson> = ScheduleHelper.generateDefaultWeeklySchedule(),
     val isScheduleSettingsStepActive: Boolean = false,
-    val activeScheduleDay: String = "PZT",
+    val activeScheduleDay: String = ScheduleHelper.getDefaultScheduleDayKey(),
 
     // Akıllı Sınıf Oturma Planı Durumu
     val seatingPlanState: SeatingPlanState = SeatingPlanState(),
@@ -1647,17 +1647,24 @@ class BirizViewModel(
         }
     }
 
-    fun loadScheduleFromStorage(classId: String = resolveActiveClassId()) {
+    fun loadScheduleFromStorage(
+        classId: String = resolveActiveClassId(),
+        resetDayToToday: Boolean = false
+    ) {
         val ctx = appContext ?: return
         val savedConfig = SchedulePersistenceHelper.loadScheduleConfig(ctx, classId)
         val savedLessons = SchedulePersistenceHelper.loadScheduleLessons(ctx, classId)
-        val savedActiveDay = SchedulePersistenceHelper.loadActiveDay(ctx, classId)
+        val targetDay = if (resetDayToToday) {
+            ScheduleHelper.getDefaultScheduleDayKey()
+        } else {
+            _uiState.value.activeScheduleDay
+        }
 
-        if (savedConfig != null || savedLessons != null || savedActiveDay != null) {
+        if (savedConfig != null || savedLessons != null || resetDayToToday) {
             _uiState.value = _uiState.value.copy(
                 scheduleConfig = savedConfig ?: _uiState.value.scheduleConfig,
                 scheduleLessons = savedLessons ?: _uiState.value.scheduleLessons,
-                activeScheduleDay = savedActiveDay ?: _uiState.value.activeScheduleDay
+                activeScheduleDay = targetDay
             )
         }
 
@@ -4232,8 +4239,10 @@ class BirizViewModel(
 
     fun selectSubPage(subPage: DashboardSubPage) {
         val activeClassId = resolveActiveClassId()
+        val isEnteringSchedule = subPage == DashboardSubPage.DERS_PROGRAMI &&
+            _uiState.value.currentSubPage != DashboardSubPage.DERS_PROGRAMI
         if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.DERS_PROGRAMI) {
-            loadScheduleFromStorage(activeClassId)
+            loadScheduleFromStorage(activeClassId, resetDayToToday = isEnteringSchedule)
         }
         if (subPage == DashboardSubPage.ANA_SAYFA || subPage == DashboardSubPage.OTURMA_PLANI) {
             loadSeatingPlanFromStorage(activeClassId)
