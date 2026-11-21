@@ -1130,6 +1130,589 @@
       animation: spinWheelGlow 0.55s ease-in-out infinite;
     }
 
+    /* ANA SAYFA (AKILLI TAHTA ÖZET EKRANI) */
+    .home-note-strip {
+      display: none;
+      align-items: center;
+      gap: clamp(10px, 1.1vw, 16px);
+      padding: clamp(7px, 1.05vh, 12px) clamp(12px, 1.3vw, 18px);
+      border-radius: 18px;
+      background: linear-gradient(90deg, #FEF3C7 0%, #FFFBEB 55%, #FEF9C3 100%);
+      border: 2.5px solid #F59E0B;
+      border-bottom: 5px solid #D97706;
+      box-shadow: 0 6px 16px rgba(217, 119, 6, 0.16);
+      flex-shrink: 0;
+    }
+
+    .home-note-strip.is-visible {
+      display: flex;
+    }
+
+    .home-note-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: clamp(5px, 0.7vh, 8px) clamp(10px, 1vw, 14px);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      color: #FFFFFF;
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.84rem, 1.65vh, 1.1rem);
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-shadow: 0 3px 8px rgba(217, 119, 6, 0.28);
+    }
+
+    .home-note-text {
+      flex: 1;
+      min-width: 0;
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1.02rem, 2.15vh, 1.46rem);
+      font-weight: 700;
+      color: #78350F;
+      line-height: 1.22;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .home-countdown-hero {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: clamp(8px, 1vw, 14px);
+      padding: clamp(8px, 1.15vh, 13px) clamp(11px, 1.15vw, 16px);
+      border-radius: 16px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+      border: 2.5px solid #38BDF8;
+      border-bottom: 4px solid #0284C7;
+      color: #FFFFFF;
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
+    }
+
+    .home-countdown-hero.mode-lesson {
+      background: linear-gradient(135deg, #065F46 0%, #059669 60%, #10B981 100%);
+      border-color: #6EE7B7;
+      border-bottom-color: #047857;
+      box-shadow: 0 6px 16px rgba(5, 150, 105, 0.26);
+    }
+
+    .home-countdown-hero.mode-recess {
+      background: linear-gradient(135deg, #B45309 0%, #D97706 58%, #F59E0B 100%);
+      border-color: #FDE68A;
+      border-bottom-color: #92400E;
+      box-shadow: 0 6px 16px rgba(217, 119, 6, 0.28);
+    }
+
+    .home-countdown-hero.mode-lunch {
+      background: linear-gradient(135deg, #0E7490 0%, #0891B2 60%, #06B6D4 100%);
+      border-color: #A5F3FC;
+      border-bottom-color: #155E75;
+      box-shadow: 0 6px 16px rgba(8, 145, 178, 0.26);
+    }
+
+    .home-countdown-hero.mode-before {
+      background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+      border-color: #93C5FD;
+      border-bottom-color: #1D4ED8;
+    }
+
+    .home-countdown-hero.mode-idle {
+      background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
+      border-color: #94A3B8;
+      border-bottom-color: #475569;
+    }
+
+    .home-countdown-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .home-countdown-eyebrow {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.72rem, 1.32vh, 0.92rem);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: rgba(255, 255, 255, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .home-countdown-subject {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.95rem, 1.92vh, 1.32rem);
+      font-weight: 700;
+      color: #FFFFFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.15;
+    }
+
+    .home-countdown-digits-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    .home-countdown-digits {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1.65rem, 3.85vh, 2.75rem);
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 1px;
+      font-variant-numeric: tabular-nums;
+      color: #FFFFFF;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+      white-space: nowrap;
+    }
+
+    .home-countdown-caption {
+      font-size: clamp(0.64rem, 1.1vh, 0.78rem);
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.86);
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .home-countdown-progress-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .home-countdown-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 0 4px 4px 0;
+      transition: width 0.6s linear;
+    }
+
+    .home-dashboard-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.28fr 1fr 1fr;
+      gap: clamp(8px, 1.1vw, 15px);
+      overflow: hidden;
+    }
+
+    .home-panel {
+      background: rgba(255, 255, 255, 0.94);
+      border: 2.5px solid #CBD5E1;
+      border-bottom: 5px solid #94A3B8;
+      border-radius: 22px;
+      padding: clamp(9px, 1.2vh, 14px) clamp(10px, 1.1vw, 15px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(6px, 0.9vh, 10px);
+      min-height: 0;
+      overflow: hidden;
+      box-shadow: 0 6px 16px rgba(15, 30, 54, 0.08);
+    }
+
+    .home-panel.schedule-panel {
+      border-color: #7DD3FC;
+      border-bottom-color: #0284C7;
+      background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(240,249,255,0.95) 100%);
+    }
+
+    .home-panel.stars-panel {
+      border-color: #FCD34D;
+      border-bottom-color: #D97706;
+      background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(255,251,235,0.95) 100%);
+    }
+
+    .home-panel.books-panel {
+      border-color: #6EE7B7;
+      border-bottom-color: #059669;
+      background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(236,253,245,0.95) 100%);
+    }
+
+    .home-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: clamp(5px, 0.7vh, 8px);
+      border-bottom: 2px solid rgba(148, 163, 184, 0.25);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .home-panel-title {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1rem, 2.05vh, 1.38rem);
+      font-weight: 700;
+      color: var(--navy-primary);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .home-panel-subbadge {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.72rem, 1.32vh, 0.9rem);
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #E0F2FE;
+      color: #0369A1;
+      border: 1.5px solid #BAE6FD;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .home-scope-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(245, 158, 11, 0.14);
+      padding: 3px;
+      border-radius: 12px;
+      border: 1.5px solid #FDE68A;
+      flex-shrink: 0;
+      width: 100%;
+    }
+
+    .home-scope-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: #92400E;
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.74rem, 1.38vh, 0.94rem);
+      font-weight: 700;
+      padding: clamp(4px, 0.55vh, 6px) 6px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .home-scope-btn.active {
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      color: #FFFFFF;
+      box-shadow: 0 2px 6px rgba(217, 119, 6, 0.28);
+    }
+
+    .home-schedule-list {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(3px, 0.55vh, 6px);
+      overflow: hidden;
+    }
+
+    .home-lesson-row {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      gap: clamp(7px, 0.8vw, 11px);
+      padding: clamp(4px, 0.65vh, 8px) clamp(8px, 0.85vw, 12px);
+      border-radius: 14px;
+      background: #FFFFFF;
+      border: 2px solid #E2E8F0;
+      border-left: 6px solid #0284C7;
+      transition: all 0.2s ease;
+      overflow: hidden;
+    }
+
+    .home-lesson-row.theme-AMBER { border-left-color: #F59E0B; background: linear-gradient(90deg, #FFFBEB 0%, #FFFFFF 45%); }
+    .home-lesson-row.theme-TURQUOISE { border-left-color: #06B6D4; background: linear-gradient(90deg, #ECFEFF 0%, #FFFFFF 45%); }
+    .home-lesson-row.theme-PURPLE { border-left-color: #A855F7; background: linear-gradient(90deg, #FAF5FF 0%, #FFFFFF 45%); }
+    .home-lesson-row.theme-EMERALD { border-left-color: #10B981; background: linear-gradient(90deg, #ECFDF5 0%, #FFFFFF 45%); }
+    .home-lesson-row.theme-ROSE { border-left-color: #F43F5E; background: linear-gradient(90deg, #FFF1F2 0%, #FFFFFF 45%); }
+    .home-lesson-row.theme-NAVY { border-left-color: #1B2A4A; background: linear-gradient(90deg, #EFF6FF 0%, #FFFFFF 45%); }
+
+    .home-lesson-row.is-past {
+      opacity: 0.64;
+    }
+
+    .home-lesson-row.is-active {
+      flex: 1.32;
+      background: linear-gradient(135deg, #DCFCE7 0%, #ECFDF5 58%, #FFFFFF 100%);
+      border: 2.5px solid #10B981;
+      border-left: 7px solid #059669;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22), 0 6px 14px rgba(16, 185, 129, 0.18);
+      opacity: 1;
+    }
+
+    .home-lesson-idx {
+      width: clamp(28px, 3.8vh, 38px);
+      height: clamp(28px, 3.8vh, 38px);
+      border-radius: 11px;
+      background: var(--navy-primary);
+      color: #FFFFFF;
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.84rem, 1.65vh, 1.12rem);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .home-lesson-row.is-active .home-lesson-idx {
+      background: #059669;
+      box-shadow: 0 2px 6px rgba(5, 150, 105, 0.35);
+    }
+
+    .home-lesson-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .home-lesson-name {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.9rem, 1.85vh, 1.24rem);
+      font-weight: 700;
+      color: var(--navy-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.12;
+    }
+
+    .home-lesson-time {
+      font-size: clamp(0.72rem, 1.32vh, 0.9rem);
+      font-weight: 800;
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    .home-live-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #059669;
+      color: #FFFFFF;
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.7rem, 1.3vh, 0.88rem);
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(5, 150, 105, 0.3);
+    }
+
+    .home-break-row {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: clamp(2px, 0.35vh, 4px) 10px;
+      border-radius: 9px;
+      background: rgba(241, 245, 249, 0.9);
+      border: 1.5px dashed #CBD5E1;
+      font-size: clamp(0.68rem, 1.18vh, 0.82rem);
+      font-weight: 800;
+      color: #64748B;
+    }
+
+    .home-break-row.is-lunch {
+      background: #ECFEFF;
+      border-color: #67E8F9;
+      color: #0E7490;
+    }
+
+    .home-break-row.is-active {
+      background: linear-gradient(90deg, #FEF3C7 0%, #FDE68A 100%);
+      border: 2px solid #F59E0B;
+      color: #92400E;
+      padding: clamp(5px, 0.75vh, 9px) 11px;
+      font-size: clamp(0.78rem, 1.48vh, 0.98rem);
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24);
+    }
+
+    .home-break-row.is-lunch.is-active {
+      background: linear-gradient(90deg, #CFFAFE 0%, #A5F3FC 100%);
+      border: 2px solid #06B6D4;
+      color: #155E75;
+      box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.24);
+    }
+
+    .home-rank-list {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: repeat(5, minmax(0, 1fr));
+      gap: clamp(5px, 0.8vh, 9px);
+      overflow: hidden;
+    }
+
+    .home-rank-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: clamp(7px, 0.75vw, 11px);
+      padding: clamp(5px, 0.75vh, 10px) clamp(9px, 0.9vw, 13px);
+      border-radius: 15px;
+      background: #FFFFFF;
+      border: 2px solid #E2E8F0;
+      border-bottom: 4px solid #CBD5E1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .home-rank-row.rank-1 {
+      background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+      border-color: #F59E0B;
+      border-bottom-color: #D97706;
+    }
+    .home-rank-row.rank-2 {
+      background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
+      border-color: #94A3B8;
+      border-bottom-color: #64748B;
+    }
+    .home-rank-row.rank-3 {
+      background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+      border-color: #F97316;
+      border-bottom-color: #EA580C;
+    }
+
+    .home-rank-bar {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 4px;
+      border-radius: 0 4px 0 0;
+      opacity: 0.78;
+    }
+
+    .home-rank-medal {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(1.1rem, 2.3vh, 1.55rem);
+      font-weight: 700;
+      width: clamp(28px, 3.6vh, 38px);
+      text-align: center;
+      flex-shrink: 0;
+      color: var(--navy-primary);
+    }
+
+    .home-rank-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .home-rank-name {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.92rem, 1.92vh, 1.28rem);
+      font-weight: 700;
+      color: #0F172A;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.12;
+    }
+
+    .home-rank-sub {
+      font-size: clamp(0.7rem, 1.24vh, 0.85rem);
+      font-weight: 800;
+      color: #64748B;
+      white-space: nowrap;
+    }
+
+    .home-rank-metrics {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .home-metric-badge {
+      font-family: 'Fredoka', sans-serif;
+      font-size: clamp(0.84rem, 1.65vh, 1.12rem);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 11px;
+      white-space: nowrap;
+    }
+
+    .home-metric-badge.star-badge {
+      background: linear-gradient(180deg, #FFFFFF 0%, #FEF3C7 100%);
+      border: 2px solid #F59E0B;
+      color: #92400E;
+    }
+
+    .home-metric-badge.book-badge {
+      background: linear-gradient(180deg, #FFFFFF 0%, #D1FAE5 100%);
+      border: 2px solid #10B981;
+      color: #065F46;
+    }
+
+    .home-metric-badge.page-badge {
+      background: #F1F5F9;
+      border: 1.5px solid #CBD5E1;
+      color: #334155;
+      font-size: clamp(0.74rem, 1.38vh, 0.94rem);
+      padding: 4px 8px;
+    }
+
+    .home-panel-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: clamp(4px, 0.6vh, 7px);
+      border-top: 1.5px solid rgba(148, 163, 184, 0.25);
+      font-size: clamp(0.74rem, 1.32vh, 0.9rem);
+      font-weight: 800;
+      color: #475569;
+      flex-shrink: 0;
+    }
+
+    .home-empty-box {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 6px;
+      color: #64748B;
+      font-weight: 800;
+      font-size: clamp(0.86rem, 1.6vh, 1.05rem);
+      padding: 12px;
+    }
+
+    @media (max-width: 1080px) {
+      .home-dashboard-grid {
+        grid-template-columns: 1fr 1fr;
+        overflow-y: auto;
+      }
+      .home-panel.schedule-panel {
+        grid-column: 1 / -1;
+      }
+    }
+
     @media (max-width: 780px) {
       .pairing-main-grid {
         grid-template-columns: 1fr;
@@ -1138,6 +1721,9 @@
         grid-template-columns: 1fr;
       }
       .split-stage {
+        grid-template-columns: 1fr;
+      }
+      .home-dashboard-grid {
         grid-template-columns: 1fr;
       }
       .clock-pill {
@@ -1233,6 +1819,13 @@
       <p style="color:#BAE6FD; max-width:520px; margin-top:8px; font-weight:700; font-size:1.05rem;">
         Öğretmen tarafından canlı tahta yansıtması geçici olarak duraklatıldı.
       </p>
+    </div>
+
+    <!-- MODÜL 0: SINIF ANA SAYFASI (ÖZET EKRAN) -->
+    <div id="mod-ANA_SAYFA" class="module-screen">
+      <div class="board-toolbar" id="home-toolbar"></div>
+      <div class="home-note-strip" id="home-note-strip"></div>
+      <div class="home-dashboard-grid" id="home-stage"></div>
     </div>
 
     <!-- MODÜL 1: SINIF LİSTESİ -->
@@ -1342,8 +1935,14 @@
 
       var liveStudentsMap = {};
       var liveStarsMap = {};
+      var liveTodayStarsMap = {};
+      var liveWeekStarsMap = {};
       var liveBooksMap = {};
+      var livePagesMap = {};
       var previousTotalsMap = {};
+      var currentHomeStarScope = "today";
+      var homeStarScopeTouched = false;
+      var activeHomeCountdownState = null;
 
       var activeCleanupCallbacks = [];
       var classCleanupCallbacks = [];
@@ -1431,6 +2030,22 @@
         if (hh.length < 2) hh = "0" + hh;
         if (mm.length < 2) mm = "0" + mm;
         el.textContent = "🕐 " + hh + ":" + mm;
+
+        // Canlı ders/teneffüs göstergelerini ana sayfa ve ders programında dakikası dakikasına güncelle
+        if (isBoardConnected) {
+          var homeEl = document.getElementById("mod-ANA_SAYFA");
+          if (homeEl && homeEl.classList.contains("active")) {
+            renderHomeDashboard(latestStateData, getMergedStudentsList());
+          }
+          var schedEl = document.getElementById("mod-DERS_PROGRAMI");
+          if (schedEl && schedEl.classList.contains("active")) {
+            renderSchedule(
+              latestStateData.schedule || [],
+              latestStateData.selectedDay || latestStateData.activeScheduleDay || getTodayScheduleKey(),
+              latestStateData.scheduleConfig
+            );
+          }
+        }
       }
 
       function updateTransportNote(msg, isError) {
@@ -1532,6 +2147,13 @@
           dayKey,
           latestStateData.scheduleConfig
         );
+      };
+
+      window.setHomeStarScope = function(scope) {
+        if (scope !== "today" && scope !== "week" && scope !== "all") return;
+        currentHomeStarScope = scope;
+        homeStarScopeTouched = true;
+        renderHomeDashboard(latestStateData, getMergedStudentsList());
       };
 
       window.setBoardLibraryTab = function(tab) {
@@ -2229,7 +2851,10 @@
         classCleanupCallbacks = [];
         liveStudentsMap = {};
         liveStarsMap = {};
+        liveTodayStarsMap = {};
+        liveWeekStarsMap = {};
         liveBooksMap = {};
+        livePagesMap = {};
       }
 
       function startSessionListening() {
@@ -2338,13 +2963,25 @@
               classCleanupCallbacks.push(fbApi.onSnapshot(starsRef, function(snap) {
                 if (!snap) return;
                 var map = {};
+                var todayMap = {};
+                var weekMap = {};
                 var recentList = [];
+                var nowDate = new Date();
+                var todayStartMs = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+                var dow = nowDate.getDay();
+                var daysSinceMonday = (dow === 0 ? 6 : dow - 1);
+                var weekStartMs = todayStartMs - (daysSinceMonday * 86400000);
                 snap.forEach(function(docSnap) {
                   var d = docSnap.data() || {};
                   var sid = d.studentId || "";
                   var cnt = Number(d.starCount);
                   var validCnt = isNaN(cnt) ? 1 : cnt;
-                  if (sid) map[sid] = (map[sid] || 0) + validCnt;
+                  var ts = Number(d.timestamp || 0);
+                  if (sid) {
+                    map[sid] = (map[sid] || 0) + validCnt;
+                    if (ts >= weekStartMs) weekMap[sid] = (weekMap[sid] || 0) + validCnt;
+                    if (ts >= todayStartMs) todayMap[sid] = (todayMap[sid] || 0) + validCnt;
+                  }
                   recentList.push({
                     id: docSnap.id,
                     studentId: sid,
@@ -2352,12 +2989,14 @@
                     studentNumber: String(d.studentNumber || ""),
                     categoryName: d.categoryName || "Başarı Yıldızı",
                     starCount: validCnt,
-                    timestamp: Number(d.timestamp || 0)
+                    timestamp: ts
                   });
                 });
                 if (!snap.empty || Object.keys(liveStarsMap).length > 0) {
                   recentList.sort(function(a, b) { return b.timestamp - a.timestamp; });
                   liveStarsMap = map;
+                  liveTodayStarsMap = todayMap;
+                  liveWeekStarsMap = weekMap;
                   lastLiveStarsAt = Date.now();
                   latestStateData.recentStars = recentList.slice(0, 15);
                   refreshLiveViews();
@@ -2368,13 +3007,19 @@
               classCleanupCallbacks.push(fbApi.onSnapshot(booksRef, function(snap) {
                 if (!snap) return;
                 var map = {};
+                var pagesMap = {};
                 snap.forEach(function(docSnap) {
                   var d = docSnap.data() || {};
                   var sid = d.studentId || "";
-                  if (sid) map[sid] = (map[sid] || 0) + 1;
+                  var pgs = Number(d.pageCount || 0);
+                  if (sid) {
+                    map[sid] = (map[sid] || 0) + 1;
+                    pagesMap[sid] = (pagesMap[sid] || 0) + (isNaN(pgs) ? 0 : pgs);
+                  }
                 });
                 if (!snap.empty || Object.keys(liveBooksMap).length > 0) {
                   liveBooksMap = map;
+                  livePagesMap = pagesMap;
                   lastLiveBooksAt = Date.now();
                   refreshLiveViews();
                 }
@@ -2401,8 +3046,9 @@
       }
 
       function normalizeModuleKey(rawMod) {
-        var m = String(rawMod || "SINIF_LISTESI").toUpperCase().trim();
-        if (m === "ANA_SAYFA" || m === "SINIF_LISTESI" || m === "PROFIL_AYARLARI") return "SINIF_LISTESI";
+        var m = String(rawMod || "ANA_SAYFA").toUpperCase().trim();
+        if (m === "ANA_SAYFA") return "ANA_SAYFA";
+        if (m === "SINIF_LISTESI" || m === "PROFIL_AYARLARI") return "SINIF_LISTESI";
         if (m === "PAYLASIM" || m === "BOARD_CAST") return "PAYLASIM";
         if (m.indexOf("ILETISIM") === 0 || m.indexOf("OGRETMEN_ODASI") === 0) return "SINIF_LISTESI";
         if (m.indexOf("KITAPLIK") === 0) {
@@ -2421,7 +3067,7 @@
 
       function getModuleTitle(key) {
         var map = {
-          "ANA_SAYFA": "📋 Sınıf Listesi",
+          "ANA_SAYFA": "🏠 Sınıf Ana Sayfası",
           "SINIF_LISTESI": "📋 Sınıf Listesi",
           "DERS_PROGRAMI": "📅 Ders Programı",
           "OTURMA_PLANI": "🪑 Oturma Planı",
@@ -2433,7 +3079,7 @@
           "TURNUVA": "🏆 Sınıf Turnuvası",
           "PAYLASIM": "📡 Paylaşım"
         };
-        return map[key] || "📋 Sınıf Listesi";
+        return map[key] || "🏠 Sınıf Ana Sayfası";
       }
 
       function forceDisconnectToWaiting(noteMsg, disconnectedTs, disconnectedConnId) {
@@ -2454,6 +3100,7 @@
         lastPayloadStudentsAt = 0;
         lastLiveStarsAt = 0;
         lastLiveBooksAt = 0;
+        homeStarScopeTouched = false;
         latestStateData = {};
         activeCastRenderKey = "";
         activeCastMirrorId = "";
@@ -2642,7 +3289,9 @@
           } else {
             modBadge.textContent = isPrivateTeacherModule
               ? "📋 Sınıf Listesi (Gizlilik Korumalı)"
-              : (targetKey === "SINIF_LISTESI" ? "📋 Sınıf Listesi" : rawTitle);
+              : (targetKey === "ANA_SAYFA"
+                  ? "🏠 Sınıf Ana Sayfası"
+                  : (targetKey === "SINIF_LISTESI" ? "📋 Sınıf Listesi" : rawTitle));
           }
         }
 
@@ -2655,13 +3304,14 @@
             activeCastRenderKey = "";
             activeCastMirrorId = "";
           }
-          var fallbackTarget = (targetKey === "PAYLASIM") ? "SINIF_LISTESI" : targetKey;
+          var fallbackTarget = (targetKey === "PAYLASIM") ? "ANA_SAYFA" : targetKey;
           switchActiveModuleScreen(fallbackTarget);
         }
 
         var mergedStudents = getMergedStudentsList();
+        renderHomeDashboard(latestStateData, mergedStudents);
         renderStudents(mergedStudents);
-        renderSchedule(latestStateData.schedule || [], latestStateData.selectedDay || latestStateData.activeScheduleDay || "PZT", latestStateData.scheduleConfig);
+        renderSchedule(latestStateData.schedule || [], latestStateData.selectedDay || latestStateData.activeScheduleDay || getTodayScheduleKey(), latestStateData.scheduleConfig);
         renderSeatingPlan(latestStateData.seatingPlan, mergedStudents);
         renderGroups(latestStateData.groups, mergedStudents);
         renderLuckyStudent(latestStateData, mergedStudents);
@@ -2684,14 +3334,20 @@
           var s = baseList[i] || {};
           var sid = s.id || "";
           var starsFromPayload = Number(s.stars || 0);
+          var todayStarsFromPayload = Number(s.todayStars || 0);
+          var weekStarsFromPayload = Number(s.weekStars || 0);
           var booksFromPayload = Number(s.booksRead || 0);
+          var pagesFromPayload = Number(s.pagesRead || 0);
 
           var mergedItem = {};
           for (var k in s) {
             if (Object.prototype.hasOwnProperty.call(s, k)) mergedItem[k] = s[k];
           }
           mergedItem.stars = useLiveStars ? (liveStarsMap[sid] !== undefined ? liveStarsMap[sid] : 0) : starsFromPayload;
+          mergedItem.todayStars = useLiveStars ? (liveTodayStarsMap[sid] !== undefined ? liveTodayStarsMap[sid] : 0) : todayStarsFromPayload;
+          mergedItem.weekStars = useLiveStars ? (liveWeekStarsMap[sid] !== undefined ? liveWeekStarsMap[sid] : 0) : weekStarsFromPayload;
           mergedItem.booksRead = useLiveBooks ? (liveBooksMap[sid] !== undefined ? liveBooksMap[sid] : 0) : booksFromPayload;
+          mergedItem.pagesRead = useLiveBooks ? (livePagesMap[sid] !== undefined ? livePagesMap[sid] : 0) : pagesFromPayload;
           result.push(mergedItem);
         }
         return result;
@@ -2700,6 +3356,7 @@
       function refreshLiveViews() {
         if (!isBoardConnected) return;
         var merged = getMergedStudentsList();
+        renderHomeDashboard(latestStateData, merged);
         renderStudents(merged);
         renderStarStandings(merged);
         if (latestStateData.seatingPlan) renderSeatingPlan(latestStateData.seatingPlan, merged);
@@ -2896,6 +3553,533 @@
       function parseMinutesOfDay(hhmm) {
         var parts = String(hhmm || "00:00").split(":");
         return (parseInt(parts[0] || "0", 10) * 60) + parseInt(parts[1] || "0", 10);
+      }
+
+      function getTodayScheduleKey() {
+        var dow = new Date().getDay();
+        if (dow === 1) return "PZT";
+        if (dow === 2) return "SAL";
+        if (dow === 3) return "ÇAR";
+        if (dow === 4) return "PER";
+        if (dow === 5) return "CUM";
+        return "PZT";
+      }
+
+      function normalizeDayCode(dayStr) {
+        var up = String(dayStr || "").toUpperCase().trim();
+        return up === "CAR" ? "ÇAR" : up;
+      }
+
+      function formatTurkishNumber(n) {
+        var num = Number(n || 0);
+        try {
+          return num.toLocaleString("tr-TR");
+        } catch (e) {
+          return String(num);
+        }
+      }
+
+      function formatCountdownDigits(totalSeconds) {
+        var secs = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+        var h = Math.floor(secs / 3600);
+        var m = Math.floor((secs % 3600) / 60);
+        var s = secs % 60;
+        var mm = (m < 10 ? "0" : "") + m;
+        var ss = (s < 10 ? "0" : "") + s;
+        if (h > 0) {
+          return h + ":" + mm + ":" + ss;
+        }
+        return mm + ":" + ss;
+      }
+
+      function formatClockWithSeconds(dateObj) {
+        var d = dateObj || new Date();
+        var hh = String(d.getHours());
+        var mm = String(d.getMinutes());
+        var ss = String(d.getSeconds());
+        if (hh.length < 2) hh = "0" + hh;
+        if (mm.length < 2) mm = "0" + mm;
+        if (ss.length < 2) ss = "0" + ss;
+        return hh + ":" + mm + ":" + ss;
+      }
+
+      function getDailyNoteIcon(label) {
+        var low = String(label || "").toLocaleLowerCase("tr-TR");
+        if (low.indexOf("ödev") !== -1) return "📝";
+        if (low.indexOf("yarın") !== -1 || low.indexOf("getir") !== -1) return "🎒";
+        if (low.indexOf("hatırlat") !== -1 || low.indexOf("duyuru") !== -1) return "📢";
+        return "📌";
+      }
+
+      function extractDailyNote(stateData) {
+        if (!stateData) return { label: "Günün Notu", text: "" };
+        var raw = stateData.dailyNote;
+        if (typeof raw === "string") {
+          return { label: "Günün Notu", text: raw.trim() };
+        }
+        if (raw && typeof raw === "object") {
+          var txt = String(raw.text || "").trim();
+          var lbl = String(raw.label || "Günün Notu").trim() || "Günün Notu";
+          return { label: lbl, text: txt };
+        }
+        return { label: "Günün Notu", text: "" };
+      }
+
+      function updateHomeCountdownTick() {
+        if (!isBoardConnected) return;
+        var homeEl = document.getElementById("mod-ANA_SAYFA");
+        if (!homeEl || !homeEl.classList.contains("active")) return;
+        var digitsEl = document.getElementById("home-countdown-digits");
+        if (!digitsEl || !activeHomeCountdownState) return;
+
+        var st = activeHomeCountdownState;
+        var nowMs = Date.now();
+        if (st.mode === "idle") {
+          digitsEl.textContent = formatClockWithSeconds(new Date(nowMs));
+          return;
+        }
+
+        var remMs = st.targetEpochMs - nowMs;
+        if (remMs <= 0) {
+          // Ders/teneffüs geçiş anı: panoyu anında yeni duruma geçir
+          renderHomeDashboard(latestStateData, getMergedStudentsList());
+          return;
+        }
+        var remSecs = Math.max(0, Math.ceil(remMs / 1000));
+        digitsEl.textContent = formatCountdownDigits(remSecs);
+
+        var progEl = document.getElementById("home-countdown-progress");
+        if (progEl && st.totalSecs > 0) {
+          var elapsedSecs = Math.max(0, st.totalSecs - remSecs);
+          var pct = Math.max(0, Math.min(100, Math.round((elapsedSecs / st.totalSecs) * 100)));
+          progEl.style.width = pct + "%";
+        }
+      }
+
+      function renderHomeDashboard(stateData, students) {
+        var toolbar = document.getElementById("home-toolbar");
+        var noteStrip = document.getElementById("home-note-strip");
+        var stage = document.getElementById("home-stage");
+        if (!toolbar || !stage) return;
+
+        var list = Array.isArray(students) ? students : [];
+        var now = new Date();
+        var dayNamesTr = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
+        var monthNamesTr = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+        var dow = now.getDay();
+        var isWeekday = dow >= 1 && dow <= 5;
+        var todayKey = getTodayScheduleKey();
+        var scheduleDayLabel = isWeekday ? dayNamesTr[dow] : "Pazartesi (Önizleme)";
+        var dateLabel = now.getDate() + " " + monthNamesTr[now.getMonth()] + " " + dayNamesTr[dow];
+
+        // --- 0. GÜNÜN SABİT NOTU / ÖDEV PANOSU ---
+        if (noteStrip) {
+          var dailyNote = extractDailyNote(stateData);
+          if (dailyNote.text) {
+            noteStrip.className = "home-note-strip is-visible";
+            noteStrip.innerHTML =
+              '<span class="home-note-badge">' + getDailyNoteIcon(dailyNote.label) + ' ' + escapeHtml(dailyNote.label) + '</span>' +
+              '<div class="home-note-text">' + escapeHtml(dailyNote.text) + '</div>';
+          } else {
+            noteStrip.className = "home-note-strip";
+            noteStrip.innerHTML = "";
+          }
+        }
+
+        // --- 1. CANLI GÜNLÜK DERS PROGRAMI (DİKEY) + BÜYÜK GERİ SAYIM SAYACI ---
+        var cfg = (stateData && stateData.scheduleConfig) ? stateData.scheduleConfig : {};
+        var rawSchedule = (stateData && Array.isArray(stateData.schedule)) ? stateData.schedule : [];
+        var lessonMins = Number(cfg.lessonDurationMinutes) || 40;
+        var startTime = cfg.firstLessonStartTime || "08:30";
+        var recessList = Array.isArray(cfg.recessDurations) ? cfg.recessDurations : [15, 15, 15, 15, 15];
+        var lunchActive = cfg.isLunchBreakActive !== false;
+        var lunchAfter = Number(cfg.lunchAfterLessonIndex) || 4;
+        var lunchMins = Number(cfg.lunchDurationMinutes) || 50;
+
+        var dayLessons = [];
+        for (var dl = 0; dl < rawSchedule.length; dl++) {
+          if (normalizeDayCode(rawSchedule[dl].dayOfWeek) === todayKey) {
+            dayLessons.push(rawSchedule[dl]);
+          }
+        }
+        dayLessons.sort(function(a, b) { return (Number(a.lessonIndex) || 0) - (Number(b.lessonIndex) || 0); });
+        var dailyCount = Math.max(Number(cfg.dailyLessonCount) || 6, dayLessons.length);
+        if (dailyCount > 10) dailyCount = 10;
+
+        var nowMins = now.getHours() * 60 + now.getMinutes();
+        var todayMidnightMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+        var nowMs = now.getTime();
+        var cursorMins = 0;
+        var liveBannerText = isWeekday ? "📚 Günlük Ders Akışı" : "📅 Hafta Sonu Dinlenme Zamanı";
+        var liveBannerClass = "stat-pill";
+        var timelineHtml = [];
+        var firstStartMin = null;
+        var firstLessonName = "1. Ders";
+        var lastEndMin = null;
+
+        var countdownHero = {
+          mode: "idle",
+          eyebrow: isWeekday ? "🌙 GÜNLÜK PROGRAM" : "📅 HAFTA SONU",
+          subject: isWeekday ? "Ders Akışı Bekleniyor" : "İyi Tatiller & Dinlenmeler",
+          digits: formatClockWithSeconds(now),
+          caption: "CANLI SAAT",
+          progressPct: 0,
+          targetEpochMs: 0,
+          totalSecs: 0
+        };
+
+        var lessonNamesByIdx = {};
+        for (var ln = 0; ln < dayLessons.length; ln++) {
+          var lIdxNum = Number(dayLessons[ln].lessonIndex) || 0;
+          if (lIdxNum > 0 && dayLessons[ln].subjectName) {
+            lessonNamesByIdx[lIdxNum] = dayLessons[ln].subjectName;
+          }
+        }
+
+        for (var idx = 1; idx <= dailyCount; idx++) {
+          var sTime = addMinutesToTime(startTime, cursorMins);
+          var eTime = addMinutesToTime(startTime, cursorMins + lessonMins);
+          var sMin = parseMinutesOfDay(sTime);
+          var eMin = parseMinutesOfDay(eTime);
+          if (firstStartMin === null) firstStartMin = sMin;
+          lastEndMin = eMin;
+          cursorMins += lessonMins;
+
+          var lessonObj = null;
+          for (var j = 0; j < dayLessons.length; j++) {
+            if (Number(dayLessons[j].lessonIndex) === idx) { lessonObj = dayLessons[j]; break; }
+          }
+          var subjName = (lessonObj && lessonObj.subjectName) ? lessonObj.subjectName : (idx + ". Ders");
+          if (idx === 1) firstLessonName = subjName;
+          var themeKey = (lessonObj && lessonObj.colorTheme) ? lessonObj.colorTheme : "NAVY";
+          var isActiveLesson = isWeekday && nowMins >= sMin && nowMins < eMin;
+          var isPastLesson = isWeekday && nowMins >= eMin;
+          var remLesson = Math.max(1, eMin - nowMins);
+
+          if (isActiveLesson) {
+            var lessonStartMs = todayMidnightMs + (sMin * 60000);
+            var lessonEndMs = todayMidnightMs + (eMin * 60000);
+            var lessonTotalSecs = Math.max(60, (eMin - sMin) * 60);
+            var lessonRemSecs = Math.max(1, Math.ceil((lessonEndMs - nowMs) / 1000));
+            var lessonElapsedPct = Math.max(0, Math.min(100, Math.round(((lessonTotalSecs - lessonRemSecs) / lessonTotalSecs) * 100)));
+            liveBannerText = "🟢 " + idx + ". Ders: " + subjName + " • Bitişe " + remLesson + " dk";
+            liveBannerClass = "stat-pill book-stat";
+            countdownHero = {
+              mode: "lesson",
+              eyebrow: "🟢 " + idx + ". DERS • BİTİŞE KALAN",
+              subject: subjName + " (" + sTime + " – " + eTime + ")",
+              digits: formatCountdownDigits(lessonRemSecs),
+              caption: "DERS BİTİMİNE",
+              progressPct: lessonElapsedPct,
+              targetEpochMs: lessonEndMs,
+              totalSecs: lessonTotalSecs
+            };
+          }
+
+          timelineHtml.push(
+            '<div class="home-lesson-row theme-' + escapeHtml(themeKey) + (isActiveLesson ? ' is-active' : (isPastLesson ? ' is-past' : '')) + '">' +
+              '<div class="home-lesson-idx">' + idx + '</div>' +
+              '<div class="home-lesson-main">' +
+                '<div class="home-lesson-name">' + escapeHtml(subjName) + '</div>' +
+                '<div class="home-lesson-time">⏰ ' + escapeHtml(sTime) + ' – ' + escapeHtml(eTime) + '</div>' +
+              '</div>' +
+              (isActiveLesson
+                ? '<span class="home-live-pill">🟢 ŞU AN • ' + remLesson + ' dk</span>'
+                : (isPastLesson
+                    ? '<span style="font-family:Fredoka,sans-serif; font-size:0.82rem; font-weight:700; color:#10B981; flex-shrink:0;">✓</span>'
+                    : '')) +
+            '</div>'
+          );
+
+          if (idx < dailyCount) {
+            var isLunch = lunchActive && idx === lunchAfter;
+            var breakDur = isLunch ? lunchMins : Number(recessList[idx - 1] || 15);
+            var bStart = addMinutesToTime(startTime, cursorMins);
+            var bEnd = addMinutesToTime(startTime, cursorMins + breakDur);
+            var bStartMin = parseMinutesOfDay(bStart);
+            var bEndMin = parseMinutesOfDay(bEnd);
+            cursorMins += breakDur;
+
+            var isActiveBreak = isWeekday && nowMins >= bStartMin && nowMins < bEndMin;
+            var remBreak = Math.max(1, bEndMin - nowMins);
+
+            if (isActiveBreak) {
+              var breakEndMs = todayMidnightMs + (bEndMin * 60000);
+              var breakTotalSecs = Math.max(60, (bEndMin - bStartMin) * 60);
+              var breakRemSecs = Math.max(1, Math.ceil((breakEndMs - nowMs) / 1000));
+              var breakElapsedPct = Math.max(0, Math.min(100, Math.round(((breakTotalSecs - breakRemSecs) / breakTotalSecs) * 100)));
+              var nextSubjName = lessonNamesByIdx[idx + 1] || ((idx + 1) + ". Ders");
+              liveBannerText = (isLunch ? "🍽️ Öğle Arası" : "☕ Teneffüs") + " • " + (idx + 1) + ". Derse " + remBreak + " dk";
+              liveBannerClass = "stat-pill star-stat";
+              countdownHero = {
+                mode: isLunch ? "lunch" : "recess",
+                eyebrow: isLunch ? "🍽️ ÖĞLE ARASI • BİTİŞE KALAN" : "☕ TENEFFÜS • ZİLE KALAN",
+                subject: "Sıradaki: " + (idx + 1) + ". Ders – " + nextSubjName,
+                digits: formatCountdownDigits(breakRemSecs),
+                caption: (idx + 1) + ". DERSE KALAN",
+                progressPct: breakElapsedPct,
+                targetEpochMs: breakEndMs,
+                totalSecs: breakTotalSecs
+              };
+            }
+
+            if (isLunch || isActiveBreak) {
+              timelineHtml.push(
+                '<div class="home-break-row' + (isLunch ? ' is-lunch' : '') + (isActiveBreak ? ' is-active' : '') + '">' +
+                  '<span>' +
+                    (isLunch
+                      ? (isActiveBreak ? '🍽️ ÖĞLE ARASINDASINIZ • Derse ' + remBreak + ' dk' : '🍽️ Öğle Arası (' + breakDur + ' dk)')
+                      : ('☕ TENEFFÜSTESİNİZ • ' + (idx + 1) + '. Derse ' + remBreak + ' dk')) +
+                  '</span>' +
+                  '<span>' + escapeHtml(bStart) + ' – ' + escapeHtml(bEnd) + '</span>' +
+                '</div>'
+              );
+            }
+          }
+        }
+
+        if (isWeekday && firstStartMin !== null && nowMins < firstStartMin) {
+          var untilFirst = Math.max(1, firstStartMin - nowMins);
+          var firstStartMs = todayMidnightMs + (firstStartMin * 60000);
+          var firstRemSecs = Math.max(1, Math.ceil((firstStartMs - nowMs) / 1000));
+          liveBannerText = "⏰ İlk Derse " + untilFirst + " dk Kaldı (" + startTime + ")";
+          liveBannerClass = "stat-pill star-stat";
+          countdownHero = {
+            mode: "before",
+            eyebrow: "🔔 İLK DERSE GERİ SAYIM",
+            subject: "1. Ders: " + firstLessonName + " (" + startTime + ")",
+            digits: formatCountdownDigits(firstRemSecs),
+            caption: "BAŞLAMASINA",
+            progressPct: 0,
+            targetEpochMs: firstStartMs,
+            totalSecs: 0
+          };
+        } else if (isWeekday && lastEndMin !== null && nowMins >= lastEndMin) {
+          liveBannerText = "🌙 Bugünlük Dersler Tamamlandı";
+          liveBannerClass = "stat-pill";
+          countdownHero = {
+            mode: "idle",
+            eyebrow: "🌙 GÜN TAMAMLANDI",
+            subject: "Bugünlük tüm dersler bitti",
+            digits: formatClockWithSeconds(now),
+            caption: "CANLI SAAT",
+            progressPct: 100,
+            targetEpochMs: 0,
+            totalSecs: 0
+          };
+        }
+
+        activeHomeCountdownState = {
+          mode: countdownHero.mode,
+          targetEpochMs: countdownHero.targetEpochMs,
+          totalSecs: countdownHero.totalSecs
+        };
+
+        var countdownHtml =
+          '<div class="home-countdown-hero mode-' + escapeHtml(countdownHero.mode) + '">' +
+            '<div class="home-countdown-meta">' +
+              '<div class="home-countdown-eyebrow">' + escapeHtml(countdownHero.eyebrow) + '</div>' +
+              '<div class="home-countdown-subject">' + escapeHtml(countdownHero.subject) + '</div>' +
+            '</div>' +
+            '<div class="home-countdown-digits-wrap">' +
+              '<div class="home-countdown-digits" id="home-countdown-digits">' + escapeHtml(countdownHero.digits) + '</div>' +
+              '<div class="home-countdown-caption">' + escapeHtml(countdownHero.caption) + '</div>' +
+            '</div>' +
+            '<div class="home-countdown-progress-track">' +
+              '<div class="home-countdown-progress-fill" id="home-countdown-progress" style="width:' + countdownHero.progressPct + '%;"></div>' +
+            '</div>' +
+          '</div>';
+
+        // --- 2. YILDIZLAR SINIFI İLK 5 (BUGÜN / BU HAFTA / TÜM ZAMANLAR) ---
+        var totalAllStars = 0;
+        var totalWeekStars = 0;
+        var totalTodayStars = 0;
+        var totalBooksRead = 0;
+        var totalPagesRead = 0;
+        var girlsCount = 0;
+
+        for (var si = 0; si < list.length; si++) {
+          var st = list[si];
+          totalAllStars += Number(st.stars || 0);
+          totalWeekStars += Number(st.weekStars || 0);
+          totalTodayStars += Number(st.todayStars || 0);
+          totalBooksRead += Number(st.booksRead || 0);
+          totalPagesRead += Number(st.pagesRead || 0);
+          if (isGirlStudent(st.gender)) girlsCount++;
+        }
+        var boysCount = Math.max(0, list.length - girlsCount);
+
+        if (!homeStarScopeTouched) {
+          if (totalTodayStars > 0) currentHomeStarScope = "today";
+          else if (totalWeekStars > 0) currentHomeStarScope = "week";
+          else currentHomeStarScope = "all";
+        }
+
+        var starField = currentHomeStarScope === "today" ? "todayStars" : (currentHomeStarScope === "week" ? "weekStars" : "stars");
+        var scopeTotalStars = currentHomeStarScope === "today" ? totalTodayStars : (currentHomeStarScope === "week" ? totalWeekStars : totalAllStars);
+        var scopeLabel = currentHomeStarScope === "today" ? "Bugün" : (currentHomeStarScope === "week" ? "Bu Hafta" : "Tüm Zamanlar");
+
+        var starCandidates = [];
+        for (var sc = 0; sc < list.length; sc++) {
+          var val = Number(list[sc][starField] || 0);
+          if (val > 0) starCandidates.push({ student: list[sc], score: val });
+        }
+        starCandidates.sort(function(a, b) {
+          if (b.score !== a.score) return b.score - a.score;
+          if ((Number(b.student.stars) || 0) !== (Number(a.student.stars) || 0)) {
+            return (Number(b.student.stars) || 0) - (Number(a.student.stars) || 0);
+          }
+          return (Number(a.student.studentNo) || 0) - (Number(b.student.studentNo) || 0);
+        });
+        var topStars = starCandidates.slice(0, 5);
+        var maxStarScore = topStars.length > 0 ? Math.max(1, topStars[0].score) : 1;
+
+        var starRowsHtml = "";
+        if (topStars.length === 0) {
+          starRowsHtml =
+            '<div class="home-empty-box">' +
+              '<div style="font-size:2.6rem;">🌟</div>' +
+              '<div>' + escapeHtml(scopeLabel) + ' için henüz yıldız kaydı yok.</div>' +
+              '<div style="font-size:0.84em; opacity:0.82;">Yukarıdaki sekmelerden diğer dönemlere bakabilirsiniz.</div>' +
+            '</div>';
+        } else {
+          var sParts = ['<div class="home-rank-list">'];
+          for (var r = 0; r < topStars.length; r++) {
+            var item = topStars[r];
+            var medal = r === 0 ? "🥇" : (r === 1 ? "🥈" : (r === 2 ? "🥉" : (r + 1) + "."));
+            var rankCls = r < 3 ? (" rank-" + (r + 1)) : "";
+            var pct = Math.max(12, Math.round((item.score / maxStarScore) * 100));
+            var scoreText = (currentHomeStarScope === "all" ? "" : "+") + formatTurkishNumber(item.score) + " ⭐";
+            var subMeta = "No: " + escapeHtml(item.student.studentNumber || item.student.studentNo || "-") +
+              (currentHomeStarScope !== "all" ? (" • Toplam " + formatTurkishNumber(item.student.stars || 0) + " ⭐") : "");
+            sParts.push(
+              '<div class="home-rank-row' + rankCls + '">' +
+                '<div class="home-rank-medal">' + medal + '</div>' +
+                '<div class="home-rank-info">' +
+                  '<div class="home-rank-name">' + escapeHtml(item.student.fullName || "") + '</div>' +
+                  '<div class="home-rank-sub">' + subMeta + '</div>' +
+                '</div>' +
+                '<div class="home-rank-metrics">' +
+                  '<span class="home-metric-badge star-badge">' + scoreText + '</span>' +
+                '</div>' +
+                '<div class="home-rank-bar" style="width:' + pct + '%; background:linear-gradient(90deg,#F59E0B,#FBBF24);"></div>' +
+              '</div>'
+            );
+          }
+          sParts.push('</div>');
+          starRowsHtml = sParts.join("");
+        }
+
+        // --- 3. EN ÇOK KİTAP OKUYAN İLK 5 (KİTAP + SAYFA SAYISI) ---
+        var readerCandidates = [];
+        for (var rc = 0; rc < list.length; rc++) {
+          var bCnt = Number(list[rc].booksRead || 0);
+          var pCnt = Number(list[rc].pagesRead || 0);
+          if (bCnt > 0 || pCnt > 0) {
+            readerCandidates.push({ student: list[rc], books: bCnt, pages: pCnt });
+          }
+        }
+        readerCandidates.sort(function(a, b) {
+          if (b.books !== a.books) return b.books - a.books;
+          if (b.pages !== a.pages) return b.pages - a.pages;
+          return (Number(a.student.studentNo) || 0) - (Number(b.student.studentNo) || 0);
+        });
+        var topReaders = readerCandidates.slice(0, 5);
+        var maxBooks = topReaders.length > 0 ? Math.max(1, topReaders[0].books) : 1;
+
+        var readerRowsHtml = "";
+        if (topReaders.length === 0) {
+          readerRowsHtml =
+            '<div class="home-empty-box">' +
+              '<div style="font-size:2.6rem;">📚</div>' +
+              '<div>Henüz tamamlanan kitap okuma kaydı yok.</div>' +
+              '<div style="font-size:0.84em; opacity:0.82;">Öğrenciler kitap bitirdikçe ilk 5 burada canlı sıralanır.</div>' +
+            '</div>';
+        } else {
+          var bParts = ['<div class="home-rank-list">'];
+          for (var br = 0; br < topReaders.length; br++) {
+            var rItem = topReaders[br];
+            var rMedal = br === 0 ? "🥇" : (br === 1 ? "🥈" : (br === 2 ? "🥉" : (br + 1) + "."));
+            var rCls = br < 3 ? (" rank-" + (br + 1)) : "";
+            var bPct = Math.max(12, Math.round((rItem.books / maxBooks) * 100));
+            bParts.push(
+              '<div class="home-rank-row' + rCls + '">' +
+                '<div class="home-rank-medal">' + rMedal + '</div>' +
+                '<div class="home-rank-info">' +
+                  '<div class="home-rank-name">' + escapeHtml(rItem.student.fullName || "") + '</div>' +
+                  '<div class="home-rank-sub">No: ' + escapeHtml(rItem.student.studentNumber || rItem.student.studentNo || "-") + '</div>' +
+                '</div>' +
+                '<div class="home-rank-metrics">' +
+                  '<span class="home-metric-badge book-badge">📖 ' + formatTurkishNumber(rItem.books) + '</span>' +
+                  (rItem.pages > 0 ? '<span class="home-metric-badge page-badge">' + formatTurkishNumber(rItem.pages) + ' sf.</span>' : '') +
+                '</div>' +
+                '<div class="home-rank-bar" style="width:' + bPct + '%; background:linear-gradient(90deg,#10B981,#34D399);"></div>' +
+              '</div>'
+            );
+          }
+          bParts.push('</div>');
+          readerRowsHtml = bParts.join("");
+        }
+
+        var libData = (stateData && stateData.libraryData) ? stateData.libraryData : {};
+        var activeLoansCount = Number(libData.activeLoansCount || 0);
+
+        toolbar.innerHTML =
+          '<div class="stats-bar">' +
+            '<div class="stat-pill">📅 <strong>' + escapeHtml(dateLabel) + '</strong></div>' +
+            '<div class="' + liveBannerClass + '"><strong>' + escapeHtml(liveBannerText) + '</strong></div>' +
+          '</div>' +
+          '<div class="stats-bar">' +
+            '<div class="stat-pill">👥 <strong>' + list.length + '</strong> Öğrenci (' + girlsCount + ' Kız • ' + boysCount + ' Erkek)</div>' +
+            '<div class="stat-pill star-stat">⭐ <strong>' + formatTurkishNumber(totalAllStars) + '</strong> Yıldız</div>' +
+            '<div class="stat-pill book-stat">📚 <strong>' + formatTurkishNumber(totalBooksRead) + '</strong> Kitap</div>' +
+          '</div>';
+
+        stage.innerHTML =
+          '<section class="home-panel schedule-panel">' +
+            '<div class="home-panel-head">' +
+              '<div class="home-panel-title">📅 Bugünün Ders Programı</div>' +
+              '<span class="home-panel-subbadge">' + escapeHtml(scheduleDayLabel) + '</span>' +
+            '</div>' +
+            countdownHtml +
+            '<div class="home-schedule-list">' +
+              (timelineHtml.length > 0
+                ? timelineHtml.join("")
+                : '<div class="home-empty-box"><div style="font-size:2.4rem;">📅</div><div>Ders programı henüz girilmemiş.</div></div>') +
+            '</div>' +
+            '<div class="home-panel-foot">' +
+              '<span>🔔 İlk Ders: ' + escapeHtml(startTime) + '</span>' +
+              '<span>⏱️ ' + dailyCount + ' Ders • ' + lessonMins + ' dk</span>' +
+            '</div>' +
+          '</section>' +
+
+          '<section class="home-panel stars-panel">' +
+            '<div class="home-panel-head">' +
+              '<div class="home-panel-title">⭐ Yıldızlar İlk 5</div>' +
+              '<div class="home-scope-tabs">' +
+                '<button class="home-scope-btn ' + (currentHomeStarScope === "today" ? "active" : "") + '" onclick="setHomeStarScope(\'today\')">🌟 Bugün</button>' +
+                '<button class="home-scope-btn ' + (currentHomeStarScope === "week" ? "active" : "") + '" onclick="setHomeStarScope(\'week\')">📅 Bu Hafta</button>' +
+                '<button class="home-scope-btn ' + (currentHomeStarScope === "all" ? "active" : "") + '" onclick="setHomeStarScope(\'all\')">🏆 Tümü</button>' +
+              '</div>' +
+            '</div>' +
+            starRowsHtml +
+            '<div class="home-panel-foot">' +
+              '<span>Dönem: ' + escapeHtml(scopeLabel) + '</span>' +
+              '<span>Sınıf Toplamı: ' + formatTurkishNumber(scopeTotalStars) + ' ⭐</span>' +
+            '</div>' +
+          '</section>' +
+
+          '<section class="home-panel books-panel">' +
+            '<div class="home-panel-head">' +
+              '<div class="home-panel-title">📚 En Çok Okuyan İlk 5</div>' +
+              '<span class="home-panel-subbadge" style="background:#D1FAE5; color:#065F46; border-color:#6EE7B7;">Kitap &amp; Sayfa</span>' +
+            '</div>' +
+            readerRowsHtml +
+            '<div class="home-panel-foot">' +
+              '<span>Toplam: ' + formatTurkishNumber(totalBooksRead) + ' Kitap' + (totalPagesRead > 0 ? (' • ' + formatTurkishNumber(totalPagesRead) + ' sf.') : '') + '</span>' +
+              '<span>📖 Okunan: ' + formatTurkishNumber(activeLoansCount) + '</span>' +
+            '</div>' +
+          '</section>';
       }
 
       function renderSchedule(scheduleList, selectedDay, config) {
@@ -4184,6 +5368,7 @@
       function initBoard() {
         updateHeaderClock();
         setInterval(updateHeaderClock, 15000);
+        setInterval(updateHomeCountdownTick, 1000);
 
         try {
           var urlParams = new URLSearchParams(window.location.search);
