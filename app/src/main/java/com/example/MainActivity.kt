@@ -528,11 +528,17 @@ fun BirizApp(viewModel: BirizViewModel) {
                             isScreenMirrorPaused = uiState.isScreenMirrorPaused,
                             screenMirrorPauseReason = uiState.screenMirrorPauseReason,
                             screenMirrorPackageName = uiState.screenMirrorPackageName,
+                            smartBoardDailyNote = uiState.smartBoardDailyNote,
+                            smartBoardDailyNoteLabel = uiState.smartBoardDailyNoteLabel,
                             onOpenSmartBoardDialog = { viewModel.openSmartBoardDialog() },
                             onDismissSmartBoardDialog = { viewModel.dismissSmartBoardDialog() },
                             onConnectSmartBoard = { viewModel.connectSmartBoard(it) },
                             onToggleLiveBoardMirror = { viewModel.toggleLiveBoardMirror(it) },
                             onDisconnectSmartBoard = { viewModel.disconnectSmartBoard() },
+                            onSaveSmartBoardDailyNote = { label, text ->
+                                viewModel.saveSmartBoardDailyNote(label, text)
+                            },
+                            onClearSmartBoardDailyNote = { viewModel.clearSmartBoardDailyNote() },
                             onCastFileToBoard = { viewModel.castFileToSmartBoard(it) },
                             onCastUrlOrProgramToBoard = { url, title, isProgram ->
                                 viewModel.castUrlToSmartBoard(url, title, isProgram)

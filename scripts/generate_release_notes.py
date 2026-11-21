@@ -83,6 +83,24 @@ SPECIFIC_DIFF_RULES = [
     ),
     # --- Akıllı Tahta ---
     (
+        "smartboard_countdown_and_daily_note",
+        "smartboard",
+        False,
+        re.compile(r"(tahta\.html|index\.html|SmartBoardHelper|SmartBoardDailyNoteCard|TeacherDashboardScreen)", re.I),
+        re.compile(r"(SmartBoardDailyNoteCard|home-countdown-hero|home-note-strip|updateHomeCountdownTick|saveSmartBoardDailyNote|buildDailyNotePayload)", re.I),
+        "Akıllı Tahta Canlı Geri Sayım ve Günün Notu Panosu",
+        "Akıllı tahta ana sayfasına büyük ders/teneffüs geri sayım sayacı ile Akıllı Tahta Kumandasından sabitlenebilen Günün Notu ve Ödev Panosu eklendi.",
+    ),
+    (
+        "smartboard_home_dashboard",
+        "smartboard",
+        False,
+        re.compile(r"(tahta\.html|index\.html|SmartBoardHelper)", re.I),
+        re.compile(r"(renderHomeDashboard|mod-ANA_SAYFA|setHomeStarScope|calculatePeriodStarTotals|home-dashboard-grid)", re.I),
+        "Akıllı Tahta Sınıf Ana Sayfası",
+        "Uygulama ana sayfasına geçildiğinde akıllı tahtada bugünün canlı ders programı, dönem bazlı ilk 5 yıldız sıralaması ve en çok okuyan ilk 5 öğrenci özetinin görüntülenmesi sağlandı.",
+    ),
+    (
         "smartboard_hybrid_cf_webrtc",
         "smartboard",
         False,

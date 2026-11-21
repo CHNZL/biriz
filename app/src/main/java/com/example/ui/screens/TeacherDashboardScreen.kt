@@ -55,6 +55,7 @@ import com.example.data.model.BirizNotification
 import com.example.data.model.ChatMessage
 import com.example.ui.components.NotificationCenterDialog
 import com.example.ui.components.SmartBoardCastSection
+import com.example.ui.components.SmartBoardDailyNoteCard
 import com.example.ui.components.UserAvatarCircle
 import com.example.ui.components.UserProfileMenuDialog
 import com.example.ui.viewmodel.AuthenticatedUser
@@ -221,11 +222,15 @@ fun TeacherDashboardScreen(
     isScreenMirrorPaused: Boolean = false,
     screenMirrorPauseReason: String? = null,
     screenMirrorPackageName: String? = null,
+    smartBoardDailyNote: String = "",
+    smartBoardDailyNoteLabel: String = SmartBoardHelper.DEFAULT_DAILY_NOTE_LABEL,
     onOpenSmartBoardDialog: () -> Unit = {},
     onDismissSmartBoardDialog: () -> Unit = {},
     onConnectSmartBoard: (String) -> Unit = {},
     onToggleLiveBoardMirror: (Boolean) -> Unit = {},
     onDisconnectSmartBoard: () -> Unit = {},
+    onSaveSmartBoardDailyNote: (String, String) -> Unit = { _, _ -> },
+    onClearSmartBoardDailyNote: () -> Unit = {},
     onCastFileToBoard: (Uri) -> Unit = {},
     onCastUrlOrProgramToBoard: (String, String, Boolean) -> Unit = { _, _, _ -> },
     onStartAppMirror: (String, String, Int, Intent) -> Unit = { _, _, _, _ -> },
@@ -1223,11 +1228,15 @@ fun TeacherDashboardScreen(
                 isScreenMirrorPaused = isScreenMirrorPaused,
                 screenMirrorPauseReason = screenMirrorPauseReason,
                 screenMirrorPackageName = screenMirrorPackageName,
+                dailyNote = smartBoardDailyNote,
+                dailyNoteLabel = smartBoardDailyNoteLabel,
                 isDarkTheme = isDarkTheme,
                 onDismiss = onDismissSmartBoardDialog,
                 onConnect = onConnectSmartBoard,
                 onToggleMirror = onToggleLiveBoardMirror,
                 onDisconnect = onDisconnectSmartBoard,
+                onSaveDailyNote = onSaveSmartBoardDailyNote,
+                onClearDailyNote = onClearSmartBoardDailyNote,
                 onCastFile = onCastFileToBoard,
                 onCastUrlOrProgram = onCastUrlOrProgramToBoard,
                 onStartAppMirror = onStartAppMirror,
@@ -1250,11 +1259,15 @@ fun SmartBoardDialog(
     isScreenMirrorPaused: Boolean = false,
     screenMirrorPauseReason: String? = null,
     screenMirrorPackageName: String? = null,
+    dailyNote: String = "",
+    dailyNoteLabel: String = SmartBoardHelper.DEFAULT_DAILY_NOTE_LABEL,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
     onConnect: (String) -> Unit,
     onToggleMirror: (Boolean) -> Unit,
     onDisconnect: () -> Unit,
+    onSaveDailyNote: (String, String) -> Unit = { _, _ -> },
+    onClearDailyNote: () -> Unit = {},
     onCastFile: (Uri) -> Unit,
     onCastUrlOrProgram: (String, String, Boolean) -> Unit,
     onStartAppMirror: (String, String, Int, Intent) -> Unit = { _, _, _, _ -> },
@@ -1384,6 +1397,17 @@ fun SmartBoardDialog(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    SmartBoardDailyNoteCard(
+                        savedNote = dailyNote,
+                        savedLabel = dailyNoteLabel,
+                        isConnected = true,
+                        isDarkTheme = isDarkTheme,
+                        onSave = onSaveDailyNote,
+                        onClear = onClearDailyNote
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -1545,6 +1569,17 @@ fun SmartBoardDialog(
                             Text("Tahtaya Bağlan 🚀", fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    SmartBoardDailyNoteCard(
+                        savedNote = dailyNote,
+                        savedLabel = dailyNoteLabel,
+                        isConnected = false,
+                        isDarkTheme = isDarkTheme,
+                        onSave = onSaveDailyNote,
+                        onClear = onClearDailyNote
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

@@ -1,13 +1,13 @@
 {
-  "title": "Öğretmen Ders Programında Gün Bazlı Canlı Gösterim",
+  "title": "Canlı Geri Sayım ve Günün Notu Panosu",
   "items": [
     {
-      "title": "Sadece Bugünün Dersinde Canlı Süre Bilgisi",
-      "summary": "Öğretmen ders programındaki aktif ders, teneffüs ve bitişe kalan süre bilgisi diğer günlere yansımayacak şekilde yalnızca bulunulan gün için sınırlandırıldı."
+      "title": "Büyük Ders ve Teneffüs Geri Sayım Sayacı",
+      "summary": "Akıllı tahta ana sayfasındaki günlük ders programının üstüne, dersin bitimine veya teneffüs ve öğle arasının dolmasına kalan süreyi saniye saniye büyük rakamlarla gösteren canlı sayaç eklendi."
     },
     {
-      "title": "Bulunulan Günle Otomatik Açılış",
-      "summary": "Öğretmen ders programı ekranı açıldığında varsayılan olarak içinde bulunulan günün (hafta sonlarında pazartesinin) programı doğrudan seçili gelir."
+      "title": "Akıllı Tahta Kumandasından Günün Notu ve Ödev Panosu",
+      "summary": "Akıllı Tahta Kumandası penceresine başlık seçimiyle birlikte tek adımda tahtaya sabitlenip kaldırılabilen Günün Notu ve Ödev Panosu girişi eklendi."
     }
   ]
 }

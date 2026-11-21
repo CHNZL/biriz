@@ -3997,4 +3997,80 @@ class ExampleUnitTest {
     assertFalse(weekendStatus.isLive)
     assertFalse(helper.isLessonLiveForSelectedDay(weekendStatus, "PZT", 2))
   }
+
+  @Test
+  fun testSmartBoardPeriodStarTotalsTodayWeekAllTime() {
+    // Reference moment: Thursday, 19 Nov 2026 14:00 (Week started Monday 16 Nov 2026 00:00)
+    fun calAt(dayOfMonth: Int, hour: Int, min: Int): Long {
+      return java.util.Calendar.getInstance().apply {
+        set(2026, java.util.Calendar.NOVEMBER, dayOfMonth, hour, min, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+      }.timeInMillis
+    }
+
+    val now = calAt(19, 14, 0)
+    val records = listOf(
+      // Today (Thu Nov 19, 10:00) -> counts in today, week, all-time
+      com.example.data.model.StarRewardRecord(
+        id = "r1", classId = "c1", studentId = "s1", studentName = "Ali", studentNumber = "1",
+        categoryId = "mat", categoryName = "Matematik", starCount = 4, note = "", timestamp = calAt(19, 10, 0)
+      ),
+      // Earlier this week (Mon Nov 16, 09:00) -> counts in week & all-time, NOT today
+      com.example.data.model.StarRewardRecord(
+        id = "r2", classId = "c1", studentId = "s1", studentName = "Ali", studentNumber = "1",
+        categoryId = "tur", categoryName = "Türkçe", starCount = 6, note = "", timestamp = calAt(16, 9, 0)
+      ),
+      // Previous week (Sun Nov 15, 18:00) -> counts ONLY in all-time
+      com.example.data.model.StarRewardRecord(
+        id = "r3", classId = "c1", studentId = "s1", studentName = "Ali", studentNumber = "1",
+        categoryId = "fen", categoryName = "Fen", starCount = 10, note = "", timestamp = calAt(15, 18, 0)
+      ),
+      // Student s2 today only
+      com.example.data.model.StarRewardRecord(
+        id = "r4", classId = "c1", studentId = "s2", studentName = "Ayşe", studentNumber = "2",
+        categoryId = "mat", categoryName = "Matematik", starCount = 7, note = "", timestamp = calAt(19, 11, 30)
+      )
+    )
+
+    val (todayMap, weekMap, allMap) = com.example.util.SmartBoardHelper.calculatePeriodStarTotals(
+      starRecords = records,
+      nowMillis = now
+    )
+
+    assertEquals(4, todayMap["s1"])
+    assertEquals(10, weekMap["s1"])
+    assertEquals(20, allMap["s1"])
+
+    assertEquals(7, todayMap["s2"])
+    assertEquals(7, weekMap["s2"])
+    assertEquals(7, allMap["s2"])
+  }
+
+  @Test
+  fun testSmartBoardDailyNotePayloadSanitizationAndClear() {
+    val payload = com.example.util.SmartBoardHelper.buildDailyNotePayload(
+      label = "   ",
+      text = "   Yarın   resim defteri\nve sulu boya getirilecek   ",
+      updatedAt = 123456L
+    )
+    assertEquals("Günün Notu", payload["label"])
+    assertEquals("Yarın resim defteri ve sulu boya getirilecek", payload["text"])
+    assertEquals(123456L, payload["updatedAt"])
+
+    val longText = "A".repeat(250)
+    val capped = com.example.util.SmartBoardHelper.buildDailyNotePayload(
+      label = "Ödev",
+      text = longText,
+      updatedAt = 999L
+    )
+    assertEquals("Ödev", capped["label"])
+    assertEquals(com.example.util.SmartBoardHelper.MAX_DAILY_NOTE_LENGTH, (capped["text"] as String).length)
+
+    val cleared = com.example.util.SmartBoardHelper.buildDailyNotePayload(
+      label = "Günün Notu",
+      text = "   ",
+      updatedAt = 1000L
+    )
+    assertEquals("", cleared["text"])
+  }
 }

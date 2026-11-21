@@ -63,8 +63,19 @@ object SmartBoardHelper {
     private const val KEY_SESSION_CODE = "key_connected_session_code"
     private const val KEY_MIRROR_ACTIVE = "key_live_mirror_active"
     private const val KEY_TRANSPORT_MODE = "key_smart_board_transport_mode"
+    private const val KEY_DAILY_NOTE_TEXT_PREFIX = "key_smart_board_daily_note_text_"
+    private const val KEY_DAILY_NOTE_LABEL_PREFIX = "key_smart_board_daily_note_label_"
+    private const val KEY_DAILY_NOTE_UPDATED_PREFIX = "key_smart_board_daily_note_updated_"
+    const val DEFAULT_DAILY_NOTE_LABEL = "Günün Notu"
+    const val MAX_DAILY_NOTE_LENGTH = 180
     private const val CLOUDFLARE_API_BASE = "https://cihanogretmen.com/tahta/api"
     private const val CLOUDFLARE_WS_BASE = "wss://cihanogretmen.com/tahta/api/ws"
+
+    data class SmartBoardDailyNote(
+        val label: String = DEFAULT_DAILY_NOTE_LABEL,
+        val text: String = "",
+        val updatedAt: Long = 0L
+    )
 
     enum class TransportMode {
         NONE,
@@ -138,6 +149,8 @@ object SmartBoardHelper {
     private var sentTournamentHash: Int = 0
     @Volatile
     private var sentBoardCastHash: Int = 0
+    @Volatile
+    private var sentDailyNoteHash: Int = 0
 
     fun isQuotaCooldownActive(): Boolean {
         if (activeTransportMode == TransportMode.CLOUDFLARE) return false
@@ -162,6 +175,7 @@ object SmartBoardHelper {
         sentLibraryHash = 0
         sentTournamentHash = 0
         sentBoardCastHash = 0
+        sentDailyNoteHash = 0
     }
 
     /**
@@ -724,6 +738,119 @@ object SmartBoardHelper {
         editor.apply()
     }
 
+    internal fun buildDailyNotePayload(
+        label: String,
+        text: String,
+        updatedAt: Long = System.currentTimeMillis()
+    ): Map<String, Any> {
+        val cleanText = text.replace(Regex("\\s+"), " ").trim().take(MAX_DAILY_NOTE_LENGTH)
+        val cleanLabel = label.trim().ifBlank { DEFAULT_DAILY_NOTE_LABEL }.take(32)
+        return mapOf(
+            "label" to cleanLabel,
+            "text" to cleanText,
+            "updatedAt" to updatedAt
+        )
+    }
+
+    private fun normalizeNoteClassKey(classId: String): String {
+        return classId.trim().ifBlank { "default" }
+    }
+
+    fun getSavedDailyNote(context: Context, classId: String): SmartBoardDailyNote {
+        val key = normalizeNoteClassKey(classId)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val text = prefs.getString("$KEY_DAILY_NOTE_TEXT_PREFIX$key", "") ?: ""
+        val label = prefs.getString("$KEY_DAILY_NOTE_LABEL_PREFIX$key", DEFAULT_DAILY_NOTE_LABEL)
+            ?.ifBlank { DEFAULT_DAILY_NOTE_LABEL }
+            ?: DEFAULT_DAILY_NOTE_LABEL
+        val updatedAt = prefs.getLong("$KEY_DAILY_NOTE_UPDATED_PREFIX$key", 0L)
+        return SmartBoardDailyNote(label = label, text = text, updatedAt = updatedAt)
+    }
+
+    fun saveDailyNote(
+        context: Context,
+        classId: String,
+        label: String,
+        text: String
+    ): SmartBoardDailyNote {
+        val key = normalizeNoteClassKey(classId)
+        val now = System.currentTimeMillis()
+        val payload = buildDailyNotePayload(label = label, text = text, updatedAt = now)
+        val cleanLabel = payload["label"] as String
+        val cleanText = payload["text"] as String
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("$KEY_DAILY_NOTE_TEXT_PREFIX$key", cleanText)
+            .putString("$KEY_DAILY_NOTE_LABEL_PREFIX$key", cleanLabel)
+            .putLong("$KEY_DAILY_NOTE_UPDATED_PREFIX$key", now)
+            .apply()
+        return SmartBoardDailyNote(label = cleanLabel, text = cleanText, updatedAt = now)
+    }
+
+    fun clearDailyNote(context: Context, classId: String): SmartBoardDailyNote {
+        return saveDailyNote(context, classId, DEFAULT_DAILY_NOTE_LABEL, "")
+    }
+
+    private fun prepareDailyNoteData(context: Context, classId: String): Map<String, Any> {
+        val saved = getSavedDailyNote(context, classId)
+        return buildDailyNotePayload(
+            label = saved.label,
+            text = saved.text,
+            updatedAt = saved.updatedAt
+        )
+    }
+
+    /**
+     * Yıldız kayıtlarından öğrenci başına bugün, bu hafta (Pazartesi 00:00'dan itibaren) ve
+     * tüm zamanlar toplam yıldız sayılarını hesaplar.
+     */
+    internal fun calculatePeriodStarTotals(
+        starRecords: List<com.example.data.model.StarRewardRecord>,
+        nowMillis: Long = System.currentTimeMillis(),
+        resolveId: (rawId: String, rawNo: String, rawName: String) -> String = { id, _, _ -> id }
+    ): Triple<Map<String, Int>, Map<String, Int>, Map<String, Int>> {
+        val todayStartCal = java.util.Calendar.getInstance().apply {
+            timeInMillis = nowMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val todayStartMs = todayStartCal.timeInMillis
+
+        val weekStartCal = java.util.Calendar.getInstance().apply {
+            timeInMillis = todayStartMs
+            val daysSinceMonday = when (get(java.util.Calendar.DAY_OF_WEEK)) {
+                java.util.Calendar.MONDAY -> 0
+                java.util.Calendar.TUESDAY -> 1
+                java.util.Calendar.WEDNESDAY -> 2
+                java.util.Calendar.THURSDAY -> 3
+                java.util.Calendar.FRIDAY -> 4
+                java.util.Calendar.SATURDAY -> 5
+                java.util.Calendar.SUNDAY -> 6
+                else -> 0
+            }
+            add(java.util.Calendar.DAY_OF_MONTH, -daysSinceMonday)
+        }
+        val weekStartMs = weekStartCal.timeInMillis
+
+        val allTimeMap = mutableMapOf<String, Int>()
+        val weekMap = mutableMapOf<String, Int>()
+        val todayMap = mutableMapOf<String, Int>()
+
+        for (record in starRecords) {
+            val resolvedId = resolveId(record.studentId, record.studentNumber, record.studentName)
+            allTimeMap[resolvedId] = (allTimeMap[resolvedId] ?: 0) + record.starCount
+            if (record.timestamp >= weekStartMs) {
+                weekMap[resolvedId] = (weekMap[resolvedId] ?: 0) + record.starCount
+            }
+            if (record.timestamp >= todayStartMs) {
+                todayMap[resolvedId] = (todayMap[resolvedId] ?: 0) + record.starCount
+            }
+        }
+        return Triple(todayMap, weekMap, allTimeMap)
+    }
+
     /**
      * Öğrencilerin yıldız puanları ve okudukları kitap sayıları ile sunum verisini hazırlar.
      * Veli kodları akıllı tahta projeksiyonuna gönderilmez.
@@ -767,11 +894,12 @@ object SmartBoardHelper {
             return null
         }
 
-        val starsPerStudent = mutableMapOf<String, Int>()
-        for (record in starRecords) {
-            val resolvedId = resolveStudentId(record.studentId, record.studentNumber, record.studentName) ?: record.studentId
-            starsPerStudent[resolvedId] = (starsPerStudent[resolvedId] ?: 0) + record.starCount
-        }
+        val (todayStarsPerStudent, weekStarsPerStudent, starsPerStudent) = calculatePeriodStarTotals(
+            starRecords = starRecords,
+            resolveId = { rawId, rawNo, rawName ->
+                resolveStudentId(rawId, rawNo, rawName) ?: rawId
+            }
+        )
 
         val booksPerStudent = mutableMapOf<String, Int>()
         val pagesPerStudent = mutableMapOf<String, Int>()
@@ -789,6 +917,8 @@ object SmartBoardHelper {
                 "fullName" to s.fullName,
                 "gender" to s.gender,
                 "stars" to (starsPerStudent[s.id] ?: 0),
+                "todayStars" to (todayStarsPerStudent[s.id] ?: 0),
+                "weekStars" to (weekStarsPerStudent[s.id] ?: 0),
                 "booksRead" to (booksPerStudent[s.id] ?: 0),
                 "pagesRead" to (pagesPerStudent[s.id] ?: 0)
             )
@@ -1244,6 +1374,7 @@ object SmartBoardHelper {
             val luckyData = prepareLuckyStudentData(context, classId)
             val libraryData = prepareLibraryData(context, classId)
             val tournamentData = prepareTournamentData(context, classId)
+            val dailyNoteData = prepareDailyNoteData(context, classId)
 
             val scheduleData = schedule.map { l ->
                 mapOf(
@@ -1310,6 +1441,7 @@ object SmartBoardHelper {
                 "luckyData" to luckyData,
                 "libraryData" to libraryData,
                 "tournamentData" to tournamentData,
+                "dailyNote" to dailyNoteData,
                 "updatedAt" to dataNow
             )
             if (seatingData != null) fullPayload["seatingPlan"] = seatingData
@@ -1363,6 +1495,7 @@ object SmartBoardHelper {
                     sentSeatingHash = seatingData?.hashCode() ?: 0
                     sentGroupsHash = groupsData?.hashCode() ?: 0
                     sentLuckyHash = luckyData.hashCode()
+                    sentDailyNoteHash = dailyNoteData.hashCode()
                     if (syncedLibraryAndTournament) {
                         sentLibraryHash = libraryData.hashCode()
                         sentTournamentHash = tournamentData.hashCode()
@@ -1431,6 +1564,7 @@ object SmartBoardHelper {
         val luckyData = prepareLuckyStudentData(context, classId)
         val libraryData = prepareLibraryData(context, classId)
         val tournamentData = prepareTournamentData(context, classId)
+        val dailyNoteData = prepareDailyNoteData(context, classId)
 
         val scheduleData = effectiveSchedule.map { l ->
             mapOf(
@@ -1491,6 +1625,7 @@ object SmartBoardHelper {
         val luckyHash = luckyData.hashCode()
         val libraryHash = libraryData.hashCode()
         val tournamentHash = tournamentData.hashCode()
+        val dailyNoteHash = dailyNoteData.hashCode()
 
         val activeCast = lastBoardCast
         val boardCastHash = activeCast?.hashCode() ?: 0
@@ -1547,6 +1682,9 @@ object SmartBoardHelper {
         val includedBoardCast = activeCast != null && (forceFullSync || boardCastHash != sentBoardCastHash)
         if (includedBoardCast) boardSessionUpdate["boardCast"] = activeCast
 
+        val includedDailyNote = forceFullSync || dailyNoteHash != sentDailyNoteHash
+        if (includedDailyNote) boardSessionUpdate["dailyNote"] = dailyNoteData
+
         if (extraData.isNotEmpty()) {
             boardSessionUpdate.putAll(extraData)
             boardSessionUpdate["extraData"] = extraData
@@ -1580,6 +1718,7 @@ object SmartBoardHelper {
                         if (includedLibrary) sentLibraryHash = libraryHash
                         if (includedTournament) sentTournamentHash = tournamentHash
                         if (includedBoardCast) sentBoardCastHash = boardCastHash
+                        if (includedDailyNote) sentDailyNoteHash = dailyNoteHash
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error updating live board state: ${e.message}")

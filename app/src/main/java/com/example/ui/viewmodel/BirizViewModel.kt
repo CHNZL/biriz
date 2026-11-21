@@ -225,6 +225,8 @@ data class BirizUiState(
     val isScreenMirrorPaused: Boolean = false,
     val screenMirrorPauseReason: String? = null,
     val screenMirrorPackageName: String? = null,
+    val smartBoardDailyNote: String = "",
+    val smartBoardDailyNoteLabel: String = SmartBoardHelper.DEFAULT_DAILY_NOTE_LABEL,
 
     // UI Bildirimleri
     val snackbarMessage: String? = null
@@ -4333,7 +4335,56 @@ class BirizViewModel(
     }
 
     fun openSmartBoardDialog() {
-        _uiState.value = _uiState.value.copy(isSmartBoardDialogOpen = true, smartBoardMessage = null)
+        val ctx = appContext
+        val classId = _uiState.value.activeClassRoom?.id.orEmpty()
+        val savedNote = if (ctx != null && classId.isNotBlank()) {
+            SmartBoardHelper.getSavedDailyNote(ctx, classId)
+        } else {
+            SmartBoardHelper.SmartBoardDailyNote(
+                label = _uiState.value.smartBoardDailyNoteLabel,
+                text = _uiState.value.smartBoardDailyNote
+            )
+        }
+        _uiState.value = _uiState.value.copy(
+            isSmartBoardDialogOpen = true,
+            smartBoardMessage = null,
+            smartBoardDailyNote = savedNote.text,
+            smartBoardDailyNoteLabel = savedNote.label
+        )
+    }
+
+    fun saveSmartBoardDailyNote(label: String, text: String) {
+        val ctx = appContext ?: return
+        val classId = _uiState.value.activeClassRoom?.id?.takeIf { it.isNotBlank() } ?: "default"
+        val saved = SmartBoardHelper.saveDailyNote(ctx, classId, label, text)
+        val isConnected = !_uiState.value.connectedBoardSessionCode.isNullOrBlank()
+        val feedback = if (saved.text.isBlank()) {
+            if (isConnected) "Günün notu tahtadan kaldırıldı." else "Günün notu temizlendi."
+        } else {
+            if (isConnected) "✅ Günün notu akıllı tahtaya sabitlendi." else "✅ Günün notu kaydedildi. Tahta bağlandığında otomatik görünecek."
+        }
+        _uiState.value = _uiState.value.copy(
+            smartBoardDailyNote = saved.text,
+            smartBoardDailyNoteLabel = saved.label,
+            smartBoardMessage = feedback,
+            snackbarMessage = feedback
+        )
+        triggerSmartBoardSync()
+    }
+
+    fun clearSmartBoardDailyNote() {
+        val ctx = appContext ?: return
+        val classId = _uiState.value.activeClassRoom?.id?.takeIf { it.isNotBlank() } ?: "default"
+        val cleared = SmartBoardHelper.clearDailyNote(ctx, classId)
+        val isConnected = !_uiState.value.connectedBoardSessionCode.isNullOrBlank()
+        val feedback = if (isConnected) "Günün notu tahtadan kaldırıldı." else "Günün notu temizlendi."
+        _uiState.value = _uiState.value.copy(
+            smartBoardDailyNote = cleared.text,
+            smartBoardDailyNoteLabel = cleared.label,
+            smartBoardMessage = feedback,
+            snackbarMessage = feedback
+        )
+        triggerSmartBoardSync()
     }
 
     fun dismissSmartBoardDialog() {
