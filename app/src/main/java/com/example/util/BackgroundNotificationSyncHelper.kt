@@ -81,13 +81,20 @@ object BackgroundNotificationSyncHelper {
         context: Context,
         config: QuietHoursConfig,
         viewerKey: String,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        teacherDeferral: ParentNotificationDeferralConfig = ParentNotificationDeferralConfig()
     ) {
-        if (!config.enabled) {
+        val hasPersonal = config.enabled
+        val hasTeacher = teacherDeferral.enabled && viewerKey != "teacher"
+        if (!hasPersonal && !hasTeacher) {
             cancelQuietHoursFlush(context)
             return
         }
-        val targetAt = NotificationPreferencesHelper.nextQuietHoursEndMillis(config, nowMillis)
+        val targetAt = if (viewerKey == "teacher") {
+            NotificationPreferencesHelper.nextQuietHoursEndMillis(config, nowMillis)
+        } else {
+            NotificationPreferencesHelper.nextEffectiveParentDeliveryMillis(config, teacherDeferral, nowMillis)
+        }
         val delayMs = (targetAt - nowMillis).coerceAtLeast(10_000L)
         val appCtx = context.applicationContext ?: context
         val inputData = Data.Builder()
@@ -131,12 +138,32 @@ object BackgroundNotificationSyncHelper {
         context: Context,
         viewerKey: String,
         forceFlushEvenIfWithinWindow: Boolean = false,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        teacherDeferralOverride: ParentNotificationDeferralConfig? = null
     ): Int {
         val appCtx = context.applicationContext ?: context
         val scope = viewerKey.ifBlank { "default" }
         val quietConfig = NotificationPreferencesHelper.loadQuietHours(appCtx, scope)
-        if (!forceFlushEvenIfWithinWindow && NotificationPreferencesHelper.isWithinQuietHours(quietConfig, nowMillis)) {
+        val teacherDeferral = if (scope == "teacher") {
+            ParentNotificationDeferralConfig(enabled = false)
+        } else {
+            teacherDeferralOverride ?: run {
+                val appPrefs = appCtx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+                val savedClassId = appPrefs.getString("key_linked_classroom_id", "")?.trim().orEmpty()
+                if (savedClassId.isNotBlank() && savedClassId != "default") {
+                    NotificationPreferencesHelper.loadTeacherParentDeferral(appCtx, savedClassId)
+                } else {
+                    ParentNotificationDeferralConfig(enabled = false)
+                }
+            }
+        }
+        val blockedByPersonal = NotificationPreferencesHelper.isWithinQuietHours(quietConfig, nowMillis)
+        val blockedByTeacher = scope != "teacher" &&
+            NotificationPreferencesHelper.isWithinDeferralWindow(teacherDeferral, nowMillis)
+        if (!forceFlushEvenIfWithinWindow && (blockedByPersonal || blockedByTeacher)) {
+            if (NotificationPreferencesHelper.peekDeferredCount(appCtx, scope) > 0) {
+                scheduleQuietHoursFlush(appCtx, quietConfig, scope, nowMillis, teacherDeferral)
+            }
             return 0
         }
         val deferred = NotificationPreferencesHelper.drainDeferredNotifications(appCtx, scope)
@@ -186,14 +213,12 @@ object BackgroundNotificationSyncHelper {
             else -> return
         }
 
-        // Sessiz saatler sona erdiyse gece biriken bildirimleri önce teslim et
         val nowMs = System.currentTimeMillis()
-        flushQuietHoursDigestIfDue(appCtx, viewerKey, nowMillis = nowMs)
-
         // Gece 00:00 - 06:59 arasında arka plan Firestore sorgulaması yapma (kota ve pil tasarrufu)
         if (!allowWhenForeground) {
             val hour = Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.HOUR_OF_DAY)
             if (hour in 0..6) {
+                flushQuietHoursDigestIfDue(appCtx, viewerKey, nowMillis = nowMs)
                 return
             }
         }
@@ -201,11 +226,24 @@ object BackgroundNotificationSyncHelper {
         val db = try {
             FirestoreProvider.get(appCtx)
         } catch (_: Exception) {
+            flushQuietHoursDigestIfDue(appCtx, viewerKey, nowMillis = nowMs)
             return
         }
 
         val notificationPrefs = NotificationPreferencesHelper.loadPreferences(appCtx, viewerKey)
         val quietConfig = NotificationPreferencesHelper.loadQuietHours(appCtx, viewerKey)
+        val teacherDeferral = if (role == UserRole.PARENT) {
+            fetchAndCacheTeacherDeferral(db, appCtx, classId)
+        } else {
+            ParentNotificationDeferralConfig(enabled = false)
+        }
+        // Güncel öğretmen erteleme ayarı alındıktan sonra süresi dolan bildirimleri teslim et
+        flushQuietHoursDigestIfDue(
+            context = appCtx,
+            viewerKey = viewerKey,
+            nowMillis = nowMs,
+            teacherDeferralOverride = if (role == UserRole.PARENT) teacherDeferral else null
+        )
         val (baselineMs, seenKeysInitial) = CommunicationPersistenceHelper.loadActivityNotificationState(
             context = appCtx,
             classId = classId,
@@ -415,13 +453,18 @@ object BackgroundNotificationSyncHelper {
             CommunicationPersistenceHelper.saveNotifications(appCtx, classId, mergedStored, viewerKey)
         }
 
-        // Sessiz Saatler kontrolü ile sistem bildirim çubuğuna iletim
+        // Sessiz Saatler ve Öğretmen Gece Erteleme kontrolü ile sistem bildirim çubuğuna iletim
         val toDefer = mutableListOf<DeferredSystemNotification>()
         val immediateActivities = mutableListOf<BirizNotification>()
         val immediateChats = mutableListOf<Pair<ChatMessage, Int>>()
 
         uniqueActivityNew.forEach { notif ->
-            if (NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, notif, nowMs)) {
+            val shouldDefer = if (isTeacher) {
+                NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, notif, nowMs)
+            } else {
+                NotificationPreferencesHelper.shouldDeferForParent(quietConfig, teacherDeferral, notif, nowMs)
+            }
+            if (shouldDefer) {
                 toDefer.add(DeferredSystemNotification(notif, isTeacher))
             } else {
                 immediateActivities.add(notif)
@@ -429,7 +472,12 @@ object BackgroundNotificationSyncHelper {
         }
 
         chatAlertPairs.forEach { (msg, chatNotif) ->
-            if (NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, chatNotif, nowMs)) {
+            val shouldDefer = if (isTeacher) {
+                NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, chatNotif, nowMs)
+            } else {
+                NotificationPreferencesHelper.shouldDeferForParent(quietConfig, teacherDeferral, chatNotif, nowMs)
+            }
+            if (shouldDefer) {
                 toDefer.add(DeferredSystemNotification(chatNotif, isTeacher))
             } else {
                 val countForStudent = incomingUnread.count { it.studentId == msg.studentId }.coerceAtLeast(1)
@@ -439,7 +487,7 @@ object BackgroundNotificationSyncHelper {
 
         if (toDefer.isNotEmpty()) {
             NotificationPreferencesHelper.enqueueDeferredNotifications(appCtx, viewerKey, toDefer)
-            scheduleQuietHoursFlush(appCtx, quietConfig, viewerKey, nowMs)
+            scheduleQuietHoursFlush(appCtx, quietConfig, viewerKey, nowMs, teacherDeferral)
         }
         if (immediateActivities.isNotEmpty()) {
             SystemActivityNotificationHelper.showNotificationsBatch(
@@ -455,6 +503,29 @@ object BackgroundNotificationSyncHelper {
                 isRecipientTeacher = isTeacher,
                 unreadCountForStudent = count
             )
+        }
+    }
+
+    private suspend fun fetchAndCacheTeacherDeferral(
+        db: FirebaseFirestore,
+        context: Context,
+        classId: String
+    ): ParentNotificationDeferralConfig {
+        val fallback = NotificationPreferencesHelper.loadTeacherParentDeferral(context, classId)
+        return try {
+            val doc = db.collection("classrooms").document(classId).get().await()
+            if (!doc.exists()) return fallback
+            val fetched = ParentNotificationDeferralConfig(
+                enabled = doc.getBoolean("parentNotifDeferralEnabled") ?: false,
+                startHour = (doc.getLong("parentNotifDeferralStartHour") ?: 21L).toInt().coerceIn(0, 23),
+                startMinute = (doc.getLong("parentNotifDeferralStartMinute") ?: 0L).toInt().coerceIn(0, 59),
+                deliverHour = (doc.getLong("parentNotifDeferralDeliverHour") ?: 10L).toInt().coerceIn(0, 23),
+                deliverMinute = (doc.getLong("parentNotifDeferralDeliverMinute") ?: 0L).toInt().coerceIn(0, 59)
+            )
+            NotificationPreferencesHelper.saveTeacherParentDeferral(context, classId, fetched)
+            fetched
+        } catch (_: Exception) {
+            fallback
         }
     }
 

@@ -58,6 +58,7 @@ import com.example.util.AppUpdateNotificationHelper
 import com.example.util.BackgroundNotificationSyncHelper
 import com.example.util.BackgroundUpdateState
 import com.example.util.ClassroomPresenceSnapshot
+import com.example.util.ParentNotificationDeferralConfig
 import com.example.util.DeferredSystemNotification
 import com.example.util.FirestoreListenerHub
 import com.example.util.LibraryPersistenceHelper
@@ -204,6 +205,7 @@ data class BirizUiState(
     val requestedParentCommIsChat: Boolean? = null,
     val notificationPreferences: Map<String, Boolean> = NotificationPreferencesHelper.defaultPreferences(),
     val quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    val teacherParentDeferralConfig: ParentNotificationDeferralConfig = ParentNotificationDeferralConfig(),
     val deferredQuietCount: Int = 0,
 
     // Uygulama Güncelleme Durumu (Arka planda & gezinirken otomatik tespit)
@@ -344,13 +346,28 @@ class BirizViewModel(
         val loaded = NotificationPreferencesHelper.loadPreferences(ctx, viewerKey)
         val quietCfg = NotificationPreferencesHelper.loadQuietHours(ctx, viewerKey)
         val pendingCount = NotificationPreferencesHelper.peekDeferredCount(ctx, viewerKey)
+        val activeClass = state.activeClassRoom
+        val resolvedDeferral = if (activeClass != null && activeClass.id.isNotBlank() && activeClass.id != "default") {
+            NotificationPreferencesHelper.saveTeacherParentDeferral(ctx, activeClass.id, activeClass.parentNotificationDeferral)
+            activeClass.parentNotificationDeferral
+        } else {
+            val savedClassId = ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+                .getString("key_linked_classroom_id", "").orEmpty()
+            if (savedClassId.isNotBlank() && savedClassId != "default") {
+                NotificationPreferencesHelper.loadTeacherParentDeferral(ctx, savedClassId)
+            } else {
+                _uiState.value.teacherParentDeferralConfig
+            }
+        }
         if (_uiState.value.notificationPreferences != loaded ||
             _uiState.value.quietHoursConfig != quietCfg ||
+            _uiState.value.teacherParentDeferralConfig != resolvedDeferral ||
             _uiState.value.deferredQuietCount != pendingCount
         ) {
             _uiState.value = _uiState.value.copy(
                 notificationPreferences = loaded,
                 quietHoursConfig = quietCfg,
+                teacherParentDeferralConfig = resolvedDeferral,
                 deferredQuietCount = pendingCount
             )
         }
@@ -393,9 +410,21 @@ class BirizViewModel(
         )
         appContext?.let { ctx ->
             NotificationPreferencesHelper.saveQuietHours(ctx, viewerKey, updated)
-            if (enabled) {
-                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, updated, viewerKey)
-                if (!NotificationPreferencesHelper.isWithinQuietHours(updated)) {
+            val teacherDef = if (state.currentRole == UserRole.PARENT) {
+                state.teacherParentDeferralConfig
+            } else {
+                ParentNotificationDeferralConfig(enabled = false)
+            }
+            if (enabled || teacherDef.enabled) {
+                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                    context = ctx,
+                    config = updated,
+                    viewerKey = viewerKey,
+                    teacherDeferral = teacherDef
+                )
+                if (!NotificationPreferencesHelper.isWithinQuietHours(updated) &&
+                    !NotificationPreferencesHelper.isWithinDeferralWindow(teacherDef)
+                ) {
                     flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = false)
                 }
             } else {
@@ -425,11 +454,83 @@ class BirizViewModel(
         )
         appContext?.let { ctx ->
             NotificationPreferencesHelper.saveQuietHours(ctx, viewerKey, updated)
-            if (updated.enabled) {
-                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, updated, viewerKey)
-                if (!NotificationPreferencesHelper.isWithinQuietHours(updated)) {
+            val teacherDef = if (state.currentRole == UserRole.PARENT) {
+                state.teacherParentDeferralConfig
+            } else {
+                ParentNotificationDeferralConfig(enabled = false)
+            }
+            if (updated.enabled || teacherDef.enabled) {
+                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                    context = ctx,
+                    config = updated,
+                    viewerKey = viewerKey,
+                    teacherDeferral = teacherDef
+                )
+                if (!NotificationPreferencesHelper.isWithinQuietHours(updated) &&
+                    !NotificationPreferencesHelper.isWithinDeferralWindow(teacherDef)
+                ) {
                     flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = false)
                 }
+            }
+        }
+    }
+
+    fun toggleTeacherParentDeferral(enabled: Boolean) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+        val updated = state.teacherParentDeferralConfig.copy(enabled = enabled)
+        val deliverLabel = NotificationPreferencesHelper.formatTime(updated.deliverHour, updated.deliverMinute)
+        val rangeLabel = NotificationPreferencesHelper.formatDeferralRange(updated)
+        val activeRoom = state.activeClassRoom
+        _uiState.value = state.copy(
+            teacherParentDeferralConfig = updated,
+            activeClassRoom = activeRoom?.copy(parentNotificationDeferral = updated),
+            snackbarMessage = if (enabled) {
+                "🌙 Veli bildirim erteleme açıldı ($rangeLabel → $deliverLabel)"
+            } else {
+                "🔔 Veli bildirim erteleme kapatıldı; bildirimler anında iletilir"
+            }
+        )
+        val classId = activeRoom?.id?.trim().orEmpty()
+        if (classId.isNotBlank() && classId != "default") {
+            appContext?.let { ctx ->
+                NotificationPreferencesHelper.saveTeacherParentDeferral(ctx, classId, updated)
+            }
+            viewModelScope.launch {
+                repository.updateParentNotificationDeferral(classId, updated)
+            }
+        }
+    }
+
+    fun updateTeacherParentDeferralWindow(
+        startHour: Int,
+        startMinute: Int,
+        deliverHour: Int,
+        deliverMinute: Int
+    ) {
+        val state = _uiState.value
+        if (state.currentRole != UserRole.TEACHER) return
+        val updated = state.teacherParentDeferralConfig.copy(
+            startHour = startHour.coerceIn(0, 23),
+            startMinute = startMinute.coerceIn(0, 59),
+            deliverHour = deliverHour.coerceIn(0, 23),
+            deliverMinute = deliverMinute.coerceIn(0, 59)
+        )
+        val deliverLabel = NotificationPreferencesHelper.formatTime(updated.deliverHour, updated.deliverMinute)
+        val rangeLabel = NotificationPreferencesHelper.formatDeferralRange(updated)
+        val activeRoom = state.activeClassRoom
+        _uiState.value = state.copy(
+            teacherParentDeferralConfig = updated,
+            activeClassRoom = activeRoom?.copy(parentNotificationDeferral = updated),
+            snackbarMessage = "⏰ Veli bildirim erteleme saatleri güncellendi ($rangeLabel • İletim: $deliverLabel)"
+        )
+        val classId = activeRoom?.id?.trim().orEmpty()
+        if (classId.isNotBlank() && classId != "default") {
+            appContext?.let { ctx ->
+                NotificationPreferencesHelper.saveTeacherParentDeferral(ctx, classId, updated)
+            }
+            viewModelScope.launch {
+                repository.updateParentNotificationDeferral(classId, updated)
             }
         }
     }
@@ -439,10 +540,17 @@ class BirizViewModel(
         viewerKey: String,
         forceEvenIfWithinWindow: Boolean = false
     ) {
+        val state = _uiState.value
+        val teacherDef = if (state.currentRole == UserRole.PARENT) {
+            state.teacherParentDeferralConfig
+        } else {
+            ParentNotificationDeferralConfig(enabled = false)
+        }
         val flushed = BackgroundNotificationSyncHelper.flushQuietHoursDigestIfDue(
             context = ctx,
             viewerKey = viewerKey,
-            forceFlushEvenIfWithinWindow = forceEvenIfWithinWindow
+            forceFlushEvenIfWithinWindow = forceEvenIfWithinWindow,
+            teacherDeferralOverride = teacherDef
         )
         val remaining = NotificationPreferencesHelper.peekDeferredCount(ctx, viewerKey)
         if (flushed > 0 || remaining != _uiState.value.deferredQuietCount) {
@@ -459,9 +567,18 @@ class BirizViewModel(
         val state = _uiState.value
         val viewerKey = currentViewerKey(state)
         val quietCfg = state.quietHoursConfig
+        val teacherDeferral = if (isRecipientTeacher) {
+            ParentNotificationDeferralConfig(enabled = false)
+        } else {
+            state.teacherParentDeferralConfig
+        }
         val now = System.currentTimeMillis()
-        val (deferred, immediate) = notifications.partition {
-            NotificationPreferencesHelper.shouldDeferForQuietHours(quietCfg, it, now)
+        val (deferred, immediate) = notifications.partition { notif ->
+            if (isRecipientTeacher) {
+                NotificationPreferencesHelper.shouldDeferForQuietHours(quietCfg, notif, now)
+            } else {
+                NotificationPreferencesHelper.shouldDeferForParent(quietCfg, teacherDeferral, notif, now)
+            }
         }
         if (deferred.isNotEmpty()) {
             val newCount = NotificationPreferencesHelper.enqueueDeferredNotifications(
@@ -470,7 +587,13 @@ class BirizViewModel(
                 items = deferred.map { DeferredSystemNotification(it, isRecipientTeacher) }
             )
             _uiState.value = _uiState.value.copy(deferredQuietCount = newCount)
-            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, quietCfg, viewerKey, now)
+            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                context = ctx,
+                config = quietCfg,
+                viewerKey = viewerKey,
+                nowMillis = now,
+                teacherDeferral = teacherDeferral
+            )
         }
         if (immediate.isNotEmpty()) {
             SystemActivityNotificationHelper.showNotificationsBatch(
@@ -486,8 +609,18 @@ class BirizViewModel(
         if (state.currentRole != UserRole.TEACHER && state.currentRole != UserRole.PARENT) return
         BackgroundNotificationSyncHelper.schedulePeriodicSync(ctx)
         val viewerKey = currentViewerKey(state)
-        if (state.quietHoursConfig.enabled) {
-            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, state.quietHoursConfig, viewerKey)
+        val teacherDef = if (state.currentRole == UserRole.PARENT) {
+            state.teacherParentDeferralConfig
+        } else {
+            ParentNotificationDeferralConfig(enabled = false)
+        }
+        if (state.quietHoursConfig.enabled || teacherDef.enabled) {
+            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                context = ctx,
+                config = state.quietHoursConfig,
+                viewerKey = viewerKey,
+                teacherDeferral = teacherDef
+            )
         }
         val uid = try { Firebase.auth.currentUser?.uid } catch (_: Throwable) { null } ?: return
         try {
@@ -1083,8 +1216,37 @@ class BirizViewModel(
                 } else {
                     baseUpdated
                 }
-                if (finalRoom != currentActive) {
-                    _uiState.value = _uiState.value.copy(activeClassRoom = finalRoom)
+                if (finalRoom != currentActive ||
+                    finalRoom.parentNotificationDeferral != _uiState.value.teacherParentDeferralConfig
+                ) {
+                    val prevDeferral = _uiState.value.teacherParentDeferralConfig
+                    val nextDeferral = finalRoom.parentNotificationDeferral
+                    _uiState.value = _uiState.value.copy(
+                        activeClassRoom = finalRoom,
+                        teacherParentDeferralConfig = nextDeferral
+                    )
+                    appContext?.let { ctx ->
+                        if (finalRoom.id.isNotBlank() && finalRoom.id != "default") {
+                            NotificationPreferencesHelper.saveTeacherParentDeferral(ctx, finalRoom.id, nextDeferral)
+                        }
+                        if (_uiState.value.currentRole == UserRole.PARENT && prevDeferral != nextDeferral) {
+                            val viewerKey = currentViewerKey(_uiState.value)
+                            val personalQuiet = _uiState.value.quietHoursConfig
+                            if (nextDeferral.enabled || personalQuiet.enabled) {
+                                BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                                    context = ctx,
+                                    config = personalQuiet,
+                                    viewerKey = viewerKey,
+                                    teacherDeferral = nextDeferral
+                                )
+                            }
+                            if (!NotificationPreferencesHelper.isWithinQuietHours(personalQuiet) &&
+                                !NotificationPreferencesHelper.isWithinDeferralWindow(nextDeferral)
+                            ) {
+                                flushPendingMorningDigest(ctx, viewerKey, forceEvenIfWithinWindow = false)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2813,7 +2975,17 @@ class BirizViewModel(
                     notifsChanged = true
 
                     if (ctx != null) {
-                        if (NotificationPreferencesHelper.shouldDeferForQuietHours(state.quietHoursConfig, notif, now)) {
+                        val teacherDeferral = if (viewerIsTeacher) {
+                            ParentNotificationDeferralConfig(enabled = false)
+                        } else {
+                            state.teacherParentDeferralConfig
+                        }
+                        val shouldDefer = if (viewerIsTeacher) {
+                            NotificationPreferencesHelper.shouldDeferForQuietHours(state.quietHoursConfig, notif, now)
+                        } else {
+                            NotificationPreferencesHelper.shouldDeferForParent(state.quietHoursConfig, teacherDeferral, notif, now)
+                        }
+                        if (shouldDefer) {
                             val viewerKey = currentViewerKey(state)
                             val deferredCount = NotificationPreferencesHelper.enqueueDeferredNotifications(
                                 context = ctx,
@@ -2821,7 +2993,13 @@ class BirizViewModel(
                                 items = listOf(DeferredSystemNotification(notif, viewerIsTeacher))
                             )
                             _uiState.value = _uiState.value.copy(deferredQuietCount = deferredCount)
-                            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(ctx, state.quietHoursConfig, viewerKey, now)
+                            BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
+                                context = ctx,
+                                config = state.quietHoursConfig,
+                                viewerKey = viewerKey,
+                                nowMillis = now,
+                                teacherDeferral = teacherDeferral
+                            )
                         } else {
                             ChatNotificationHelper.showIncomingMessageNotification(
                                 context = ctx,

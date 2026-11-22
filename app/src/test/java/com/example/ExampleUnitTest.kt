@@ -4073,4 +4073,108 @@ class ExampleUnitTest {
     )
     assertEquals("", cleared["text"])
   }
+
+  @Test
+  fun testTeacherParentNotificationDeferralAndEffectiveDelivery() {
+    fun millisAt(dayOfMonth: Int, hour: Int, minute: Int): Long {
+      return java.util.Calendar.getInstance().apply {
+        set(2026, java.util.Calendar.NOVEMBER, dayOfMonth, hour, minute, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+      }.timeInMillis
+    }
+
+    val personalOff = com.example.util.QuietHoursConfig(enabled = false)
+    val teacherDeferral = com.example.util.ParentNotificationDeferralConfig(
+      enabled = true,
+      startHour = 21,
+      startMinute = 0,
+      deliverHour = 10,
+      deliverMinute = 0
+    )
+
+    val starNotif = com.example.data.model.BirizNotification(
+      id = "star_1",
+      title = "Yıldız Kazandı",
+      message = "+2 yıldız eklendi",
+      timestamp = millisAt(19, 23, 30),
+      type = com.example.data.model.NotificationType.STAR_REWARD,
+      targetSubPageName = "STARS"
+    )
+    val announcementNotif = com.example.data.model.BirizNotification(
+      id = "ann_1",
+      title = "Yeni Duyuru",
+      message = "Yarın gezi var",
+      timestamp = millisAt(19, 23, 30),
+      type = com.example.data.model.NotificationType.ANNOUNCEMENT,
+      targetSubPageName = "ANNOUNCEMENTS"
+    )
+    val securityNotif = com.example.data.model.BirizNotification(
+      id = "parent_sec_link_123",
+      title = "Güvenlik Uyarısı",
+      message = "Yeni veli hesabı bağlandı",
+      timestamp = millisAt(19, 23, 30),
+      type = com.example.data.model.NotificationType.PARENT_REGISTRATION,
+      targetSubPageName = "HOME"
+    )
+    val updateNotif = com.example.data.model.BirizNotification(
+      id = "app_update_1",
+      title = "Yeni Sürüm",
+      message = "Güncelleme hazır",
+      timestamp = millisAt(19, 23, 30),
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "HOME"
+    )
+
+    val night2330 = millisAt(19, 23, 30)
+    val morning1005 = millisAt(20, 10, 5)
+
+    // Parent has personal quiet hours OFF, teacher deferral ON (21:00 - 10:00)
+    assertTrue(com.example.util.NotificationPreferencesHelper.shouldDeferForParent(personalOff, teacherDeferral, starNotif, night2330))
+    assertTrue(com.example.util.NotificationPreferencesHelper.shouldDeferForParent(personalOff, teacherDeferral, announcementNotif, night2330))
+    assertFalse(com.example.util.NotificationPreferencesHelper.shouldDeferForParent(personalOff, teacherDeferral, securityNotif, night2330))
+    assertFalse(com.example.util.NotificationPreferencesHelper.shouldDeferForParent(personalOff, teacherDeferral, updateNotif, night2330))
+
+    // After 10:00 morning delivery time, routine notifications are no longer deferred
+    assertFalse(com.example.util.NotificationPreferencesHelper.shouldDeferForParent(personalOff, teacherDeferral, starNotif, morning1005))
+
+    // Delivery timestamp when only teacher deferral is ON: next day 10:00:05
+    val deliveryTeacherOnly = com.example.util.NotificationPreferencesHelper.nextEffectiveParentDeliveryMillis(
+      personalQuiet = personalOff,
+      teacherDeferral = teacherDeferral,
+      nowMillis = night2330
+    )
+    val calTeacherOnly = java.util.Calendar.getInstance().apply { timeInMillis = deliveryTeacherOnly }
+    assertEquals(20, calTeacherOnly.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(10, calTeacherOnly.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(0, calTeacherOnly.get(java.util.Calendar.MINUTE))
+
+    // Personal 22:00-08:00 + Teacher 21:00-10:00 -> waits until 10:00
+    val personalShort = com.example.util.QuietHoursConfig(enabled = true, startHour = 22, startMinute = 0, endHour = 8, endMinute = 0)
+    val deliveryCombinedTeacherLater = com.example.util.NotificationPreferencesHelper.nextEffectiveParentDeliveryMillis(
+      personalQuiet = personalShort,
+      teacherDeferral = teacherDeferral,
+      nowMillis = night2330
+    )
+    val calCombined1 = java.util.Calendar.getInstance().apply { timeInMillis = deliveryCombinedTeacherLater }
+    assertEquals(20, calCombined1.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(10, calCombined1.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(0, calCombined1.get(java.util.Calendar.MINUTE))
+
+    // Personal 22:00-11:00 + Teacher 21:00-10:00 -> respects longer personal window (11:00)
+    val personalLong = com.example.util.QuietHoursConfig(enabled = true, startHour = 22, startMinute = 0, endHour = 11, endMinute = 0)
+    val deliveryCombinedPersonalLater = com.example.util.NotificationPreferencesHelper.nextEffectiveParentDeliveryMillis(
+      personalQuiet = personalLong,
+      teacherDeferral = teacherDeferral,
+      nowMillis = night2330
+    )
+    val calCombined2 = java.util.Calendar.getInstance().apply { timeInMillis = deliveryCombinedPersonalLater }
+    assertEquals(20, calCombined2.get(java.util.Calendar.DAY_OF_MONTH))
+    assertEquals(11, calCombined2.get(java.util.Calendar.HOUR_OF_DAY))
+    assertEquals(0, calCombined2.get(java.util.Calendar.MINUTE))
+
+    // 30-minute time stepping wraps cleanly across midnight
+    assertEquals(0 to 0, com.example.util.NotificationPreferencesHelper.stepTimeByMinutes(23, 30, 30))
+    assertEquals(23 to 30, com.example.util.NotificationPreferencesHelper.stepTimeByMinutes(0, 0, -30))
+    assertEquals("21:00 – 10:00", com.example.util.NotificationPreferencesHelper.formatDeferralRange(teacherDeferral))
+  }
 }

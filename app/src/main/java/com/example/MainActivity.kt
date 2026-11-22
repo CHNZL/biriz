@@ -565,6 +565,11 @@ fun BirizApp(viewModel: BirizViewModel) {
                             onUpdateQuietHoursWindow = { sH, sM, eH, eM ->
                                 viewModel.updateQuietHoursWindow(sH, sM, eH, eM)
                             },
+                            teacherParentDeferralConfig = uiState.teacherParentDeferralConfig,
+                            onToggleTeacherParentDeferral = { viewModel.toggleTeacherParentDeferral(it) },
+                            onUpdateTeacherParentDeferralWindow = { sH, sM, dH, dM ->
+                                viewModel.updateTeacherParentDeferralWindow(sH, sM, dH, dM)
+                            },
                             onSyncWebMigrationData = { customJson ->
                                 viewModel.syncWebMigrationDataNow(customJson)
                             }

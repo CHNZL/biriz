@@ -111,6 +111,7 @@ import com.example.ui.viewmodel.AuthenticatedUser
 import com.example.util.AppUpdateManager
 import com.example.util.NotificationCategory
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.ParentNotificationDeferralConfig
 import com.example.util.QuietHoursConfig
 import com.example.util.UpdateInfo
 import kotlinx.coroutines.launch
@@ -209,6 +210,9 @@ fun UserProfileMenuDialog(
     deferredQuietCount: Int = 0,
     onToggleQuietHours: (Boolean) -> Unit = {},
     onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
+    teacherParentDeferralConfig: ParentNotificationDeferralConfig = classRoom?.parentNotificationDeferral ?: ParentNotificationDeferralConfig(),
+    onToggleTeacherParentDeferral: (Boolean) -> Unit = {},
+    onUpdateTeacherParentDeferralWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onToggleTheme: () -> Unit,
     onDeleteRole: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
@@ -1162,7 +1166,10 @@ fun UserProfileMenuDialog(
                     quietHoursConfig = quietHoursConfig,
                     deferredQuietCount = deferredQuietCount,
                     onToggleQuietHours = onToggleQuietHours,
-                    onUpdateQuietHoursWindow = onUpdateQuietHoursWindow
+                    onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
+                    teacherParentDeferralConfig = teacherParentDeferralConfig,
+                    onToggleTeacherParentDeferral = onToggleTeacherParentDeferral,
+                    onUpdateTeacherParentDeferralWindow = onUpdateTeacherParentDeferralWindow
                 )
             }
         }

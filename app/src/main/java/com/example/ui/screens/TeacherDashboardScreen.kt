@@ -247,6 +247,9 @@ fun TeacherDashboardScreen(
     deferredQuietCount: Int = 0,
     onToggleQuietHours: (Boolean) -> Unit = {},
     onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
+    teacherParentDeferralConfig: com.example.util.ParentNotificationDeferralConfig = classRoom.parentNotificationDeferral,
+    onToggleTeacherParentDeferral: (Boolean) -> Unit = {},
+    onUpdateTeacherParentDeferralWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onSyncWebMigrationData: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -869,6 +872,9 @@ fun TeacherDashboardScreen(
                             deferredQuietCount = deferredQuietCount,
                             onToggleQuietHours = onToggleQuietHours,
                             onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
+                            teacherParentDeferralConfig = teacherParentDeferralConfig,
+                            onToggleTeacherParentDeferral = onToggleTeacherParentDeferral,
+                            onUpdateTeacherParentDeferralWindow = onUpdateTeacherParentDeferralWindow,
                             onDeleteTeacherRoleAndClass = { showDeleteRoleDialog = true },
                             onDeleteEntireAccount = { showDeleteAccountDialog = true },
                             onBackToClassList = { onSelectSubPage(DashboardSubPage.SINIF_LISTESI) },
@@ -1174,6 +1180,9 @@ fun TeacherDashboardScreen(
                 deferredQuietCount = deferredQuietCount,
                 onToggleQuietHours = onToggleQuietHours,
                 onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
+                teacherParentDeferralConfig = teacherParentDeferralConfig,
+                onToggleTeacherParentDeferral = onToggleTeacherParentDeferral,
+                onUpdateTeacherParentDeferralWindow = onUpdateTeacherParentDeferralWindow,
                 onToggleTheme = onToggleTheme,
                 onDeleteRole = onDeleteTeacherRoleAndClass,
                 onDeleteEntireAccount = onDeleteEntireAccount,

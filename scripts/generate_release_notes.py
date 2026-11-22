@@ -276,6 +276,15 @@ SPECIFIC_DIFF_RULES = [
         "Zamanlayıcı, şanslı öğrenci ve grup oluşturma araçları güncellendi.",
     ),
     (
+        "teacher_parent_notif_deferral",
+        "notifications",
+        False,
+        re.compile(r"(NotificationPreferences|BackgroundNotificationSync|BirizFirebaseMessaging|BirizViewModel|ClassRegistryRepository)", re.I),
+        re.compile(r"(TeacherParentDeferralCard|ParentNotificationDeferralConfig|toggleTeacherParentDeferral|shouldDeferForParent|updateParentNotificationDeferral)", re.I),
+        "Öğretmen İçin Veli Bildirimlerini Erteleme (Gece Çalışma Modu)",
+        "Öğretmen bildirim ayarlarına, akşam ve gece yapılan sınıf veri girişlerinin velilere anında gitmesini önleyip belirlenen sabah saatinde topluca ileten erteleme özelliği eklendi.",
+    ),
+    (
         "notifications_quiet",
         "notifications",
         True,

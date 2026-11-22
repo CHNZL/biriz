@@ -1,13 +1,17 @@
 {
-  "title": "Canlı Geri Sayım ve Günün Notu Panosu",
+  "title": "Gece Çalışma Modu ve Veli Bildirim Erteleme",
   "items": [
     {
-      "title": "Büyük Ders ve Teneffüs Geri Sayım Sayacı",
-      "summary": "Akıllı tahta ana sayfasındaki günlük ders programının üstüne, dersin bitimine veya teneffüs ve öğle arasının dolmasına kalan süreyi saniye saniye büyük rakamlarla gösteren canlı sayaç eklendi."
+      "title": "Öğretmen İçin Veli Bildirimlerini Erteleme",
+      "summary": "Bildirim Tercihleri penceresine eklenen Gece Çalışma Modu ile öğretmenin akşam ve gece yaptığı yıldız, kitaplık, duyuru ve ders programı girişleri velilere anında bildirim göndermeden sabah belirlenen saatte topluca iletilir."
     },
     {
-      "title": "Akıllı Tahta Kumandasından Günün Notu ve Ödev Panosu",
-      "summary": "Akıllı Tahta Kumandası penceresine başlık seçimiyle birlikte tek adımda tahtaya sabitlenip kaldırılabilen Günün Notu ve Ödev Panosu girişi eklendi."
+      "title": "Özelleştirilebilir Erteleme ve Sabah İletim Saatleri",
+      "summary": "Öğretmenler varsayılan 21:00 – 10:00 aralığının yanı sıra hızlı saat seçenekleri veya yarım saatlik adımlarla kendi erteleme başlangıç ve sabah iletim saatlerini kolayca belirleyebilir."
+    },
+    {
+      "title": "Veliler İçin Otomatik Gece Koruması",
+      "summary": "Veli kendi sessiz saatlerini açmamış olsa bile sınıf genelindeki erteleme ayarı otomatik olarak uygulanır; velinin kişisel sessiz saati daha geç bitiyorsa ona da saygı gösterilir ve kritik güvenlik uyarıları anında iletilir."
     }
   ]
 }

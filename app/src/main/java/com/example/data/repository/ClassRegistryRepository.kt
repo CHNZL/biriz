@@ -107,6 +107,13 @@ class ClassRegistryRepository(
         val inviteCode = doc.getString("inviteCode") ?: ""
         val teacherIsOnline = doc.getBoolean("teacherIsOnline") ?: false
         val teacherLastActiveMillis = doc.getLong("teacherLastActiveMillis")
+        val deferralConfig = com.example.util.ParentNotificationDeferralConfig(
+            enabled = doc.getBoolean("parentNotifDeferralEnabled") ?: false,
+            startHour = (doc.getLong("parentNotifDeferralStartHour") ?: 21L).toInt().coerceIn(0, 23),
+            startMinute = (doc.getLong("parentNotifDeferralStartMinute") ?: 0L).toInt().coerceIn(0, 59),
+            deliverHour = (doc.getLong("parentNotifDeferralDeliverHour") ?: 10L).toInt().coerceIn(0, 23),
+            deliverMinute = (doc.getLong("parentNotifDeferralDeliverMinute") ?: 0L).toInt().coerceIn(0, 59)
+        )
 
         return ClassRoom(
             id = doc.id,
@@ -121,7 +128,8 @@ class ClassRegistryRepository(
             inviteCode = inviteCode,
             isOccupied = true,
             teacherIsOnline = teacherIsOnline,
-            teacherLastActiveMillis = teacherLastActiveMillis
+            teacherLastActiveMillis = teacherLastActiveMillis,
+            parentNotificationDeferral = deferralConfig
         )
     }
 
@@ -2717,6 +2725,45 @@ class ClassRegistryRepository(
                     mapOf("teacherId" to uid)
                 )
             } catch (_: Exception) {}
+        }
+    }
+
+    suspend fun updateParentNotificationDeferral(
+        classroomId: String,
+        config: com.example.util.ParentNotificationDeferralConfig
+    ): Result<Unit> {
+        val cleanId = classroomId.trim()
+        if (cleanId.isBlank() || cleanId == "default") {
+            return Result.failure(IllegalArgumentException("Geçersiz sınıf kimliği"))
+        }
+        if (isAccountDeleting || isGlobalAccountDeleting) {
+            return Result.success(Unit)
+        }
+        val normalized = config.copy(
+            startHour = config.startHour.coerceIn(0, 23),
+            startMinute = config.startMinute.coerceIn(0, 59),
+            deliverHour = config.deliverHour.coerceIn(0, 23),
+            deliverMinute = config.deliverMinute.coerceIn(0, 59)
+        )
+        _registeredClasses.value = _registeredClasses.value.map { room ->
+            if (room.id == cleanId) room.copy(parentNotificationDeferral = normalized) else room
+        }
+        if (!isFirebaseAuthAvailable) return Result.success(Unit)
+        return try {
+            db.collection("classrooms").document(cleanId).update(
+                mapOf(
+                    "parentNotifDeferralEnabled" to normalized.enabled,
+                    "parentNotifDeferralStartHour" to normalized.startHour,
+                    "parentNotifDeferralStartMinute" to normalized.startMinute,
+                    "parentNotifDeferralDeliverHour" to normalized.deliverHour,
+                    "parentNotifDeferralDeliverMinute" to normalized.deliverMinute,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "classrooms/$cleanId")
+            Result.failure(e)
         }
     }
 

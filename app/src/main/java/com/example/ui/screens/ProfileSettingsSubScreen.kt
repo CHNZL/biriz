@@ -92,6 +92,9 @@ fun ProfileSettingsSubScreen(
     deferredQuietCount: Int = 0,
     onToggleQuietHours: (Boolean) -> Unit = {},
     onUpdateQuietHoursWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
+    teacherParentDeferralConfig: com.example.util.ParentNotificationDeferralConfig = classRoom.parentNotificationDeferral,
+    onToggleTeacherParentDeferral: (Boolean) -> Unit = {},
+    onUpdateTeacherParentDeferralWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
     onDeleteTeacherRoleAndClass: () -> Unit,
     onDeleteEntireAccount: () -> Unit,
     onBackToClassList: () -> Unit,
@@ -276,7 +279,10 @@ fun ProfileSettingsSubScreen(
                 quietHoursConfig = quietHoursConfig,
                 deferredQuietCount = deferredQuietCount,
                 onToggleQuietHours = onToggleQuietHours,
-                onUpdateQuietHoursWindow = onUpdateQuietHoursWindow
+                onUpdateQuietHoursWindow = onUpdateQuietHoursWindow,
+                teacherParentDeferralConfig = teacherParentDeferralConfig,
+                onToggleTeacherParentDeferral = onToggleTeacherParentDeferral,
+                onUpdateTeacherParentDeferralWindow = onUpdateTeacherParentDeferralWindow
             )
         }
 

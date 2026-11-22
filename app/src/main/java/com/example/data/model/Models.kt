@@ -52,7 +52,8 @@ data class ClassRoom(
     val studentCount: Int = 0,
     val isOccupied: Boolean = true,
     val teacherIsOnline: Boolean = false,
-    val teacherLastActiveMillis: Long? = null
+    val teacherLastActiveMillis: Long? = null,
+    val parentNotificationDeferral: com.example.util.ParentNotificationDeferralConfig = com.example.util.ParentNotificationDeferralConfig()
 ) {
     /**
      * Öğretmenin şu an sistemde gerçekten bağlı olup olmadığını döndürür.

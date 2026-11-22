@@ -125,6 +125,27 @@ data class QuietHoursConfig(
     val endMinute: Int = 0
 )
 
+/**
+ * Öğretmenin gece saatlerinde yaptığı sınıf veri girişlerinin velilere anında bildirim
+ * olarak gitmesini engelleyip belirlediği sabah saatinde (örn. 10:00) topluca iletilmesini
+ * sağlayan sınıf geneli bildirim erteleme ayarı.
+ */
+data class ParentNotificationDeferralConfig(
+    val enabled: Boolean = false,
+    val startHour: Int = 21,
+    val startMinute: Int = 0,
+    val deliverHour: Int = 10,
+    val deliverMinute: Int = 0
+) {
+    fun toQuietHoursConfig(): QuietHoursConfig = QuietHoursConfig(
+        enabled = enabled,
+        startHour = startHour.coerceIn(0, 23),
+        startMinute = startMinute.coerceIn(0, 59),
+        endHour = deliverHour.coerceIn(0, 23),
+        endMinute = deliverMinute.coerceIn(0, 59)
+    )
+}
+
 data class DeferredSystemNotification(
     val notification: BirizNotification,
     val isRecipientTeacher: Boolean
@@ -136,6 +157,7 @@ object NotificationPreferencesHelper {
     private const val KEY_PREFIX = "notif_pref_"
     private const val KEY_QUIET_PREFIX = "quiet_hours_"
     private const val KEY_DEFERRED_PREFIX = "quiet_deferred_"
+    private const val KEY_TEACHER_DEFERRAL_PREFIX = "teacher_parent_deferral_"
 
     fun defaultPreferences(): Map<String, Boolean> {
         return NotificationCategory.entries.associate { it.key to true }
@@ -238,12 +260,60 @@ object NotificationPreferencesHelper {
             .apply()
     }
 
+    fun formatTime(hour: Int, minute: Int): String {
+        val hh = hour.coerceIn(0, 23).toString().padStart(2, '0')
+        val mm = minute.coerceIn(0, 59).toString().padStart(2, '0')
+        return "$hh:$mm"
+    }
+
+    fun stepTimeByMinutes(hour: Int, minute: Int, deltaMinutes: Int): Pair<Int, Int> {
+        val total = (hour.coerceIn(0, 23) * 60 + minute.coerceIn(0, 59) + deltaMinutes)
+            .mod(24 * 60)
+        return (total / 60) to (total % 60)
+    }
+
     fun formatQuietHoursRange(config: QuietHoursConfig): String {
-        val sH = config.startHour.toString().padStart(2, '0')
-        val sM = config.startMinute.toString().padStart(2, '0')
-        val eH = config.endHour.toString().padStart(2, '0')
-        val eM = config.endMinute.toString().padStart(2, '0')
-        return "$sH:$sM – $eH:$eM"
+        return "${formatTime(config.startHour, config.startMinute)} – ${formatTime(config.endHour, config.endMinute)}"
+    }
+
+    fun formatDeferralRange(config: ParentNotificationDeferralConfig): String {
+        return "${formatTime(config.startHour, config.startMinute)} – ${formatTime(config.deliverHour, config.deliverMinute)}"
+    }
+
+    fun loadTeacherParentDeferral(context: Context, classId: String): ParentNotificationDeferralConfig {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val scope = classId.trim().ifBlank { "default" }
+        return ParentNotificationDeferralConfig(
+            enabled = prefs.getBoolean("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_enabled", false),
+            startHour = prefs.getInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_start_h", 21).coerceIn(0, 23),
+            startMinute = prefs.getInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_start_m", 0).coerceIn(0, 59),
+            deliverHour = prefs.getInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_deliver_h", 10).coerceIn(0, 23),
+            deliverMinute = prefs.getInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_deliver_m", 0).coerceIn(0, 59)
+        )
+    }
+
+    fun saveTeacherParentDeferral(
+        context: Context,
+        classId: String,
+        config: ParentNotificationDeferralConfig
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val scope = classId.trim().ifBlank { "default" }
+        prefs.edit()
+            .putBoolean("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_enabled", config.enabled)
+            .putInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_start_h", config.startHour.coerceIn(0, 23))
+            .putInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_start_m", config.startMinute.coerceIn(0, 59))
+            .putInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_deliver_h", config.deliverHour.coerceIn(0, 23))
+            .putInt("${KEY_TEACHER_DEFERRAL_PREFIX}${scope}_deliver_m", config.deliverMinute.coerceIn(0, 59))
+            .apply()
+    }
+
+    fun isWithinDeferralWindow(
+        config: ParentNotificationDeferralConfig,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!config.enabled) return false
+        return isWithinQuietHours(config.toQuietHoursConfig(), nowMillis)
     }
 
     fun isWithinQuietHours(
@@ -298,6 +368,65 @@ object NotificationPreferencesHelper {
         if (notif.type == NotificationType.APP_UPDATE) return false
         if (isSecurityCriticalNotification(notif)) return false
         return isWithinQuietHours(config, nowMillis)
+    }
+
+    /**
+     * Veli cihazında hem velinin kendi Sessiz Saatler ayarını hem de öğretmenin
+     * sınıf geneli Veli Bildirim Erteleme (Gece Çalışma Modu) ayarını birlikte değerlendirir.
+     * İkisinden biri aktifse (güvenlik uyarıları ve uygulama güncellemeleri hariç) bildirimi erteler.
+     */
+    fun shouldDeferForParent(
+        personalQuiet: QuietHoursConfig,
+        teacherDeferral: ParentNotificationDeferralConfig,
+        notif: BirizNotification,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (notif.type == NotificationType.APP_UPDATE) return false
+        if (isSecurityCriticalNotification(notif)) return false
+        return isWithinQuietHours(personalQuiet, nowMillis) ||
+            isWithinDeferralWindow(teacherDeferral, nowMillis)
+    }
+
+    /**
+     * Velinin kişisel Sessiz Saatleri ile öğretmenin Veli Bildirim Erteleme penceresi
+     * çakıştığında, iki korumanın da bittiği en erken teslim zamanını hesaplar.
+     */
+    fun nextEffectiveParentDeliveryMillis(
+        personalQuiet: QuietHoursConfig,
+        teacherDeferral: ParentNotificationDeferralConfig,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Long {
+        val teacherAsQuiet = teacherDeferral.toQuietHoursConfig()
+        val hasPersonal = personalQuiet.enabled
+        val hasTeacher = teacherAsQuiet.enabled
+        if (!hasPersonal && !hasTeacher) return nowMillis
+
+        var candidate = nowMillis
+        // Eğer şu an aktif olan bir pencere varsa, her iki pencere de bitene dek ileri al
+        var advanced = false
+        for (step in 0 until 4) {
+            val inPersonal = hasPersonal && isWithinQuietHours(personalQuiet, candidate)
+            val inTeacher = hasTeacher && isWithinQuietHours(teacherAsQuiet, candidate)
+            if (!inPersonal && !inTeacher) break
+            var nextCand = candidate
+            if (inPersonal) {
+                nextCand = maxOf(nextCand, nextQuietHoursEndMillis(personalQuiet, candidate))
+            }
+            if (inTeacher) {
+                nextCand = maxOf(nextCand, nextQuietHoursEndMillis(teacherAsQuiet, candidate))
+            }
+            if (nextCand <= candidate) break
+            candidate = nextCand
+            advanced = true
+        }
+        if (advanced) return candidate
+
+        // Şu an iki pencere de aktif değilse, bir sonraki planlı bitiş saatini döndür
+        val candidates = buildList {
+            if (hasPersonal) add(nextQuietHoursEndMillis(personalQuiet, nowMillis))
+            if (hasTeacher) add(nextQuietHoursEndMillis(teacherAsQuiet, nowMillis))
+        }
+        return candidates.minOrNull() ?: nowMillis
     }
 
     fun enqueueDeferredNotifications(

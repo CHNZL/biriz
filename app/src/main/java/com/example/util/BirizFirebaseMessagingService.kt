@@ -108,16 +108,27 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
         }
 
         val quietConfig = NotificationPreferencesHelper.loadQuietHours(applicationContext, viewerKey)
-        if (NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, notif)) {
+        val teacherDeferral = if (!isTeacher && classId.isNotBlank() && classId != "default") {
+            NotificationPreferencesHelper.loadTeacherParentDeferral(applicationContext, classId)
+        } else {
+            ParentNotificationDeferralConfig(enabled = false)
+        }
+        val shouldDefer = if (isTeacher) {
+            NotificationPreferencesHelper.shouldDeferForQuietHours(quietConfig, notif)
+        } else {
+            NotificationPreferencesHelper.shouldDeferForParent(quietConfig, teacherDeferral, notif)
+        }
+        if (shouldDefer) {
             NotificationPreferencesHelper.enqueueDeferredNotifications(
                 applicationContext,
                 viewerKey,
                 listOf(DeferredSystemNotification(notif, isTeacher))
             )
             BackgroundNotificationSyncHelper.scheduleQuietHoursFlush(
-                applicationContext,
-                quietConfig,
-                viewerKey
+                context = applicationContext,
+                config = quietConfig,
+                viewerKey = viewerKey,
+                teacherDeferral = teacherDeferral
             )
         } else {
             SystemActivityNotificationHelper.showNotification(
