@@ -18,6 +18,15 @@ from pathlib import Path
 SPECIFIC_DIFF_RULES = [
     # --- Kitaplık ve Okuma İstatistikleri ---
     (
+        "library_student_pdf_currently_reading",
+        "library",
+        False,
+        re.compile(r"(LibraryPdfReportsHelper|LibrarySubScreen)", re.I),
+        re.compile(r"(extractCurrentlyReadingBooksForStudent|OKUMAKTA OLDUĞU KİTAPLAR|ActiveStudentBookEntry)", re.I),
+        "Öğrenci Okuma Raporunda Okumakta Olduğu Kitaplar",
+        "Öğrencinin Okuduğu Kitaplar Listesi raporunda öğrenci özet satırı ile tamamlanan kitaplar tablosu arasına okumakta olduğu kitaplar, okuma süresi ve gecikme uyarısı eklendi.",
+    ),
+    (
         "library_analytics_student_sort",
         "library",
         False,
@@ -82,6 +91,15 @@ SPECIFIC_DIFF_RULES = [
         "Öğretmenler Odası bölümü hazırlık aşamasında bilgilendirme görünümüyle güncellendi.",
     ),
     # --- Akıllı Tahta ---
+    (
+        "smartboard_home_legibility_and_note_spotlight",
+        "smartboard",
+        False,
+        re.compile(r"(tahta\.html|index\.html)", re.I),
+        re.compile(r"(home-note-beacon|noteBeaconPulse|reader-metrics|home-metric-unit|is-long-note)", re.I),
+        "Akıllı Tahta Okunabilirlik ve Günün Notu Güncellemesi",
+        "Akıllı tahta ana sayfasındaki yıldız, kitap ve sayfa sayıları uzaktan okunacak şekilde büyütülüp yüksek kontrastlı rozetlere dönüştürüldü; Günün Notu şeridi belirgin canlı tasarımla öne çıkarıldı.",
+    ),
     (
         "smartboard_countdown_and_daily_note",
         "smartboard",
@@ -274,6 +292,15 @@ SPECIFIC_DIFF_RULES = [
         None,
         "Sınıf İçi Etkinlik Araçları",
         "Zamanlayıcı, şanslı öğrenci ve grup oluşturma araçları güncellendi.",
+    ),
+    (
+        "cross_device_notif_read_sync",
+        "notifications",
+        False,
+        re.compile(r"(NotificationLifecycleHelper|CommunicationPersistenceHelper|BirizViewModel|BackgroundNotificationSync|BirizFirebaseMessaging)", re.I),
+        re.compile(r"(NotificationReadSyncState|notification_read_state|observeFirestoreNotificationReadSyncState|recordAllNotificationsRead|pruneDismissedNotifications)", re.I),
+        "Çoklu Cihaz Bildirim Okundu Eşitlemesi",
+        "Bir cihazda okunan veya tümü okundu işaretlenen bildirimlerin bulut üzerinden eşitlenerek aynı hesapla giriş yapılan diğer cihazlarda tekrar baştan gelmesi engellendi.",
     ),
     (
         "teacher_parent_notif_deferral",

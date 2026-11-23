@@ -65,6 +65,7 @@ import com.example.util.LibraryPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
+import com.example.util.NotificationReadSyncState
 import com.example.util.PresenceSocketManager
 import com.example.util.QuietHoursConfig
 import com.example.util.SmartBoardHelper
@@ -260,6 +261,8 @@ class BirizViewModel(
     private var communicationAnnouncementsListener: ListenerRegistration? = null
     private var communicationMessagesListener: ListenerRegistration? = null
     private var communicationClearStateListener: ListenerRegistration? = null
+    private var notificationReadStateListener: ListenerRegistration? = null
+    private var notificationReadStateGateJob: Job? = null
     private var starsNotificationListener: ListenerRegistration? = null
     private var libraryBooksNotificationListener: ListenerRegistration? = null
     private var libraryRecordsNotificationListener: ListenerRegistration? = null
@@ -304,6 +307,9 @@ class BirizViewModel(
     private var hasCloudSchedule: Boolean = false
     private var hasCloudSeating: Boolean = false
     private var hasCloudGroups: Boolean = false
+    private var hasCloudStudents: Boolean = false
+    private var hasCloudNotificationReadState: Boolean = false
+    private var hasBootstrappedCloudReadState: Boolean = false
     private val loadedCloudMatchTournamentIds = mutableSetOf<String>()
 
     private var previousActivitySnapshot: ActivityNotificationHelper.ActivitySnapshot? = null
@@ -313,6 +319,8 @@ class BirizViewModel(
     private var seenActivityEventKeys: Set<String> = emptySet()
     private var activityBaselineTimestampMs: Long = 0L
     private var loadedActivityStateKey: String? = null
+    private var loadedReadStateKey: String? = null
+    private var notificationReadSyncState: NotificationReadSyncState = NotificationReadSyncState()
     private data class PendingPollVote(
         val announcementId: String,
         val optionId: String,
@@ -642,6 +650,10 @@ class BirizViewModel(
         communicationMessagesListener = null
         communicationClearStateListener?.remove()
         communicationClearStateListener = null
+        notificationReadStateListener?.remove()
+        notificationReadStateListener = null
+        notificationReadStateGateJob?.cancel()
+        notificationReadStateGateJob = null
         starsNotificationListener?.remove()
         starsNotificationListener = null
         libraryBooksNotificationListener?.remove()
@@ -679,12 +691,14 @@ class BirizViewModel(
         loadedNotifiedClassId = null
         loadedActivityStateKey = null
         loadedClearStateKey = null
+        loadedReadStateKey = null
         previousActivitySnapshot = null
         previousTeacherStudentsSnapshot = null
         previousTeacherAnnouncements = null
         previousChatReactions = null
         seenActivityEventKeys = emptySet()
         activityBaselineTimestampMs = 0L
+        notificationReadSyncState = NotificationReadSyncState()
 
         knownMessageIds.clear()
         processedNotifMessageIds.clear()
@@ -710,6 +724,9 @@ class BirizViewModel(
         hasCloudSchedule = false
         hasCloudSeating = false
         hasCloudGroups = false
+        hasCloudStudents = false
+        hasCloudNotificationReadState = false
+        hasBootstrappedCloudReadState = false
         loadedCloudMatchTournamentIds.clear()
     }
 
@@ -774,6 +791,67 @@ class BirizViewModel(
             }
     }
 
+    private fun applyRemoteNotificationReadSyncState(
+        ctx: Context,
+        classId: String,
+        viewerKey: String,
+        mergedState: NotificationReadSyncState
+    ) {
+        notificationReadSyncState = mergedState
+        val effectiveBaseline = NotificationLifecycleHelper.effectiveBaselineMs(mergedState)
+        var activityStateChanged = false
+        if (effectiveBaseline > activityBaselineTimestampMs) {
+            activityBaselineTimestampMs = effectiveBaseline
+            activityStateChanged = true
+        }
+        if (mergedState.seenEventKeys.isNotEmpty() && !seenActivityEventKeys.containsAll(mergedState.seenEventKeys)) {
+            seenActivityEventKeys = seenActivityEventKeys + mergedState.seenEventKeys
+            activityStateChanged = true
+        }
+        if (activityStateChanged) {
+            CommunicationPersistenceHelper.saveActivityNotificationState(
+                context = ctx,
+                classId = classId,
+                viewerKey = viewerKey,
+                baselineMs = activityBaselineTimestampMs,
+                seenKeys = seenActivityEventKeys
+            )
+        }
+        if (mergedState.dismissedMessageIds.isNotEmpty() &&
+            processedNotifMessageIds.addAll(mergedState.dismissedMessageIds)
+        ) {
+            CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+        }
+
+        val currentNotifs = _uiState.value.notifications
+        val keptNotifs = NotificationLifecycleHelper.pruneDismissedNotifications(currentNotifs, mergedState)
+        val remainingDeferred = NotificationPreferencesHelper.pruneDeferredNotifications(ctx, viewerKey, mergedState)
+        if (keptNotifs.size != currentNotifs.size) {
+            val prunedItems = currentNotifs.filterNot { item -> keptNotifs.any { it.id == item.id } }
+            _uiState.value = _uiState.value.copy(
+                notifications = keptNotifs,
+                deferredQuietCount = remainingDeferred
+            )
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, keptNotifs, viewerKey)
+            val prunedActivityIds = prunedItems
+                .filterNot { NotificationLifecycleHelper.isUpdateNotification(it) }
+                .map { it.id }
+            if (prunedActivityIds.isNotEmpty()) {
+                SystemActivityNotificationHelper.cancelNotifications(ctx, prunedActivityIds)
+            }
+            prunedItems
+                .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+                .mapNotNull { it.targetId }
+                .distinct()
+                .forEach { sId -> ChatNotificationHelper.cancelMessageNotification(ctx, sId) }
+            if (prunedItems.any { NotificationLifecycleHelper.isUpdateNotification(it) }) {
+                AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
+            }
+        } else if (remainingDeferred != _uiState.value.deferredQuietCount) {
+            _uiState.value = _uiState.value.copy(deferredQuietCount = remainingDeferred)
+        }
+    }
+
     private fun evaluateActivityNotifications(
         classId: String = resolveActiveClassId(),
         forceReloadViewerNotifications: Boolean = false
@@ -781,6 +859,10 @@ class BirizViewModel(
         val ctx = appContext ?: return
         val state = _uiState.value
         val viewerKey = currentViewerKey(state)
+        val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(
+            viewerIsTeacher = state.currentRole == UserRole.TEACHER,
+            userEmail = state.currentUser.email
+        )
         val stateKey = "$classId|$viewerKey"
 
         if (forceReloadViewerNotifications || loadedActivityStateKey != stateKey) {
@@ -790,15 +872,19 @@ class BirizViewModel(
             previousTeacherAnnouncements = null
             reloadNotificationPreferences(state)
 
+            val localReadSync = CommunicationPersistenceHelper.loadNotificationReadSyncState(ctx, classId, viewerDocKey)
+            notificationReadSyncState = NotificationLifecycleHelper.mergeReadSyncState(notificationReadSyncState, localReadSync)
+
             val existingUpdateNotifs = state.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
             val loadedViewerNotifs = CommunicationPersistenceHelper.loadNotifications(ctx, classId, viewerKey)
             val merged = (existingUpdateNotifs + loadedViewerNotifs).distinctBy { it.id }
-            val pruned = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+            val prunedUpdates = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
                 notifications = merged,
                 currentVersionCode = BuildConfig.VERSION_CODE,
                 currentVersionName = BuildConfig.VERSION_NAME,
                 latestCheckInfo = state.availableUpdateInfo
             )
+            val pruned = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
             if (pruned != state.notifications) {
                 _uiState.value = _uiState.value.copy(notifications = pruned)
             }
@@ -814,39 +900,53 @@ class BirizViewModel(
                 classId = classId,
                 viewerKey = viewerKey
             )
-            activityBaselineTimestampMs = loadedBaseline
-            seenActivityEventKeys = loadedSeen
+            activityBaselineTimestampMs = maxOf(
+                loadedBaseline,
+                NotificationLifecycleHelper.effectiveBaselineMs(notificationReadSyncState)
+            )
+            seenActivityEventKeys = loadedSeen + notificationReadSyncState.seenEventKeys
+        }
+
+        // Buluttaki okundu eşitleme kaydı gelmeden yeni cihazda eski olaylardan bildirim üretme
+        if (classId != "default" && !hasCloudNotificationReadState) {
+            return
         }
 
         val freshState = _uiState.value
         val activePrefs = freshState.notificationPreferences
+        val effectiveBaselineMs = maxOf(
+            activityBaselineTimestampMs,
+            NotificationLifecycleHelper.effectiveBaselineMs(notificationReadSyncState)
+        )
+        val mergedSeenBase = seenActivityEventKeys + notificationReadSyncState.seenEventKeys
+
         if (freshState.currentRole == UserRole.TEACHER) {
             previousActivitySnapshot = null
             val generatedForTeacher = mutableListOf<BirizNotification>()
-            var updatedTeacherSeen = seenActivityEventKeys
+            var updatedTeacherSeen = mergedSeenBase
 
             val currentStudents = repository.students.value
-            if (currentStudents.isNotEmpty()) {
+            if (currentStudents.isNotEmpty() && (hasCloudStudents || classId == "default")) {
                 val teacherRes = ActivityNotificationHelper.evaluateTeacherNotifications(
                     previousStudents = previousTeacherStudentsSnapshot,
                     currentStudents = currentStudents,
                     seenEventKeys = updatedTeacherSeen,
-                    baselineTimestampMs = activityBaselineTimestampMs
+                    baselineTimestampMs = effectiveBaselineMs
                 )
                 previousTeacherStudentsSnapshot = currentStudents
                 generatedForTeacher.addAll(teacherRes.newNotifications)
                 updatedTeacherSeen = teacherRes.updatedSeenKeys
             }
 
-            if (hasCloudAnnouncements || hasCloudBooks || latestAnnouncements.isNotEmpty() || latestBooks.isNotEmpty()) {
+            if (hasCloudAnnouncements || hasCloudBooks || (classId == "default" && (latestAnnouncements.isNotEmpty() || latestBooks.isNotEmpty()))) {
                 val opRes = ActivityNotificationHelper.evaluateTeacherOperationalNotifications(
                     previousAnnouncements = previousTeacherAnnouncements,
                     currentAnnouncements = latestAnnouncements,
                     books = latestBooks,
                     seenEventKeys = updatedTeacherSeen,
-                    baselineTimestampMs = activityBaselineTimestampMs
+                    baselineTimestampMs = effectiveBaselineMs
                 )
-                if (hasCloudAnnouncements || latestAnnouncements.isNotEmpty()) {
+                if (hasCloudAnnouncements || (classId == "default" && latestAnnouncements.isNotEmpty())) {
                     previousTeacherAnnouncements = latestAnnouncements
                 }
                 generatedForTeacher.addAll(opRes.newNotifications)
@@ -859,13 +959,14 @@ class BirizViewModel(
                     context = ctx,
                     classId = classId,
                     viewerKey = viewerKey,
-                    baselineMs = activityBaselineTimestampMs,
+                    baselineMs = effectiveBaselineMs,
                     seenKeys = seenActivityEventKeys
                 )
             }
 
             val allowedTeacherNew = generatedForTeacher.filter {
-                NotificationPreferencesHelper.isNotificationEnabled(activePrefs, it)
+                NotificationPreferencesHelper.isNotificationEnabled(activePrefs, it) &&
+                    !NotificationLifecycleHelper.isNotificationDismissed(it, notificationReadSyncState)
             }
             if (allowedTeacherNew.isNotEmpty()) {
                 val latestUi = _uiState.value
@@ -925,8 +1026,8 @@ class BirizViewModel(
             previous = previousActivitySnapshot,
             current = currentSnapshot,
             linkedStudentIds = freshState.linkedParentStudentIds.toSet(),
-            seenEventKeys = seenActivityEventKeys,
-            baselineTimestampMs = activityBaselineTimestampMs,
+            seenEventKeys = mergedSeenBase,
+            baselineTimestampMs = effectiveBaselineMs,
             currentUserEmail = freshState.currentUser.email
         )
         previousActivitySnapshot = currentSnapshot
@@ -939,13 +1040,14 @@ class BirizViewModel(
                 context = ctx,
                 classId = classId,
                 viewerKey = viewerKey,
-                baselineMs = activityBaselineTimestampMs,
+                baselineMs = effectiveBaselineMs,
                 seenKeys = seenActivityEventKeys
             )
         }
 
         val allowedParentNew = result.newNotifications.filter {
-            NotificationPreferencesHelper.isNotificationEnabled(activePrefs, it)
+            NotificationPreferencesHelper.isNotificationEnabled(activePrefs, it) &&
+                !NotificationLifecycleHelper.isNotificationDismissed(it, notificationReadSyncState)
         }
         if (allowedParentNew.isNotEmpty()) {
             val latestUi = _uiState.value
@@ -1181,6 +1283,7 @@ class BirizViewModel(
                     }
                 }
                 if (currentStudents.isNotEmpty()) {
+                    hasCloudStudents = true
                     val currentSeating = _uiState.value.seatingPlanState
                     val reconciledSeating = SeatingPlanHelper.reconcileAndSanitizePlan(currentSeating, currentStudents)
                     if (reconciledSeating != currentSeating) {
@@ -1924,13 +2027,22 @@ class BirizViewModel(
         val loadedMessages = CommunicationPersistenceHelper.loadChatMessages(ctx, classId, currentStudents)
         val existingUpdateNotifs = stateSnapshot.notifications.filter { NotificationLifecycleHelper.isUpdateNotification(it) }
         val loadedNotifications = CommunicationPersistenceHelper.loadNotifications(ctx, classId, viewerKey)
+        val hadLocalActivityHistory = CommunicationPersistenceHelper.hasSavedActivityNotificationState(ctx, classId, viewerKey) ||
+            loadedNotifications.isNotEmpty()
+        val localReadSync = CommunicationPersistenceHelper.loadNotificationReadSyncState(ctx, classId, viewerDocKey)
+        notificationReadSyncState = NotificationLifecycleHelper.mergeReadSyncState(notificationReadSyncState, localReadSync)
+        val hadLocalSyncHistory = hadLocalActivityHistory ||
+            localReadSync.readAllBeforeMs > 0L ||
+            localReadSync.baselineMs > 0L
+
         val rawMerged = (existingUpdateNotifs + loadedNotifications).distinctBy { it.id }
-        val prunedNotifications = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
+        val prunedUpdates = NotificationLifecycleHelper.pruneStaleUpdateNotifications(
             notifications = rawMerged,
             currentVersionCode = BuildConfig.VERSION_CODE,
             currentVersionName = BuildConfig.VERSION_NAME,
             latestCheckInfo = stateSnapshot.availableUpdateInfo
         )
+        val prunedNotifications = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
         if (prunedNotifications.size != loadedNotifications.size && prunedNotifications != rawMerged) {
             CommunicationPersistenceHelper.saveNotifications(ctx, classId, prunedNotifications, viewerKey)
             if (prunedNotifications.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
@@ -1942,6 +2054,7 @@ class BirizViewModel(
             loadedNotifiedClassId = classId
             processedNotifMessageIds.clear()
             processedNotifMessageIds.addAll(CommunicationPersistenceHelper.loadNotifiedMessageIds(ctx, classId))
+            processedNotifMessageIds.addAll(notificationReadSyncState.dismissedMessageIds)
             knownMessageIds.clear()
             previousChatReactions = null
         }
@@ -1970,6 +2083,9 @@ class BirizViewModel(
             hasCloudSchedule = false
             hasCloudSeating = false
             hasCloudGroups = false
+            hasCloudStudents = currentStudents.isNotEmpty()
+            hasCloudNotificationReadState = (classId == "default")
+            hasBootstrappedCloudReadState = false
             latestScheduleUpdatedAtMs = 0L
             latestSeatingUpdatedAtMs = 0L
             latestGroupsUpdatedAtMs = 0L
@@ -1985,6 +2101,94 @@ class BirizViewModel(
 
         seedLocalActivitySnapshotsIfNeeded(ctx, classId, forceAllLocal = classChanged)
         evaluateActivityNotifications(classId, forceReloadViewerNotifications = true)
+
+        val readStateKey = "$classId|$viewerDocKey"
+        if (classChanged || loadedReadStateKey != readStateKey || notificationReadStateListener == null) {
+            notificationReadStateListener?.remove()
+            notificationReadStateListener = null
+            notificationReadStateGateJob?.cancel()
+            notificationReadStateGateJob = null
+            loadedReadStateKey = readStateKey
+            hasBootstrappedCloudReadState = false
+
+            if (classId == "default") {
+                hasCloudNotificationReadState = true
+            } else {
+                hasCloudNotificationReadState = false
+                notificationReadStateGateJob = viewModelScope.launch {
+                    delay(3_000L)
+                    if (!hasCloudNotificationReadState && loadedReadStateKey == readStateKey) {
+                        hasCloudNotificationReadState = true
+                        evaluateActivityNotifications(classId)
+                        if (rawChatMessages.isNotEmpty()) {
+                            handleIncomingChatMessagesSnapshot(classId, rawChatMessages)
+                        }
+                    }
+                }
+                notificationReadStateListener = CommunicationPersistenceHelper.observeFirestoreNotificationReadSyncState(
+                    context = ctx,
+                    classId = classId,
+                    viewerDocKey = viewerDocKey
+                ) { existsInCloud, mergedFromCloud ->
+                    notificationReadStateGateJob?.cancel()
+                    notificationReadStateGateJob = null
+                    val now = System.currentTimeMillis()
+                    val resolvedState = if (!existsInCloud && !hasBootstrappedCloudReadState) {
+                        hasBootstrappedCloudReadState = true
+                        val bootstrapped = if (hadLocalSyncHistory) {
+                            val currentBell = _uiState.value.notifications
+                            val currentlyUnreadKeys = currentBell.mapNotNull { notif ->
+                                if (notif.id.startsWith("notif_")) notif.id.removePrefix("notif_").takeIf { it.isNotBlank() } else null
+                            }.toSet()
+                            val alreadyHandledSeen = seenActivityEventKeys - currentlyUnreadKeys
+                            val readAllCutoff = if (currentBell.isEmpty()) {
+                                maxOf(mergedFromCloud.readAllBeforeMs, activityBaselineTimestampMs, now)
+                            } else {
+                                mergedFromCloud.readAllBeforeMs
+                            }
+                            NotificationLifecycleHelper.mergeReadSyncState(
+                                mergedFromCloud,
+                                NotificationReadSyncState(
+                                    readAllBeforeMs = readAllCutoff,
+                                    baselineMs = maxOf(activityBaselineTimestampMs, readAllCutoff),
+                                    seenEventKeys = alreadyHandledSeen,
+                                    dismissedMessageIds = processedNotifMessageIds
+                                )
+                            )
+                        } else {
+                            // Yeni cihazda ilk giriş ve bulutta henüz okundu kaydı yoksa geçmiş bildirimleri yağdırma
+                            NotificationLifecycleHelper.mergeReadSyncState(
+                                mergedFromCloud,
+                                NotificationReadSyncState(
+                                    readAllBeforeMs = now,
+                                    baselineMs = now
+                                )
+                            )
+                        }
+                        CommunicationPersistenceHelper.updateNotificationReadSyncStateInFirestore(
+                            context = ctx,
+                            classId = classId,
+                            viewerDocKey = viewerDocKey,
+                            state = bootstrapped
+                        )
+                        bootstrapped
+                    } else {
+                        hasBootstrappedCloudReadState = true
+                        mergedFromCloud
+                    }
+
+                    val wasGated = !hasCloudNotificationReadState
+                    applyRemoteNotificationReadSyncState(ctx, classId, viewerKey, resolvedState)
+                    hasCloudNotificationReadState = true
+                    if (wasGated) {
+                        evaluateActivityNotifications(classId)
+                        if (rawChatMessages.isNotEmpty()) {
+                            handleIncomingChatMessagesSnapshot(classId, rawChatMessages)
+                        }
+                    }
+                }
+            }
+        }
 
         if (classChanged || communicationClearStateListener == null) {
             communicationClearStateListener?.remove()
@@ -2929,9 +3133,19 @@ class BirizViewModel(
             if (ctx != null) ChatNotificationHelper.cancelMessageNotification(ctx, sId)
         }
 
+        if (classId != "default" && !hasCloudNotificationReadState) {
+            _uiState.value = _uiState.value.copy(
+                chatMessages = filterMessagesForCurrentViewer(updatedRaw, state)
+            )
+            return
+        }
+
         // Kapalı sohbetlere gelen YENİ okunmamış mesajlar için alıcıya bildirim üret
         val closedChatUnread = incomingUnread.filterNot { msg -> openChatUnread.any { it.id == msg.id } }
-        val newlyArrived = closedChatUnread.filter { it.id !in processedNotifMessageIds }
+        val newlyArrived = closedChatUnread.filter { msg ->
+            msg.id !in processedNotifMessageIds &&
+                !NotificationLifecycleHelper.isChatMessageNotificationDismissed(msg, notificationReadSyncState)
+        }
         var bannerText: String? = null
         val messagesNotifEnabled = NotificationPreferencesHelper.isCategoryEnabled(
             state.notificationPreferences,
@@ -3072,7 +3286,9 @@ class BirizViewModel(
                                     targetId = msg.studentId,
                                     isRead = false
                                 )
-                                if (updatedNotifs.none { it.id == reactNotifId }) {
+                                if (updatedNotifs.none { it.id == reactNotifId } &&
+                                    !NotificationLifecycleHelper.isNotificationDismissed(reactNotif, notificationReadSyncState)
+                                ) {
                                     updatedNotifs = listOf(reactNotif) + updatedNotifs
                                     notifsChanged = true
                                     if (ctx != null) {
@@ -3153,6 +3369,25 @@ class BirizViewModel(
                     CommunicationPersistenceHelper.saveChatMessagesLocal(ctx, classId, updatedRaw)
                     CommunicationPersistenceHelper.markChatMessagesReadInFirestore(ctx, classId, newlyReadMessages)
                     CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+                    val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher, _uiState.value.currentUser.email)
+                    notificationReadSyncState = NotificationLifecycleHelper.recordDismissedMessageIds(
+                        state = notificationReadSyncState,
+                        messageIds = newlyReadMessages.map { it.id }
+                    )
+                    if (reactIdsToCancel.isNotEmpty()) {
+                        reactIdsToCancel.forEach { rid ->
+                            notificationReadSyncState = NotificationLifecycleHelper.recordSingleNotificationRead(
+                                state = notificationReadSyncState,
+                                notificationId = rid
+                            )
+                        }
+                    }
+                    CommunicationPersistenceHelper.updateNotificationReadSyncStateInFirestore(
+                        context = ctx,
+                        classId = classId,
+                        viewerDocKey = viewerDocKey,
+                        state = notificationReadSyncState
+                    )
                 }
                 if (notifsChanged) {
                     CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
@@ -3354,14 +3589,71 @@ class BirizViewModel(
     }
 
     fun markNotificationAsRead(notificationId: String) {
+        val state = _uiState.value
         val classId = resolveActiveClassId()
-        val removed = _uiState.value.notifications.firstOrNull { it.id == notificationId }
-        val updatedNotifs = _uiState.value.notifications.filterNot { it.id == notificationId }
-        _uiState.value = _uiState.value.copy(notifications = updatedNotifs)
+        val viewerKey = currentViewerKey(state)
+        val viewerIsTeacher = state.currentRole == UserRole.TEACHER
+        val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher, state.currentUser.email)
+        val removed = state.notifications.firstOrNull { it.id == notificationId }
+        val updatedNotifs = state.notifications.filterNot { it.id == notificationId }
+
+        val isSpecialMessageAlert = removed != null &&
+            (removed.id.startsWith("msg_react_") || removed.id.startsWith("sched_confirm_"))
+        val extraDismissedMsgIds = if (removed?.type == NotificationType.MESSAGE && !isSpecialMessageAlert && !removed.targetId.isNullOrBlank()) {
+            rawChatMessages.filter { msg ->
+                msg.studentId == removed.targetId &&
+                    msg.status != MessageStatus.READ &&
+                    !msg.isDeletedForEveryone &&
+                    NotificationLifecycleHelper.isIncomingMessageForViewer(
+                        msg = msg,
+                        viewerIsTeacher = viewerIsTeacher,
+                        viewerIsParent = !viewerIsTeacher,
+                        linkedParentStudentIds = state.linkedParentStudentIds,
+                        currentUserEmail = state.currentUser.email
+                    )
+            }.map { it.id }
+        } else {
+            emptyList()
+        }
+
+        notificationReadSyncState = NotificationLifecycleHelper.recordSingleNotificationRead(
+            state = notificationReadSyncState,
+            notificationId = notificationId,
+            extraDismissedMessageIds = extraDismissedMsgIds
+        )
+        if (notificationId.startsWith("notif_")) {
+            val strippedKey = notificationId.removePrefix("notif_")
+            if (strippedKey.isNotBlank()) {
+                seenActivityEventKeys = seenActivityEventKeys + strippedKey
+            }
+        }
+        if (extraDismissedMsgIds.isNotEmpty()) {
+            processedNotifMessageIds.addAll(extraDismissedMsgIds)
+        }
+
+        _uiState.value = state.copy(notifications = updatedNotifs)
         appContext?.let { ctx ->
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey())
-            val isSpecialMessageAlert = removed != null &&
-                (removed.id.startsWith("msg_react_") || removed.id.startsWith("sched_confirm_"))
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, viewerKey)
+            if (extraDismissedMsgIds.isNotEmpty()) {
+                CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            }
+            CommunicationPersistenceHelper.saveActivityNotificationState(
+                context = ctx,
+                classId = classId,
+                viewerKey = viewerKey,
+                baselineMs = maxOf(activityBaselineTimestampMs, NotificationLifecycleHelper.effectiveBaselineMs(notificationReadSyncState)),
+                seenKeys = seenActivityEventKeys
+            )
+            CommunicationPersistenceHelper.updateNotificationReadSyncStateInFirestore(
+                context = ctx,
+                classId = classId,
+                viewerDocKey = viewerDocKey,
+                state = notificationReadSyncState
+            )
+            val remainingDeferred = NotificationPreferencesHelper.pruneDeferredNotifications(ctx, viewerKey, notificationReadSyncState)
+            if (remainingDeferred != _uiState.value.deferredQuietCount) {
+                _uiState.value = _uiState.value.copy(deferredQuietCount = remainingDeferred)
+            }
             if (removed?.type == NotificationType.MESSAGE && !isSpecialMessageAlert && !removed.targetId.isNullOrBlank()) {
                 ChatNotificationHelper.cancelMessageNotification(ctx, removed.targetId)
             } else if (removed != null && NotificationLifecycleHelper.isUpdateNotification(removed)) {
@@ -3373,15 +3665,69 @@ class BirizViewModel(
     }
 
     fun markAllNotificationsAsRead() {
+        val state = _uiState.value
         val classId = resolveActiveClassId()
-        val current = _uiState.value.notifications
+        val viewerKey = currentViewerKey(state)
+        val viewerIsTeacher = state.currentRole == UserRole.TEACHER
+        val viewerDocKey = ChatVisibilityHelper.viewerDocumentKey(viewerIsTeacher, state.currentUser.email)
+        val current = state.notifications
+        val now = System.currentTimeMillis()
         val messageStudentIds = current
             .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
             .mapNotNull { it.targetId }
             .distinct()
-        _uiState.value = _uiState.value.copy(notifications = emptyList())
+        val currentUnreadIncomingMsgIds = rawChatMessages.filter { msg ->
+            msg.status != MessageStatus.READ &&
+                !msg.isDeletedForEveryone &&
+                NotificationLifecycleHelper.isIncomingMessageForViewer(
+                    msg = msg,
+                    viewerIsTeacher = viewerIsTeacher,
+                    viewerIsParent = !viewerIsTeacher,
+                    linkedParentStudentIds = state.linkedParentStudentIds,
+                    currentUserEmail = state.currentUser.email,
+                    nowMillis = now
+                )
+        }.map { it.id }
+
+        notificationReadSyncState = NotificationLifecycleHelper.recordAllNotificationsRead(
+            state = notificationReadSyncState,
+            currentNotifications = current,
+            currentUnreadMessageIds = currentUnreadIncomingMsgIds,
+            currentSeenEventKeys = seenActivityEventKeys,
+            nowMillis = now
+        )
+        activityBaselineTimestampMs = maxOf(
+            activityBaselineTimestampMs,
+            NotificationLifecycleHelper.effectiveBaselineMs(notificationReadSyncState)
+        )
+        seenActivityEventKeys = seenActivityEventKeys + notificationReadSyncState.seenEventKeys
+        if (currentUnreadIncomingMsgIds.isNotEmpty()) {
+            processedNotifMessageIds.addAll(currentUnreadIncomingMsgIds)
+        }
+
+        _uiState.value = state.copy(notifications = emptyList())
         appContext?.let { ctx ->
-            CommunicationPersistenceHelper.saveNotifications(ctx, classId, emptyList(), currentViewerKey())
+            CommunicationPersistenceHelper.saveNotifications(ctx, classId, emptyList(), viewerKey)
+            CommunicationPersistenceHelper.saveActivityNotificationState(
+                context = ctx,
+                classId = classId,
+                viewerKey = viewerKey,
+                baselineMs = activityBaselineTimestampMs,
+                seenKeys = seenActivityEventKeys
+            )
+            if (currentUnreadIncomingMsgIds.isNotEmpty()) {
+                CommunicationPersistenceHelper.saveNotifiedMessageIds(ctx, classId, processedNotifMessageIds)
+            }
+            CommunicationPersistenceHelper.updateNotificationReadSyncStateInFirestore(
+                context = ctx,
+                classId = classId,
+                viewerDocKey = viewerDocKey,
+                state = notificationReadSyncState
+            )
+            val remainingDeferred = NotificationPreferencesHelper.pruneDeferredNotifications(ctx, viewerKey, notificationReadSyncState)
+            if (remainingDeferred != _uiState.value.deferredQuietCount) {
+                _uiState.value = _uiState.value.copy(deferredQuietCount = remainingDeferred)
+            }
             ChatNotificationHelper.cancelAllMessageNotifications(ctx, messageStudentIds)
             AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
             SystemActivityNotificationHelper.cancelNotifications(ctx, current.map { it.id })

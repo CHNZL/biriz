@@ -237,19 +237,38 @@ object BackgroundNotificationSyncHelper {
         } else {
             ParentNotificationDeferralConfig(enabled = false)
         }
-        // Güncel öğretmen erteleme ayarı alındıktan sonra süresi dolan bildirimleri teslim et
+        val clearDocKey = ChatVisibilityHelper.viewerDocumentKey(
+            viewerIsTeacher = role == UserRole.TEACHER,
+            userEmail = userEmail
+        )
+        val (cloudReadExists, cloudReadState) = CommunicationPersistenceHelper.fetchNotificationReadSyncStateFromFirestore(
+            db = db,
+            context = appCtx,
+            classId = classId,
+            viewerDocKey = clearDocKey
+        )
+        // Başka cihazda okunmuş/temizlenmiş bildirimleri sessiz saatler kuyruğundan da düşür
+        NotificationPreferencesHelper.pruneDeferredNotifications(appCtx, viewerKey, cloudReadState)
+
+        // Güncel öğretmen erteleme ayarı ve okundu eşitlemesi alındıktan sonra süresi dolan bildirimleri teslim et
         flushQuietHoursDigestIfDue(
             context = appCtx,
             viewerKey = viewerKey,
             nowMillis = nowMs,
             teacherDeferralOverride = if (role == UserRole.PARENT) teacherDeferral else null
         )
-        val (baselineMs, seenKeysInitial) = CommunicationPersistenceHelper.loadActivityNotificationState(
+        val hadLocalActivityState = CommunicationPersistenceHelper.hasSavedActivityNotificationState(appCtx, classId, viewerKey)
+        val (rawBaselineMs, seenKeysInitial) = CommunicationPersistenceHelper.loadActivityNotificationState(
             context = appCtx,
             classId = classId,
             viewerKey = viewerKey
         )
-        var updatedSeenKeys = seenKeysInitial
+        val baselineMs = if (!cloudReadExists && !hadLocalActivityState) {
+            maxOf(rawBaselineMs, NotificationLifecycleHelper.effectiveBaselineMs(cloudReadState), nowMs)
+        } else {
+            maxOf(rawBaselineMs, NotificationLifecycleHelper.effectiveBaselineMs(cloudReadState))
+        }
+        var updatedSeenKeys = seenKeysInitial + cloudReadState.seenEventKeys
 
         val students = if (role == UserRole.PARENT && linkedIds.isNotEmpty()) {
             fetchLinkedStudentsOnly(db, classId, linkedIds)
@@ -257,10 +276,6 @@ object BackgroundNotificationSyncHelper {
             fetchStudents(db, classId)
         }
         val announcements = fetchAnnouncements(db, classId)
-        val clearDocKey = ChatVisibilityHelper.viewerDocumentKey(
-            viewerIsTeacher = role == UserRole.TEACHER,
-            userEmail = userEmail
-        )
         val clearMap = CommunicationPersistenceHelper.loadChatClearTimestamps(appCtx, classId, clearDocKey)
         val chatMessages = fetchChatMessages(db, classId)
 
@@ -369,11 +384,13 @@ object BackgroundNotificationSyncHelper {
             isTeacher || linkedIds.isEmpty() || msg.studentId in linkedIds
         }
 
-        val processedMsgIds = CommunicationPersistenceHelper.loadNotifiedMessageIds(appCtx, classId).toMutableSet()
+        val processedMsgIds = (CommunicationPersistenceHelper.loadNotifiedMessageIds(appCtx, classId) +
+            cloudReadState.dismissedMessageIds).toMutableSet()
         val incomingUnread = visibleMessages.filter { msg ->
             msg.status != MessageStatus.READ &&
                 !msg.isDeletedForEveryone &&
                 msg.id !in processedMsgIds &&
+                !NotificationLifecycleHelper.isChatMessageNotificationDismissed(msg, cloudReadState) &&
                 NotificationLifecycleHelper.isIncomingMessageForViewer(
                     msg = msg,
                     viewerIsTeacher = isTeacher,
@@ -431,9 +448,21 @@ object BackgroundNotificationSyncHelper {
         }
 
         val allowedActivityNew = generatedNotifications.filter {
-            NotificationPreferencesHelper.isNotificationEnabled(notificationPrefs, it)
+            NotificationPreferencesHelper.isNotificationEnabled(notificationPrefs, it) &&
+                !NotificationLifecycleHelper.isNotificationDismissed(it, cloudReadState)
         }
-        val existingStored = CommunicationPersistenceHelper.loadNotifications(appCtx, classId, viewerKey)
+        val rawExistingStored = CommunicationPersistenceHelper.loadNotifications(appCtx, classId, viewerKey)
+        val existingStored = NotificationLifecycleHelper.pruneDismissedNotifications(rawExistingStored, cloudReadState)
+        val prunedOnOtherDevice = rawExistingStored.filterNot { kept -> existingStored.any { it.id == kept.id } }
+        if (prunedOnOtherDevice.isNotEmpty()) {
+            CommunicationPersistenceHelper.saveNotifications(appCtx, classId, existingStored, viewerKey)
+            SystemActivityNotificationHelper.cancelNotifications(appCtx, prunedOnOtherDevice.map { it.id })
+            prunedOnOtherDevice
+                .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+                .mapNotNull { it.targetId }
+                .distinct()
+                .forEach { sId -> ChatNotificationHelper.cancelMessageNotification(appCtx, sId) }
+        }
         val existingIds = existingStored.map { it.id }.toSet()
         val uniqueActivityNew = allowedActivityNew.filter { it.id !in existingIds }
 

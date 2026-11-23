@@ -100,6 +100,14 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
         if (!NotificationPreferencesHelper.isNotificationEnabled(prefs, notif)) return
 
         if (classId.isNotBlank() && classId != "default") {
+            val cachedReadState = CommunicationPersistenceHelper.loadNotificationReadSyncState(
+                context = applicationContext,
+                classId = classId,
+                viewerDocKey = viewerKey
+            )
+            if (NotificationLifecycleHelper.isNotificationDismissed(notif, cachedReadState)) {
+                return
+            }
             val existing = CommunicationPersistenceHelper.loadNotifications(applicationContext, classId, viewerKey)
             if (existing.none { it.id == notif.id }) {
                 val updated = (listOf(notif) + existing).distinctBy { it.id }.take(150)

@@ -687,17 +687,107 @@ object LibraryPdfReportsHelper {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // 5. ÖĞRENCİNİN OKUDUĞU KİTAPLAR LİSTESİ (PDF ve Öğrenci Bazında Eskiden Yeniye)
+    // 5. ÖĞRENCİNİN OKUDUĞU KİTAPLAR LİSTESİ (PDF ve Öğrenci Bazında Eskiden Yeniye + Okumakta Oldukları)
     // ---------------------------------------------------------------------------------------------
+    internal const val OVERDUE_READING_DAYS_THRESHOLD = 14
+
+    internal data class ActiveStudentBookEntry(
+        val bookId: String,
+        val registrationNo: Int,
+        val bookName: String,
+        val author: String,
+        val pageCount: Int,
+        val assignmentDate: Long,
+        val elapsedDays: Int,
+        val isOverdue: Boolean
+    )
+
+    internal fun calculateElapsedReadingDays(startDate: Long, nowMs: Long = System.currentTimeMillis()): Int {
+        if (startDate <= 0L || nowMs <= startDate) return 0
+        return ((nowMs - startDate) / (1000L * 60L * 60L * 24L)).toInt().coerceAtLeast(0)
+    }
+
+    internal fun extractCurrentlyReadingBooksForStudent(
+        studentId: String,
+        books: List<Book>,
+        nowMs: Long = System.currentTimeMillis()
+    ): List<ActiveStudentBookEntry> {
+        if (studentId.isBlank() || books.isEmpty()) return emptyList()
+        val results = mutableListOf<ActiveStudentBookEntry>()
+        val seenKeys = mutableSetOf<String>()
+
+        books.forEach { book ->
+            val matchedDates = mutableListOf<Long>()
+            if (book.activeAssignments.isNotEmpty()) {
+                book.activeAssignments
+                    .filter { it.studentId == studentId }
+                    .forEach { matchedDates.add(it.assignmentDate) }
+            } else if (book.currentStudentId == studentId) {
+                matchedDates.add(book.assignmentDate ?: 0L)
+            }
+
+            matchedDates.forEach { assignedAt ->
+                val dedupeKey = "${book.id.ifBlank { book.name.trim().lowercase(Locale("tr")) }}|$assignedAt"
+                if (seenKeys.add(dedupeKey)) {
+                    val elapsed = calculateElapsedReadingDays(assignedAt, nowMs)
+                    results.add(
+                        ActiveStudentBookEntry(
+                            bookId = book.id,
+                            registrationNo = book.registrationNo,
+                            bookName = book.name.trim(),
+                            author = book.author.trim(),
+                            pageCount = book.pageCount.coerceAtLeast(0),
+                            assignmentDate = assignedAt,
+                            elapsedDays = elapsed,
+                            isOverdue = assignedAt > 0L && elapsed >= OVERDUE_READING_DAYS_THRESHOLD
+                        )
+                    )
+                }
+            }
+        }
+
+        return results.sortedWith(
+            compareBy<ActiveStudentBookEntry>(
+                { if (it.assignmentDate <= 0L) Long.MAX_VALUE else it.assignmentDate },
+                { it.registrationNo },
+                { it.bookName.lowercase(Locale("tr")) }
+            )
+        )
+    }
+
+    private fun truncateTextToWidth(text: String, paint: Paint, maxWidth: Float): String {
+        if (paint.measureText(text) <= maxWidth) return text
+        val ellipsis = "…"
+        var end = text.length
+        while (end > 1 && paint.measureText(text.substring(0, end) + ellipsis) > maxWidth) {
+            end--
+        }
+        return text.substring(0, end).trimEnd() + ellipsis
+    }
+
+    private data class StudentReadingReportPageSpec(
+        val student: Student,
+        val activeBooks: List<ActiveStudentBookEntry>,
+        val allCompletedCount: Int,
+        val allCompletedPages: Int,
+        val allCompletedStars: Int,
+        val pageRecords: List<ReadingRecord>,
+        val startIndex: Int,
+        val isContinuation: Boolean
+    )
+
     fun exportStudentReadingLogsPdf(
         context: Context,
         classRoom: ClassRoom,
         records: List<ReadingRecord>,
-        students: List<Student>
+        students: List<Student>,
+        books: List<Book> = emptyList()
     ): Uri {
         val file = createPdfFile(context, "Ogrencinin_Okudugu_Kitaplar_Listesi", classRoom)
         val pdf = PdfDocument()
 
+        val nowMs = System.currentTimeMillis()
+        val dateFmt = SimpleDateFormat("dd.MM.yyyy", Locale("tr"))
         val recordsByStudent = records.groupBy { it.studentId }
         val sortedStudents = students.sortedWith(
             compareBy<Student>(
@@ -707,65 +797,283 @@ object LibraryPdfReportsHelper {
             )
         )
 
-        var globalPage = 1
+        val leftX = 36f
+        val rightX = (PAGE_WIDTH - 36).toFloat()
+        val usableWidth = rightX - leftX
+        val bottomLimitY = (PAGE_HEIGHT - 40).toFloat()
+        val completedRowHeight = 18f
+        val activeRowHeight = 18f
+        val activeHeaderHeight = 20f
+        val activeCardBottomPad = 4f
+        val maxActiveDisplayCount = 12
 
         val thBgPaint = Paint().apply { color = navyTheme; style = Paint.Style.FILL }
         val thTextPaint = Paint().apply { color = Color.WHITE; textSize = 9f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
         val tdTextPaint = Paint().apply { color = darkText; textSize = 8.5f; isAntiAlias = true }
+        val tdBoldPaint = Paint().apply { color = darkText; textSize = 8.5f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
         val zebraPaint = Paint().apply { color = zebraColor; style = Paint.Style.FILL }
-        val sectionPaint = Paint().apply { color = tealTheme; textSize = 11f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val completedSectionPaint = Paint().apply { color = navyTheme; textSize = 9.2f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
 
-        // Her öğrenciyi veya öğrenci gruplarını sayfalandır
+        // Okumakta olduğu kitaplar kutusu boyaları
+        val activeCardBgPaint = Paint().apply { color = 0xFFFFFBEB.toInt(); style = Paint.Style.FILL }
+        val activeCardHeaderBgPaint = Paint().apply { color = 0xFFFEF3C7.toInt(); style = Paint.Style.FILL }
+        val activeCardBorderPaint = Paint().apply { color = 0xFFF59E0B.toInt(); style = Paint.Style.STROKE; strokeWidth = 0.9f; isAntiAlias = true }
+        val activeAccentPaint = Paint().apply { color = 0xFFD97706.toInt(); style = Paint.Style.FILL }
+        val activeDividerPaint = Paint().apply { color = 0xFFFDE68A.toInt(); strokeWidth = 0.6f }
+        val activeHeaderTitlePaint = Paint().apply { color = 0xFF92400E.toInt(); textSize = 8.8f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val activeHeaderColPaint = Paint().apply { color = 0xFF92400E.toInt(); textSize = 8f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val activeIndexPaint = Paint().apply { color = 0xFFB45309.toInt(); textSize = 8.3f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val activeStatusNormalPaint = Paint().apply { color = 0xFFB45309.toInt(); textSize = 8.2f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val activeStatusTodayPaint = Paint().apply { color = 0xFF0F766E.toInt(); textSize = 8.2f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val activeStatusOverduePaint = Paint().apply { color = 0xFFDC2626.toInt(); textSize = 8.2f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+
+        val emptyActiveBgPaint = Paint().apply { color = 0xFFF8FAFC.toInt(); style = Paint.Style.FILL }
+        val emptyActiveBorderPaint = Paint().apply { color = 0xFFCBD5E1.toInt(); style = Paint.Style.STROKE; strokeWidth = 0.75f; isAntiAlias = true }
+        val emptyActiveAccentPaint = Paint().apply { color = 0xFF94A3B8.toInt(); style = Paint.Style.FILL }
+        val emptyActiveLabelPaint = Paint().apply { color = 0xFF475569.toInt(); textSize = 8.5f; typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true }
+        val emptyActiveTextPaint = Paint().apply { color = mutedText; textSize = 8.3f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC); isAntiAlias = true }
+
+        // Tüm sayfaları önceden planla ki altbilgideki "Sayfa X / Y" her zaman doğru olsun
+        val pageSpecs = mutableListOf<StudentReadingReportPageSpec>()
+        val contPageCapacity = ((bottomLimitY - (104f + 14f + 20f)) / completedRowHeight).toInt().coerceAtLeast(1)
+
         sortedStudents.forEach { st ->
             val stRecords = recordsByStudent[st.id]?.sortedBy { it.endDate } ?: emptyList()
-
-            val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, globalPage).create()
-            val page = pdf.startPage(pageInfo)
-            val canvas = page.canvas
-
-            var y = drawDocumentHeader(canvas, context, classRoom, "Öğrenci Kitap Okuma Geçmişi", "${st.fullName} (${st.studentNumber})")
-
-            // Öğrenci Özet Kutusu
+            val activeBooks = extractCurrentlyReadingBooksForStudent(st.id, books, nowMs)
             val totalBooks = stRecords.size
             val totalPages = stRecords.sumOf { it.pageCount }
             val totalStars = stRecords.sumOf { it.earnedStars }
 
-            canvas.drawText("👤 Öğrenci: ${st.fullName}  |  Okunan Kitap: $totalBooks Adet  |  Toplam: $totalPages Sayfa  |  Kazanılan: +$totalStars ⭐", 36f, y, sectionPaint)
-            y += 16f
+            val visibleActiveCount = activeBooks.size.coerceAtMost(maxActiveDisplayCount)
+            val hasOverflowActiveNote = activeBooks.size > maxActiveDisplayCount
+            val activeSectionHeight = if (activeBooks.isEmpty()) {
+                22f + 12f
+            } else {
+                val extraNoteH = if (hasOverflowActiveNote) 15f else 0f
+                activeHeaderHeight + (visibleActiveCount * activeRowHeight) + extraNoteH + activeCardBottomPad + 12f
+            }
+            val firstPageTableStartY = 104f + 10f + activeSectionHeight + 14f + 20f
+            val firstPageCapacity = ((bottomLimitY - firstPageTableStartY) / completedRowHeight).toInt().coerceAtLeast(1)
 
             if (stRecords.isEmpty()) {
-                canvas.drawText("Henüz tamamlanmış kitap okuma kaydı bulunmuyor.", 36f, y + 20f, tdTextPaint)
+                pageSpecs.add(
+                    StudentReadingReportPageSpec(
+                        student = st,
+                        activeBooks = activeBooks,
+                        allCompletedCount = totalBooks,
+                        allCompletedPages = totalPages,
+                        allCompletedStars = totalStars,
+                        pageRecords = emptyList(),
+                        startIndex = 0,
+                        isContinuation = false
+                    )
+                )
             } else {
-                canvas.drawRect(36f, y, (PAGE_WIDTH - 36).toFloat(), y + 20f, thBgPaint)
-                canvas.drawText("Sıra", 42f, y + 14f, thTextPaint)
-                canvas.drawText("Kitabın Adı", 80f, y + 14f, thTextPaint)
-                canvas.drawText("Sayfa", 330f, y + 14f, thTextPaint)
-                canvas.drawText("Başlama", 380f, y + 14f, thTextPaint)
-                canvas.drawText("Bitiş / İade", 440f, y + 14f, thTextPaint)
-                canvas.drawText("Yıldız", 515f, y + 14f, thTextPaint)
-                y += 20f
-
-                stRecords.take(30).forEachIndexed { i, r ->
-                    if (i % 2 == 1) {
-                        canvas.drawRect(36f, y, (PAGE_WIDTH - 36).toFloat(), y + 18f, zebraPaint)
-                    }
-                    canvas.drawText("${i + 1}", 42f, y + 13f, tdTextPaint)
-                    val bookCut = if (r.bookName.length > 36) r.bookName.take(34) + ".." else r.bookName
-                    canvas.drawText(bookCut, 80f, y + 13f, tdTextPaint)
-                    canvas.drawText("${r.pageCount} s.", 330f, y + 13f, tdTextPaint)
-
-                    val startStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(r.startDate))
-                    val endStr = SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(r.endDate))
-                    canvas.drawText(startStr, 380f, y + 13f, tdTextPaint)
-                    canvas.drawText(endStr, 440f, y + 13f, tdTextPaint)
-                    canvas.drawText("+${r.earnedStars} ⭐", 515f, y + 13f, tdTextPaint)
-                    y += 18f
+                val firstSlice = stRecords.take(firstPageCapacity)
+                pageSpecs.add(
+                    StudentReadingReportPageSpec(
+                        student = st,
+                        activeBooks = activeBooks,
+                        allCompletedCount = totalBooks,
+                        allCompletedPages = totalPages,
+                        allCompletedStars = totalStars,
+                        pageRecords = firstSlice,
+                        startIndex = 0,
+                        isContinuation = false
+                    )
+                )
+                var offset = firstSlice.size
+                while (offset < stRecords.size) {
+                    val nextSlice = stRecords.subList(offset, (offset + contPageCapacity).coerceAtMost(stRecords.size))
+                    pageSpecs.add(
+                        StudentReadingReportPageSpec(
+                            student = st,
+                            activeBooks = activeBooks,
+                            allCompletedCount = totalBooks,
+                            allCompletedPages = totalPages,
+                            allCompletedStars = totalStars,
+                            pageRecords = nextSlice,
+                            startIndex = offset,
+                            isContinuation = true
+                        )
+                    )
+                    offset += nextSlice.size
                 }
             }
+        }
 
-            drawFooter(canvas, globalPage, sortedStudents.size)
+        val totalDocPages = pageSpecs.size.coerceAtLeast(1)
+
+        if (pageSpecs.isEmpty()) {
+            val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, 1).create()
+            val page = pdf.startPage(pageInfo)
+            val canvas = page.canvas
+            val y = drawDocumentHeader(canvas, context, classRoom, "Öğrenci Kitap Okuma Geçmişi")
+            canvas.drawText("Sınıfta kayıtlı öğrenci bulunmamaktadır.", leftX, y + 16f, tdTextPaint)
+            drawFooter(canvas, 1, 1)
             pdf.finishPage(page)
-            globalPage++
+        } else {
+            pageSpecs.forEachIndexed { pageIdx, spec ->
+                val pageNum = pageIdx + 1
+                val st = spec.student
+                val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNum).create()
+                val page = pdf.startPage(pageInfo)
+                val canvas = page.canvas
+
+                val subHeader = if (spec.isContinuation) {
+                    "${st.fullName} (${st.studentNumber}) • Devamı"
+                } else {
+                    "${st.fullName} (${st.studentNumber})"
+                }
+                var y = drawDocumentHeader(canvas, context, classRoom, "Öğrenci Kitap Okuma Geçmişi", subHeader)
+
+                if (!spec.isContinuation) {
+                    // Öğrenci Özet Satırı (uzun öğrenci adlarında taşmayı önleyecek şekilde sığdırılır)
+                    val summaryPaint = Paint().apply {
+                        color = tealTheme
+                        textSize = 10.5f
+                        typeface = Typeface.DEFAULT_BOLD
+                        isAntiAlias = true
+                    }
+                    val summaryText = if (spec.activeBooks.isNotEmpty()) {
+                        "👤 Öğrenci: ${st.fullName}  |  Okuyor: ${spec.activeBooks.size}  |  Okunan Kitap: ${spec.allCompletedCount} Adet  |  Toplam: ${spec.allCompletedPages} Sayfa  |  +${spec.allCompletedStars} ⭐"
+                    } else {
+                        "👤 Öğrenci: ${st.fullName}  |  Okunan Kitap: ${spec.allCompletedCount} Adet  |  Toplam: ${spec.allCompletedPages} Sayfa  |  Kazanılan: +${spec.allCompletedStars} ⭐"
+                    }
+                    while (summaryPaint.measureText(summaryText) > usableWidth && summaryPaint.textSize > 7.8f) {
+                        summaryPaint.textSize -= 0.4f
+                    }
+                    canvas.drawText(summaryText, leftX, y, summaryPaint)
+                    y += 10f
+
+                    // OKUMAKTA OLDUĞU KİTAPLAR BLOĞU (Öğrenci özet satırı ile tamamlanan kitaplar tablosunun arasında)
+                    if (spec.activeBooks.isEmpty()) {
+                        val barTop = y
+                        val barBottom = y + 22f
+                        canvas.drawRoundRect(RectF(leftX, barTop, rightX, barBottom), 5f, 5f, emptyActiveBgPaint)
+                        canvas.drawRoundRect(RectF(leftX, barTop, rightX, barBottom), 5f, 5f, emptyActiveBorderPaint)
+                        canvas.drawRoundRect(RectF(leftX, barTop, leftX + 3.5f, barBottom), 2f, 2f, emptyActiveAccentPaint)
+
+                        val label = "📖 Okumakta Olduğu Kitaplar:"
+                        canvas.drawText(label, leftX + 10f, barTop + 14f, emptyActiveLabelPaint)
+                        val labelW = emptyActiveLabelPaint.measureText(label)
+                        canvas.drawText(
+                            "Şu an öğrencide ödünç kitap bulunmamaktadır.",
+                            leftX + 10f + labelW + 6f,
+                            barTop + 14f,
+                            emptyActiveTextPaint
+                        )
+                        y = barBottom + 12f
+                    } else {
+                        val visibleActive = spec.activeBooks.take(maxActiveDisplayCount)
+                        val overflowCount = (spec.activeBooks.size - visibleActive.size).coerceAtLeast(0)
+                        val extraNoteH = if (overflowCount > 0) 15f else 0f
+                        val cardTop = y
+                        val cardBottom = cardTop + activeHeaderHeight + (visibleActive.size * activeRowHeight) + extraNoteH + activeCardBottomPad
+
+                        // Arka plan ve başlık şeridi
+                        canvas.drawRoundRect(RectF(leftX, cardTop, rightX, cardBottom), 5f, 5f, activeCardBgPaint)
+                        canvas.drawRect(leftX + 3f, cardTop + 0.5f, rightX - 0.5f, cardTop + activeHeaderHeight, activeCardHeaderBgPaint)
+                        canvas.drawLine(leftX, cardTop + activeHeaderHeight, rightX, cardTop + activeHeaderHeight, activeDividerPaint)
+                        canvas.drawRoundRect(RectF(leftX, cardTop, rightX, cardBottom), 5f, 5f, activeCardBorderPaint)
+                        canvas.drawRoundRect(RectF(leftX, cardTop, leftX + 4f, cardBottom), 2f, 2f, activeAccentPaint)
+
+                        // Aktif kitaplar başlık satırı (aşağıdaki tablo sütunlarıyla aynı dikey ızgarada)
+                        val headerBaseY = cardTop + 13.5f
+                        canvas.drawText("📖 OKUMAKTA OLDUĞU KİTAPLAR (${spec.activeBooks.size})", leftX + 10f, headerBaseY, activeHeaderTitlePaint)
+                        canvas.drawText("Sayfa", 330f, headerBaseY, activeHeaderColPaint)
+                        canvas.drawText("Başlama", 380f, headerBaseY, activeHeaderColPaint)
+                        canvas.drawText("Durum / Süre", 440f, headerBaseY, activeHeaderColPaint)
+
+                        var rowY = cardTop + activeHeaderHeight
+                        visibleActive.forEachIndexed { idx, entry ->
+                            if (idx > 0) {
+                                canvas.drawLine(leftX + 6f, rowY, rightX - 4f, rowY, activeDividerPaint)
+                            }
+                            val baseY = rowY + 12.5f
+                            canvas.drawText("${idx + 1}", leftX + 10f, baseY, activeIndexPaint)
+
+                            val fittedBookName = truncateTextToWidth(entry.bookName, tdBoldPaint, 324f - 80f)
+                            canvas.drawText(fittedBookName, 80f, baseY, tdBoldPaint)
+
+                            val pageText = if (entry.pageCount > 0) "${entry.pageCount} s." else "-"
+                            canvas.drawText(pageText, 330f, baseY, tdTextPaint)
+
+                            val assignedText = if (entry.assignmentDate > 0L) {
+                                dateFmt.format(Date(entry.assignmentDate))
+                            } else {
+                                "-"
+                            }
+                            canvas.drawText(assignedText, 380f, baseY, tdTextPaint)
+
+                            val (statusText, statusPaint) = when {
+                                entry.isOverdue -> "⚠ ${entry.elapsedDays} gün (Gecikti)" to activeStatusOverduePaint
+                                entry.assignmentDate <= 0L -> "Okunuyor" to activeStatusNormalPaint
+                                entry.elapsedDays == 0 -> "Bugün alındı" to activeStatusTodayPaint
+                                else -> "${entry.elapsedDays} gündür okuyor" to activeStatusNormalPaint
+                            }
+                            val fittedStatus = truncateTextToWidth(statusText, statusPaint, rightX - 6f - 440f)
+                            canvas.drawText(fittedStatus, 440f, baseY, statusPaint)
+
+                            rowY += activeRowHeight
+                        }
+
+                        if (overflowCount > 0) {
+                            canvas.drawText(
+                                "+$overflowCount diğer ödünç kitap daha öğrencide görünmektedir.",
+                                80f,
+                                rowY + 11f,
+                                emptyActiveTextPaint
+                            )
+                        }
+
+                        y = cardBottom + 12f
+                    }
+                }
+
+                // TAMAMLADIĞI KİTAPLAR BÖLÜM BAŞLIĞI VE TABLOSU
+                val completedTitle = if (spec.isContinuation) {
+                    "✓ TAMAMLADIĞI KİTAPLAR (Devamı)"
+                } else {
+                    "✓ TAMAMLADIĞI KİTAPLAR (${spec.allCompletedCount} Kitap)"
+                }
+                canvas.drawText(completedTitle, leftX, y + 8f, completedSectionPaint)
+                y += 14f
+
+                if (spec.pageRecords.isEmpty()) {
+                    canvas.drawText("Henüz tamamlanmış kitap okuma kaydı bulunmamaktadır.", leftX, y + 14f, emptyActiveTextPaint)
+                } else {
+                    canvas.drawRect(leftX, y, rightX, y + 20f, thBgPaint)
+                    canvas.drawText("Sıra", 42f, y + 14f, thTextPaint)
+                    canvas.drawText("Kitabın Adı", 80f, y + 14f, thTextPaint)
+                    canvas.drawText("Sayfa", 330f, y + 14f, thTextPaint)
+                    canvas.drawText("Başlama", 380f, y + 14f, thTextPaint)
+                    canvas.drawText("Bitiş / İade", 440f, y + 14f, thTextPaint)
+                    canvas.drawText("Yıldız", 515f, y + 14f, thTextPaint)
+                    y += 20f
+
+                    spec.pageRecords.forEachIndexed { i, r ->
+                        if (i % 2 == 1) {
+                            canvas.drawRect(leftX, y, rightX, y + completedRowHeight, zebraPaint)
+                        }
+                        val globalRowNum = spec.startIndex + i + 1
+                        canvas.drawText("$globalRowNum", 42f, y + 13f, tdTextPaint)
+                        val fittedCompletedBook = truncateTextToWidth(r.bookName, tdTextPaint, 324f - 80f)
+                        canvas.drawText(fittedCompletedBook, 80f, y + 13f, tdTextPaint)
+                        canvas.drawText("${r.pageCount} s.", 330f, y + 13f, tdTextPaint)
+
+                        val startStr = dateFmt.format(Date(r.startDate))
+                        val endStr = dateFmt.format(Date(r.endDate))
+                        canvas.drawText(startStr, 380f, y + 13f, tdTextPaint)
+                        canvas.drawText(endStr, 440f, y + 13f, tdTextPaint)
+                        canvas.drawText("+${r.earnedStars} ⭐", 515f, y + 13f, tdTextPaint)
+                        y += completedRowHeight
+                    }
+                }
+
+                drawFooter(canvas, pageNum, totalDocPages)
+                pdf.finishPage(page)
+            }
         }
 
         FileOutputStream(file).use { pdf.writeTo(it) }

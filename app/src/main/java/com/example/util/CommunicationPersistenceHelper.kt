@@ -38,6 +38,7 @@ object CommunicationPersistenceHelper {
     private const val KEY_DELETED_ANNOUNCEMENT_IDS_PREFIX = "deleted_announcements_"
     private const val KEY_CHAT_MESSAGES_PREFIX = "chat_messages_"
     private const val KEY_NOTIFICATIONS_PREFIX = "notifications_"
+    private const val KEY_NOTIFICATION_READ_STATE_PREFIX = "notif_read_sync_state_"
     private const val KEY_FONT_OFFSET = "key_communication_font_offset"
     private const val KEY_PARENT_FONT_OFFSET = "key_parent_communication_font_offset"
     private val syncScope = CoroutineScope(Dispatchers.IO)
@@ -999,6 +1000,203 @@ object CommunicationPersistenceHelper {
         val trimmed = if (ids.size > 400) ids.toList().takeLast(400) else ids.toList()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_NOTIFIED_MESSAGE_IDS_PREFIX + classId, trimmed.joinToString(",")).apply()
+    }
+
+    // --- ÇOKLU CİHAZ BİLDİRİM OKUNDU / TEMİZLENDİ EŞİTLEMESİ (FIRESTORE + YEREL) ---
+
+    fun hasSavedActivityNotificationState(
+        context: Context,
+        classId: String,
+        viewerKey: String
+    ): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val scopedSuffix = if (viewerKey.isBlank()) classId else "${classId}_$viewerKey"
+        return prefs.contains(KEY_ACTIVITY_BASELINE_PREFIX + scopedSuffix) ||
+            prefs.contains(KEY_SEEN_ACTIVITY_EVENTS_PREFIX + scopedSuffix)
+    }
+
+    fun loadNotificationReadSyncState(
+        context: Context,
+        classId: String,
+        viewerDocKey: String
+    ): NotificationReadSyncState {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val safeViewer = viewerDocKey.ifBlank { "default" }
+        val raw = prefs.getString("${KEY_NOTIFICATION_READ_STATE_PREFIX}${classId}_$safeViewer", null)
+            ?: return NotificationReadSyncState()
+        return try {
+            val obj = JSONObject(raw)
+            NotificationReadSyncState(
+                readAllBeforeMs = obj.optLong("readAllBeforeMs", 0L),
+                baselineMs = obj.optLong("baselineMs", 0L),
+                readNotificationIds = parseJsonStringSet(obj.optJSONArray("readNotificationIds")),
+                seenEventKeys = parseJsonStringSet(obj.optJSONArray("seenEventKeys")),
+                dismissedMessageIds = parseJsonStringSet(obj.optJSONArray("dismissedMessageIds"))
+            )
+        } catch (_: Exception) {
+            NotificationReadSyncState()
+        }
+    }
+
+    fun saveNotificationReadSyncStateLocal(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        state: NotificationReadSyncState
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val safeViewer = viewerDocKey.ifBlank { "default" }
+        val obj = JSONObject().apply {
+            put("readAllBeforeMs", state.readAllBeforeMs)
+            put("baselineMs", state.baselineMs)
+            put("readNotificationIds", JSONArray(state.readNotificationIds.toList()))
+            put("seenEventKeys", JSONArray(state.seenEventKeys.toList()))
+            put("dismissedMessageIds", JSONArray(state.dismissedMessageIds.toList()))
+        }
+        prefs.edit().putString("${KEY_NOTIFICATION_READ_STATE_PREFIX}${classId}_$safeViewer", obj.toString()).apply()
+    }
+
+    private fun parseJsonStringSet(arr: JSONArray?): Set<String> {
+        if (arr == null) return emptySet()
+        val result = LinkedHashSet<String>()
+        for (i in 0 until arr.length()) {
+            val v = arr.optString(i, "").trim()
+            if (v.isNotBlank()) result.add(v)
+        }
+        return result
+    }
+
+    private fun parseFirestoreStringSet(raw: Any?): Set<String> {
+        val list = raw as? List<*> ?: return emptySet()
+        val result = LinkedHashSet<String>()
+        list.forEach { item ->
+            val v = item?.toString()?.trim().orEmpty()
+            if (v.isNotBlank()) result.add(v)
+        }
+        return result
+    }
+
+    private fun parseNotificationReadSyncDoc(data: Map<String, Any>?): NotificationReadSyncState {
+        if (data == null) return NotificationReadSyncState()
+        return NotificationReadSyncState(
+            readAllBeforeMs = (data["readAllBeforeMs"] as? Number)?.toLong() ?: 0L,
+            baselineMs = (data["baselineMs"] as? Number)?.toLong() ?: 0L,
+            readNotificationIds = parseFirestoreStringSet(data["readNotificationIds"]),
+            seenEventKeys = parseFirestoreStringSet(data["seenEventKeys"]),
+            dismissedMessageIds = parseFirestoreStringSet(data["dismissedMessageIds"])
+        )
+    }
+
+    private fun buildNotificationReadSyncPayload(state: NotificationReadSyncState): Map<String, Any> {
+        return mapOf(
+            "readAllBeforeMs" to state.readAllBeforeMs,
+            "baselineMs" to state.baselineMs,
+            "readNotificationIds" to state.readNotificationIds.toList(),
+            "seenEventKeys" to state.seenEventKeys.toList(),
+            "dismissedMessageIds" to state.dismissedMessageIds.toList(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+    }
+
+    fun updateNotificationReadSyncStateInFirestore(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        state: NotificationReadSyncState
+    ) {
+        val safeViewer = viewerDocKey.ifBlank { "default" }
+        saveNotificationReadSyncStateLocal(context, classId, safeViewer, state)
+        if (classId.isBlank() || classId == "default") return
+        val db = getFirestore(context) ?: return
+        syncScope.launch {
+            val docRef = db.collection("classrooms").document(classId)
+                .collection("notification_read_state").document(safeViewer)
+            try {
+                val finalMerged = db.runTransaction { tx ->
+                    val existingSnap = tx.get(docRef)
+                    val remote = if (existingSnap.exists()) {
+                        parseNotificationReadSyncDoc(existingSnap.data)
+                    } else {
+                        NotificationReadSyncState()
+                    }
+                    val merged = NotificationLifecycleHelper.mergeReadSyncState(state, remote)
+                    tx.set(docRef, buildNotificationReadSyncPayload(merged), SetOptions.merge())
+                    merged
+                }.await()
+                saveNotificationReadSyncStateLocal(context, classId, safeViewer, finalMerged)
+            } catch (e: Exception) {
+                // Çevrimdışıysa Firestore yerel kuyruğuna yazarak yeniden bağlantıda eşitlenmesini sağla
+                try {
+                    docRef.set(buildNotificationReadSyncPayload(state), SetOptions.merge())
+                } catch (fallbackErr: Exception) {
+                    Log.w(TAG, "Failed to update notification read sync state in Firestore", fallbackErr)
+                }
+            }
+        }
+    }
+
+    suspend fun fetchNotificationReadSyncStateFromFirestore(
+        db: FirebaseFirestore,
+        context: Context,
+        classId: String,
+        viewerDocKey: String
+    ): Pair<Boolean, NotificationReadSyncState> {
+        val safeViewer = viewerDocKey.ifBlank { "default" }
+        val local = loadNotificationReadSyncState(context, classId, safeViewer)
+        if (classId.isBlank() || classId == "default") return false to local
+        return try {
+            val doc = db.collection("classrooms").document(classId)
+                .collection("notification_read_state").document(safeViewer)
+                .get()
+                .await()
+            if (!doc.exists()) {
+                false to local
+            } else {
+                val remote = parseNotificationReadSyncDoc(doc.data)
+                val merged = NotificationLifecycleHelper.mergeReadSyncState(local, remote)
+                saveNotificationReadSyncStateLocal(context, classId, safeViewer, merged)
+                true to merged
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching notification read sync state from Firestore", e)
+            false to local
+        }
+    }
+
+    fun observeFirestoreNotificationReadSyncState(
+        context: Context,
+        classId: String,
+        viewerDocKey: String,
+        onUpdate: (existsInCloud: Boolean, mergedState: NotificationReadSyncState) -> Unit
+    ): ListenerRegistration? {
+        val safeViewer = viewerDocKey.ifBlank { "default" }
+        if (classId.isBlank() || classId == "default") return null
+        val db = getFirestore(context) ?: return null
+        return try {
+            db.collection("classrooms").document(classId)
+                .collection("notification_read_state").document(safeViewer)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    try {
+                        val local = loadNotificationReadSyncState(context, classId, safeViewer)
+                        if (!snapshot.exists()) {
+                            // Yeni cihazda yerel önbellek boşken sunucunun gerçek yanıtını bekle
+                            if (snapshot.metadata.isFromCache) return@addSnapshotListener
+                            onUpdate(false, local)
+                            return@addSnapshotListener
+                        }
+                        val remote = parseNotificationReadSyncDoc(snapshot.data)
+                        val merged = NotificationLifecycleHelper.mergeReadSyncState(local, remote)
+                        saveNotificationReadSyncStateLocal(context, classId, safeViewer, merged)
+                        onUpdate(true, merged)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed parsing notification read sync snapshot", e)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed registering notification read sync listener", e)
+            null
+        }
     }
 
     /**

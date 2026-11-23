@@ -237,7 +237,7 @@ object ActivityNotificationHelper {
         ) {
             if (eventKey in updatedSeen) return
             updatedSeen.add(eventKey)
-            val isAfterBaseline = eventTimestamp <= 0L || eventTimestamp >= baselineTimestampMs
+            val isAfterBaseline = eventTimestamp > 0L && eventTimestamp >= baselineTimestampMs
             if (isLiveTransition || isAfterBaseline) {
                 generated.add(buildNotification())
             }
@@ -381,18 +381,20 @@ object ActivityNotificationHelper {
                     val overdueKey = "book_overdue_${book.id}_${sId}_w$weekBucket"
                     if (overdueKey !in updatedSeen) {
                         updatedSeen.add(overdueKey)
-                        generated.add(
-                            BirizNotification(
-                                id = "notif_$overdueKey",
-                                title = "⏰ Kitap İade Hatırlatması",
-                                message = "$sName, \"${book.name}\" kitabını ödünç alalı $daysElapsed gün oldu. Okuma tamamlandıysa iade edebilirsiniz.",
-                                timestamp = nowMs,
-                                type = NotificationType.LIBRARY,
-                                targetSubPageName = "READING",
-                                targetId = sId,
-                                isRead = false
+                        if (nowMs > baselineTimestampMs) {
+                            generated.add(
+                                BirizNotification(
+                                    id = "notif_$overdueKey",
+                                    title = "⏰ Kitap İade Hatırlatması",
+                                    message = "$sName, \"${book.name}\" kitabını ödünç alalı $daysElapsed gün oldu. Okuma tamamlandıysa iade edebilirsiniz.",
+                                    timestamp = nowMs,
+                                    type = NotificationType.LIBRARY,
+                                    targetSubPageName = "READING",
+                                    targetId = sId,
+                                    isRead = false
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -993,20 +995,22 @@ object ActivityNotificationHelper {
             val overdueSummaryKey = "teacher_books_overdue_d$dayBucket"
             if (overdueSummaryKey !in updatedSeen) {
                 updatedSeen.add(overdueSummaryKey)
-                val preview = overdueItems.take(2).joinToString(", ")
-                val extraSuffix = if (overdueItems.size > 2) " ve ${overdueItems.size - 2} kitap daha" else ""
-                generated.add(
-                    BirizNotification(
-                        id = "notif_$overdueSummaryKey",
-                        title = "📚 İadesi Geciken Kitaplar (${overdueItems.size})",
-                        message = "$preview$extraSuffix 14 günü aşkın süredir öğrencilerde.",
-                        timestamp = nowMs,
-                        type = NotificationType.LIBRARY,
-                        targetSubPageName = "KITAPLIK_LISTE",
-                        targetId = null,
-                        isRead = false
+                if (nowMs > baselineTimestampMs) {
+                    val preview = overdueItems.take(2).joinToString(", ")
+                    val extraSuffix = if (overdueItems.size > 2) " ve ${overdueItems.size - 2} kitap daha" else ""
+                    generated.add(
+                        BirizNotification(
+                            id = "notif_$overdueSummaryKey",
+                            title = "📚 İadesi Geciken Kitaplar (${overdueItems.size})",
+                            message = "$preview$extraSuffix 14 günü aşkın süredir öğrencilerde.",
+                            timestamp = nowMs,
+                            type = NotificationType.LIBRARY,
+                            targetSubPageName = "KITAPLIK_LISTE",
+                            targetId = null,
+                            isRead = false
+                        )
                     )
-                )
+                }
             }
         }
 

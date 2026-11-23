@@ -4152,11 +4152,11 @@ private fun ExportLibraryDialog(
                 ReportOptionCard(
                     icon = "🧒",
                     title = "Öğrencinin Okuduğu Kitaplar Listesi (PDF)",
-                    subtitle = "Öğrenci bazında tamamlanan kitapların arşivi",
+                    subtitle = "Öğrenci bazında okumakta olduğu ve tamamladığı kitapların arşivi",
                     themeColor = Color(0xFF8B5CF6), // Purple
                     isDarkTheme = isDarkTheme,
                     onClick = {
-                        val uri = LibraryPdfReportsHelper.exportStudentReadingLogsPdf(context, classRoom, records, students)
+                        val uri = LibraryPdfReportsHelper.exportStudentReadingLogsPdf(context, classRoom, records, students, books)
                         ExcelPdfHelper.shareFile(context, uri, "application/pdf", "Öğrencinin Okuduğu Kitaplar Listesi")
                         onDismiss()
                     }

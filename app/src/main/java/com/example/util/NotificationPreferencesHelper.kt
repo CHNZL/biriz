@@ -464,6 +464,28 @@ object NotificationPreferencesHelper {
         return items
     }
 
+    fun pruneDeferredNotifications(
+        context: Context,
+        viewerKey: String,
+        readState: NotificationReadSyncState
+    ): Int {
+        val scope = viewerKey.ifBlank { "default" }
+        val items = loadDeferredNotifications(context, scope)
+        if (items.isEmpty()) return 0
+        val remaining = items.filterNot { entry ->
+            NotificationLifecycleHelper.isNotificationDismissed(entry.notification, readState)
+        }
+        if (remaining.size != items.size) {
+            if (remaining.isEmpty()) {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit().remove("${KEY_DEFERRED_PREFIX}$scope").apply()
+            } else {
+                saveDeferredNotifications(context, scope, remaining)
+            }
+        }
+        return remaining.size
+    }
+
     private fun loadDeferredNotifications(
         context: Context,
         viewerKey: String

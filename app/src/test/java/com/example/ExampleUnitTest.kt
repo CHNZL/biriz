@@ -4177,4 +4177,227 @@ class ExampleUnitTest {
     assertEquals(23 to 30, com.example.util.NotificationPreferencesHelper.stepTimeByMinutes(0, 0, -30))
     assertEquals("21:00 – 10:00", com.example.util.NotificationPreferencesHelper.formatDeferralRange(teacherDeferral))
   }
+
+  @Test
+  fun testCrossDeviceNotificationReadSyncStateAndSuppression() {
+    val t1 = 1_700_000_000_000L
+    val t2 = t1 + 60_000L
+    val t3 = t2 + 60_000L
+
+    val oldStarNotif = com.example.data.model.BirizNotification(
+      id = "notif_star_old_1",
+      title = "Yıldız",
+      message = "+3 yıldız",
+      timestamp = t1,
+      type = com.example.data.model.NotificationType.STAR_REWARD,
+      targetSubPageName = "STARS"
+    )
+    val oldOverdueNotif = com.example.data.model.BirizNotification(
+      id = "notif_teacher_books_overdue_d100",
+      title = "Geciken Kitaplar",
+      message = "2 kitap gecikti",
+      timestamp = t1 + 5_000L,
+      type = com.example.data.model.NotificationType.LIBRARY,
+      targetSubPageName = "KITAPLIK_LISTE"
+    )
+    val futureStarNotif = com.example.data.model.BirizNotification(
+      id = "notif_star_new_2",
+      title = "Yeni Yıldız",
+      message = "+5 yıldız",
+      timestamp = t3,
+      type = com.example.data.model.NotificationType.STAR_REWARD,
+      targetSubPageName = "STARS"
+    )
+    val updateV2 = com.example.data.model.BirizNotification(
+      id = "app_update_200",
+      title = "Yeni Sürüm v2.0.0",
+      message = "Güncelleme hazır",
+      timestamp = t1,
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "APP_UPDATE"
+    )
+    val updateV3 = com.example.data.model.BirizNotification(
+      id = "app_update_300",
+      title = "Yeni Sürüm v3.0.0",
+      message = "Güncelleme hazır",
+      timestamp = t1,
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "APP_UPDATE"
+    )
+
+    val oldChatMsg = com.example.data.model.ChatMessage(
+      id = "msg_old_1",
+      classId = "c1",
+      studentId = "s1",
+      studentNumber = "1",
+      studentName = "Ali",
+      parentName = "Ayşe",
+      parentEmail = "ayse@test.com",
+      isFromTeacher = false,
+      senderName = "Ayşe",
+      text = "Merhaba",
+      timestamp = t1,
+      status = com.example.data.model.MessageStatus.DELIVERED
+    )
+    val newChatMsg = oldChatMsg.copy(id = "msg_new_2", timestamp = t3, text = "Yeni mesaj")
+
+    // Device A marks a single notification read
+    val deviceASingle = com.example.util.NotificationLifecycleHelper.recordSingleNotificationRead(
+      state = com.example.util.NotificationReadSyncState(),
+      notificationId = oldStarNotif.id,
+      extraDismissedMessageIds = listOf(oldChatMsg.id)
+    )
+    assertTrue(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(oldStarNotif, deviceASingle))
+    assertFalse(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(oldOverdueNotif, deviceASingle))
+    assertTrue(com.example.util.NotificationLifecycleHelper.isChatMessageNotificationDismissed(oldChatMsg, deviceASingle))
+    assertFalse(com.example.util.NotificationLifecycleHelper.isChatMessageNotificationDismissed(newChatMsg, deviceASingle))
+
+    // Device A clicks "Tümünü Okundu İşaretle" at t2
+    val deviceAAllRead = com.example.util.NotificationLifecycleHelper.recordAllNotificationsRead(
+      state = deviceASingle,
+      currentNotifications = listOf(oldStarNotif, oldOverdueNotif, updateV2),
+      currentUnreadMessageIds = listOf(oldChatMsg.id),
+      currentSeenEventKeys = setOf("parent_reg_s1_veli@test.com"),
+      nowMillis = t2
+    )
+
+    // Device B (brand-new device with empty local state) merges cloud state
+    val deviceBMerged = com.example.util.NotificationLifecycleHelper.mergeReadSyncState(
+      local = com.example.util.NotificationReadSyncState(),
+      remote = deviceAAllRead
+    )
+    assertEquals(t2, com.example.util.NotificationLifecycleHelper.effectiveBaselineMs(deviceBMerged))
+    assertTrue(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(oldStarNotif, deviceBMerged))
+    assertTrue(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(oldOverdueNotif, deviceBMerged))
+    assertTrue(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(updateV2, deviceBMerged))
+    // Newer app update version (different ID) and future notifications after t2 MUST NOT be suppressed
+    assertFalse(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(updateV3, deviceBMerged))
+    assertFalse(com.example.util.NotificationLifecycleHelper.isNotificationDismissed(futureStarNotif, deviceBMerged))
+    assertTrue(com.example.util.NotificationLifecycleHelper.isChatMessageNotificationDismissed(oldChatMsg, deviceBMerged))
+    assertFalse(com.example.util.NotificationLifecycleHelper.isChatMessageNotificationDismissed(newChatMsg, deviceBMerged))
+
+    val pruned = com.example.util.NotificationLifecycleHelper.pruneDismissedNotifications(
+      listOf(oldStarNotif, oldOverdueNotif, futureStarNotif, updateV2, updateV3),
+      deviceBMerged
+    )
+    assertEquals(listOf(futureStarNotif.id, updateV3.id), pruned.map { it.id })
+
+    // Zero-timestamp historical star record must NOT bypass baselineTimestampMs on a new device
+    val zeroTsStar = com.example.data.model.StarRewardRecord(
+      id = "star_zero",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Ali",
+      studentNumber = "1",
+      categoryId = "mat",
+      categoryName = "Matematik",
+      starCount = 2,
+      note = "",
+      timestamp = 0L
+    )
+    val evalRes = com.example.util.ActivityNotificationHelper.evaluateParentNotifications(
+      previous = null,
+      current = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+        starRecords = listOf(zeroTsStar),
+        hasStars = true
+      ),
+      linkedStudentIds = setOf("s1"),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = t2,
+      nowMs = t2
+    )
+    assertTrue(evalRes.newNotifications.isEmpty())
+    assertTrue("star_star_zero" in evalRes.updatedSeenKeys)
+  }
+
+  @Test
+  fun testLibraryStudentPdfCurrentlyReadingExtraction() {
+    val dayMs = 24L * 60L * 60L * 1000L
+    val nowMs = 1_800_000_000_000L
+
+    val books = listOf(
+      // Multi-copy modern assignment: both student s1 (16 days -> overdue) and student s2
+      com.example.data.model.Book(
+        id = "b_overdue",
+        registrationNo = 12,
+        name = "Küçük Prens",
+        author = "Antoine de Saint-Exupery",
+        pageCount = 112,
+        status = "Okunuyor",
+        activeAssignments = listOf(
+          com.example.data.model.ActiveAssignment("s1", "Semih Ahmet", nowMs - 16 * dayMs),
+          com.example.data.model.ActiveAssignment("s2", "Zeynep", nowMs - 2 * dayMs)
+        )
+      ),
+      // Modern assignment: student s1 borrowed 4 days ago (not overdue)
+      com.example.data.model.Book(
+        id = "b_recent",
+        registrationNo = 5,
+        name = "Şeker Portakalı",
+        author = "Vasconcelos",
+        pageCount = 184,
+        status = "Okunuyor",
+        activeAssignments = listOf(
+          com.example.data.model.ActiveAssignment("s1", "Semih Ahmet", nowMs - 4 * dayMs)
+        )
+      ),
+      // Legacy fallback assignment (empty activeAssignments, uses currentStudentId)
+      com.example.data.model.Book(
+        id = "b_legacy",
+        registrationNo = 8,
+        name = "Bursalı Ertuğrul",
+        pageCount = 62,
+        status = "Okunuyor",
+        activeAssignments = emptyList(),
+        currentStudentId = "s1",
+        assignmentDate = nowMs - 3 * 60L * 60L * 1000L // Today (0 full days elapsed)
+      ),
+      // Book assigned only to another student (must NOT appear for s1)
+      com.example.data.model.Book(
+        id = "b_other",
+        registrationNo = 19,
+        name = "Pal Sokağı Çocukları",
+        pageCount = 210,
+        status = "Okunuyor",
+        activeAssignments = listOf(
+          com.example.data.model.ActiveAssignment("s2", "Zeynep", nowMs - 5 * dayMs)
+        )
+      ),
+      // Shelf book (no active assignments)
+      com.example.data.model.Book(
+        id = "b_shelf",
+        registrationNo = 20,
+        name = "Beyaz Diş",
+        pageCount = 160,
+        status = "Rafta"
+      )
+    )
+
+    val s1Active = com.example.util.LibraryPdfReportsHelper.extractCurrentlyReadingBooksForStudent(
+      studentId = "s1",
+      books = books,
+      nowMs = nowMs
+    )
+    assertEquals(3, s1Active.size)
+    // Sorted oldest assignment first
+    assertEquals("b_overdue", s1Active[0].bookId)
+    assertEquals(16, s1Active[0].elapsedDays)
+    assertTrue(s1Active[0].isOverdue)
+
+    assertEquals("b_recent", s1Active[1].bookId)
+    assertEquals(4, s1Active[1].elapsedDays)
+    assertFalse(s1Active[1].isOverdue)
+
+    assertEquals("b_legacy", s1Active[2].bookId)
+    assertEquals(0, s1Active[2].elapsedDays)
+    assertFalse(s1Active[2].isOverdue)
+
+    // Student with no active books returns empty list cleanly
+    val s3Active = com.example.util.LibraryPdfReportsHelper.extractCurrentlyReadingBooksForStudent(
+      studentId = "s3",
+      books = books,
+      nowMs = nowMs
+    )
+    assertTrue(s3Active.isEmpty())
+  }
 }
