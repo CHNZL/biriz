@@ -5,6 +5,9 @@ import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.Book
 import com.example.data.model.GroupMakerState
+import com.example.data.model.LibraryBookRequest
+import com.example.data.model.LibraryRequestStatus
+import com.example.data.model.LibraryRequestType
 import com.example.data.model.NotificationType
 import com.example.data.model.ReadingRecord
 import com.example.data.model.ScheduleConfig
@@ -34,6 +37,7 @@ object ActivityNotificationHelper {
         val starRecords: List<StarRewardRecord> = emptyList(),
         val books: List<Book> = emptyList(),
         val readingRecords: List<ReadingRecord> = emptyList(),
+        val libraryRequests: List<LibraryBookRequest> = emptyList(),
         val tournaments: List<Tournament> = emptyList(),
         val matchesByTournament: Map<String, List<TournamentMatch>> = emptyMap(),
         val students: List<Student> = emptyList(),
@@ -48,6 +52,7 @@ object ActivityNotificationHelper {
         val hasStars: Boolean = true,
         val hasBooks: Boolean = true,
         val hasReadingRecords: Boolean = true,
+        val hasLibraryRequests: Boolean = true,
         val hasTournaments: Boolean = true,
         val hasSchedule: Boolean = false,
         val hasSeating: Boolean = false,
@@ -421,6 +426,61 @@ object ActivityNotificationHelper {
                     targetId = rec.studentId,
                     isRead = false
                 )
+            }
+        }
+
+        // 5b. Veli Kitap Talebi Sonuçları (Öğretmen Onayladı / Reddetti)
+        val canDiffLibraryRequests = previous != null && previous.hasLibraryRequests
+        val prevReqById = previous?.libraryRequests?.associateBy { it.id }.orEmpty()
+        current.libraryRequests.forEach { req ->
+            if (req.studentId !in linkedStudentIds) return@forEach
+            if (req.status == LibraryRequestStatus.PENDING) return@forEach
+
+            val eventKey = "lib_req_parent_${req.id}_${req.status.name.lowercase(Locale.ROOT)}"
+            val prevStatus = prevReqById[req.id]?.status
+            val isLiveTransition = canDiffLibraryRequests && prevStatus != req.status
+            val sName = resolveStudentName(req.studentId, current.students, req.studentName)
+            val ts = (req.reviewedAt ?: req.createdAt).takeIf { it > 0L } ?: nowMs
+            val isFinish = req.requestType == LibraryRequestType.FINISH_BOOK
+
+            processCandidate(eventKey, ts, isLiveTransition) {
+                if (req.status == LibraryRequestStatus.APPROVED) {
+                    val title = if (isFinish) "✅ Kitap Bitirme Talebi Onaylandı" else "✅ Kitap Talebi Onaylandı"
+                    val starSuffix = if (isFinish && req.earnedStarsPreview > 0) " (+${req.earnedStarsPreview} ⭐ kazanıldı)" else ""
+                    val msg = if (isFinish) {
+                        "$sName için \"${req.bookName}\" kitap bitirme talebiniz onaylandı ve okuma geçmişine eklendi$starSuffix."
+                    } else {
+                        "$sName için \"${req.bookName}\" kitap talebiniz öğretmen tarafından onaylandı ve okuma kaydı başlatıldı."
+                    }
+                    BirizNotification(
+                        id = "notif_$eventKey",
+                        title = title,
+                        message = msg,
+                        timestamp = ts,
+                        type = NotificationType.LIBRARY,
+                        targetSubPageName = "READING",
+                        targetId = req.studentId,
+                        isRead = false
+                    )
+                } else {
+                    val title = if (isFinish) "❌ Kitap Bitirme Talebi Reddedildi" else "❌ Kitap Talebi Reddedildi"
+                    val reasonSuffix = if (req.rejectionReason.isNotBlank()) " Açıklama: ${req.rejectionReason}" else ""
+                    val msg = if (isFinish) {
+                        "$sName için \"${req.bookName}\" kitap bitirme talebiniz öğretmen tarafından reddedildi.$reasonSuffix"
+                    } else {
+                        "$sName için \"${req.bookName}\" kitap talebiniz öğretmen tarafından reddedildi.$reasonSuffix"
+                    }
+                    BirizNotification(
+                        id = "notif_$eventKey",
+                        title = title,
+                        message = msg,
+                        timestamp = ts,
+                        type = NotificationType.LIBRARY,
+                        targetSubPageName = "READING",
+                        targetId = req.studentId,
+                        isRead = false
+                    )
+                }
             }
         }
 
@@ -913,7 +973,9 @@ object ActivityNotificationHelper {
         books: List<Book>,
         seenEventKeys: Set<String>,
         baselineTimestampMs: Long,
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        previousLibraryRequests: List<LibraryBookRequest>? = null,
+        currentLibraryRequests: List<LibraryBookRequest> = emptyList()
     ): EvaluationResult {
         val updatedSeen = seenEventKeys.toMutableSet()
         val generated = mutableListOf<BirizNotification>()
@@ -1011,6 +1073,43 @@ object ActivityNotificationHelper {
                         )
                     )
                 }
+            }
+        }
+
+        // Velilerden gelen yeni bekleyen kitap ekleme / kitap bitirme talepleri için öğretmen bildirimi
+        val prevReqIds = previousLibraryRequests?.map { it.id }?.toSet()
+        currentLibraryRequests.forEach { req ->
+            if (req.status != LibraryRequestStatus.PENDING) return@forEach
+            val reqKey = "lib_req_teacher_${req.id}"
+            if (reqKey in updatedSeen) return@forEach
+            updatedSeen.add(reqKey)
+
+            val isLiveNew = prevReqIds != null && req.id !in prevReqIds
+            val createdTs = req.createdAt.takeIf { it > 0L } ?: nowMs
+            if (isLiveNew || createdTs >= baselineTimestampMs) {
+                val isFinish = req.requestType == LibraryRequestType.FINISH_BOOK
+                val title = if (isFinish) {
+                    "🏁 Yeni Kitap Bitti Talebi"
+                } else {
+                    "📘 Yeni Veli Kitap İsteği"
+                }
+                val message = if (isFinish) {
+                    "${req.studentName} için \"${req.bookName}\" kitap bitirme talebi onayınızı bekliyor."
+                } else {
+                    "${req.studentName} için \"${req.bookName}\" (${req.pageCount} s.) kitap ekleme talebi onayınızı bekliyor."
+                }
+                generated.add(
+                    BirizNotification(
+                        id = "notif_$reqKey",
+                        title = title,
+                        message = message,
+                        timestamp = createdTs,
+                        type = NotificationType.LIBRARY,
+                        targetSubPageName = "KITAPLIK_ISTEKLER",
+                        targetId = req.id,
+                        isRead = false
+                    )
+                )
             }
         }
 

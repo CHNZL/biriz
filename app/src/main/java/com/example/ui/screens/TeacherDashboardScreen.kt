@@ -250,7 +250,8 @@ fun TeacherDashboardScreen(
     teacherParentDeferralConfig: com.example.util.ParentNotificationDeferralConfig = classRoom.parentNotificationDeferral,
     onToggleTeacherParentDeferral: (Boolean) -> Unit = {},
     onUpdateTeacherParentDeferralWindow: (Int, Int, Int, Int) -> Unit = { _, _, _, _ -> },
-    onSyncWebMigrationData: (String?) -> Unit = {}
+    onSyncWebMigrationData: (String?) -> Unit = {},
+    pendingLibraryRequestsCount: Int = 0
 ) {
     val context = LocalContext.current
     var studentToDelete by remember { mutableStateOf<Student?>(null) }
@@ -294,7 +295,8 @@ fun TeacherDashboardScreen(
 
         DashboardSubPage.KITAPLIK_LISTE,
         DashboardSubPage.KITAPLIK_KAYITLAR,
-        DashboardSubPage.KITAPLIK_DEGERLENDIRME -> "KITAPLIK"
+        DashboardSubPage.KITAPLIK_DEGERLENDIRME,
+        DashboardSubPage.KITAPLIK_ISTEKLER -> "KITAPLIK"
 
         DashboardSubPage.TURNUVA_DEVAM_EDENLER,
         DashboardSubPage.TURNUVA_TAMAMLANANLAR -> "TURNUVA"
@@ -609,7 +611,8 @@ fun TeacherDashboardScreen(
                 "KITAPLIK" -> listOf(
                     DashboardSubPage.KITAPLIK_LISTE,
                     DashboardSubPage.KITAPLIK_KAYITLAR,
-                    DashboardSubPage.KITAPLIK_DEGERLENDIRME
+                    DashboardSubPage.KITAPLIK_DEGERLENDIRME,
+                    DashboardSubPage.KITAPLIK_ISTEKLER
                 )
                 "TURNUVA" -> listOf(
                     DashboardSubPage.TURNUVA_DEVAM_EDENLER,
@@ -688,6 +691,21 @@ fun TeacherDashboardScreen(
                                             else -> if (isDarkTheme) Color.White else BirizNavyPrimary
                                         }
                                     )
+                                    if (subPage == DashboardSubPage.KITAPLIK_ISTEKLER && pendingLibraryRequestsCount > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = BirizError
+                                        ) {
+                                            Text(
+                                                text = if (pendingLibraryRequestsCount > 99) "99+" else pendingLibraryRequestsCount.toString(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -894,7 +912,8 @@ fun TeacherDashboardScreen(
 
                     DashboardSubPage.KITAPLIK_LISTE,
                     DashboardSubPage.KITAPLIK_KAYITLAR,
-                    DashboardSubPage.KITAPLIK_DEGERLENDIRME -> {
+                    DashboardSubPage.KITAPLIK_DEGERLENDIRME,
+                    DashboardSubPage.KITAPLIK_ISTEKLER -> {
                         LibrarySubScreen(
                             classRoom = classRoom,
                             students = students,

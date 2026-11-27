@@ -572,7 +572,8 @@ fun BirizApp(viewModel: BirizViewModel) {
                             },
                             onSyncWebMigrationData = { customJson ->
                                 viewModel.syncWebMigrationDataNow(customJson)
-                            }
+                            },
+                            pendingLibraryRequestsCount = uiState.pendingLibraryRequestsCount
                         )
                     } else {
                         viewModel.resetToRoleSelection()

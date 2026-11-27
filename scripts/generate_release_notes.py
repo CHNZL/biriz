@@ -18,6 +18,15 @@ from pathlib import Path
 SPECIFIC_DIFF_RULES = [
     # --- Kitaplık ve Okuma İstatistikleri ---
     (
+        "library_parent_requests_and_quick_assign",
+        "library",
+        False,
+        re.compile(r"(LibraryRequestPersistenceHelper|LibraryRequestsSection|ParentLibraryRequestDialogs|LibrarySubScreen|ParentLibrarySection)", re.I),
+        re.compile(r"(LibraryBookRequest|KITAPLIK_ISTEKLER|ParentAddBookRequestDialog|ParentFinishBookRequestDialog|onAssignExistingBook|validateStartBookRequest)", re.I),
+        "Veli Kitap Girişi, Kitap Bitti Talebi ve Hızlı Ödünç Verme",
+        "Velilerin yeni kitap girişi ve kitap bitirme talebi gönderebilmesi, öğretmenin Veli Kitap İstekleri merkezinden onaylayıp reddedebilmesi ve kitap ekleme penceresinden kayıtlı kitapların anında ödünç verilebilmesi eklendi.",
+    ),
+    (
         "library_student_pdf_currently_reading",
         "library",
         False,

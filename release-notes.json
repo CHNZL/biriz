@@ -1,17 +1,17 @@
 {
-  "title": "Akıllı Tahta Okunabilirlik ve Günün Notu Güncellemesi",
+  "title": "Veli Kitap Girişi, Kitap Bitti Talebi ve Hızlı Ödünç Verme",
   "items": [
     {
-      "title": "Göz Alıcı ve Uzaktan Okunabilir Günün Notu Şeridi",
-      "summary": "Akıllı tahta ana sayfasındaki Günün Notu alanı yüksek kontrastlı canlı kırmızı-turuncu şerit, belirgin beyaz etiket, canlı dikkat noktası ve çok daha büyük beyaz yazı tipiyle uzaktan kolayca fark edilecek şekilde yenilendi."
+      "title": "Kitap Ekle Penceresinden Kayıtlı Kitabı Hemen Ödünç Verme",
+      "summary": "Öğretmen kitap ekleme penceresinde kütüphanede zaten kayıtlı bir kitap seçildiğinde yazar ve sayfa sayısı otomatik doldurulur; öğretmen listeye dönmeden doğrudan öğrenci seçip ödünç verebilir."
     },
     {
-      "title": "Büyütülmüş Yıldız, Kitap ve Sayfa Rozetleri",
-      "summary": "Yıldızlar İlk 5 ve En Çok Okuyan İlk 5 panellerindeki yıldız sayıları, kitap adetleri ve sayfa sayıları çok daha büyük, yüksek kontrastlı rozetlerle düzenlenerek sınıfın arka sıralarından da rahatça okunması sağlandı."
+      "title": "Veli Hesabından Kitap Girişi ve Kitap Bitti Talebi",
+      "summary": "Veliler öğrencinin okumaya başladığı kitabı adı, sayfa sayısı ve başlama tarihiyle öğretmenin onayına gönderebilir; kitap kütüphanede kayıtlıysa sayfa sayısı kitaplıktan kilitli olarak otomatik gelir. Aktif okunan her kitap için bitiş tarihi girilerek Kitap Bitti talebi iletilebilir."
     },
     {
-      "title": "Dengeli Panel Yerleşimi",
-      "summary": "En Çok Okuyan İlk 5 kartlarında kitap ve sayfa sayıları alt alta hizalanarak hem sayıların büyümesi hem de uzun öğrenci adlarının kesilmeden görünmesi sağlandı."
+      "title": "Öğretmen Onay Merkezi ve İki Yönlü Bildirimler",
+      "summary": "Öğretmen kitaplığındaki Veli Kitap İstekleri sekmesinden gelen talepler incelenip onaylanabilir veya açıklama ile reddedilebilir; yeni talepler öğretmene, onay ve ret sonuçları veliye anında bildirim olarak iletilir."
     }
   ]
 }

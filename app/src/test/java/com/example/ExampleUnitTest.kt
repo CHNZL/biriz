@@ -4400,4 +4400,267 @@ class ExampleUnitTest {
     )
     assertTrue(s3Active.isEmpty())
   }
+
+  @Test
+  fun testLibraryRequestValidationAndRegisteredBookPageLock() {
+    val helper = com.example.util.LibraryRequestPersistenceHelper
+    val dayMs = 24L * 60L * 60L * 1000L
+    val startMs = 1_760_000_000_000L
+    val registeredBook = com.example.data.model.Book(
+      id = "book_kp",
+      registrationNo = 14,
+      name = "Küçük Prens",
+      author = "Antoine de Saint-Exupéry",
+      pageCount = 112,
+      status = "Rafta",
+      activeAssignments = listOf(
+        com.example.data.model.ActiveAssignment("s2", "Zeynep", startMs)
+      )
+    )
+    val bookReadByS1 = com.example.data.model.Book(
+      id = "book_istanbul",
+      registrationNo = 22,
+      name = "İstanbul Masalları",
+      author = "Ahmet Yazar",
+      pageCount = 85,
+      status = "Okunuyor",
+      activeAssignments = listOf(
+        com.example.data.model.ActiveAssignment("s1", "Semih Ahmet", startMs)
+      )
+    )
+    val classBooks = listOf(registeredBook, bookReadByS1)
+
+    // 1. Türkçe büyük/küçük harf duyarsız eşleşme ("istanbul masalları" -> "İstanbul Masalları")
+    assertEquals("book_istanbul", helper.findMatchingLibraryBook(classBooks, "  istanbul masalları ")?.id)
+    assertEquals("book_kp", helper.findMatchingLibraryBook(classBooks, "KÜÇÜK PRENS")?.id)
+    assertNull(helper.findMatchingLibraryBook(classBooks, "Bilinmeyen Kitap"))
+
+    // 2. Kayıtlı kitap seçildiğinde veli farklı sayfa sayısı gönderse bile kütüphanedeki kilitli sayfa sayısı kullanılır
+    val lockedRes = helper.validateStartBookRequest(
+      studentId = "s1",
+      rawBookName = "küçük prens",
+      rawAuthor = "Farklı Yazar",
+      enteredPageCount = 999,
+      startDateMs = startMs,
+      classBooks = classBooks,
+      existingRequests = emptyList()
+    )
+    assertTrue(lockedRes.isValid)
+    assertEquals("book_kp", lockedRes.matchedExistingBook?.id)
+    assertEquals(112, lockedRes.resolvedPageCount)
+    assertEquals("Antoine de Saint-Exupéry", lockedRes.resolvedAuthor)
+
+    // 3. Öğrencinin zaten aktif olarak okuduğu kitap için yeni başlama talebi engellenmeli
+    val alreadyReadingRes = helper.validateStartBookRequest(
+      studentId = "s1",
+      rawBookName = "İstanbul Masalları",
+      rawAuthor = "",
+      enteredPageCount = 85,
+      startDateMs = startMs,
+      classBooks = classBooks,
+      existingRequests = emptyList()
+    )
+    assertFalse(alreadyReadingRes.isValid)
+    assertTrue(alreadyReadingRes.errorMessage!!.contains("zaten okumaktadır"))
+
+    // 4. Aynı kitap için zaten bekleyen bir başlama talebi varsa mükerrer talep engellenmeli
+    val existingPendingStart = com.example.data.model.LibraryBookRequest(
+      id = "req_pending_1",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Semih Ahmet",
+      requestType = com.example.data.model.LibraryRequestType.START_BOOK,
+      status = com.example.data.model.LibraryRequestStatus.PENDING,
+      bookName = "Şeker Portakalı",
+      pageCount = 184,
+      startDate = startMs
+    )
+    val dupStartRes = helper.validateStartBookRequest(
+      studentId = "s1",
+      rawBookName = "şeker portakalı",
+      rawAuthor = "",
+      enteredPageCount = 184,
+      startDateMs = startMs,
+      classBooks = classBooks,
+      existingRequests = listOf(existingPendingStart)
+    )
+    assertFalse(dupStartRes.isValid)
+    assertTrue(dupStartRes.errorMessage!!.contains("bekleyen"))
+
+    // 5. Yeni kitap geçerli verilerle onaylanmaya hazır olmalı
+    val brandNewRes = helper.validateStartBookRequest(
+      studentId = "s1",
+      rawBookName = "momo",
+      rawAuthor = "michael ende",
+      enteredPageCount = 240,
+      startDateMs = startMs,
+      classBooks = classBooks,
+      existingRequests = emptyList()
+    )
+    assertTrue(brandNewRes.isValid)
+    assertNull(brandNewRes.matchedExistingBook)
+    assertEquals(240, brandNewRes.resolvedPageCount)
+
+    // 6. Kitap Bitti doğrulaması: bitiş tarihi başlama tarihinden önce olamaz
+    val invalidFinishBeforeStart = helper.validateFinishBookRequest(
+      studentId = "s1",
+      book = bookReadByS1,
+      startDateMs = startMs,
+      endDateMs = startMs - 2 * dayMs,
+      existingRequests = emptyList()
+    )
+    assertFalse(invalidFinishBeforeStart.isValid)
+    assertTrue(invalidFinishBeforeStart.errorMessage!!.contains("önce olamaz"))
+
+    // Aynı gün veya sonraki gün geçerli olmalı
+    val validFinishSameDay = helper.validateFinishBookRequest(
+      studentId = "s1",
+      book = bookReadByS1,
+      startDateMs = startMs,
+      endDateMs = startMs,
+      existingRequests = emptyList()
+    )
+    assertTrue(validFinishSameDay.isValid)
+
+    // Aynı kitap için bekleyen bitirme talebi varsa mükerrer talep engellenmeli
+    val pendingFinishReq = com.example.data.model.LibraryBookRequest(
+      id = "req_fin_1",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Semih Ahmet",
+      requestType = com.example.data.model.LibraryRequestType.FINISH_BOOK,
+      status = com.example.data.model.LibraryRequestStatus.PENDING,
+      existingBookId = bookReadByS1.id,
+      bookName = bookReadByS1.name,
+      pageCount = bookReadByS1.pageCount,
+      startDate = startMs,
+      endDate = startMs + dayMs
+    )
+    val dupFinishRes = helper.validateFinishBookRequest(
+      studentId = "s1",
+      book = bookReadByS1,
+      startDateMs = startMs,
+      endDateMs = startMs + dayMs,
+      existingRequests = listOf(pendingFinishReq)
+    )
+    assertFalse(dupFinishRes.isValid)
+    assertTrue(dupFinishRes.errorMessage!!.contains("bekleyen"))
+  }
+
+  @Test
+  fun testLibraryRequestTwoWayNotifications() {
+    val notifHelper = com.example.util.ActivityNotificationHelper
+    val baseline = 10_000L
+    val now = 25_000L
+    val students = listOf(
+      com.example.data.model.Student(id = "s1", studentNumber = "45", fullName = "Semih Ahmet", gender = "Erkek"),
+      com.example.data.model.Student(id = "s2", studentNumber = "12", fullName = "Zeynep", gender = "Kız")
+    )
+
+    // 1. Öğretmen bildirimleri: yeni bekleyen START_BOOK ve FINISH_BOOK talepleri KITAPLIK_ISTEKLER hedefiyle üretilir
+    val oldPendingReq = com.example.data.model.LibraryBookRequest(
+      id = "req_old",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Semih Ahmet",
+      requestType = com.example.data.model.LibraryRequestType.START_BOOK,
+      status = com.example.data.model.LibraryRequestStatus.PENDING,
+      bookName = "Eski Kitap",
+      pageCount = 50,
+      createdAt = 5_000L // baseline öncesi -> yeni cihazda bildirim üretmemeli
+    )
+    val newStartReq = com.example.data.model.LibraryBookRequest(
+      id = "req_start_new",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Semih Ahmet",
+      requestType = com.example.data.model.LibraryRequestType.START_BOOK,
+      status = com.example.data.model.LibraryRequestStatus.PENDING,
+      bookName = "Küçük Prens",
+      pageCount = 112,
+      createdAt = 15_000L
+    )
+    val newFinishReq = com.example.data.model.LibraryBookRequest(
+      id = "req_finish_new",
+      classId = "c1",
+      studentId = "s1",
+      studentName = "Semih Ahmet",
+      requestType = com.example.data.model.LibraryRequestType.FINISH_BOOK,
+      status = com.example.data.model.LibraryRequestStatus.PENDING,
+      existingBookId = "b1",
+      bookName = "Momo",
+      pageCount = 240,
+      startDate = 11_000L,
+      endDate = 18_000L,
+      createdAt = 18_000L
+    )
+
+    val teacherRes = notifHelper.evaluateTeacherOperationalNotifications(
+      previousAnnouncements = null,
+      currentAnnouncements = emptyList(),
+      books = emptyList(),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = now,
+      previousLibraryRequests = null,
+      currentLibraryRequests = listOf(oldPendingReq, newStartReq, newFinishReq)
+    )
+    assertEquals(2, teacherRes.newNotifications.size)
+    assertTrue(teacherRes.newNotifications.all { it.targetSubPageName == "KITAPLIK_ISTEKLER" })
+    assertTrue(teacherRes.newNotifications.any { it.title.contains("Veli Kitap İsteği") && it.message.contains("Küçük Prens") })
+    assertTrue(teacherRes.newNotifications.any { it.title.contains("Kitap Bitti Talebi") && it.message.contains("Momo") })
+
+    // Tekrar değerlendirildiğinde mükerrer öğretmen bildirimi üretmemeli
+    val teacherRepeat = notifHelper.evaluateTeacherOperationalNotifications(
+      previousAnnouncements = null,
+      currentAnnouncements = emptyList(),
+      books = emptyList(),
+      seenEventKeys = teacherRes.updatedSeenKeys,
+      baselineTimestampMs = baseline,
+      nowMs = now + 1_000L,
+      previousLibraryRequests = listOf(oldPendingReq, newStartReq, newFinishReq),
+      currentLibraryRequests = listOf(oldPendingReq, newStartReq, newFinishReq)
+    )
+    assertTrue(teacherRepeat.newNotifications.isEmpty())
+
+    // 2. Veli bildirimleri: onay (yıldızlı) ve ret (gerekçeli) bildirimleri READING hedefiyle yalnızca kendi öğrencisine gider
+    val approvedFinish = newFinishReq.copy(
+      status = com.example.data.model.LibraryRequestStatus.APPROVED,
+      earnedStarsPreview = 24,
+      reviewedAt = 21_000L
+    )
+    val rejectedStart = newStartReq.copy(
+      status = com.example.data.model.LibraryRequestStatus.REJECTED,
+      rejectionReason = "Sayfa sayısı hatalı girilmiş",
+      reviewedAt = 22_000L
+    )
+    val otherStudentApproved = approvedFinish.copy(
+      id = "req_other_student",
+      studentId = "s2",
+      studentName = "Zeynep"
+    )
+
+    val parentPrev = com.example.util.ActivityNotificationHelper.ActivitySnapshot(
+      libraryRequests = listOf(newStartReq, newFinishReq),
+      students = students,
+      hasLibraryRequests = true
+    )
+    val parentCurr = parentPrev.copy(
+      libraryRequests = listOf(approvedFinish, rejectedStart, otherStudentApproved)
+    )
+    val parentRes = notifHelper.evaluateParentNotifications(
+      previous = parentPrev,
+      current = parentCurr,
+      linkedStudentIds = setOf("s1"),
+      seenEventKeys = emptySet(),
+      baselineTimestampMs = baseline,
+      nowMs = now
+    )
+    assertEquals(2, parentRes.newNotifications.size)
+    assertTrue(parentRes.newNotifications.all { it.targetSubPageName == "READING" && it.targetId == "s1" })
+    assertTrue(parentRes.newNotifications.any { it.title.contains("Onaylandı") && it.message.contains("+24 ⭐") })
+    assertTrue(parentRes.newNotifications.any { it.title.contains("Reddedildi") && it.message.contains("Sayfa sayısı hatalı girilmiş") })
+    assertFalse(parentRes.newNotifications.any { it.message.contains("Zeynep") })
+  }
 }
+

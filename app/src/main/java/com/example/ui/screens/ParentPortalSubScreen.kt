@@ -333,6 +333,7 @@ fun ParentPortalSubScreen(
     // Aktif öğrencinin kütüphane ve turnuva verilerini Firestore'dan canlı dinle
     var classBooks by remember { mutableStateOf(emptyList<Book>()) }
     var rawReadingRecords by remember { mutableStateOf(emptyList<com.example.data.model.ReadingRecord>()) }
+    var classLibraryRequests by remember { mutableStateOf(emptyList<com.example.data.model.LibraryBookRequest>()) }
     var classTournaments by remember { mutableStateOf(emptyList<Tournament>()) }
     var tournamentMatches by remember { mutableStateOf(emptyList<TournamentMatch>()) }
 
@@ -341,6 +342,7 @@ fun ParentPortalSubScreen(
         if (!cid.isNullOrBlank()) {
             classBooks = LibraryPersistenceHelper.loadBooks(context, cid)
             rawReadingRecords = LibraryPersistenceHelper.loadReadingRecords(context, cid)
+            classLibraryRequests = com.example.util.LibraryRequestPersistenceHelper.loadRequests(context, cid)
             classTournaments = TournamentPersistenceHelper.loadTournaments(context, cid)
 
             val booksListener = LibraryPersistenceHelper.observeFirestoreBooks(context, cid) { updated ->
@@ -349,17 +351,22 @@ fun ParentPortalSubScreen(
             val recordsListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(context, cid) { updated ->
                 rawReadingRecords = updated
             }
+            val requestsListener = com.example.util.LibraryRequestPersistenceHelper.observeFirestoreRequests(context, cid) { updated ->
+                classLibraryRequests = updated
+            }
             val tourneysListener = TournamentPersistenceHelper.observeFirestoreTournaments(context, cid) { updated ->
                 classTournaments = updated
             }
             onDispose {
                 booksListener?.remove()
                 recordsListener?.remove()
+                requestsListener?.remove()
                 tourneysListener?.remove()
             }
         } else {
             classBooks = emptyList()
             rawReadingRecords = emptyList()
+            classLibraryRequests = emptyList()
             classTournaments = emptyList()
             onDispose {}
         }
@@ -368,6 +375,11 @@ fun ParentPortalSubScreen(
     val studentReadingRecords = remember(rawReadingRecords, activeStudent) {
         if (activeStudent != null) {
             rawReadingRecords.filter { it.studentId == activeStudent.id }
+        } else emptyList()
+    }
+    val activeStudentLibraryRequests = remember(classLibraryRequests, activeStudent) {
+        if (activeStudent != null) {
+            classLibraryRequests.filter { it.studentId == activeStudent.id }
         } else emptyList()
     }
 
@@ -652,7 +664,17 @@ fun ParentPortalSubScreen(
                                 student = activeStudent,
                                 records = studentReadingRecords,
                                 classBooks = classBooks,
-                                isDarkTheme = isDarkTheme
+                                isDarkTheme = isDarkTheme,
+                                classId = classRoom?.id.orEmpty(),
+                                parentName = currentUser.fullName,
+                                parentEmail = currentUser.email,
+                                studentRequests = activeStudentLibraryRequests,
+                                onRequestsChanged = {
+                                    val cid = classRoom?.id
+                                    if (!cid.isNullOrBlank()) {
+                                        classLibraryRequests = com.example.util.LibraryRequestPersistenceHelper.loadRequests(context, cid)
+                                    }
+                                }
                             )
                         }
 

@@ -25,8 +25,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -45,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +58,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Book
+import com.example.data.model.LibraryBookRequest
+import com.example.data.model.LibraryRequestStatus
+import com.example.data.model.LibraryRequestType
 import com.example.data.model.ReadingRecord
 import com.example.data.model.Student
 import com.example.ui.theme.BirizAmber
@@ -61,14 +70,17 @@ import com.example.ui.theme.BirizDarkCardGlass
 import com.example.ui.theme.BirizDarkTextMuted
 import com.example.ui.theme.BirizDarkTextPrimary
 import com.example.ui.theme.BirizDarkTextSecondary
+import com.example.ui.theme.BirizError
 import com.example.ui.theme.BirizGold
 import com.example.ui.theme.BirizNavyDark
 import com.example.ui.theme.BirizNavyPrimary
+import com.example.ui.theme.BirizSuccess
 import com.example.ui.theme.BirizTextMuted
 import com.example.ui.theme.BirizTextPrimary
 import com.example.ui.theme.BirizTextSecondary
 import com.example.ui.theme.BirizTurquoise
 import com.example.util.LibraryPersistenceHelper
+import com.example.util.LibraryRequestPersistenceHelper
 import com.example.util.ParentBookStatus
 import com.example.util.ParentHistorySortOrder
 import com.example.util.ParentInventoryCounts
@@ -93,8 +105,14 @@ fun ParentReadingDetailView(
     student: Student,
     records: List<ReadingRecord>,
     classBooks: List<Book>,
-    isDarkTheme: Boolean
+    isDarkTheme: Boolean,
+    classId: String = "",
+    parentName: String = "",
+    parentEmail: String = "",
+    studentRequests: List<LibraryBookRequest> = emptyList(),
+    onRequestsChanged: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
     val secondaryText = if (isDarkTheme) BirizDarkTextSecondary else BirizTextSecondary
     val mutedText = if (isDarkTheme) BirizDarkTextMuted else BirizTextMuted
@@ -105,8 +123,14 @@ fun ParentReadingDetailView(
     var inventorySearchQuery by remember { mutableStateOf("") }
     var inventoryFilter by remember { mutableStateOf(ParentInventoryFilter.ALL) }
 
+    var showAddBookRequestDialog by remember { mutableStateOf(false) }
+    var finishBookTarget by remember { mutableStateOf<Pair<Book, Long>?>(null) }
+
     val activeReadingBooks = remember(classBooks, student.id) {
         ParentLibraryHelper.resolveActiveReadingBooks(classBooks, student.id)
+    }
+    val pendingRequestCount = remember(studentRequests) {
+        studentRequests.count { it.status == LibraryRequestStatus.PENDING }
     }
     val totalPagesRead = remember(records) { records.sumOf { it.pageCount } }
     val totalReadingStars = remember(records) { records.sumOf { it.earnedStars } }
@@ -228,6 +252,39 @@ fun ParentReadingDetailView(
                 }
             }
 
+            // Veli Kitap Girişi Hızlı İşlem Butonu
+            if (classId.isNotBlank()) {
+                Button(
+                    onClick = { showAddBookRequestDialog = true },
+                    shape = RoundedCornerShape(13.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("parent_add_book_request_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Yeni Kitap Girişi Yap",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (pendingRequestCount > 0) {
+                            "Yeni Kitap Girişi Yap ($pendingRequestCount Onay Bekliyor)"
+                        } else {
+                            "Yeni Kitap Girişi Yap (Öğretmen Onaylı)"
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                }
+            }
+
             // 3 Sekmeli Geçiş Çubuğu: Okuyor | Okuma Geçmişi | Sınıf Kitaplığı
             Surface(
                 shape = RoundedCornerShape(14.dp),
@@ -332,10 +389,23 @@ fun ParentReadingDetailView(
                     ParentActiveReadingTabContent(
                         student = student,
                         activeReadingBooks = activeReadingBooks,
+                        studentRequests = studentRequests,
+                        canSendRequests = classId.isNotBlank(),
                         isDarkTheme = isDarkTheme,
                         primaryText = primaryText,
                         secondaryText = secondaryText,
-                        onBrowseClassLibrary = { selectedTab = ParentLibraryTab.CLASS_LIBRARY }
+                        onBrowseClassLibrary = { selectedTab = ParentLibraryTab.CLASS_LIBRARY },
+                        onOpenAddBookRequest = { showAddBookRequestDialog = true },
+                        onRequestFinishBook = { book, startMs ->
+                            finishBookTarget = book to startMs
+                        },
+                        onCancelPendingRequest = { reqId ->
+                            if (classId.isNotBlank()) {
+                                LibraryRequestPersistenceHelper.cancelPendingRequest(context, classId, reqId)
+                                onRequestsChanged()
+                                Toast.makeText(context, "Bekleyen kitap talebi geri çekildi.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
                 }
 
@@ -373,17 +443,92 @@ fun ParentReadingDetailView(
             }
         }
     }
+
+    // Veli Yeni Kitap Girişi Diyaloğu
+    if (showAddBookRequestDialog && classId.isNotBlank()) {
+        ParentAddBookRequestDialog(
+            student = student,
+            classBooks = classBooks,
+            existingRequests = studentRequests,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { showAddBookRequestDialog = false },
+            onSubmit = { bName, bAuthor, pages, startMs ->
+                val result = LibraryRequestPersistenceHelper.submitStartBookRequest(
+                    context = context,
+                    classId = classId,
+                    student = student,
+                    parentName = parentName,
+                    parentEmail = parentEmail,
+                    rawBookName = bName,
+                    rawAuthor = bAuthor,
+                    enteredPageCount = pages,
+                    startDateMs = startMs,
+                    classBooks = classBooks
+                )
+                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                if (result.success) {
+                    showAddBookRequestDialog = false
+                    onRequestsChanged()
+                }
+            }
+        )
+    }
+
+    // Veli 'Kitap Bitti' Diyaloğu
+    if (finishBookTarget != null && classId.isNotBlank()) {
+        val (targetBook, startDateMs) = finishBookTarget!!
+        ParentFinishBookRequestDialog(
+            student = student,
+            book = targetBook,
+            startDateMs = startDateMs,
+            existingRequests = studentRequests,
+            isDarkTheme = isDarkTheme,
+            onDismiss = { finishBookTarget = null },
+            onSubmit = { endDateMs ->
+                val result = LibraryRequestPersistenceHelper.submitFinishBookRequest(
+                    context = context,
+                    classId = classId,
+                    student = student,
+                    parentName = parentName,
+                    parentEmail = parentEmail,
+                    book = targetBook,
+                    startDateMs = startDateMs,
+                    endDateMs = endDateMs
+                )
+                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                if (result.success) {
+                    finishBookTarget = null
+                    onRequestsChanged()
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun ParentActiveReadingTabContent(
     student: Student,
     activeReadingBooks: List<Book>,
+    studentRequests: List<LibraryBookRequest>,
+    canSendRequests: Boolean,
     isDarkTheme: Boolean,
     primaryText: Color,
     secondaryText: Color,
-    onBrowseClassLibrary: () -> Unit
+    onBrowseClassLibrary: () -> Unit,
+    onOpenAddBookRequest: () -> Unit,
+    onRequestFinishBook: (Book, Long) -> Unit,
+    onCancelPendingRequest: (String) -> Unit
 ) {
+    val recentRequests = remember(studentRequests) {
+        studentRequests
+            .sortedWith(
+                compareBy<LibraryBookRequest> {
+                    if (it.status == LibraryRequestStatus.PENDING) 0 else 1
+                }.thenByDescending { it.reviewedAt ?: it.createdAt }
+            )
+            .take(8)
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -452,30 +597,63 @@ private fun ParentActiveReadingTabContent(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = onBrowseClassLibrary,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("parent_library_browse_inventory_button")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "📚 Sınıf Kitaplığına Göz At",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
-                            )
+                            if (canSendRequests) {
+                                Button(
+                                    onClick = onOpenAddBookRequest,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                    ),
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Text(
+                                        text = "➕ Kitap Girişi Yap",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = onBrowseClassLibrary,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("parent_library_browse_inventory_button")
+                            ) {
+                                Text(
+                                    text = "📚 Sınıf Kitaplığı",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary
+                                )
+                            }
                         }
                     }
                 }
             }
         } else {
             items(activeReadingBooks, key = { "active_${it.id}" }) { book ->
+                val dateFmt = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")) }
                 val myAssignment = book.activeAssignments.firstOrNull { it.studentId == student.id }
                 val rawAssignMs = myAssignment?.assignmentDate ?: book.assignmentDate ?: System.currentTimeMillis()
                 val assignDateMs = if (rawAssignMs > 0L) rawAssignMs else System.currentTimeMillis()
                 val daysAgo = ((System.currentTimeMillis() - assignDateMs) / (1000L * 60L * 60L * 24L)).coerceAtLeast(1L)
                 val targetStars = LibraryPersistenceHelper.calculateReadingStars(book.pageCount)
+
+                val pendingFinishReq = remember(studentRequests, book.id, book.name) {
+                    val upperName = TurkishTextHelper.toTurkishUpperCase(book.name.trim())
+                    studentRequests.firstOrNull { req ->
+                        req.status == LibraryRequestStatus.PENDING &&
+                            req.requestType == LibraryRequestType.FINISH_BOOK &&
+                            (req.existingBookId == book.id ||
+                                TurkishTextHelper.toTurkishUpperCase(req.bookName.trim()) == upperName)
+                    }
+                }
 
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -547,11 +725,14 @@ private fun ParentActiveReadingTabContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "📄 ${book.pageCount} Sayfa • Veriliş: ${SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date(assignDateMs))}",
+                                text = "📄 ${book.pageCount} Sayfa • Başlama: ${dateFmt.format(Date(assignDateMs))}",
                                 fontSize = 11.5.sp,
                                 color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFF92400E),
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
                             )
+
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
@@ -559,12 +740,195 @@ private fun ParentActiveReadingTabContent(
                                 border = BorderStroke(1.dp, BirizGold)
                             ) {
                                 Text(
-                                    text = "İade edilince +$targetStars ⭐",
+                                    text = "Tamamlanınca +$targetStars ⭐",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFFB45309),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
+                            }
+                        }
+
+                        // Her aktif kitap için ayrı 'Kitap Bitti' butonu veya bekleyen onay bilgisi
+                        if (canSendRequests) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (pendingFinishReq != null) {
+                                val endText = pendingFinishReq.endDate?.takeIf { it > 0L }?.let { dateFmt.format(Date(it)) } ?: "-"
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isDarkTheme) Color(0x401E293B) else Color.White.copy(alpha = 0.85f),
+                                    border = BorderStroke(1.dp, Color(0xFFD97706)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "⏳ Kitap Bitti talebi öğretmen onayında (Bitiş: $endText)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFF92400E),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { onCancelPendingRequest(pendingFinishReq.id) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Text(
+                                                text = "İptal",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = BirizError
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Button(
+                                    onClick = { onRequestFinishBook(book, assignDateMs) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BirizSuccess),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("parent_finish_book_button_${book.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Kitap Bitti",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Kitap Bitti • Öğretmene Bildir",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Öğretmene Gönderilen Kitap Talepleri Durum Listesi
+        if (recentRequests.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "📬 Kitap Taleplerim (${studentRequests.count { it.status == LibraryRequestStatus.PENDING }} Bekleyen)",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.5.sp,
+                    color = primaryText
+                )
+            }
+            items(recentRequests, key = { "req_${it.id}" }) { req ->
+                val dateFmt = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")) }
+                val isFinish = req.requestType == LibraryRequestType.FINISH_BOOK
+                val (badgeBg, badgeFg, badgeText) = when (req.status) {
+                    LibraryRequestStatus.PENDING -> Triple(
+                        if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFEF3C7),
+                        if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFFB45309),
+                        "⏳ Onay Bekliyor"
+                    )
+                    LibraryRequestStatus.APPROVED -> Triple(
+                        if (isDarkTheme) Color(0x3510B981) else Color(0xFFECFDF5),
+                        if (isDarkTheme) Color(0xFF6EE7B7) else Color(0xFF047857),
+                        "✅ Onaylandı"
+                    )
+                    LibraryRequestStatus.REJECTED -> Triple(
+                        if (isDarkTheme) Color(0x35EF4444) else Color(0xFFFEF2F2),
+                        if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
+                        "❌ Reddedildi"
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(13.dp),
+                    color = if (isDarkTheme) BirizDarkCardGlass else Color.White,
+                    border = BorderStroke(1.dp, if (isDarkTheme) BirizDarkCardBorder else BirizBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("parent_library_request_item_${req.id}")
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isFinish) "🏁 Kitap Bitti Talebi" else "📘 Kitap Girişi Talebi",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = secondaryText
+                            )
+                            Surface(shape = RoundedCornerShape(8.dp), color = badgeBg) {
+                                Text(
+                                    text = badgeText,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = badgeFg,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = TurkishTextHelper.toTurkishTitleCase(req.bookName),
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = primaryText
+                        )
+
+                        val dateInfo = if (isFinish) {
+                            val endStr = req.endDate?.takeIf { it > 0L }?.let { dateFmt.format(Date(it)) } ?: "-"
+                            "📄 ${req.pageCount} Sayfa • Bitiş: $endStr"
+                        } else {
+                            val startStr = if (req.startDate > 0L) dateFmt.format(Date(req.startDate)) else "-"
+                            "📄 ${req.pageCount} Sayfa • Başlama: $startStr"
+                        }
+                        Text(
+                            text = dateInfo,
+                            fontSize = 11.5.sp,
+                            color = secondaryText
+                        )
+
+                        if (req.status == LibraryRequestStatus.REJECTED && req.rejectionReason.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(5.dp))
+                            Text(
+                                text = "Öğretmen Notu: ${req.rejectionReason}",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDarkTheme) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
+                            )
+                        }
+
+                        if (req.status == LibraryRequestStatus.PENDING && canSendRequests) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = { onCancelPendingRequest(req.id) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        text = "Talebi Geri Çek",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BirizError
+                                    )
+                                }
                             }
                         }
                     }

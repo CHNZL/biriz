@@ -36,6 +36,8 @@ import com.example.data.model.AnnouncementTargetType
 import com.example.data.model.BirizNotification
 import com.example.data.model.Book
 import com.example.data.model.ChatMessage
+import com.example.data.model.LibraryBookRequest
+import com.example.data.model.LibraryRequestStatus
 import com.example.data.model.MessageStatus
 import com.example.data.model.NotificationType
 import com.example.data.model.ReadingRecord
@@ -62,6 +64,7 @@ import com.example.util.ParentNotificationDeferralConfig
 import com.example.util.DeferredSystemNotification
 import com.example.util.FirestoreListenerHub
 import com.example.util.LibraryPersistenceHelper
+import com.example.util.LibraryRequestPersistenceHelper
 import com.example.util.NotificationCategory
 import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
@@ -123,6 +126,7 @@ enum class DashboardSubPage(val title: String, val category: String) {
     KITAPLIK_LISTE("Kitaplık Listesi", "KİTAPLIK YÖNETİMİ"),
     KITAPLIK_KAYITLAR("Ödünç & İade Geçmişi", "KİTAPLIK YÖNETİMİ"),
     KITAPLIK_DEGERLENDIRME("Okuma İstatistikleri", "KİTAPLIK YÖNETİMİ"),
+    KITAPLIK_ISTEKLER("Veli Kitap İstekleri", "KİTAPLIK YÖNETİMİ"),
 
     // 5. TURNUVA YÖNETİMİ
     TURNUVA_DEVAM_EDENLER("Devam Edenler", "TURNUVA YÖNETİMİ"),
@@ -232,6 +236,7 @@ data class BirizUiState(
     val smartBoardDailyNoteLabel: String = SmartBoardHelper.DEFAULT_DAILY_NOTE_LABEL,
 
     // UI Bildirimleri
+    val pendingLibraryRequestsCount: Int = 0,
     val snackbarMessage: String? = null
 )
 
@@ -266,6 +271,7 @@ class BirizViewModel(
     private var starsNotificationListener: ListenerRegistration? = null
     private var libraryBooksNotificationListener: ListenerRegistration? = null
     private var libraryRecordsNotificationListener: ListenerRegistration? = null
+    private var libraryRequestsNotificationListener: ListenerRegistration? = null
     private var tournamentsNotificationListener: ListenerRegistration? = null
     private val tournamentMatchListeners = mutableMapOf<String, ListenerRegistration>()
     private var seatingPlanListenerRegistration: ListenerRegistration? = null
@@ -293,6 +299,7 @@ class BirizViewModel(
     private var latestStars: List<StarRewardRecord> = emptyList()
     private var latestBooks: List<Book> = emptyList()
     private var latestReadingRecords: List<ReadingRecord> = emptyList()
+    private var latestLibraryRequests: List<LibraryBookRequest> = emptyList()
     private var latestTournaments: List<Tournament> = emptyList()
     private val latestMatchesByTournament = mutableMapOf<String, List<TournamentMatch>>()
     private var latestScheduleUpdatedAtMs: Long = 0L
@@ -303,6 +310,7 @@ class BirizViewModel(
     private var hasCloudStars: Boolean = false
     private var hasCloudBooks: Boolean = false
     private var hasCloudReadingRecords: Boolean = false
+    private var hasCloudLibraryRequests: Boolean = false
     private var hasCloudTournaments: Boolean = false
     private var hasCloudSchedule: Boolean = false
     private var hasCloudSeating: Boolean = false
@@ -315,6 +323,7 @@ class BirizViewModel(
     private var previousActivitySnapshot: ActivityNotificationHelper.ActivitySnapshot? = null
     private var previousTeacherStudentsSnapshot: List<Student>? = null
     private var previousTeacherAnnouncements: List<Announcement>? = null
+    private var previousTeacherLibraryRequests: List<LibraryBookRequest>? = null
     private var previousChatReactions: Map<String, Map<String, String>>? = null
     private var seenActivityEventKeys: Set<String> = emptySet()
     private var activityBaselineTimestampMs: Long = 0L
@@ -660,6 +669,8 @@ class BirizViewModel(
         libraryBooksNotificationListener = null
         libraryRecordsNotificationListener?.remove()
         libraryRecordsNotificationListener = null
+        libraryRequestsNotificationListener?.remove()
+        libraryRequestsNotificationListener = null
         tournamentsNotificationListener?.remove()
         tournamentsNotificationListener = null
         tournamentMatchListeners.values.forEach { it.remove() }
@@ -695,6 +706,7 @@ class BirizViewModel(
         previousActivitySnapshot = null
         previousTeacherStudentsSnapshot = null
         previousTeacherAnnouncements = null
+        previousTeacherLibraryRequests = null
         previousChatReactions = null
         seenActivityEventKeys = emptySet()
         activityBaselineTimestampMs = 0L
@@ -710,6 +722,7 @@ class BirizViewModel(
         latestStars = emptyList()
         latestBooks = emptyList()
         latestReadingRecords = emptyList()
+        latestLibraryRequests = emptyList()
         latestTournaments = emptyList()
         latestMatchesByTournament.clear()
         latestScheduleUpdatedAtMs = 0L
@@ -720,6 +733,7 @@ class BirizViewModel(
         hasCloudStars = false
         hasCloudBooks = false
         hasCloudReadingRecords = false
+        hasCloudLibraryRequests = false
         hasCloudTournaments = false
         hasCloudSchedule = false
         hasCloudSeating = false
@@ -728,6 +742,7 @@ class BirizViewModel(
         hasCloudNotificationReadState = false
         hasBootstrappedCloudReadState = false
         loadedCloudMatchTournamentIds.clear()
+        _uiState.value = _uiState.value.copy(pendingLibraryRequestsCount = 0)
     }
 
     private fun seedLocalActivitySnapshotsIfNeeded(
@@ -938,16 +953,21 @@ class BirizViewModel(
                 updatedTeacherSeen = teacherRes.updatedSeenKeys
             }
 
-            if (hasCloudAnnouncements || hasCloudBooks || (classId == "default" && (latestAnnouncements.isNotEmpty() || latestBooks.isNotEmpty()))) {
+            if (hasCloudAnnouncements || hasCloudBooks || hasCloudLibraryRequests || (classId == "default" && (latestAnnouncements.isNotEmpty() || latestBooks.isNotEmpty() || latestLibraryRequests.isNotEmpty()))) {
                 val opRes = ActivityNotificationHelper.evaluateTeacherOperationalNotifications(
                     previousAnnouncements = previousTeacherAnnouncements,
                     currentAnnouncements = latestAnnouncements,
                     books = latestBooks,
                     seenEventKeys = updatedTeacherSeen,
-                    baselineTimestampMs = effectiveBaselineMs
+                    baselineTimestampMs = effectiveBaselineMs,
+                    previousLibraryRequests = previousTeacherLibraryRequests,
+                    currentLibraryRequests = latestLibraryRequests
                 )
                 if (hasCloudAnnouncements || (classId == "default" && latestAnnouncements.isNotEmpty())) {
                     previousTeacherAnnouncements = latestAnnouncements
+                }
+                if (hasCloudLibraryRequests || (classId == "default" && latestLibraryRequests.isNotEmpty())) {
+                    previousTeacherLibraryRequests = latestLibraryRequests
                 }
                 generatedForTeacher.addAll(opRes.newNotifications)
                 updatedTeacherSeen = opRes.updatedSeenKeys
@@ -991,6 +1011,7 @@ class BirizViewModel(
 
         previousTeacherStudentsSnapshot = null
         previousTeacherAnnouncements = null
+        previousTeacherLibraryRequests = null
         if (freshState.currentRole != UserRole.PARENT || freshState.linkedParentStudentIds.isEmpty()) {
             previousActivitySnapshot = null
             return
@@ -1001,6 +1022,7 @@ class BirizViewModel(
             starRecords = latestStars,
             books = latestBooks,
             readingRecords = latestReadingRecords,
+            libraryRequests = latestLibraryRequests,
             tournaments = latestTournaments,
             matchesByTournament = latestMatchesByTournament.mapValues { it.value.toList() },
             students = repository.students.value,
@@ -1015,6 +1037,7 @@ class BirizViewModel(
             hasStars = hasCloudStars,
             hasBooks = hasCloudBooks,
             hasReadingRecords = hasCloudReadingRecords,
+            hasLibraryRequests = hasCloudLibraryRequests,
             hasTournaments = hasCloudTournaments,
             hasSchedule = hasCloudSchedule,
             hasSeating = hasCloudSeating,
@@ -2276,6 +2299,19 @@ class BirizViewModel(
                 latestReadingRecords = cloudRecords
                 hasCloudReadingRecords = true
                 triggerSmartBoardSync()
+                evaluateActivityNotifications(classId)
+            }
+        }
+
+        if (classChanged || libraryRequestsNotificationListener == null) {
+            libraryRequestsNotificationListener?.remove()
+            libraryRequestsNotificationListener = LibraryRequestPersistenceHelper.observeFirestoreRequests(ctx, classId) { cloudRequests ->
+                latestLibraryRequests = cloudRequests
+                hasCloudLibraryRequests = true
+                val pendingCount = cloudRequests.count { it.status == LibraryRequestStatus.PENDING }
+                if (_uiState.value.pendingLibraryRequestsCount != pendingCount) {
+                    _uiState.value = _uiState.value.copy(pendingLibraryRequestsCount = pendingCount)
+                }
                 evaluateActivityNotifications(classId)
             }
         }

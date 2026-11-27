@@ -58,7 +58,9 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.Search
@@ -122,6 +124,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ActiveAssignment
 import com.example.data.model.Book
 import com.example.data.model.ClassRoom
+import com.example.data.model.LibraryBookRequest
+import com.example.data.model.LibraryRequestStatus
 import com.example.data.model.ReadingRecord
 import com.example.data.model.Student
 import com.example.ui.theme.BirizAmber
@@ -144,6 +148,7 @@ import com.example.ui.viewmodel.DashboardSubPage
 import com.example.util.ExcelPdfHelper
 import com.example.util.LibraryPdfReportsHelper
 import com.example.util.LibraryPersistenceHelper
+import com.example.util.LibraryRequestPersistenceHelper
 import com.example.util.TurkishTextHelper
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -171,14 +176,16 @@ fun LibrarySubScreen(
     // State
     var books by remember { mutableStateOf<List<Book>>(emptyList()) }
     var records by remember { mutableStateOf<List<ReadingRecord>>(emptyList()) }
+    var libraryRequests by remember { mutableStateOf<List<LibraryBookRequest>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Active tab (0: Envanter, 1: Ödünç & İade Geçmişi, 2: Okuma Analitiği)
+    // Active tab (0: Envanter, 1: Ödünç & İade Geçmişi, 2: Okuma Analitiği, 3: Veli Kitap İstekleri)
     var selectedTab by remember {
         mutableIntStateOf(
             when (currentSubPage) {
                 DashboardSubPage.KITAPLIK_KAYITLAR -> 1
                 DashboardSubPage.KITAPLIK_DEGERLENDIRME -> 2
+                DashboardSubPage.KITAPLIK_ISTEKLER -> 3
                 else -> 0
             }
         )
@@ -189,6 +196,7 @@ fun LibrarySubScreen(
         val targetTab = when (currentSubPage) {
             DashboardSubPage.KITAPLIK_KAYITLAR -> 1
             DashboardSubPage.KITAPLIK_DEGERLENDIRME -> 2
+            DashboardSubPage.KITAPLIK_ISTEKLER -> 3
             else -> 0
         }
         if (selectedTab != targetTab) {
@@ -227,6 +235,7 @@ fun LibrarySubScreen(
     fun refreshData() {
         books = LibraryPersistenceHelper.loadBooks(context, classRoom.id)
         records = LibraryPersistenceHelper.loadReadingRecords(context, classRoom.id)
+        libraryRequests = LibraryRequestPersistenceHelper.loadRequests(context, classRoom.id)
         isLoading = false
     }
 
@@ -254,10 +263,18 @@ fun LibrarySubScreen(
         val recordsListener = LibraryPersistenceHelper.observeFirestoreReadingRecords(context, classRoom.id) { updatedRecords ->
             records = updatedRecords
         }
+        val requestsListener = LibraryRequestPersistenceHelper.observeFirestoreRequests(context, classRoom.id) { updatedRequests ->
+            libraryRequests = updatedRequests
+        }
         onDispose {
             booksListener?.remove()
             recordsListener?.remove()
+            requestsListener?.remove()
         }
+    }
+
+    val pendingRequestsCount = remember(libraryRequests) {
+        libraryRequests.count { it.status == LibraryRequestStatus.PENDING }
     }
 
     // Colors
@@ -347,6 +364,11 @@ fun LibrarySubScreen(
                         },
                         onBatchClassReadClick = {
                             showBatchClassReadDialog = true
+                        },
+                        pendingRequestsCount = pendingRequestsCount,
+                        onOpenRequestsTab = {
+                            selectedTab = 3
+                            onSelectSubPage(DashboardSubPage.KITAPLIK_ISTEKLER)
                         }
                     )
                 }
@@ -385,6 +407,36 @@ fun LibrarySubScreen(
                         selectedStudentId = selectedStudentFilterId,
                         isDarkTheme = isDarkTheme,
                         onSelectStudent = { selectedStudentFilterId = it }
+                    )
+                }
+
+                3 -> {
+                    // TAB 3: VELİ KİTAP İSTEKLERİ ONAY MERKEZİ
+                    LibraryRequestsManagementView(
+                        requests = libraryRequests,
+                        books = books,
+                        students = students,
+                        isDarkTheme = isDarkTheme,
+                        onApprove = { req ->
+                            val result = LibraryRequestPersistenceHelper.approveRequest(
+                                context = context,
+                                classId = classRoom.id,
+                                request = req,
+                                students = students
+                            )
+                            refreshData()
+                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        },
+                        onReject = { req, reason ->
+                            val result = LibraryRequestPersistenceHelper.rejectRequest(
+                                context = context,
+                                classId = classRoom.id,
+                                request = req,
+                                reason = reason
+                            )
+                            refreshData()
+                            Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                        }
                     )
                 }
             }
@@ -428,6 +480,35 @@ fun LibrarySubScreen(
                     }
                     refreshData()
                     showAddEditDialog = false
+                },
+                onAssignExistingBook = { existingBook, assignStudentId, assignDateStr ->
+                    val targetStudent = students.firstOrNull { it.id == assignStudentId }
+                    if (targetStudent != null) {
+                        val assignDateMs = if (assignDateStr.isNotBlank()) {
+                            try {
+                                SimpleDateFormat("dd.MM.yyyy", Locale("tr")).parse(assignDateStr)?.time
+                                    ?: System.currentTimeMillis()
+                            } catch (_: Exception) {
+                                System.currentTimeMillis()
+                            }
+                        } else {
+                            System.currentTimeMillis()
+                        }
+                        LibraryPersistenceHelper.borrowBook(
+                            context = context,
+                            classId = classRoom.id,
+                            bookId = existingBook.id,
+                            students = listOf(targetStudent),
+                            assignmentDate = assignDateMs
+                        )
+                        refreshData()
+                        showAddEditDialog = false
+                        Toast.makeText(
+                            context,
+                            "📖 \"${existingBook.name}\" ${targetStudent.fullName} adına ödünç verildi.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             )
         }
@@ -976,7 +1057,9 @@ private fun LibraryInventoryView(
     onEditClick: (Book) -> Unit,
     onDeleteClick: (Book) -> Unit,
     onCancelAssignment: (Book, String) -> Unit,
-    onBatchClassReadClick: () -> Unit
+    onBatchClassReadClick: () -> Unit,
+    pendingRequestsCount: Int = 0,
+    onOpenRequestsTab: () -> Unit = {}
 ) {
     val filteredBooks = remember(books, searchQuery, statusFilter) {
         books.filter { book ->
@@ -1006,6 +1089,58 @@ private fun LibraryInventoryView(
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
+        // Bekleyen Veli Kitap İstekleri Hızlı Uyarı Bandı
+        if (pendingRequestsCount > 0) {
+            Surface(
+                onClick = onOpenRequestsTab,
+                shape = RoundedCornerShape(12.dp),
+                color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB),
+                border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .testTag("library_pending_requests_banner")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Bekleyen veli isteği",
+                            tint = if (isDarkTheme) Color(0xFFFCD34D) else Color(0xFFD97706),
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "$pendingRequestsCount veli kitap isteği onayınızı bekliyor",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFF92400E)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFD97706)
+                    ) {
+                        Text(
+                            text = "İncele",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
         // Arama Kutucuğu, Rapor, Kitap Ekle ve Görünüm Değiştirici
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2729,7 +2864,7 @@ private fun KpiBentoCard(
 // BİLEŞEN: KULLANIŞLI & ŞIK TARİH SEÇİCİ (BUGÜN / DÜN / TAKVİM)
 // -------------------------------------------------------------
 @Composable
-private fun BirizDatePickerField(
+internal fun BirizDatePickerField(
     label: String,
     dateStr: String,
     onDateChange: (String) -> Unit,
@@ -2873,7 +3008,8 @@ private fun AddEditBookDialog(
     bookToEdit: Book?,
     isDarkTheme: Boolean,
     onDismiss: () -> Unit,
-    onSave: (name: String, author: String, pageCount: Int, registrationNo: Int, assignStudentId: String?, assignDate: String?) -> Unit
+    onSave: (name: String, author: String, pageCount: Int, registrationNo: Int, assignStudentId: String?, assignDate: String?) -> Unit,
+    onAssignExistingBook: (existingBook: Book, studentId: String, assignDate: String) -> Unit = { _, _, _ -> }
 ) {
     var name by remember { mutableStateOf(bookToEdit?.name ?: "") }
     var author by remember { mutableStateOf(bookToEdit?.author ?: "") }
@@ -2884,33 +3020,64 @@ private fun AddEditBookDialog(
         bookToEdit?.registrationNo ?: LibraryPersistenceHelper.findNextAvailableRegistrationNo(existingBooks)
     }
 
-    // Sayfa sayısı zorunlu kontrolü
-    val pageCount = pageCountStr.toIntOrNull() ?: 0
-    val isPageValid = pageCount > 0
-
     // Öğrenciye Hemen Ver Seçeneği
     var assignImmediately by remember { mutableStateOf(false) }
     var selectedStudentId by remember { mutableStateOf<String?>(null) }
     val todayDateStr = remember { SimpleDateFormat("dd.MM.yyyy", Locale("tr")).format(Date()) }
     var assignmentDateStr by remember { mutableStateOf(todayDateStr) }
 
-    // Mükerrer Kontrolü (Büyük-küçük harf duyarsız Türkçe)
-    val isDuplicate = remember(name, bookToEdit, existingBooks) {
-        val trimmed = name.trim()
-        trimmed.isNotEmpty() && existingBooks.any { b ->
-            b.id != bookToEdit?.id && b.name.trim().equals(trimmed, ignoreCase = true)
+    // Kitap ekleme modunda kitaplıkta zaten kayıtlı olan kitabı yakala -> doğrudan öğrenciye ödünç verme modu
+    val matchedExistingBook = remember(name, bookToEdit, existingBooks) {
+        if (bookToEdit != null) null
+        else LibraryRequestPersistenceHelper.findMatchingLibraryBook(existingBooks, name)
+    }
+
+    // Düzenleme modunda başka bir kitapla isim çakışması kontrolü (sadece düzenleme modunda hata olarak engeller)
+    val isEditDuplicate = remember(name, bookToEdit, existingBooks) {
+        if (bookToEdit == null) false else {
+            val trimmedUpper = TurkishTextHelper.toTurkishUpperCase(name.trim())
+            trimmedUpper.isNotEmpty() && existingBooks.any { b ->
+                b.id != bookToEdit.id && TurkishTextHelper.toTurkishUpperCase(b.name.trim()) == trimmedUpper
+            }
         }
     }
 
-    // Akıllı Tamamlama Önerileri
-    val nameSuggestions = remember(name, existingBooks) {
-        if (name.length < 2) emptyList() else {
-            existingBooks
-                .map { it.name }
-                .distinct()
-                .filter { it.contains(name, ignoreCase = true) && !it.equals(name.trim(), ignoreCase = true) }
-                .take(3)
+    // Kayıtlı kitap eşleştiğinde yazar/sayfa bilgilerini otomatik doldur ve hemen ödünç verme panelini aç
+    LaunchedEffect(matchedExistingBook?.id) {
+        if (matchedExistingBook != null) {
+            author = matchedExistingBook.author
+            pageCountStr = matchedExistingBook.pageCount.toString()
+            if (students.isNotEmpty()) {
+                assignImmediately = true
+            }
+            val alreadyReadingIds = matchedExistingBook.activeAssignments.map { it.studentId }.toSet()
+            if (selectedStudentId != null && selectedStudentId in alreadyReadingIds) {
+                selectedStudentId = null
+            }
         }
+    }
+
+    // Sayfa sayısı zorunlu kontrolü
+    val effectivePageCount = matchedExistingBook?.pageCount ?: (pageCountStr.toIntOrNull() ?: 0)
+    val isPageValid = effectivePageCount > 0
+
+    // Akıllı Tamamlama Önerileri (Kitap nesnesi olarak — dokununca bilgiler dolar ve hemen ödünç verilebilir)
+    val bookSuggestions = remember(name, bookToEdit, existingBooks, matchedExistingBook) {
+        val query = name.trim()
+        if (bookToEdit != null || query.length < 2) emptyList() else {
+            val upperQuery = TurkishTextHelper.toTurkishUpperCase(query)
+            existingBooks
+                .filter { b ->
+                    b.id != matchedExistingBook?.id &&
+                        TurkishTextHelper.toTurkishUpperCase(b.name).contains(upperQuery)
+                }
+                .distinctBy { TurkishTextHelper.toTurkishUpperCase(it.name.trim()) }
+                .take(4)
+        }
+    }
+
+    val alreadyReadingStudentIds = remember(matchedExistingBook) {
+        matchedExistingBook?.activeAssignments?.map { it.studentId }?.toSet().orEmpty()
     }
 
     val primaryText = if (isDarkTheme) BirizDarkTextPrimary else BirizTextPrimary
@@ -2973,13 +3140,21 @@ private fun AddEditBookDialog(
 
                             Column {
                                 Text(
-                                    text = if (bookToEdit == null) "Yeni Kitap Ekle" else "Kitabı Düzenle",
+                                    text = when {
+                                        bookToEdit != null -> "Kitabı Düzenle"
+                                        matchedExistingBook != null -> "Kayıtlı Kitabı Hemen Ödünç Ver"
+                                        else -> "Yeni Kitap Ekle"
+                                    },
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = primaryText
                                 )
                                 Text(
-                                    text = if (bookToEdit == null) "Sınıf kütüphanesine yeni bir eser kazandırın" else "Kitap bilgilerini güncelleyin",
+                                    text = when {
+                                        bookToEdit != null -> "Kitap bilgilerini güncelleyin"
+                                        matchedExistingBook != null -> "Kitaplık #${matchedExistingBook.registrationNo} • Aşağıdan öğrenci seçin"
+                                        else -> "Yeni eser ekleyin veya kayıtlı kitabı seçip hemen ödünç verin"
+                                    },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = secondaryText
@@ -3024,7 +3199,7 @@ private fun AddEditBookDialog(
                                 leadingIcon = {
                                     Icon(Icons.Default.Book, contentDescription = null, tint = BirizTurquoise, modifier = Modifier.size(19.dp))
                                 },
-                                isError = isDuplicate,
+                                isError = isEditDuplicate,
                                 singleLine = true,
                                 shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -3032,13 +3207,15 @@ private fun AddEditBookDialog(
                                     unfocusedBorderColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1),
                                     focusedLabelColor = BirizTurquoise
                                 ),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("add_edit_book_name_input")
                             )
 
-                            if (isDuplicate) {
+                            if (isEditDuplicate) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "⚠️ Bu isimde bir kitap kitaplığınızda zaten kayıtlı!",
+                                    text = "⚠️ Bu isimde başka bir kitap kitaplığınızda zaten kayıtlı!",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = BirizError,
@@ -3046,26 +3223,65 @@ private fun AddEditBookDialog(
                                 )
                             }
 
-                            // Öneri çipleri
-                            if (nameSuggestions.isNotEmpty()) {
+                            if (matchedExistingBook != null) {
+                                Spacer(modifier = Modifier.height(5.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isDarkTheme) Color(0x300D9488) else Color(0xFFF0FDFA),
+                                    border = BorderStroke(1.dp, BirizTurquoise),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("existing_book_quick_assign_banner")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.BookmarkAdd,
+                                            contentDescription = null,
+                                            tint = if (isDarkTheme) BirizTurquoise else Color(0xFF0F766E),
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(7.dp))
+                                        Text(
+                                            text = "Bu kitap kitaplığınızda zaten kayıtlı (#${matchedExistingBook.registrationNo}). Bilgileri otomatik getirildi; aşağıdan öğrenci seçerek hemen ödünç verebilirsiniz.",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isDarkTheme) Color(0xFF99F6E4) else Color(0xFF115E59),
+                                            lineHeight = 14.5.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Öneri çipleri (seçilince tüm kitap bilgileri dolar ve hemen öğrenci ataması açılır)
+                            if (bookSuggestions.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    nameSuggestions.forEach { suggestion ->
+                                    bookSuggestions.forEach { suggestedBook ->
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
                                             color = if (isDarkTheme) Color(0x3038BDF8) else Color(0xFFE0F2FE),
                                             border = BorderStroke(1.dp, if (isDarkTheme) Color(0x4038BDF8) else Color(0xFFBAE6FD)),
-                                            modifier = Modifier.clickable { name = suggestion }
+                                            modifier = Modifier.clickable {
+                                                name = suggestedBook.name
+                                                author = suggestedBook.author
+                                                pageCountStr = suggestedBook.pageCount.toString()
+                                                if (students.isNotEmpty()) {
+                                                    assignImmediately = true
+                                                }
+                                            }
                                         ) {
                                             Text(
-                                                text = "💡 $suggestion",
+                                                text = "💡 ${suggestedBook.name} • ${suggestedBook.pageCount} s.",
                                                 fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
+                                                fontWeight = FontWeight.SemiBold,
                                                 color = if (isDarkTheme) Color(0xFF7DD3FC) else Color(0xFF0369A1),
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                             )
                                         }
                                     }
@@ -3073,15 +3289,33 @@ private fun AddEditBookDialog(
                             }
                         }
 
+                        val isExistingBookLocked = matchedExistingBook != null
+
                         // Yazar Adı
                         OutlinedTextField(
-                            value = author,
-                            onValueChange = { author = it },
-                            label = { Text("Yazar Adı (İsteğe bağlı)", fontWeight = FontWeight.SemiBold) },
+                            value = if (isExistingBookLocked) matchedExistingBook!!.author else author,
+                            onValueChange = { if (!isExistingBookLocked) author = it },
+                            readOnly = isExistingBookLocked,
+                            label = {
+                                Text(
+                                    text = if (isExistingBookLocked) "Yazar Adı (Kitaplıktan Alındı)" else "Yazar Adı (İsteğe bağlı)",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
                             placeholder = { Text("Örn: Antoine de Saint-Exupéry", fontSize = 12.sp) },
                             leadingIcon = {
                                 Icon(Icons.Default.PersonOutline, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
                             },
+                            trailingIcon = if (isExistingBookLocked) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Kayıtlı kitap bilgisi",
+                                        tint = BirizTurquoise,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -3095,14 +3329,30 @@ private fun AddEditBookDialog(
                         // Sayfa Sayısı (ZORUNLU)
                         Column {
                             OutlinedTextField(
-                                value = pageCountStr,
-                                onValueChange = { pageCountStr = it.filter { ch -> ch.isDigit() } },
-                                label = { Text("Sayfa Sayısı * (Zorunlu)", fontWeight = FontWeight.SemiBold) },
+                                value = if (isExistingBookLocked) matchedExistingBook!!.pageCount.toString() else pageCountStr,
+                                onValueChange = { if (!isExistingBookLocked) pageCountStr = it.filter { ch -> ch.isDigit() } },
+                                readOnly = isExistingBookLocked,
+                                label = {
+                                    Text(
+                                        text = if (isExistingBookLocked) "Sayfa Sayısı (Kitaplıktan Alındı)" else "Sayfa Sayısı * (Zorunlu)",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
                                 placeholder = { Text("Örn: 41", fontSize = 12.sp) },
                                 leadingIcon = {
                                     Icon(Icons.Default.AutoStories, contentDescription = null, tint = BirizAmber, modifier = Modifier.size(19.dp))
                                 },
-                                isError = pageCountStr.isNotBlank() && !isPageValid,
+                                trailingIcon = if (isExistingBookLocked) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = "Kayıtlı kitap sayfa sayısı",
+                                            tint = BirizTurquoise,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                } else null,
+                                isError = !isExistingBookLocked && pageCountStr.isNotBlank() && !isPageValid,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
                                 shape = RoundedCornerShape(10.dp),
@@ -3117,7 +3367,7 @@ private fun AddEditBookDialog(
                             Spacer(modifier = Modifier.height(3.dp))
 
                             if (isPageValid) {
-                                val stars = LibraryPersistenceHelper.calculateReadingStars(pageCount)
+                                val stars = LibraryPersistenceHelper.calculateReadingStars(effectivePageCount)
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
                                     color = if (isDarkTheme) Color(0x35F59E0B) else Color(0xFFFFFBEB),
@@ -3131,7 +3381,7 @@ private fun AddEditBookDialog(
                                         Text("⭐", fontSize = 13.sp)
                                         Spacer(modifier = Modifier.width(5.dp))
                                         Text(
-                                            text = "$pageCount sayfa için +$stars Kitap Kurdu yıldızı verilecektir.",
+                                            text = "$effectivePageCount sayfa için +$stars Kitap Kurdu yıldızı verilecektir.",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isDarkTheme) Color(0xFFFDE68A) else Color(0xFFB45309)
@@ -3330,13 +3580,22 @@ private fun AddEditBookDialog(
                                                 ) {
                                                     filteredSt.forEachIndexed { stIndex, st ->
                                                         val isSelected = selectedStudentId == st.id
+                                                        val isAlreadyReadingThisBook = st.id in alreadyReadingStudentIds
                                                         val isGirl = st.gender.equals("KIZ", ignoreCase = true)
 
                                                         Box(
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
-                                                                .background(if (isSelected) BirizTurquoise.copy(alpha = 0.15f) else Color.Transparent)
-                                                                .clickable { selectedStudentId = st.id }
+                                                                .background(
+                                                                    when {
+                                                                        isAlreadyReadingThisBook -> if (isDarkTheme) Color(0x2064748B) else Color(0xFFF8FAFC)
+                                                                        isSelected -> BirizTurquoise.copy(alpha = 0.15f)
+                                                                        else -> Color.Transparent
+                                                                    }
+                                                                )
+                                                                .clickable(enabled = !isAlreadyReadingThisBook) {
+                                                                    selectedStudentId = st.id
+                                                                }
                                                                 .padding(horizontal = 8.dp, vertical = 5.dp)
                                                         ) {
                                                             Row(
@@ -3344,7 +3603,10 @@ private fun AddEditBookDialog(
                                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                                 modifier = Modifier.fillMaxWidth()
                                                             ) {
-                                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier.weight(1f)
+                                                                ) {
                                                                     Surface(
                                                                         shape = CircleShape,
                                                                         color = if (isGirl) Color(0xFFFCE7F3) else Color(0xFFE0F2FE),
@@ -3364,15 +3626,17 @@ private fun AddEditBookDialog(
                                                                         text = st.fullName,
                                                                         fontSize = 11.5.sp,
                                                                         fontWeight = FontWeight.Medium,
-                                                                        color = primaryText
+                                                                        color = if (isAlreadyReadingThisBook) secondaryText else primaryText,
+                                                                        maxLines = 1,
+                                                                        overflow = TextOverflow.Ellipsis
                                                                     )
                                                                 }
 
                                                                 Text(
-                                                                    text = "Seç",
+                                                                    text = if (isAlreadyReadingThisBook) "Zaten okuyor" else "Seç",
                                                                     fontSize = 10.5.sp,
                                                                     fontWeight = FontWeight.Bold,
-                                                                    color = BirizTurquoise
+                                                                    color = if (isAlreadyReadingThisBook) BirizAmber else BirizTurquoise
                                                                 )
                                                             }
                                                         }
@@ -3439,35 +3703,50 @@ private fun AddEditBookDialog(
                             )
                         }
 
-                        val canSave = name.isNotBlank() && !isDuplicate && isPageValid && (!assignImmediately || selectedStudentId != null)
+                        val canSave = if (matchedExistingBook != null) {
+                            selectedStudentId != null && selectedStudentId !in alreadyReadingStudentIds
+                        } else {
+                            name.isNotBlank() && !isEditDuplicate && isPageValid && (!assignImmediately || selectedStudentId != null)
+                        }
 
                         Button(
                             onClick = {
-                                val assignId = if (assignImmediately) selectedStudentId else null
-                                val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
-                                onSave(name.trim(), author.trim(), pageCount, autoRegNo, assignId, assignDate)
+                                if (matchedExistingBook != null && selectedStudentId != null) {
+                                    onAssignExistingBook(matchedExistingBook, selectedStudentId!!, assignmentDateStr)
+                                } else {
+                                    val assignId = if (assignImmediately) selectedStudentId else null
+                                    val assignDate = if (assignImmediately && assignId != null) assignmentDateStr else null
+                                    onSave(name.trim(), author.trim(), effectivePageCount, autoRegNo, assignId, assignDate)
+                                }
                             },
                             enabled = canSave,
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                                containerColor = if (matchedExistingBook != null) BirizSuccess else if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
                                 disabledContainerColor = if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)
                             ),
                             modifier = Modifier
-                                .weight(1.4f)
-                                .height(44.dp)
+                                .weight(1.55f)
+                                .heightIn(min = 48.dp)
+                                .testTag("add_edit_book_confirm_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = if (matchedExistingBook != null) Icons.Default.BookmarkAdd else Icons.Default.Check,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (bookToEdit == null) "Kitabı Kaydet" else "Güncelle",
-                                fontSize = 13.sp,
+                                text = when {
+                                    bookToEdit != null -> "Güncelle"
+                                    matchedExistingBook != null -> "Seçili Öğrenciye Ödünç Ver"
+                                    else -> "Kitabı Kaydet"
+                                },
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

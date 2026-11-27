@@ -281,6 +281,8 @@ object BackgroundNotificationSyncHelper {
 
         val generatedNotifications = mutableListOf<BirizNotification>()
 
+        val libraryRequests = LibraryRequestPersistenceHelper.fetchFirestoreRequestsOnce(db, classId)
+
         if (role == UserRole.TEACHER) {
             val books = fetchBorrowedBooks(db, classId)
             if (students.isNotEmpty()) {
@@ -300,7 +302,9 @@ object BackgroundNotificationSyncHelper {
                 books = books,
                 seenEventKeys = updatedSeenKeys,
                 baselineTimestampMs = baselineMs,
-                nowMs = nowMs
+                nowMs = nowMs,
+                previousLibraryRequests = null,
+                currentLibraryRequests = libraryRequests
             )
             generatedNotifications.addAll(opRes.newNotifications)
             updatedSeenKeys = opRes.updatedSeenKeys
@@ -328,6 +332,7 @@ object BackgroundNotificationSyncHelper {
                 starRecords = stars,
                 books = books,
                 readingRecords = readingRecords,
+                libraryRequests = libraryRequests,
                 tournaments = tournaments,
                 matchesByTournament = matchesByTournament,
                 students = students,
@@ -342,6 +347,7 @@ object BackgroundNotificationSyncHelper {
                 hasStars = true,
                 hasBooks = true,
                 hasReadingRecords = true,
+                hasLibraryRequests = true,
                 hasTournaments = true,
                 hasSchedule = schedConfig != null || schedLessons.isNotEmpty(),
                 hasSeating = seatingState != null,

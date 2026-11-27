@@ -78,7 +78,8 @@ fun ModulePreviewsSubScreen(
         DashboardSubPage.ZAMANLAYICI -> Icons.Default.HourglassBottom
         DashboardSubPage.KITAPLIK_LISTE,
         DashboardSubPage.KITAPLIK_KAYITLAR,
-        DashboardSubPage.KITAPLIK_DEGERLENDIRME -> Icons.Default.MenuBook
+        DashboardSubPage.KITAPLIK_DEGERLENDIRME,
+        DashboardSubPage.KITAPLIK_ISTEKLER -> Icons.Default.MenuBook
         DashboardSubPage.TURNUVA_DEVAM_EDENLER,
         DashboardSubPage.TURNUVA_TAMAMLANANLAR -> Icons.Default.EmojiEvents
         else -> Icons.Default.School
@@ -94,6 +95,7 @@ fun ModulePreviewsSubScreen(
         DashboardSubPage.KITAPLIK_LISTE -> "Sınıf kitaplığındaki tüm hikaye ve masal kitaplarının barkod ve ISBN takibi."
         DashboardSubPage.KITAPLIK_KAYITLAR -> "Hangi öğrencinin hangi kitabı okuduğu ve iade geçmişi kayıtları."
         DashboardSubPage.KITAPLIK_DEGERLENDIRME -> "Okunan kitaplara ilişkin öğrenci anlama ve özet değerlendirme notları."
+        DashboardSubPage.KITAPLIK_ISTEKLER -> "Velilerden gelen kitap ekleme ve kitap bitirme taleplerinin öğretmen onay merkezi."
         DashboardSubPage.TURNUVA_DEVAM_EDENLER -> "Sınıf içi zeka oyunları, mangala ve kelime turnuvalarının anlık fikstür ve eşleşmeleri."
         DashboardSubPage.TURNUVA_TAMAMLANANLAR -> "Tamamlanan sınıf turnuvalarının madalya ve şampiyonluk arşivleri."
         else -> "Bu modül yakında aktif olacaktır."

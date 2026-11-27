@@ -420,4 +420,38 @@ data class ReadingRecord(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+enum class LibraryRequestType {
+    START_BOOK,
+    FINISH_BOOK
+}
+
+enum class LibraryRequestStatus {
+    PENDING,
+    APPROVED,
+    REJECTED
+}
+
+data class LibraryBookRequest(
+    val id: String,
+    val classId: String,
+    val studentId: String,
+    val studentName: String,
+    val studentNumber: String = "",
+    val parentEmail: String = "",
+    val parentName: String = "",
+    val requestType: LibraryRequestType = LibraryRequestType.START_BOOK,
+    val status: LibraryRequestStatus = LibraryRequestStatus.PENDING,
+    val existingBookId: String? = null,
+    val bookName: String,
+    val author: String = "",
+    val pageCount: Int = 0,
+    val startDate: Long = 0L,
+    val endDate: Long? = null,
+    val earnedStarsPreview: Int = 0,
+    val rejectionReason: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val reviewedAt: Long? = null,
+    val reviewedByTeacherUid: String = ""
+)
+
 
