@@ -325,6 +325,7 @@ class BirizViewModel(
     private var previousTeacherAnnouncements: List<Announcement>? = null
     private var previousTeacherLibraryRequests: List<LibraryBookRequest>? = null
     private var previousChatReactions: Map<String, Map<String, String>>? = null
+    private var previousChatReactionsScopeKey: String? = null
     private var seenActivityEventKeys: Set<String> = emptySet()
     private var activityBaselineTimestampMs: Long = 0L
     private var loadedActivityStateKey: String? = null
@@ -708,6 +709,7 @@ class BirizViewModel(
         previousTeacherAnnouncements = null
         previousTeacherLibraryRequests = null
         previousChatReactions = null
+        previousChatReactionsScopeKey = null
         seenActivityEventKeys = emptySet()
         activityBaselineTimestampMs = 0L
         notificationReadSyncState = NotificationReadSyncState()
@@ -899,12 +901,29 @@ class BirizViewModel(
                 currentVersionName = BuildConfig.VERSION_NAME,
                 latestCheckInfo = state.availableUpdateInfo
             )
-            val pruned = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
+            val prunedDismissed = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
+            val pruned = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+                notifications = prunedDismissed,
+                viewerIsTeacher = state.currentRole == UserRole.TEACHER,
+                viewerIsParent = state.currentRole == UserRole.PARENT,
+                linkedParentStudentIds = state.linkedParentStudentIds,
+                currentUserEmail = state.currentUser.email,
+                messagesById = rawChatMessages.associateBy { it.id }
+            )
             if (pruned != state.notifications) {
                 _uiState.value = _uiState.value.copy(notifications = pruned)
             }
-            if (pruned.size != loadedViewerNotifs.size) {
+            if (pruned.size != loadedViewerNotifs.size || pruned != loadedViewerNotifs) {
+                val removedNotifs = loadedViewerNotifs.filterNot { old -> pruned.any { it.id == old.id } }
                 CommunicationPersistenceHelper.saveNotifications(ctx, classId, pruned, viewerKey)
+                if (removedNotifs.isNotEmpty()) {
+                    SystemActivityNotificationHelper.cancelNotifications(ctx, removedNotifs.map { it.id })
+                    removedNotifs
+                        .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+                        .mapNotNull { it.targetId }
+                        .distinct()
+                        .forEach { sId -> ChatNotificationHelper.cancelMessageNotification(ctx, sId) }
+                }
                 if (pruned.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
                     AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
                 }
@@ -1099,13 +1118,14 @@ class BirizViewModel(
     ): List<ChatMessage> {
         val viewerIsTeacher = state.currentRole == UserRole.TEACHER
         val viewerIsParent = state.currentRole == UserRole.PARENT
-        if (!viewerIsTeacher && !viewerIsParent) return messages
+        if (!viewerIsTeacher && !viewerIsParent) return emptyList()
         return ChatVisibilityHelper.filterVisibleMessages(
             messages = messages,
             viewerIsTeacher = viewerIsTeacher,
             viewerIsParent = viewerIsParent,
             currentParentEmail = state.currentUser.email,
-            clearTimestamps = clearMap
+            clearTimestamps = clearMap,
+            linkedParentStudentIds = if (viewerIsParent) state.linkedParentStudentIds else null
         )
     }
 
@@ -2065,9 +2085,26 @@ class BirizViewModel(
             currentVersionName = BuildConfig.VERSION_NAME,
             latestCheckInfo = stateSnapshot.availableUpdateInfo
         )
-        val prunedNotifications = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
-        if (prunedNotifications.size != loadedNotifications.size && prunedNotifications != rawMerged) {
+        val prunedDismissed = NotificationLifecycleHelper.pruneDismissedNotifications(prunedUpdates, notificationReadSyncState)
+        val prunedNotifications = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+            notifications = prunedDismissed,
+            viewerIsTeacher = viewerIsTeacher,
+            viewerIsParent = stateSnapshot.currentRole == UserRole.PARENT,
+            linkedParentStudentIds = stateSnapshot.linkedParentStudentIds,
+            currentUserEmail = stateSnapshot.currentUser.email,
+            messagesById = loadedMessages.associateBy { it.id }
+        )
+        if (prunedNotifications != loadedNotifications) {
+            val removedNotifs = loadedNotifications.filterNot { old -> prunedNotifications.any { it.id == old.id } }
             CommunicationPersistenceHelper.saveNotifications(ctx, classId, prunedNotifications, viewerKey)
+            if (removedNotifs.isNotEmpty()) {
+                SystemActivityNotificationHelper.cancelNotifications(ctx, removedNotifs.map { it.id })
+                removedNotifs
+                    .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+                    .mapNotNull { it.targetId }
+                    .distinct()
+                    .forEach { sId -> ChatNotificationHelper.cancelMessageNotification(ctx, sId) }
+            }
             if (prunedNotifications.none { NotificationLifecycleHelper.isUpdateNotification(it) }) {
                 AppUpdateNotificationHelper.cancelUpdateNotification(ctx)
             }
@@ -2080,6 +2117,7 @@ class BirizViewModel(
             processedNotifMessageIds.addAll(notificationReadSyncState.dismissedMessageIds)
             knownMessageIds.clear()
             previousChatReactions = null
+            previousChatReactionsScopeKey = null
         }
         rawChatMessages = loadedMessages
         knownMessageIds.addAll(loadedMessages.map { it.id })
@@ -2119,6 +2157,7 @@ class BirizViewModel(
             previousTeacherStudentsSnapshot = null
             previousTeacherAnnouncements = null
             previousChatReactions = null
+            previousChatReactionsScopeKey = null
             clearActivityListeners()
         }
 
@@ -2133,6 +2172,8 @@ class BirizViewModel(
             notificationReadStateGateJob = null
             loadedReadStateKey = readStateKey
             hasBootstrappedCloudReadState = false
+            previousChatReactions = null
+            previousChatReactionsScopeKey = null
 
             if (classId == "default") {
                 hasCloudNotificationReadState = true
@@ -2599,9 +2640,16 @@ class BirizViewModel(
         val cleanText = text.trim()
         if (cleanText.isEmpty()) return
 
+        val stateSnapshot = _uiState.value
+        if (!isFromTeacher && stateSnapshot.currentRole == UserRole.PARENT &&
+            studentId !in stateSnapshot.linkedParentStudentIds
+        ) {
+            return
+        }
+
         val classId = resolveActiveClassId()
-        if (classId == "default" && !_uiState.value.isTestMode) {
-            _uiState.value = _uiState.value.copy(
+        if (classId == "default" && !stateSnapshot.isTestMode) {
+            _uiState.value = stateSnapshot.copy(
                 snackbarMessage = "⚠️ Mesaj gönderebilmek için aktif bir sınıf bağlantısı gereklidir."
             )
             return
@@ -2611,10 +2659,17 @@ class BirizViewModel(
         val studentNo = student?.studentNumber ?: ""
         val studentName = student?.fullName ?: "Öğrenci"
 
-        val targetParent = student?.allLinkedParents?.find { it.email.equals(parentEmail, ignoreCase = true) }
+        val effectiveParentEmailInput = if (parentEmail.isNotBlank()) {
+            parentEmail.trim()
+        } else if (!isFromTeacher && stateSnapshot.currentUser.email.isNotBlank()) {
+            stateSnapshot.currentUser.email.trim()
+        } else {
+            ""
+        }
+        val targetParent = student?.allLinkedParents?.find { it.email.equals(effectiveParentEmailInput, ignoreCase = true) }
             ?: student?.allLinkedParents?.firstOrNull()
 
-        val resolvedEmail = if (parentEmail.isNotBlank()) parentEmail.trim() else (targetParent?.email ?: "")
+        val resolvedEmail = if (effectiveParentEmailInput.isNotBlank()) effectiveParentEmailInput else (targetParent?.email ?: "")
         val resolvedParentName = when {
             parentName.isNotBlank() -> parentName.trim()
             targetParent != null && targetParent.name.isNotBlank() -> targetParent.name
@@ -2797,12 +2852,22 @@ class BirizViewModel(
         val state = _uiState.value
         val classId = resolveActiveClassId()
         val viewerIsTeacher = state.currentRole == UserRole.TEACHER
+        val viewerIsParent = state.currentRole == UserRole.PARENT
+        if (!viewerIsTeacher && !viewerIsParent) return
         var targetMsg: ChatMessage? = null
         var updatedValueForCloud = ""
         var participantKeyUsed = ""
 
         val updatedRaw = rawChatMessages.map { msg ->
-            if (msg.id == messageId && !msg.isDeletedForEveryone) {
+            val canReact = !msg.isDeletedForEveryone && (
+                viewerIsTeacher ||
+                    ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                        msg = msg,
+                        linkedParentStudentIds = state.linkedParentStudentIds,
+                        currentParentEmail = state.currentUser.email
+                    )
+            )
+            if (msg.id == messageId && canReact) {
                 val pKey = ChatFeatureHelper.reactionParticipantKey(
                     viewerIsTeacher = viewerIsTeacher,
                     userEmail = state.currentUser.email,
@@ -3073,7 +3138,7 @@ class BirizViewModel(
         val viewerIsTeacher = state.currentRole == UserRole.TEACHER
         val viewerIsParent = state.currentRole == UserRole.PARENT
         if (!viewerIsTeacher && !viewerIsParent) {
-            _uiState.value = state.copy(chatMessages = mergedMessages)
+            _uiState.value = state.copy(chatMessages = emptyList())
             return
         }
 
@@ -3270,8 +3335,19 @@ class BirizViewModel(
             }
         }
 
-        // Mesaj emoji tepkileri (👍, ❤️, 👀 vb.) eklendiğinde veya değiştiğinde alıcıya bildirim üret
-        val prevReactionsSnapshot = previousChatReactions
+        // Mesaj emoji tepkileri (👍, ❤️, 👀 vb.) eklendiğinde veya değiştiğinde YALNIZCA yetkili alıcıya canlı bildirim üret
+        val reactionScopeKey = "$classId|${currentViewerKey(state)}|${
+            if (viewerIsParent) state.linkedParentStudentIds.sorted().joinToString(",") else "teacher"
+        }"
+        val prevReactionsSnapshot = if (previousChatReactionsScopeKey == reactionScopeKey) {
+            previousChatReactions
+        } else {
+            null
+        }
+        val effectiveReactionBaselineMs = maxOf(
+            activityBaselineTimestampMs,
+            NotificationLifecycleHelper.effectiveBaselineMs(notificationReadSyncState)
+        )
         val reactionsNotifEnabled = NotificationPreferencesHelper.isCategoryEnabled(
             state.notificationPreferences,
             NotificationCategory.MESSAGE_REACTIONS
@@ -3280,19 +3356,26 @@ class BirizViewModel(
             visibleMessages
                 .filter { !it.isDeletedForEveryone && !it.isPendingScheduled(now) }
                 .forEach { msg ->
-                    val oldReactions = prevReactionsSnapshot[msg.id].orEmpty()
                     val currReactions = msg.activeReactions()
                     currReactions.forEach { (pKey, emoji) ->
-                        val ownParticipantKey = ChatFeatureHelper.reactionParticipantKey(
+                        val isAllowedRecipient = NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+                            msg = msg,
+                            reactorParticipantKey = pKey,
                             viewerIsTeacher = viewerIsTeacher,
-                            userEmail = state.currentUser.email,
-                            studentId = msg.studentId
+                            viewerIsParent = viewerIsParent,
+                            linkedParentStudentIds = state.linkedParentStudentIds,
+                            currentUserEmail = state.currentUser.email,
+                            nowMillis = now
                         )
-                        val isOwn = pKey == ownParticipantKey || (viewerIsTeacher && pKey == "teacher")
-                        if (!isOwn && oldReactions[pKey] != emoji) {
-                            val isRelevantStudent = viewerIsTeacher ||
-                                state.linkedParentStudentIds.isEmpty() ||
-                                msg.studentId in state.linkedParentStudentIds
+                        val isLiveChange = isAllowedRecipient && NotificationLifecycleHelper.shouldEmitLiveReactionNotification(
+                            msgId = msg.id,
+                            msgTimestamp = msg.timestamp,
+                            reactorParticipantKey = pKey,
+                            newEmoji = emoji,
+                            prevReactionsSnapshot = prevReactionsSnapshot,
+                            effectiveBaselineMs = effectiveReactionBaselineMs
+                        )
+                        if (isLiveChange) {
                             val isChatOpen = NotificationLifecycleHelper.isChatScreenActivelyOpenForStudent(
                                 studentId = msg.studentId,
                                 viewerIsTeacher = viewerIsTeacher,
@@ -3305,7 +3388,7 @@ class BirizViewModel(
                                 activeParentStudentId = state.activeParentStudentId,
                                 isNotificationCenterOpen = state.isNotificationCenterOpen
                             )
-                            if (isRelevantStudent && !isChatOpen && reactionsNotifEnabled) {
+                            if (!isChatOpen && reactionsNotifEnabled) {
                                 val reactorLabel = if (pKey == "teacher") {
                                     state.activeClassRoom?.teacherName?.takeIf { it.isNotBlank() } ?: "Öğretmen"
                                 } else {
@@ -3339,7 +3422,33 @@ class BirizViewModel(
                     }
                 }
         }
-        previousChatReactions = mergedMessages.associate { it.id to it.activeReactions() }
+        // Boş ilk önbellek görüntüsü gerçek bulut mesajları gelmeden tepki referansını boş haritayla kilitlemesin
+        if (mergedMessages.isNotEmpty() || prevReactionsSnapshot != null) {
+            previousChatReactions = mergedMessages.associate { it.id to it.activeReactions() }
+            previousChatReactionsScopeKey = reactionScopeKey
+        }
+
+        val sanitizedNotifs = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+            notifications = updatedNotifs,
+            viewerIsTeacher = viewerIsTeacher,
+            viewerIsParent = viewerIsParent,
+            linkedParentStudentIds = state.linkedParentStudentIds,
+            currentUserEmail = state.currentUser.email,
+            messagesById = updatedRaw.associateBy { it.id }
+        )
+        if (sanitizedNotifs.size != updatedNotifs.size) {
+            val purged = updatedNotifs.filterNot { old -> sanitizedNotifs.any { it.id == old.id } }
+            updatedNotifs = sanitizedNotifs
+            notifsChanged = true
+            if (ctx != null && purged.isNotEmpty()) {
+                SystemActivityNotificationHelper.cancelNotifications(ctx, purged.map { it.id })
+                purged
+                    .filter { it.type == NotificationType.MESSAGE && !it.targetId.isNullOrBlank() }
+                    .mapNotNull { it.targetId }
+                    .distinct()
+                    .forEach { sId -> ChatNotificationHelper.cancelMessageNotification(ctx, sId) }
+            }
+        }
 
         if (notifsChanged && ctx != null) {
             CommunicationPersistenceHelper.saveNotifications(ctx, classId, updatedNotifs, currentViewerKey(state))
@@ -3358,16 +3467,21 @@ class BirizViewModel(
         parentEmail: String = "",
         viewerIsTeacher: Boolean = (_uiState.value.currentRole == UserRole.TEACHER)
     ) {
+        val stateSnapshot = _uiState.value
         val classId = resolveActiveClassId()
         val now = System.currentTimeMillis()
         val newlyReadMessages = mutableListOf<ChatMessage>()
         val updatedRaw = rawChatMessages.map { msg ->
             val matchesStudent = msg.studentId == studentId
             val matchesDirection = if (viewerIsTeacher) !msg.isFromTeacher else msg.isFromTeacher
-            val matchesParent = if (!viewerIsTeacher || parentEmail.isBlank()) {
-                true
+            val matchesParent = if (viewerIsTeacher) {
+                parentEmail.isBlank() || msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
             } else {
-                msg.parentEmail.isBlank() || msg.parentEmail.equals(parentEmail, ignoreCase = true)
+                ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                    msg = msg,
+                    linkedParentStudentIds = stateSnapshot.linkedParentStudentIds,
+                    currentParentEmail = stateSnapshot.currentUser.email
+                )
             }
             if (matchesStudent &&
                 matchesDirection &&
@@ -4433,22 +4547,21 @@ class BirizViewModel(
             }
         }
         val targetClass = _uiState.value.activeClassRoom ?: repository.defaultSampleClass
-        if (_uiState.value.activeClassRoom == null) {
-            _uiState.value = _uiState.value.copy(activeClassRoom = targetClass)
-        }
+        previousChatReactions = null
+        previousChatReactionsScopeKey = null
+        _uiState.value = _uiState.value.copy(
+            activeClassRoom = targetClass,
+            currentRole = UserRole.PARENT,
+            isKvkkAccepted = true,
+            currentScreen = ScreenState.PARENT_PORTAL,
+            snackbarMessage = "BİRİZ Veli Modülüne Geçiş Yapıldı 👨‍👩‍👧‍👦"
+        )
         repository.observeActiveClassroom(targetClass.id)
         repository.observeStudents(targetClass.id)
         loadScheduleFromStorage(targetClass.id)
         loadSeatingPlanFromStorage(targetClass.id)
         loadGroupMakerFromStorage(targetClass.id)
         loadCommunicationFromStorage(targetClass.id)
-
-        _uiState.value = _uiState.value.copy(
-            currentRole = UserRole.PARENT,
-            isKvkkAccepted = true,
-            currentScreen = ScreenState.PARENT_PORTAL,
-            snackbarMessage = "BİRİZ Veli Modülüne Geçiş Yapıldı 👨‍👩‍👧‍👦"
-        )
         reloadNotificationPreferences(_uiState.value)
         appContext?.let { ctx ->
             seedLocalActivitySnapshotsIfNeeded(ctx, targetClass.id, forceAllLocal = !hasCloudTournaments && !hasCloudBooks)
@@ -4467,12 +4580,15 @@ class BirizViewModel(
                 _uiState.value.currentUser.fullName.ifBlank { "Öğrenci Velisi" }
             )
         }
+        previousChatReactions = null
+        previousChatReactionsScopeKey = null
         if (_uiState.value.activeClassRoom != null) {
             _uiState.value = _uiState.value.copy(
                 currentRole = UserRole.TEACHER,
                 currentScreen = ScreenState.TEACHER_DASHBOARD,
                 snackbarMessage = "Sınıf Öğretmeni Moduna Geçildi 👨‍🏫"
             )
+            loadCommunicationFromStorage()
         } else {
             _uiState.value = _uiState.value.copy(
                 currentRole = UserRole.TEACHER,
@@ -4511,9 +4627,19 @@ class BirizViewModel(
                 }
 
                 val activeClass = matchedClass ?: _uiState.value.activeClassRoom ?: repository.defaultSampleClass
-                if (_uiState.value.activeClassRoom == null || _uiState.value.activeClassRoom?.id != activeClass.id) {
-                    _uiState.value = _uiState.value.copy(activeClassRoom = activeClass)
-                }
+                previousChatReactions = null
+                previousChatReactionsScopeKey = null
+                // ÖNCE veli rolünü ve bağlı öğrenci listesini state'e yaz ki tüm dinleyiciler fail-closed doğru kapsamla başlasın
+                _uiState.value = _uiState.value.copy(
+                    activeClassRoom = activeClass,
+                    linkedParentStudentIds = currentList,
+                    activeParentStudentId = matchedStudent.id,
+                    currentRole = UserRole.PARENT,
+                    isKvkkAccepted = true,
+                    currentScreen = ScreenState.PARENT_PORTAL,
+                    snackbarMessage = "🎉 ${matchedStudent.fullName} (${activeClass.gradeLevel}/${activeClass.section} - Öğr: ${activeClass.teacherName}) Veli Hesabınıza Başarıyla Bağlandı!"
+                )
+
                 repository.stopSetupWizardObserving()
                 repository.observeActiveClassroom(activeClass.id)
                 repository.observeStudents(activeClass.id)
@@ -4528,13 +4654,6 @@ class BirizViewModel(
                     repository.saveParentLinkMetadataOnUserDoc(uid, activeClass.id, currentList)
                 }
 
-                _uiState.value = _uiState.value.copy(
-                    linkedParentStudentIds = currentList,
-                    activeParentStudentId = matchedStudent.id,
-                    currentRole = UserRole.PARENT,
-                    currentScreen = ScreenState.PARENT_PORTAL,
-                    snackbarMessage = "🎉 ${matchedStudent.fullName} (${activeClass.gradeLevel}/${activeClass.section} - Öğr: ${activeClass.teacherName}) Veli Hesabınıza Başarıyla Bağlandı!"
-                )
                 reloadNotificationPreferences(_uiState.value)
                 evaluateActivityNotifications(activeClass.id, forceReloadViewerNotifications = true)
                 refreshChatClearStateForCurrentViewer(activeClass.id, forceReload = true)
@@ -4584,12 +4703,38 @@ class BirizViewModel(
         }
 
         val studentName = repository.students.value.firstOrNull { it.id == studentId }?.fullName ?: "Öğrenci"
+        previousChatReactions = null
+        previousChatReactionsScopeKey = null
 
-        _uiState.value = _uiState.value.copy(
+        val nextStateBase = _uiState.value.copy(
             linkedParentStudentIds = currentList,
             activeParentStudentId = nextActiveStudentId,
             snackbarMessage = "🗑️ $studentName veli profilinizden başarıyla kaldırıldı."
         )
+        val sanitizedNotifs = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+            notifications = nextStateBase.notifications,
+            viewerIsTeacher = false,
+            viewerIsParent = true,
+            linkedParentStudentIds = currentList,
+            currentUserEmail = nextStateBase.currentUser.email,
+            messagesById = rawChatMessages.associateBy { it.id }
+        )
+        val removedNotifs = nextStateBase.notifications.filterNot { old -> sanitizedNotifs.any { it.id == old.id } }
+        val filteredChats = filterMessagesForCurrentViewer(rawChatMessages, nextStateBase, chatClearTimestamps)
+
+        _uiState.value = nextStateBase.copy(
+            chatMessages = filteredChats,
+            notifications = sanitizedNotifs
+        )
+
+        appContext?.let { ctx ->
+            val activeClassId = resolveActiveClassId()
+            if (removedNotifs.isNotEmpty()) {
+                CommunicationPersistenceHelper.saveNotifications(ctx, activeClassId, sanitizedNotifs, currentViewerKey(nextStateBase))
+                SystemActivityNotificationHelper.cancelNotifications(ctx, removedNotifs.map { it.id })
+            }
+            ChatNotificationHelper.cancelMessageNotification(ctx, studentId)
+        }
 
         saveParentSessionState()
 

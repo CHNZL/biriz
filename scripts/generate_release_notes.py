@@ -55,6 +55,15 @@ SPECIFIC_DIFF_RULES = [
     ),
     # --- Veli Portalı ve İletişim ---
     (
+        "parent_chat_notification_privacy_isolation",
+        "communication",
+        False,
+        re.compile(r"(ChatVisibilityHelper|NotificationLifecycleHelper|BirizViewModel|BackgroundNotificationSyncHelper|BirizFirebaseMessagingService|ParentPortalSubScreen)", re.I),
+        re.compile(r"(isMessageOwnedByParentViewer|isChatReactionNotificationAllowedForViewer|shouldEmitLiveReactionNotification|sanitizeNotificationsForViewer|isNotificationAllowedForParent|previousChatReactionsScopeKey)", re.I),
+        "Veli Mesajlaşma ve Bildirim Gizliliği Güçlendirmesi",
+        "Veli hesaplarında özel mesajlar ve mesaj tepki bildirimleri yalnızca ilgili öğrencinin kendi velisiyle sınırlandırıldı; ilk girişte geçmiş tepki bildirimlerinin oluşması engellendi ve önbellekteki başka öğrenci bildirimlerinin otomatik temizlenmesi sağlandı.",
+    ),
+    (
         "parent_comm_font_size",
         "communication",
         False,

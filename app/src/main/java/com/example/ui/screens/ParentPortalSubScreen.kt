@@ -181,6 +181,7 @@ import com.example.util.LibraryPersistenceHelper
 import com.example.util.ParentPrivacyHelper
 import com.example.data.model.TournamentStatus
 import com.example.util.NotificationCategory
+import com.example.util.NotificationLifecycleHelper
 import com.example.util.NotificationPreferencesHelper
 import com.example.util.ScheduleHelper
 import com.example.util.TournamentEngine
@@ -295,6 +296,16 @@ fun ParentPortalSubScreen(
 
     // Velinin bağlı olduğu çocuk kimlikleri kümesi (Gizlilik ve filtreleme için)
     val linkedStudentIds = remember(linkedStudents) { linkedStudents.map { it.id }.toSet() }
+    val safeNotifications = remember(notifications, linkedStudentIds, currentUser.email, chatMessages) {
+        NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+            notifications = notifications,
+            viewerIsTeacher = false,
+            viewerIsParent = true,
+            linkedParentStudentIds = linkedStudentIds,
+            currentUserEmail = currentUser.email,
+            messagesById = chatMessages.associateBy { it.id }
+        )
+    }
 
     // Geri Tuşu: Detay ekranlarındayken ana sayfaya dön
     BackHandler(enabled = activeTab != ParentPortalTab.HOME) {
@@ -565,7 +576,7 @@ fun ParentPortalSubScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                val unreadNotificationsCount = notifications.count { !it.isRead }
+                                val unreadNotificationsCount = safeNotifications.count { !it.isRead }
                                 Surface(
                                     modifier = Modifier
                                         .size(38.dp)
@@ -713,12 +724,10 @@ fun ParentPortalSubScreen(
                             val studentChatMessages = remember(chatMessages, activeStudent, currentUser.email) {
                                 chatMessages.filter { msg ->
                                     !msg.isPendingScheduled() &&
-                                        msg.studentId == activeStudent.id && (
-                                            activeStudent.allLinkedParents.size <= 1 ||
-                                                msg.parentEmail.isBlank() ||
-                                                currentUser.email.isBlank() ||
-                                                currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
-                                                msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
+                                        ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                                            msg = msg,
+                                            linkedParentStudentIds = listOf(activeStudent.id),
+                                            currentParentEmail = currentUser.email
                                         )
                                 }
                             }
@@ -759,14 +768,12 @@ fun ParentPortalSubScreen(
                 else chatMessages.count { msg ->
                     !msg.isPendingScheduled() &&
                         !msg.isDeletedForEveryone &&
-                        msg.studentId == activeStudent.id &&
                         msg.isFromTeacher &&
-                        msg.status != MessageStatus.READ && (
-                            activeStudent.allLinkedParents.size <= 1 ||
-                                msg.parentEmail.isBlank() ||
-                                currentUser.email.isBlank() ||
-                                currentUser.email.equals("veli@biriz.app", ignoreCase = true) ||
-                                msg.parentEmail.trim().equals(currentUser.email.trim(), ignoreCase = true)
+                        msg.status != MessageStatus.READ &&
+                        ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                            msg = msg,
+                            linkedParentStudentIds = listOf(activeStudent.id),
+                            currentParentEmail = currentUser.email
                         )
                 }
             }
@@ -960,7 +967,7 @@ fun ParentPortalSubScreen(
 
     if (isNotificationCenterOpen) {
         NotificationCenterDialog(
-            notifications = notifications,
+            notifications = safeNotifications,
             isDarkTheme = isDarkTheme,
             onDismiss = onCloseNotificationCenter,
             onNotificationClick = { notif ->

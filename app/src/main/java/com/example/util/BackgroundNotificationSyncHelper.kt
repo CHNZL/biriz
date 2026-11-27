@@ -385,10 +385,9 @@ object BackgroundNotificationSyncHelper {
             viewerIsParent = !isTeacher,
             currentParentEmail = userEmail,
             clearTimestamps = clearMap,
-            nowMillis = nowMs
-        ).filter { msg ->
-            isTeacher || linkedIds.isEmpty() || msg.studentId in linkedIds
-        }
+            nowMillis = nowMs,
+            linkedParentStudentIds = if (isTeacher) null else linkedIds
+        )
 
         val processedMsgIds = (CommunicationPersistenceHelper.loadNotifiedMessageIds(appCtx, classId) +
             cloudReadState.dismissedMessageIds).toMutableSet()
@@ -458,7 +457,15 @@ object BackgroundNotificationSyncHelper {
                 !NotificationLifecycleHelper.isNotificationDismissed(it, cloudReadState)
         }
         val rawExistingStored = CommunicationPersistenceHelper.loadNotifications(appCtx, classId, viewerKey)
-        val existingStored = NotificationLifecycleHelper.pruneDismissedNotifications(rawExistingStored, cloudReadState)
+        val existingDismissFiltered = NotificationLifecycleHelper.pruneDismissedNotifications(rawExistingStored, cloudReadState)
+        val existingStored = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+            notifications = existingDismissFiltered,
+            viewerIsTeacher = isTeacher,
+            viewerIsParent = !isTeacher,
+            linkedParentStudentIds = linkedIds,
+            currentUserEmail = userEmail,
+            messagesById = chatMessages.associateBy { it.id }
+        )
         val prunedOnOtherDevice = rawExistingStored.filterNot { kept -> existingStored.any { it.id == kept.id } }
         if (prunedOnOtherDevice.isNotEmpty()) {
             CommunicationPersistenceHelper.saveNotifications(appCtx, classId, existingStored, viewerKey)

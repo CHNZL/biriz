@@ -120,6 +120,7 @@ object NotificationLifecycleHelper {
 
     /**
      * Gelen bir sohbet mesajının mevcut oturumdaki kullanıcıya ait yeni bir gelen mesaj olup olmadığını belirler.
+     * Veli rolünde bağlı öğrenci listesi boşsa kesinlikle false döner (fail-closed).
      */
     fun isIncomingMessageForViewer(
         msg: ChatMessage,
@@ -134,14 +135,171 @@ object NotificationLifecycleHelper {
             viewerIsTeacher -> !msg.isFromTeacher
             viewerIsParent -> {
                 if (!msg.isFromTeacher) return false
-                val matchesStudent = linkedParentStudentIds.isEmpty() || msg.studentId in linkedParentStudentIds
-                val matchesEmail = msg.parentEmail.isBlank() ||
-                    currentUserEmail.isBlank() ||
-                    currentUserEmail.equals("veli@biriz.app", ignoreCase = true) ||
-                    msg.parentEmail.trim().equals(currentUserEmail.trim(), ignoreCase = true)
-                matchesStudent && matchesEmail
+                ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                    msg = msg,
+                    linkedParentStudentIds = linkedParentStudentIds,
+                    currentParentEmail = currentUserEmail
+                )
             }
             else -> false
+        }
+    }
+
+    /**
+     * Bir mesaj emoji tepkisinin mevcut oturumdaki kullanıcıya bildirim olarak iletilip
+     * iletilemeyeceğini rol, bağlı öğrenci ve çoklu veli e-posta izolasyonu ile doğrular.
+     */
+    fun isChatReactionNotificationAllowedForViewer(
+        msg: ChatMessage,
+        reactorParticipantKey: String,
+        viewerIsTeacher: Boolean,
+        viewerIsParent: Boolean,
+        linkedParentStudentIds: Collection<String>,
+        currentUserEmail: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (msg.isDeletedForEveryone || msg.isPendingScheduled(nowMillis)) return false
+        if (reactorParticipantKey.isBlank()) return false
+
+        val ownParticipantKey = ChatFeatureHelper.reactionParticipantKey(
+            viewerIsTeacher = viewerIsTeacher,
+            userEmail = currentUserEmail,
+            studentId = msg.studentId
+        )
+        val isOwnReaction = reactorParticipantKey == ownParticipantKey ||
+            (viewerIsTeacher && reactorParticipantKey == "teacher")
+        if (isOwnReaction) return false
+
+        return when {
+            viewerIsTeacher -> reactorParticipantKey != "teacher"
+            viewerIsParent -> {
+                if (!ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                        msg = msg,
+                        linkedParentStudentIds = linkedParentStudentIds,
+                        currentParentEmail = currentUserEmail
+                    )
+                ) {
+                    return false
+                }
+                // Veliye yalnızca öğretmenin bıraktığı tepkiler bildirim üretir
+                reactorParticipantKey == "teacher"
+            }
+            else -> false
+        }
+    }
+
+    /**
+     * İlk girişte veya yerel önbellekten buluta geçerken eski tepkilerin yeniymiş gibi
+     * toplu bildirim üretmesini engeller; yalnızca canlı tepki değişimlerine izin verir.
+     */
+    fun shouldEmitLiveReactionNotification(
+        msgId: String,
+        msgTimestamp: Long,
+        reactorParticipantKey: String,
+        newEmoji: String,
+        prevReactionsSnapshot: Map<String, Map<String, String>>?,
+        effectiveBaselineMs: Long
+    ): Boolean {
+        if (prevReactionsSnapshot == null || newEmoji.isBlank()) return false
+        val wasMessageTracked = prevReactionsSnapshot.containsKey(msgId)
+        if (wasMessageTracked) {
+            return prevReactionsSnapshot[msgId]?.get(reactorParticipantKey) != newEmoji
+        }
+        // Önceki anlık görüntüde hiç bulunmayan bir mesaj için yalnızca temel eşik sonrası yeni mesajlara izin ver
+        return effectiveBaselineMs > 0L && msgTimestamp > effectiveBaselineMs
+    }
+
+    /**
+     * Tek bir bildirimin veli oturumunda gösterilmeye yetkili olup olmadığını doğrular.
+     * Başka öğrenciye, başka veliye veya öğretmen ekranlarına ait bildirimleri engeller.
+     */
+    fun isNotificationAllowedForParent(
+        notif: BirizNotification,
+        linkedStudentIds: Set<String>,
+        currentUserEmail: String = "",
+        messagesById: Map<String, ChatMessage> = emptyMap()
+    ): Boolean {
+        if (isUpdateNotification(notif)) return true
+        if (linkedStudentIds.isEmpty()) return false
+
+        val targetSub = notif.targetSubPageName.uppercase()
+        if (targetSub.startsWith("ILETISIM_") ||
+            targetSub == "SINIF_LISTESI" ||
+            targetSub == "KITAPLIK" ||
+            targetSub == "YILDIZLAR" ||
+            targetSub == "TURNUVA"
+        ) {
+            return false
+        }
+
+        if (notif.type == NotificationType.MESSAGE ||
+            notif.id.startsWith("msg_notif_") ||
+            notif.id.startsWith("msg_react_") ||
+            notif.id.startsWith("sched_confirm_")
+        ) {
+            if (notif.id.startsWith("sched_confirm_")) return false
+            val targetStudentId = notif.targetId?.takeIf { it.isNotBlank() }
+                ?: if (notif.id.startsWith("msg_notif_")) notif.id.removePrefix("msg_notif_").takeIf { it.isNotBlank() } else null
+            if (targetStudentId.isNullOrBlank() || targetStudentId !in linkedStudentIds) {
+                return false
+            }
+
+            if (notif.id.startsWith("msg_react_") && messagesById.isNotEmpty()) {
+                val matchedMsg = messagesById.values.firstOrNull { m ->
+                    notif.id.startsWith("msg_react_${m.id}_")
+                }
+                if (matchedMsg != null && !ChatVisibilityHelper.isMessageOwnedByParentViewer(
+                        msg = matchedMsg,
+                        linkedParentStudentIds = linkedStudentIds,
+                        currentParentEmail = currentUserEmail
+                    )
+                ) {
+                    return false
+                }
+            }
+            return true
+        }
+
+        if (notif.type == NotificationType.STAR_REWARD ||
+            notif.type == NotificationType.LIBRARY ||
+            notif.type == NotificationType.TOURNAMENT ||
+            notif.type == NotificationType.SEATING ||
+            notif.type == NotificationType.GROUP ||
+            notif.type == NotificationType.PARENT_REGISTRATION
+        ) {
+            val tid = notif.targetId?.takeIf { it.isNotBlank() }
+            if (tid != null && tid !in linkedStudentIds) {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    /**
+     * Yerel önbellekte önceden birikmiş olsa dahi mevcut oturum rolüne / bağlı öğrencilere
+     * ait olmayan tüm özel bildirimleri ayıklar.
+     */
+    fun sanitizeNotificationsForViewer(
+        notifications: List<BirizNotification>,
+        viewerIsTeacher: Boolean,
+        viewerIsParent: Boolean,
+        linkedParentStudentIds: Collection<String>,
+        currentUserEmail: String = "",
+        messagesById: Map<String, ChatMessage> = emptyMap()
+    ): List<BirizNotification> {
+        if (viewerIsTeacher) return notifications
+        if (!viewerIsParent) {
+            return notifications.filter { isUpdateNotification(it) }
+        }
+        val linkedSet = linkedParentStudentIds.filter { it.isNotBlank() }.toSet()
+        return notifications.filter { notif ->
+            isNotificationAllowedForParent(
+                notif = notif,
+                linkedStudentIds = linkedSet,
+                currentUserEmail = currentUserEmail,
+                messagesById = messagesById
+            )
         }
     }
 

@@ -70,13 +70,36 @@ object ChatVisibilityHelper {
         return maxOf(exact, studentWide)
     }
 
+    /**
+     * Veli oturumunda bir sohbet mesajının yalnızca o velinin bağlı öğrencisine ve
+     * (çoklu veli durumunda) o velinin kendi özel sohbetine ait olduğunu fail-closed doğrular.
+     */
+    fun isMessageOwnedByParentViewer(
+        msg: ChatMessage,
+        linkedParentStudentIds: Collection<String>,
+        currentParentEmail: String
+    ): Boolean {
+        if (linkedParentStudentIds.isEmpty()) return false
+        if (msg.studentId.isBlank() || msg.studentId !in linkedParentStudentIds) return false
+
+        val msgEmail = msg.parentEmail.trim().lowercase()
+        val currEmail = currentParentEmail.trim().lowercase()
+        if (msgEmail.isNotBlank() && msgEmail != "veli@biriz.app") {
+            if (currEmail.isNotBlank() && currEmail != "veli@biriz.app") {
+                return msgEmail == currEmail
+            }
+        }
+        return true
+    }
+
     fun isMessageVisibleToViewer(
         msg: ChatMessage,
         viewerIsTeacher: Boolean,
         viewerIsParent: Boolean,
         currentParentEmail: String,
         clearTimestamps: Map<String, Long>,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        linkedParentStudentIds: Collection<String>? = null
     ): Boolean {
         return when {
             viewerIsTeacher -> {
@@ -89,6 +112,14 @@ object ChatVisibilityHelper {
                 msg.timestamp > clearTs
             }
             viewerIsParent -> {
+                if (linkedParentStudentIds != null && !isMessageOwnedByParentViewer(
+                        msg = msg,
+                        linkedParentStudentIds = linkedParentStudentIds,
+                        currentParentEmail = currentParentEmail
+                    )
+                ) {
+                    return false
+                }
                 if (msg.isPendingScheduled(nowMillis)) {
                     return false
                 }
@@ -100,7 +131,7 @@ object ChatVisibilityHelper {
                 val clearTs = clearTimestamps[msg.studentId] ?: 0L
                 msg.timestamp > clearTs
             }
-            else -> true
+            else -> false
         }
     }
 
@@ -110,7 +141,8 @@ object ChatVisibilityHelper {
         viewerIsParent: Boolean,
         currentParentEmail: String,
         clearTimestamps: Map<String, Long>,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        linkedParentStudentIds: Collection<String>? = null
     ): List<ChatMessage> {
         return messages.filter { msg ->
             isMessageVisibleToViewer(
@@ -119,7 +151,8 @@ object ChatVisibilityHelper {
                 viewerIsParent = viewerIsParent,
                 currentParentEmail = currentParentEmail,
                 clearTimestamps = clearTimestamps,
-                nowMillis = nowMillis
+                nowMillis = nowMillis,
+                linkedParentStudentIds = linkedParentStudentIds
             )
         }
     }

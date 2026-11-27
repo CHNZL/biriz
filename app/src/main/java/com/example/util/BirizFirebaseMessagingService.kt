@@ -96,6 +96,26 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
             isRead = false
         )
 
+        val linkedIds = appPrefs.getString("key_linked_student_ids", "")
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.toSet()
+            .orEmpty()
+        if (role == UserRole.PARENT && !NotificationLifecycleHelper.isNotificationAllowedForParent(
+                notif = notif,
+                linkedStudentIds = linkedIds,
+                currentUserEmail = email
+            )
+        ) {
+            return
+        }
+        if (role != UserRole.TEACHER && role != UserRole.PARENT &&
+            !NotificationLifecycleHelper.isUpdateNotification(notif)
+        ) {
+            return
+        }
+
         val prefs = NotificationPreferencesHelper.loadPreferences(applicationContext, viewerKey)
         if (!NotificationPreferencesHelper.isNotificationEnabled(prefs, notif)) return
 
@@ -108,10 +128,19 @@ class BirizFirebaseMessagingService : FirebaseMessagingService() {
             if (NotificationLifecycleHelper.isNotificationDismissed(notif, cachedReadState)) {
                 return
             }
-            val existing = CommunicationPersistenceHelper.loadNotifications(applicationContext, classId, viewerKey)
+            val rawExisting = CommunicationPersistenceHelper.loadNotifications(applicationContext, classId, viewerKey)
+            val existing = NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+                notifications = rawExisting,
+                viewerIsTeacher = isTeacher,
+                viewerIsParent = role == UserRole.PARENT,
+                linkedParentStudentIds = linkedIds,
+                currentUserEmail = email
+            )
             if (existing.none { it.id == notif.id }) {
                 val updated = (listOf(notif) + existing).distinctBy { it.id }.take(150)
                 CommunicationPersistenceHelper.saveNotifications(applicationContext, classId, updated, viewerKey)
+            } else if (existing.size != rawExisting.size) {
+                CommunicationPersistenceHelper.saveNotifications(applicationContext, classId, existing, viewerKey)
             }
         }
 

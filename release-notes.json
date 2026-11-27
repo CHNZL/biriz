@@ -1,17 +1,17 @@
 {
-  "title": "Veli Kitap Girişi, Kitap Bitti Talebi ve Hızlı Ödünç Verme",
+  "title": "Veli Mesajlaşma ve Bildirim Gizliliği Güçlendirmesi",
   "items": [
     {
-      "title": "Kitap Ekle Penceresinden Kayıtlı Kitabı Hemen Ödünç Verme",
-      "summary": "Öğretmen kitap ekleme penceresinde kütüphanede zaten kayıtlı bir kitap seçildiğinde yazar ve sayfa sayısı otomatik doldurulur; öğretmen listeye dönmeden doğrudan öğrenci seçip ödünç verebilir."
+      "title": "Öğrenci ve Veli Bazlı Kesin Mesaj İzolasyonu",
+      "summary": "Veli hesaplarında özel mesajlar, okunmamış sayaçlar ve mesaj tepki bildirimleri yalnızca o velinin bağlı olduğu öğrenci ve kendi özel sohbetiyle sınırlandırıldı; başka öğrencilerin mesaj veya tepki bildirimlerinin görünmesi tamamen engellendi."
     },
     {
-      "title": "Veli Hesabından Kitap Girişi ve Kitap Bitti Talebi",
-      "summary": "Veliler öğrencinin okumaya başladığı kitabı adı, sayfa sayısı ve başlama tarihiyle öğretmenin onayına gönderebilir; kitap kütüphanede kayıtlıysa sayfa sayısı kitaplıktan kilitli olarak otomatik gelir. Aktif okunan her kitap için bitiş tarihi girilerek Kitap Bitti talebi iletilebilir."
+      "title": "İlk Girişte Geçmiş Tepki Bildirimi Engelleme",
+      "summary": "Yeni bir veli koduyla giriş yapıldığında veya rol değiştirildiğinde dinleyiciler doğru öğrenci kapsamıyla başlatılır; geçmişte bırakılmış mesaj tepkileri yeni bildirim gibi tetiklenmez."
     },
     {
-      "title": "Öğretmen Onay Merkezi ve İki Yönlü Bildirimler",
-      "summary": "Öğretmen kitaplığındaki Veli Kitap İstekleri sekmesinden gelen talepler incelenip onaylanabilir veya açıklama ile reddedilebilir; yeni talepler öğretmene, onay ve ret sonuçları veliye anında bildirim olarak iletilir."
+      "title": "Önbellekteki Yetkisiz Bildirimlerin Otomatik Temizlenmesi",
+      "summary": "Önceki oturumlardan cihaz önbelleğinde kalmış olabilecek başka öğrenciye ait bildirimler uygulama açılışında ve arka plan eşitlemesinde otomatik olarak temizlenir."
     }
   ]
 }

@@ -4662,5 +4662,317 @@ class ExampleUnitTest {
     assertTrue(parentRes.newNotifications.any { it.title.contains("Reddedildi") && it.message.contains("Sayfa sayısı hatalı girilmiş") })
     assertFalse(parentRes.newNotifications.any { it.message.contains("Zeynep") })
   }
+
+  @Test
+  fun testParentChatAndReactionStrictPrivacyIsolation() {
+    val msgArasMine = com.example.data.model.ChatMessage(
+      id = "msg_aras_1",
+      classId = "c1",
+      studentId = "s_aras",
+      studentName = "ARAS GÖKKAYA",
+      studentNumber = "10",
+      parentName = "Aras Annesi",
+      parentEmail = "aras.anne@example.com",
+      isFromTeacher = false,
+      senderName = "Aras Annesi",
+      text = "Merhaba hocam",
+      timestamp = 50_000L,
+      reactions = mapOf("teacher" to "👍")
+    )
+    val msgArasOtherParent = msgArasMine.copy(
+      id = "msg_aras_2",
+      parentName = "Aras Babası",
+      parentEmail = "aras.baba@example.com",
+      text = "Baba özel mesajı"
+    )
+    val msgAhmet = msgArasMine.copy(
+      id = "msg_ahmet_1",
+      studentId = "s_ahmet",
+      studentName = "AHMET ASAF IŞIK",
+      parentName = "Ahmet Velisi",
+      parentEmail = "ahmet.veli@example.com",
+      text = "Teşekkür ederim"
+    )
+    val msgAyse = msgArasMine.copy(
+      id = "msg_ayse_1",
+      studentId = "s_ayse",
+      studentName = "AYŞE MİRAY BORHAN",
+      parentName = "Ayşe Velisi",
+      parentEmail = "ayse.veli@example.com",
+      text = "iyi akşamlar hocam"
+    )
+    val msgTeacherToAhmet = msgAhmet.copy(
+      id = "msg_ahmet_t",
+      isFromTeacher = true,
+      senderName = "Cihan Özel"
+    )
+    val msgTeacherToArasMine = msgArasMine.copy(
+      id = "msg_aras_t",
+      isFromTeacher = true,
+      senderName = "Cihan Özel"
+    )
+
+    val allMessages = listOf(msgArasMine, msgArasOtherParent, msgAhmet, msgAyse, msgTeacherToAhmet, msgTeacherToArasMine)
+
+    // 1. Sadece ARAS GÖKKAYA'ya bağlı anne (aras.anne@example.com) yalnızca kendi özel sohbetini görür
+    val visibleForArasMom = com.example.util.ChatVisibilityHelper.filterVisibleMessages(
+      messages = allMessages,
+      viewerIsTeacher = false,
+      viewerIsParent = true,
+      currentParentEmail = "aras.anne@example.com",
+      clearTimestamps = emptyMap(),
+      linkedParentStudentIds = listOf("s_aras")
+    )
+    assertEquals(listOf("msg_aras_1", "msg_aras_t"), visibleForArasMom.map { it.id })
+
+    // 2. Fail-closed: linkedParentStudentIds boşken (ör. giriş geçiş anı) HİÇBİR mesaj ve tepki görünmez
+    val visibleWhenUnlinked = com.example.util.ChatVisibilityHelper.filterVisibleMessages(
+      messages = allMessages,
+      viewerIsTeacher = false,
+      viewerIsParent = true,
+      currentParentEmail = "aras.anne@example.com",
+      clearTimestamps = emptyMap(),
+      linkedParentStudentIds = emptyList()
+    )
+    assertTrue(visibleWhenUnlinked.isEmpty())
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isIncomingMessageForViewer(
+        msg = msgTeacherToAhmet,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = emptyList(),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgAhmet,
+        reactorParticipantKey = "teacher",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = emptyList(),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+
+    // 3. Tepki bildirimi: ARAS velisi AHMET veya AYŞE mesajlarına verilen öğretmen tepkisini ASLA almaz
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgAhmet,
+        reactorParticipantKey = "teacher",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s_aras"),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgAyse,
+        reactorParticipantKey = "teacher",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s_aras"),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+
+    // 4. Çoklu veli gizliliği: ARAS'ın annesi, ARAS'ın babasının özel mesajına gelen tepkiyi ASLA almaz
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgArasOtherParent,
+        reactorParticipantKey = "teacher",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s_aras"),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+
+    // 5. Kendi öğrencisinin kendi sohbetine öğretmenin bıraktığı tepki izinli, kendi bıraktığı tepki engelli
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgArasMine,
+        reactorParticipantKey = "teacher",
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s_aras"),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+    val ownKey = com.example.util.ChatFeatureHelper.reactionParticipantKey(
+      viewerIsTeacher = false,
+      userEmail = "aras.anne@example.com",
+      studentId = "s_aras"
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.isChatReactionNotificationAllowedForViewer(
+        msg = msgArasMine,
+        reactorParticipantKey = ownKey,
+        viewerIsTeacher = false,
+        viewerIsParent = true,
+        linkedParentStudentIds = listOf("s_aras"),
+        currentUserEmail = "aras.anne@example.com"
+      )
+    )
+
+    // 6. İlk girişte veya boş ilk önbellek sonrası geçmiş tepkiler bildirim patlatmaz; yalnızca canlı değişimler üretir
+    val loginBaseline = 100_000L
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.shouldEmitLiveReactionNotification(
+        msgId = msgArasMine.id,
+        msgTimestamp = 50_000L,
+        reactorParticipantKey = "teacher",
+        newEmoji = "👍",
+        prevReactionsSnapshot = null,
+        effectiveBaselineMs = loginBaseline
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.shouldEmitLiveReactionNotification(
+        msgId = msgArasMine.id,
+        msgTimestamp = 50_000L,
+        reactorParticipantKey = "teacher",
+        newEmoji = "👍",
+        prevReactionsSnapshot = emptyMap(),
+        effectiveBaselineMs = loginBaseline
+      )
+    )
+    assertTrue(
+      com.example.util.NotificationLifecycleHelper.shouldEmitLiveReactionNotification(
+        msgId = msgArasMine.id,
+        msgTimestamp = 50_000L,
+        reactorParticipantKey = "teacher",
+        newEmoji = "👍",
+        prevReactionsSnapshot = mapOf(msgArasMine.id to emptyMap()),
+        effectiveBaselineMs = loginBaseline
+      )
+    )
+    assertFalse(
+      com.example.util.NotificationLifecycleHelper.shouldEmitLiveReactionNotification(
+        msgId = msgArasMine.id,
+        msgTimestamp = 50_000L,
+        reactorParticipantKey = "teacher",
+        newEmoji = "👍",
+        prevReactionsSnapshot = mapOf(msgArasMine.id to mapOf("teacher" to "👍")),
+        effectiveBaselineMs = loginBaseline
+      )
+    )
+  }
+
+  @Test
+  fun testSanitizeCachedNotificationsPurgesLeakedCrossStudentAndTeacherAlerts() {
+    val arasBookReminder = com.example.data.model.BirizNotification(
+      id = "notif_book_overdue_b1_s_aras_w0",
+      title = "⏰ Kitap İade Hatırlatması",
+      message = "ARAS GÖKKAYA, Malatyalı İlyas kitabını ödünç alalı 14 gün oldu.",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.LIBRARY,
+      targetSubPageName = "READING",
+      targetId = "s_aras"
+    )
+    val leakedAhmetReact = com.example.data.model.BirizNotification(
+      id = "msg_react_msg_ahmet_1_teacher_123",
+      title = "👍 Mesajınıza Tepki Bıraktı",
+      message = "Cihan Özel (AHMET ASAF IŞIK): \"Teşekkür ederim\" mesajına 👍 tepkisi verdi.",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "COMMUNICATION",
+      targetId = "s_ahmet"
+    )
+    val leakedAyseReact = leakedAhmetReact.copy(
+      id = "msg_react_msg_ayse_1_teacher_456",
+      message = "Cihan Özel (AYŞE MİRAY BORHAN): \"iyi akşamlar hocam\" mesajına 👍 tepkisi verdi.",
+      targetId = "s_ayse"
+    )
+    val leakedOtherParentSameStudentReact = com.example.data.model.BirizNotification(
+      id = "msg_react_msg_aras_baba_teacher_789",
+      title = "👍 Mesajınıza Tepki Bıraktı",
+      message = "Cihan Özel (ARAS GÖKKAYA): \"Baba mesajı\" mesajına 👍 tepkisi verdi.",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "COMMUNICATION",
+      targetId = "s_aras"
+    )
+    val teacherOnlyNotif = com.example.data.model.BirizNotification(
+      id = "msg_notif_s_aras",
+      title = "Yeni Veli Mesajı 💬",
+      message = "Öğretmen görünümü mesaj bildirimi",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "ILETISIM_MESAJLAR",
+      targetId = "s_aras"
+    )
+    val validArasReact = com.example.data.model.BirizNotification(
+      id = "msg_react_msg_aras_anne_teacher_999",
+      title = "👍 Mesajınıza Tepki Bıraktı",
+      message = "Cihan Özel (ARAS GÖKKAYA): \"Teşekkürler\" mesajına 👍 tepkisi verdi.",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.MESSAGE,
+      targetSubPageName = "COMMUNICATION",
+      targetId = "s_aras"
+    )
+    val appUpdateNotif = com.example.data.model.BirizNotification(
+      id = "app_update_2000",
+      title = "Yeni Sürüm",
+      message = "v2.0.0 hazır",
+      timestamp = 10_000L,
+      type = com.example.data.model.NotificationType.APP_UPDATE,
+      targetSubPageName = "APP_UPDATE",
+      targetId = "2000"
+    )
+
+    val msgsById = mapOf(
+      "msg_aras_baba" to com.example.data.model.ChatMessage(
+        id = "msg_aras_baba",
+        classId = "c1",
+        studentId = "s_aras",
+        studentName = "ARAS GÖKKAYA",
+        studentNumber = "10",
+        parentName = "Aras Babası",
+        parentEmail = "aras.baba@example.com",
+        isFromTeacher = false,
+        senderName = "Aras Babası",
+        text = "Baba mesajı",
+        timestamp = 9_000L
+      ),
+      "msg_aras_anne" to com.example.data.model.ChatMessage(
+        id = "msg_aras_anne",
+        classId = "c1",
+        studentId = "s_aras",
+        studentName = "ARAS GÖKKAYA",
+        studentNumber = "10",
+        parentName = "Aras Annesi",
+        parentEmail = "aras.anne@example.com",
+        isFromTeacher = false,
+        senderName = "Aras Annesi",
+        text = "Teşekkürler",
+        timestamp = 9_500L
+      )
+    )
+
+    val sanitized = com.example.util.NotificationLifecycleHelper.sanitizeNotificationsForViewer(
+      notifications = listOf(
+        arasBookReminder,
+        leakedAhmetReact,
+        leakedAyseReact,
+        leakedOtherParentSameStudentReact,
+        teacherOnlyNotif,
+        validArasReact,
+        appUpdateNotif
+      ),
+      viewerIsTeacher = false,
+      viewerIsParent = true,
+      linkedParentStudentIds = listOf("s_aras"),
+      currentUserEmail = "aras.anne@example.com",
+      messagesById = msgsById
+    )
+
+    assertEquals(
+      listOf(arasBookReminder.id, validArasReact.id, appUpdateNotif.id),
+      sanitized.map { it.id }
+    )
+  }
 }
+
 
