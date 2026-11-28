@@ -495,5 +495,163 @@ class ExampleRobolectricTest {
         assertEquals(1325, loadedStarsAfterCleanup.size)
         assertEquals(10084, loadedStarsAfterCleanup.sumOf { it.starCount })
     }
+
+    @Test
+    fun `test firestore auth rest parsers and per uid account session bookmarks`() {
+        val restHelper = com.example.util.FirestoreAuthRestHelper
+        val routingHelper = com.example.util.AuthSessionRoutingHelper
+
+        // 1. Parse teacher UserProfile from Firestore REST v1 document JSON
+        val teacherProfileJson = """
+            {
+              "name": "projects/biriz-app/databases/ai-studio-db/documents/users/uid_teacher_4d",
+              "fields": {
+                "userId": {"stringValue": "uid_teacher_4d"},
+                "fullName": {"stringValue": "Cihan Özel"},
+                "email": {"stringValue": "cihan.ozel@okul.edu.tr"},
+                "role": {"stringValue": "TEACHER"},
+                "kvkkAccepted": {"booleanValue": true},
+                "assignedClassId": {"stringValue": "58_merkez_ssk_4d"},
+                "assignedSchoolId": {"stringValue": "58_merkez_ssk"}
+              }
+            }
+        """.trimIndent()
+        val parsedTeacher = restHelper.parseUserProfileFromRestJson(
+            uid = "uid_teacher_4d",
+            fallbackName = "Fallback",
+            fallbackEmail = "fallback@example.com",
+            rawJson = teacherProfileJson
+        )
+        assertNotNull(parsedTeacher)
+        assertEquals("uid_teacher_4d", parsedTeacher!!.userId)
+        assertEquals("TEACHER", parsedTeacher.role)
+        assertEquals("58_merkez_ssk_4d", parsedTeacher.assignedClassId)
+        assertTrue(parsedTeacher.kvkkAccepted)
+        assertTrue(parsedTeacher.loadedFromCloud)
+        org.junit.Assert.assertFalse(parsedTeacher.isFreshRegistration)
+
+        // 2. Parse parent UserProfile with linkedStudentIds array
+        val parentProfileJson = """
+            {
+              "name": "projects/biriz-app/databases/ai-studio-db/documents/users/uid_parent_1",
+              "fields": {
+                "userId": {"stringValue": "uid_parent_1"},
+                "fullName": {"stringValue": "Ayşe Yılmaz"},
+                "email": {"stringValue": "ayse@example.com"},
+                "role": {"stringValue": "PARENT"},
+                "linkedClassroomId": {"stringValue": "58_merkez_ssk_4d"},
+                "linkedStudentIds": {
+                  "arrayValue": {
+                    "values": [
+                      {"stringValue": "std_45"},
+                      {"stringValue": "std_46"}
+                    ]
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val parsedParent = restHelper.parseUserProfileFromRestJson(
+            uid = "uid_parent_1",
+            fallbackName = "Fallback",
+            fallbackEmail = "ayse@example.com",
+            rawJson = parentProfileJson
+        )
+        assertNotNull(parsedParent)
+        assertEquals("PARENT", parsedParent!!.role)
+        assertEquals("58_merkez_ssk_4d", parsedParent.linkedClassroomId)
+        assertEquals(listOf("std_45", "std_46"), parsedParent.linkedStudentIds)
+        assertTrue(parsedParent.loadedFromCloud)
+
+        // 3. Parse runQuery response for ClassRoom and Student path extraction
+        val runQueryJson = """
+            [
+              {
+                "document": {
+                  "name": "projects/biriz-app/databases/ai-studio-db/documents/classrooms/58_merkez_ssk_4d",
+                  "fields": {
+                    "cityName": {"stringValue": "Sivas"},
+                    "districtName": {"stringValue": "Merkez"},
+                    "schoolName": {"stringValue": "SÜLEYMAN SAMİ KEPENEK İLKOKULU"},
+                    "gradeLevel": {"integerValue": "4"},
+                    "section": {"stringValue": "D"},
+                    "teacherId": {"stringValue": "uid_teacher_4d"},
+                    "teacherName": {"stringValue": "Cihan Özel"},
+                    "teacherEmail": {"stringValue": "cihan.ozel@okul.edu.tr"},
+                    "inviteCode": {"stringValue": "ABC123"}
+                  }
+                }
+              },
+              {
+                "readTime": "2026-11-28T06:00:00Z"
+              }
+            ]
+        """.trimIndent()
+        val queryDocs = restHelper.parseRunQueryDocuments(runQueryJson)
+        assertEquals(1, queryDocs.size)
+        val parsedRoom = restHelper.parseClassRoomFromRestDoc(queryDocs.first())
+        assertNotNull(parsedRoom)
+        assertEquals("58_merkez_ssk_4d", parsedRoom!!.id)
+        assertEquals(4, parsedRoom.gradeLevel)
+        assertEquals("D", parsedRoom.section)
+        assertEquals("uid_teacher_4d", parsedRoom.teacherId)
+
+        val extractedClassId = restHelper.extractParentClassroomIdFromStudentPath(
+            "projects/biriz-app/databases/ai-studio-db/documents/classrooms/58_merkez_ssk_4d/students/std_45"
+        )
+        assertEquals("58_merkez_ssk_4d", extractedClassId)
+
+        val queryPayload = restHelper.buildEqualityQueryPayload(
+            collectionId = "students",
+            fieldPath = "parentEmail",
+            stringValue = "ayse@example.com",
+            limit = 10,
+            allDescendants = true
+        )
+        assertTrue(queryPayload.contains("\"allDescendants\":true"))
+        assertTrue(queryPayload.contains("\"fieldPath\":\"parentEmail\""))
+
+        // 4. Per-UID AccountSessionBookmark upsert, lookup, cross-user isolation, and purge on delete
+        val teacherBookmark = com.example.util.AuthSessionRoutingHelper.AccountSessionBookmark(
+            uid = "uid_teacher_4d",
+            email = "cihan.ozel@okul.edu.tr",
+            roleCode = "OGRETMEN",
+            classId = "58_merkez_ssk_4d",
+            schoolName = "SÜLEYMAN SAMİ KEPENEK İLKOKULU",
+            gradeLevel = 4,
+            section = "D",
+            updatedAtMs = 1_000L
+        )
+        val parentBookmark = com.example.util.AuthSessionRoutingHelper.AccountSessionBookmark(
+            uid = "uid_parent_1",
+            email = "ayse@example.com",
+            roleCode = "VELI",
+            classId = "58_merkez_ssk_4d",
+            linkedStudentIds = listOf("std_45", "std_46"),
+            updatedAtMs = 2_000L
+        )
+        val json1 = routingHelper.upsertBookmarkJson("", teacherBookmark)
+        val json2 = routingHelper.upsertBookmarkJson(json1, parentBookmark)
+
+        val foundTeacher = routingHelper.findBookmarkFromJson(json2, "uid_teacher_4d", "cihan.ozel@okul.edu.tr")
+        assertNotNull(foundTeacher)
+        assertEquals("OGRETMEN", foundTeacher!!.roleCode)
+        assertEquals("58_merkez_ssk_4d", foundTeacher.classId)
+
+        val foundParent = routingHelper.findBookmarkFromJson(json2, "uid_parent_1", "ayse@example.com")
+        assertNotNull(foundParent)
+        assertEquals("VELI", foundParent!!.roleCode)
+        assertEquals(listOf("std_45", "std_46"), foundParent.linkedStudentIds)
+
+        // Different UID with same email MUST NOT steal another UID's bookmark
+        val wrongUidMatch = routingHelper.findBookmarkFromJson(json2, "uid_different_999", "ayse@example.com")
+        org.junit.Assert.assertNull(wrongUidMatch)
+
+        // Removing parent bookmark deletes only parent, preserving teacher bookmark
+        val afterRemove = routingHelper.removeBookmarkFromJson(json2, "uid_parent_1", "ayse@example.com")
+        org.junit.Assert.assertNull(routingHelper.findBookmarkFromJson(afterRemove, "uid_parent_1", "ayse@example.com"))
+        assertNotNull(routingHelper.findBookmarkFromJson(afterRemove, "uid_teacher_4d", "cihan.ozel@okul.edu.tr"))
+    }
 }
+
 

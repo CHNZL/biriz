@@ -331,16 +331,21 @@ fun BirizApp(viewModel: BirizViewModel) {
         ) {
             when (uiState.currentScreen) {
                 ScreenState.GOOGLE_SIGN_IN -> {
+                    val hasActiveFbUser = try { Firebase.auth.currentUser != null } catch (_: Throwable) { false }
                     GoogleSignInScreen(
                         onSignInSuccess = {
-                            viewModel.refreshCurrentUser()
+                            viewModel.refreshCurrentUser(forceRetry = true)
                         },
                         onTestSignIn = {
                             viewModel.launchTestSignIn()
                         },
                         isDarkTheme = uiState.isDarkTheme,
                         onToggleTheme = { viewModel.toggleTheme() },
-                        isAuthResolving = uiState.isAuthResolving
+                        isAuthResolving = uiState.isAuthResolving,
+                        hasActiveFirebaseSession = hasActiveFbUser,
+                        onRetrySessionResolve = {
+                            viewModel.refreshCurrentUser(forceRetry = true)
+                        }
                     )
                 }
 

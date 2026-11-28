@@ -184,4 +184,154 @@ object AuthSessionRoutingHelper {
         // 5. Bulut profili başarıyla okundu ve gerçekten henüz rol seçilmemiş yeni/rolsüz üye
         return AuthenticatedRouteTarget.ROLE_AND_KVKK
     }
+
+    /**
+     * Kullanıcının doğrulanmış oturum yer imi (yalnızca kendi UID/e-postası için).
+     * Çıkış yapıp tekrar giriş yapan aktif kullanıcıların geçici ağ/sunucu kesintisinde
+     * kilitlenmeden doğrudan kendi paneline erişebilmesini sağlar.
+     * Hesap silme veya rol silme işlemlerinde ilgili kayıt kalıcı olarak temizlenir.
+     */
+    data class AccountSessionBookmark(
+        val uid: String,
+        val email: String,
+        val roleCode: String,
+        val classId: String,
+        val cityName: String = "",
+        val districtName: String = "",
+        val schoolName: String = "",
+        val gradeLevel: Int = 4,
+        val section: String = "A",
+        val teacherName: String = "",
+        val teacherEmail: String = "",
+        val inviteCode: String = "",
+        val linkedStudentIds: List<String> = emptyList(),
+        val updatedAtMs: Long = System.currentTimeMillis()
+    )
+
+    fun upsertBookmarkJson(existingJson: String?, bookmark: AccountSessionBookmark): String {
+        val cleanUid = bookmark.uid.trim()
+        val cleanEmail = bookmark.email.trim().lowercase(Locale.ROOT)
+        if (cleanUid.isBlank() && cleanEmail.isBlank()) return existingJson.orEmpty()
+        val map = parseBookmarksMap(existingJson).toMutableMap()
+        val key = cleanUid.ifBlank { "email:$cleanEmail" }
+        // Aynı e-postaya ait eski anahtar varsa güncelle
+        if (cleanEmail.isNotBlank()) {
+            val staleKeys = map.entries
+                .filter { it.key != key && it.value.email.equals(cleanEmail, ignoreCase = true) }
+                .map { it.key }
+            staleKeys.forEach { map.remove(it) }
+        }
+        map[key] = bookmark.copy(uid = cleanUid, email = cleanEmail)
+        return serializeBookmarksMap(map)
+    }
+
+    fun findBookmarkFromJson(
+        existingJson: String?,
+        uid: String?,
+        email: String?
+    ): AccountSessionBookmark? {
+        val cleanUid = uid?.trim().orEmpty()
+        val cleanEmail = email?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        if (cleanUid.isBlank() && cleanEmail.isBlank()) return null
+        val map = parseBookmarksMap(existingJson)
+        if (cleanUid.isNotBlank()) {
+            map[cleanUid]?.let { return it }
+            map.values.firstOrNull { it.uid == cleanUid }?.let { return it }
+        }
+        if (cleanEmail.isNotBlank()) {
+            map.values.firstOrNull {
+                it.email.equals(cleanEmail, ignoreCase = true) &&
+                    (it.uid.isBlank() || cleanUid.isBlank() || it.uid == cleanUid)
+            }?.let { return it }
+        }
+        return null
+    }
+
+    fun removeBookmarkFromJson(
+        existingJson: String?,
+        uid: String?,
+        email: String?
+    ): String {
+        val cleanUid = uid?.trim().orEmpty()
+        val cleanEmail = email?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        if (existingJson.isNullOrBlank()) return ""
+        val map = parseBookmarksMap(existingJson).toMutableMap()
+        val keysToRemove = map.entries.filter { (k, v) ->
+            (cleanUid.isNotBlank() && (k == cleanUid || v.uid == cleanUid)) ||
+                (cleanEmail.isNotBlank() && v.email.equals(cleanEmail, ignoreCase = true))
+        }.map { it.key }
+        keysToRemove.forEach { map.remove(it) }
+        return serializeBookmarksMap(map)
+    }
+
+    private fun parseBookmarksMap(rawJson: String?): Map<String, AccountSessionBookmark> {
+        if (rawJson.isNullOrBlank()) return emptyMap()
+        return try {
+            val arr = org.json.JSONArray(rawJson)
+            val result = LinkedHashMap<String, AccountSessionBookmark>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val uid = obj.optString("uid").trim()
+                val email = obj.optString("email").trim().lowercase(Locale.ROOT)
+                val roleCode = obj.optString("roleCode").trim()
+                val classId = obj.optString("classId").trim()
+                if ((uid.isBlank() && email.isBlank()) || roleCode.isBlank()) continue
+                val idsArr = obj.optJSONArray("linkedStudentIds")
+                val linkedIds = mutableListOf<String>()
+                if (idsArr != null) {
+                    for (j in 0 until idsArr.length()) {
+                        val id = idsArr.optString(j).trim()
+                        if (id.isNotBlank()) linkedIds.add(id)
+                    }
+                }
+                val key = uid.ifBlank { "email:$email" }
+                result[key] = AccountSessionBookmark(
+                    uid = uid,
+                    email = email,
+                    roleCode = roleCode,
+                    classId = classId,
+                    cityName = obj.optString("cityName"),
+                    districtName = obj.optString("districtName"),
+                    schoolName = obj.optString("schoolName"),
+                    gradeLevel = obj.optInt("gradeLevel", 4),
+                    section = obj.optString("section", "A").ifBlank { "A" },
+                    teacherName = obj.optString("teacherName"),
+                    teacherEmail = obj.optString("teacherEmail"),
+                    inviteCode = obj.optString("inviteCode"),
+                    linkedStudentIds = linkedIds,
+                    updatedAtMs = obj.optLong("updatedAtMs", 0L)
+                )
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun serializeBookmarksMap(map: Map<String, AccountSessionBookmark>): String {
+        val arr = org.json.JSONArray()
+        map.values.sortedByDescending { it.updatedAtMs }.take(8).forEach { b ->
+            val idsArr = org.json.JSONArray()
+            b.linkedStudentIds.forEach { idsArr.put(it) }
+            arr.put(
+                org.json.JSONObject()
+                    .put("uid", b.uid)
+                    .put("email", b.email)
+                    .put("roleCode", b.roleCode)
+                    .put("classId", b.classId)
+                    .put("cityName", b.cityName)
+                    .put("districtName", b.districtName)
+                    .put("schoolName", b.schoolName)
+                    .put("gradeLevel", b.gradeLevel)
+                    .put("section", b.section)
+                    .put("teacherName", b.teacherName)
+                    .put("teacherEmail", b.teacherEmail)
+                    .put("inviteCode", b.inviteCode)
+                    .put("linkedStudentIds", idsArr)
+                    .put("updatedAtMs", b.updatedAtMs)
+            )
+        }
+        return arr.toString()
+    }
 }
+

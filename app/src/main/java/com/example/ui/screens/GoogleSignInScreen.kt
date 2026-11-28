@@ -94,6 +94,8 @@ fun GoogleSignInScreen(
     isDarkTheme: Boolean = false,
     onToggleTheme: () -> Unit = {},
     isAuthResolving: Boolean = false,
+    hasActiveFirebaseSession: Boolean = false,
+    onRetrySessionResolve: () -> Unit = onSignInSuccess,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -317,27 +319,32 @@ fun GoogleSignInScreen(
                     }
                 }
 
-                // 3. TEK VE ANA İŞLEM: GOOGLE İLE GİRİŞ YAP BUTONU
+                // 3. ANA İŞLEM: Oturumu Doğrula (zaten giriş yapıldıysa tek dokunuş) veya Google ile Giriş Yap
                 Button(
                     onClick = {
-                        isLoading = true
-                        errorMessage = null
-                        GoogleAuthHelper.onGoogleSignInClicked(
-                            context = context,
-                            credentialManager = credentialManager,
-                            onAuthSuccess = {
-                                onSignInSuccess()
-                                isLoading = false
-                            },
-                            onAuthError = { err ->
-                                isLoading = false
-                                errorMessage = err
-                            },
-                            scope = coroutineScope,
-                            onAuthCancelled = {
-                                isLoading = false
-                            }
-                        )
+                        if (hasActiveFirebaseSession) {
+                            errorMessage = null
+                            onRetrySessionResolve()
+                        } else {
+                            isLoading = true
+                            errorMessage = null
+                            GoogleAuthHelper.onGoogleSignInClicked(
+                                context = context,
+                                credentialManager = credentialManager,
+                                onAuthSuccess = {
+                                    onSignInSuccess()
+                                    isLoading = false
+                                },
+                                onAuthError = { err ->
+                                    isLoading = false
+                                    errorMessage = err
+                                },
+                                scope = coroutineScope,
+                                onAuthCancelled = {
+                                    isLoading = false
+                                }
+                            )
+                        }
                     },
                     enabled = !effectiveLoading,
                     modifier = Modifier
@@ -376,6 +383,20 @@ fun GoogleSignInScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.5.sp
                         )
+                    } else if (hasActiveFirebaseSession) {
+                        Icon(
+                            imageVector = Icons.Default.VerifiedUser,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Hesabımla Devam Et (Yeniden Dene)",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     } else {
                         // Google "G" Logosu
                         Surface(
@@ -399,6 +420,43 @@ fun GoogleSignInScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.5.sp,
                             letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+
+                if (hasActiveFirebaseSession && !effectiveLoading) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        onClick = {
+                            isLoading = true
+                            errorMessage = null
+                            GoogleAuthHelper.onGoogleSignInClicked(
+                                context = context,
+                                credentialManager = credentialManager,
+                                onAuthSuccess = {
+                                    onSignInSuccess()
+                                    isLoading = false
+                                },
+                                onAuthError = { err ->
+                                    isLoading = false
+                                    errorMessage = err
+                                },
+                                scope = coroutineScope,
+                                onAuthCancelled = {
+                                    isLoading = false
+                                }
+                            )
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.Transparent,
+                        modifier = Modifier.testTag("switch_google_account_button")
+                    ) {
+                        Text(
+                            text = "Farklı Google Hesabıyla Giriş Yap",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isDarkTheme) BirizTurquoise else BirizNavyPrimary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                         )
                     }
                 }

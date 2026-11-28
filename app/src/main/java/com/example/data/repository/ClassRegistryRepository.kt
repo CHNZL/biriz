@@ -2419,6 +2419,82 @@ class ClassRegistryRepository(
         }
     }
 
+    private sealed class ProfileProbeResult {
+        data class Existing(val profile: com.example.data.model.UserProfile) : ProfileProbeResult()
+        object Missing : ProfileProbeResult()
+    }
+
+    private sealed class TombstoneProbeResult {
+        data class Deleted(val snapshot: com.google.firebase.firestore.DocumentSnapshot? = null) : TombstoneProbeResult()
+        object NotDeleted : TombstoneProbeResult()
+    }
+
+    private suspend fun <T : Any> raceFirstMatch(
+        vararg producers: suspend () -> T?
+    ): T? = coroutineScope {
+        if (producers.isEmpty()) return@coroutineScope null
+        val winner = kotlinx.coroutines.CompletableDeferred<T?>()
+        val remaining = java.util.concurrent.atomic.AtomicInteger(producers.size)
+        val jobs = producers.map { block ->
+            launch {
+                val value = try {
+                    block()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                if (value != null) {
+                    winner.complete(value)
+                } else if (remaining.decrementAndGet() == 0) {
+                    winner.complete(null)
+                }
+            }
+        }
+        try {
+            winner.await()
+        } finally {
+            jobs.forEach { it.cancel() }
+        }
+    }
+
+    private suspend fun getQuickBearerToken(): String? {
+        return try {
+            withTimeoutOrNull(1200L) {
+                Firebase.auth.currentUser?.getIdToken(false)?.await()?.token
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun snapshotToUserProfile(
+        snapshot: com.google.firebase.firestore.DocumentSnapshot,
+        uid: String,
+        fallbackName: String,
+        fallbackEmail: String
+    ): com.example.data.model.UserProfile {
+        @Suppress("UNCHECKED_CAST")
+        val rawLinkedStudentIds = (snapshot.get("linkedStudentIds") as? List<*>)
+            ?.mapNotNull { it as? String }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+        return com.example.data.model.UserProfile(
+            id = snapshot.id,
+            userId = snapshot.getString("userId") ?: uid,
+            fullName = snapshot.getString("fullName") ?: fallbackName,
+            email = snapshot.getString("email") ?: fallbackEmail,
+            role = snapshot.getString("role") ?: "UYE",
+            kvkkAccepted = snapshot.getBoolean("kvkkAccepted") ?: false,
+            assignedClassId = snapshot.getString("assignedClassId"),
+            assignedSchoolId = snapshot.getString("assignedSchoolId"),
+            linkedClassroomId = snapshot.getString("linkedClassroomId"),
+            linkedStudentIds = rawLinkedStudentIds,
+            isFreshRegistration = false,
+            loadedFromCloud = true
+        )
+    }
+
     suspend fun ensureUserProfile(uid: String, fullName: String, email: String): com.example.data.model.UserProfile {
         if (isAccountDeleting || isGlobalAccountDeleting || Firebase.auth.currentUser == null) {
             return com.example.data.model.UserProfile(
@@ -2435,31 +2511,98 @@ class ClassRegistryRepository(
         val cleanEmail = email.trim().lowercase(java.util.Locale.ROOT)
         val tombstoneId = deletedAccountTombstoneId(cleanEmail, uid)
         val userRef = db.collection("users").document(uid)
+        val tombstoneRef = db.collection("deleted_accounts").document(tombstoneId)
+        val ctx = appContext
+        val bearerToken = getQuickBearerToken()
 
-        val (snapshot, tombstoneSnap) = coroutineScope {
+        val (userProbe, tombstoneProbe) = coroutineScope {
             val userDeferred = async {
-                try {
-                    withTimeoutOrNull(5000L) { userRef.get(Source.SERVER).await() }
-                        ?: withTimeoutOrNull(3000L) { userRef.get().await() }
-                } catch (_: Exception) {
-                    try {
-                        withTimeoutOrNull(2500L) { userRef.get().await() }
+                val networkProbe = raceFirstMatch<ProfileProbeResult>(
+                    {
+                        if (ctx == null) null
+                        else when (
+                            val res = com.example.util.FirestoreAuthRestHelper.fetchUserProfile(
+                                context = ctx,
+                                uid = uid,
+                                fallbackName = fullName,
+                                fallbackEmail = email,
+                                bearerToken = bearerToken
+                            )
+                        ) {
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found ->
+                                ProfileProbeResult.Existing(res.data)
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.NotFound ->
+                                ProfileProbeResult.Missing
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Error ->
+                                null
+                        }
+                    },
+                    {
+                        val snap = try {
+                            withTimeoutOrNull(4500L) { userRef.get(Source.SERVER).await() }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        when {
+                            snap != null && snap.exists() ->
+                                ProfileProbeResult.Existing(snapshotToUserProfile(snap, uid, fullName, email))
+                            snap != null && !snap.exists() ->
+                                ProfileProbeResult.Missing
+                            else -> null
+                        }
+                    }
+                )
+                if (networkProbe != null) {
+                    networkProbe
+                } else {
+                    // Hem REST hem SDK sunucu çağrısı başarısız/zaman aşımıysa yerel Firestore disk önbelleğini dene
+                    val cachedSnap = try {
+                        withTimeoutOrNull(1200L) { userRef.get(Source.CACHE).await() }
                     } catch (_: Exception) {
+                        null
+                    }
+                    if (cachedSnap != null && cachedSnap.exists()) {
+                        ProfileProbeResult.Existing(snapshotToUserProfile(cachedSnap, uid, fullName, email))
+                    } else {
                         null
                     }
                 }
             }
+
             val tombstoneDeferred = async {
-                try {
-                    withTimeoutOrNull(4000L) {
-                        db.collection("deleted_accounts").document(tombstoneId).get(Source.SERVER).await()
-                    } ?: withTimeoutOrNull(2000L) {
-                        db.collection("deleted_accounts").document(tombstoneId).get().await()
+                raceFirstMatch<TombstoneProbeResult>(
+                    {
+                        if (ctx == null) null
+                        else when (
+                            com.example.util.FirestoreAuthRestHelper.checkDeletedAccountTombstone(
+                                context = ctx,
+                                tombstoneId = tombstoneId,
+                                bearerToken = bearerToken
+                            )
+                        ) {
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found ->
+                                TombstoneProbeResult.Deleted(null)
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.NotFound ->
+                                TombstoneProbeResult.NotDeleted
+                            is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Error ->
+                                null
+                        }
+                    },
+                    {
+                        val snap = try {
+                            withTimeoutOrNull(3500L) { tombstoneRef.get(Source.SERVER).await() }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        when {
+                            snap != null && snap.exists() -> TombstoneProbeResult.Deleted(snap)
+                            snap != null && !snap.exists() -> TombstoneProbeResult.NotDeleted
+                            else -> null
+                        }
                     }
-                } catch (_: Exception) {
-                    null
-                }
+                ) ?: TombstoneProbeResult.NotDeleted
             }
+
             Pair(userDeferred.await(), tombstoneDeferred.await())
         }
 
@@ -2475,11 +2618,45 @@ class ClassRegistryRepository(
             )
         }
 
-        val wasAccountExplicitlyDeleted = tombstoneSnap != null && tombstoneSnap.exists()
-        val isBrandNewUserOnServer = snapshot != null && !snapshot.exists()
+        val wasAccountExplicitlyDeleted = tombstoneProbe is TombstoneProbeResult.Deleted
+        val tombstoneSnap = (tombstoneProbe as? TombstoneProbeResult.Deleted)?.snapshot
 
-        // Eğer kullanıcı hesabını silip tekrar üye olduysa (yeni UID veya silme mezar taşı varsa),
-        // önceki hesaptan kalan tüm yetim Firestore verilerini temizle ve sıfırdan başlat!
+        // Eğer kullanıcı profili gerçekten mevcut ve silme mezar taşı yoksa doğrudan döndür
+        if (!wasAccountExplicitlyDeleted && userProbe is ProfileProbeResult.Existing) {
+            scope.launch {
+                purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail, force = false)
+            }
+            return userProbe.profile
+        }
+
+        val isBrandNewUserOnServer = userProbe is ProfileProbeResult.Missing
+
+        // Güvenlik ağı: Hesap silinmemişse ama users/{uid} belgesi eksikse, önce bu UID'ye ait mevcut sınıf var mı kontrol et
+        if (!wasAccountExplicitlyDeleted && isBrandNewUserOnServer) {
+            val existingOwnedClass = findTeacherClassroom(
+                uid = uid,
+                teacherEmail = email,
+                allowEmailFallbackForDifferentUid = false,
+                allowFullCollectionScan = false
+            )
+            if (existingOwnedClass != null) {
+                healTeacherUserAssignment(uid, existingOwnedClass.id)
+                return com.example.data.model.UserProfile(
+                    id = uid,
+                    userId = uid,
+                    fullName = fullName,
+                    email = email,
+                    role = "TEACHER",
+                    kvkkAccepted = true,
+                    assignedClassId = existingOwnedClass.id,
+                    isFreshRegistration = false,
+                    loadedFromCloud = true
+                )
+            }
+        }
+
+        // Eğer kullanıcı ilk kez kayıt oluyorsa veya hesabını sildikten sonra tekrar üye olduysa,
+        // önceki hesaptan kalan yetim Firestore verilerini temizle ve sıfırdan başlat!
         if (wasAccountExplicitlyDeleted || isBrandNewUserOnServer) {
             purgeOrphanedDataOnFreshRegistration(
                 newUid = uid,
@@ -2514,7 +2691,7 @@ class ClassRegistryRepository(
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             try {
-                withTimeoutOrNull(5000L) {
+                withTimeoutOrNull(4500L) {
                     userRef.set(freshPayload).await()
                 }
             } catch (e: Exception) {
@@ -2530,37 +2707,12 @@ class ClassRegistryRepository(
                 kvkkAccepted = false,
                 assignedClassId = null,
                 assignedSchoolId = null,
-                isFreshRegistration = true
-            )
-        }
-
-        // Mevcut kullanıcı girişinde en fazla 24 saatte bir aynı kullanıcıya ait duplicate kontrolü çalıştır
-        scope.launch {
-            purgeStaleAndOrphanedUserDocuments(activeUid = uid, activeEmail = cleanEmail, force = false)
-        }
-
-        if (snapshot != null && snapshot.exists()) {
-            @Suppress("UNCHECKED_CAST")
-            val rawLinkedStudentIds = (snapshot.get("linkedStudentIds") as? List<*>)
-                ?.mapNotNull { it as? String }
-                ?.filter { it.isNotBlank() }
-                .orEmpty()
-            return com.example.data.model.UserProfile(
-                id = snapshot.id,
-                userId = snapshot.getString("userId") ?: uid,
-                fullName = snapshot.getString("fullName") ?: fullName,
-                email = snapshot.getString("email") ?: email,
-                role = snapshot.getString("role") ?: "UYE",
-                kvkkAccepted = snapshot.getBoolean("kvkkAccepted") ?: false,
-                assignedClassId = snapshot.getString("assignedClassId"),
-                assignedSchoolId = snapshot.getString("assignedSchoolId"),
-                linkedClassroomId = snapshot.getString("linkedClassroomId"),
-                linkedStudentIds = rawLinkedStudentIds,
-                isFreshRegistration = false,
+                isFreshRegistration = true,
                 loadedFromCloud = true
             )
         }
 
+        // Hem REST hem SDK hem önbellek başarısız olduysa ağ hatası sinyali ile dön
         return com.example.data.model.UserProfile(
             id = uid,
             userId = uid,
@@ -2578,48 +2730,49 @@ class ClassRegistryRepository(
         if (Firebase.auth.currentUser == null) {
             return _registeredClasses.value.firstOrNull { it.id == classroomId }
         }
-        return try {
-            val doc = withTimeoutOrNull(5000L) {
-                db.collection("classrooms").document(classroomId).get(Source.SERVER).await()
-            } ?: withTimeoutOrNull(3000L) {
-                db.collection("classrooms").document(classroomId).get().await()
-            }
-            if (doc != null && doc.exists()) {
-                val cityName = doc.getString("cityName") ?: ""
-                val districtName = doc.getString("districtName") ?: ""
-                val schoolName = doc.getString("schoolName") ?: ""
-                val gradeLevel = (doc.getLong("gradeLevel") ?: 1L).toInt()
-                val section = doc.getString("section") ?: "A"
-                val teacherId = doc.getString("teacherId") ?: ""
-                val teacherName = doc.getString("teacherName") ?: ""
-                val teacherEmail = doc.getString("teacherEmail") ?: ""
-                val inviteCode = doc.getString("inviteCode") ?: ""
+        val ctx = appContext
+        val bearerToken = getQuickBearerToken()
 
-                val room = ClassRoom(
-                    id = doc.id,
-                    cityName = cityName,
-                    districtName = districtName,
-                    schoolName = schoolName,
-                    gradeLevel = gradeLevel,
-                    section = section,
-                    teacherId = teacherId,
-                    teacherName = teacherName,
-                    teacherEmail = teacherEmail,
-                    inviteCode = inviteCode,
-                    isOccupied = true
-                )
-                if (_registeredClasses.value.none { it.id == doc.id }) {
-                    _registeredClasses.value = _registeredClasses.value + room
+        val foundRoom = raceFirstMatch<ClassRoom>(
+            {
+                if (ctx == null) null
+                else when (
+                    val res = com.example.util.FirestoreAuthRestHelper.fetchClassroomById(
+                        context = ctx,
+                        classroomId = classroomId,
+                        bearerToken = bearerToken
+                    )
+                ) {
+                    is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found -> res.data
+                    else -> null
                 }
-                room
-            } else {
-                _registeredClasses.value = _registeredClasses.value.filterNot { it.id == classroomId }
-                null
+            },
+            {
+                try {
+                    val doc = withTimeoutOrNull(4500L) {
+                        db.collection("classrooms").document(classroomId).get(Source.SERVER).await()
+                    }
+                    if (doc != null && doc.exists()) parseClassRoomFromDoc(doc) else null
+                } catch (_: Exception) {
+                    null
+                }
             }
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.GET, "classrooms/$classroomId")
+        ) ?: try {
+            val cached = withTimeoutOrNull(1200L) {
+                db.collection("classrooms").document(classroomId).get(Source.CACHE).await()
+            }
+            if (cached != null && cached.exists()) parseClassRoomFromDoc(cached) else null
+        } catch (_: Exception) {
             null
         }
+
+        if (foundRoom != null) {
+            if (_registeredClasses.value.none { it.id == foundRoom.id }) {
+                _registeredClasses.value = _registeredClasses.value + foundRoom
+            }
+            return foundRoom
+        }
+        return _registeredClasses.value.firstOrNull { it.id == classroomId }
     }
 
     private fun docToClassRoom(doc: com.google.firebase.firestore.DocumentSnapshot, fallbackUid: String, fallbackEmail: String): ClassRoom {
@@ -2652,47 +2805,105 @@ class ClassRegistryRepository(
         }
 
         val cleanEmail = teacherEmail.trim()
+        val lowerEmail = cleanEmail.lowercase(java.util.Locale.ROOT)
+        val ctx = appContext
+        val bearerToken = getQuickBearerToken()
 
-        // 1. Query Firestore classrooms from SERVER first by teacherId (& optionally teacherEmail)
-        val parallelDoc = try {
-            coroutineScope {
-                val byUidDeferred = async {
-                    withTimeoutOrNull(4500L) {
-                        db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get(Source.SERVER).await()
-                    }?.documents?.firstOrNull()
-                        ?: withTimeoutOrNull(2500L) {
-                            db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get().await()
-                        }?.documents?.firstOrNull()
+        // 1. Yüksek hızlı paralel yarış: Direct HTTPS REST (:runQuery) + Firestore SDK (teacherId & teacherEmail)
+        val producers = mutableListOf<suspend () -> ClassRoom?>()
+        if (ctx != null && uid.isNotBlank()) {
+            producers.add {
+                when (
+                    val res = com.example.util.FirestoreAuthRestHelper.findTeacherClassroomByField(
+                        context = ctx,
+                        fieldPath = "teacherId",
+                        fieldValue = uid,
+                        fallbackUid = uid,
+                        fallbackEmail = cleanEmail,
+                        bearerToken = bearerToken
+                    )
+                ) {
+                    is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found -> res.data
+                    else -> null
                 }
-                val byEmailDeferred = if (allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
-                    async {
-                        withTimeoutOrNull(4500L) {
-                            db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get(Source.SERVER).await()
-                        }?.documents?.firstOrNull()
-                    }
-                } else null
-                byUidDeferred.await() ?: byEmailDeferred?.await()
             }
-        } catch (_: Exception) { null }
-
-        if (parallelDoc != null && parallelDoc.exists()) {
-            val room = docToClassRoom(parallelDoc, uid, teacherEmail)
-            if (_registeredClasses.value.none { it.id == parallelDoc.id }) {
-                _registeredClasses.value = _registeredClasses.value + room
-            }
-            healTeacherUserAssignment(uid, room.id)
-            return room
         }
+        if (ctx != null && allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
+            val emailVariants = listOfNotNull(cleanEmail, lowerEmail.takeIf { it != cleanEmail }).distinct()
+            for (emailVar in emailVariants) {
+                producers.add {
+                    when (
+                        val res = com.example.util.FirestoreAuthRestHelper.findTeacherClassroomByField(
+                            context = ctx,
+                            fieldPath = "teacherEmail",
+                            fieldValue = emailVar,
+                            fallbackUid = uid,
+                            fallbackEmail = cleanEmail,
+                            bearerToken = bearerToken
+                        )
+                    ) {
+                        is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found -> res.data
+                        else -> null
+                    }
+                }
+            }
+        }
+        if (uid.isNotBlank()) {
+            producers.add {
+                val doc = withTimeoutOrNull(4000L) {
+                    db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get(Source.SERVER).await()
+                }?.documents?.firstOrNull()
+                if (doc != null && doc.exists()) docToClassRoom(doc, uid, cleanEmail) else null
+            }
+        }
+        if (allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
+            producers.add {
+                val doc = withTimeoutOrNull(4000L) {
+                    db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get(Source.SERVER).await()
+                }?.documents?.firstOrNull()
+                if (doc != null && doc.exists()) docToClassRoom(doc, uid, cleanEmail) else null
+            }
+        }
+
+        val racedRoom = raceFirstMatch(*producers.toTypedArray())
+        if (racedRoom != null) {
+            if (_registeredClasses.value.none { it.id == racedRoom.id }) {
+                _registeredClasses.value = _registeredClasses.value + racedRoom
+            }
+            healTeacherUserAssignment(uid, racedRoom.id)
+            return racedRoom
+        }
+
+        // 2. Yerel Firestore disk önbelleği (Source.CACHE) kontrolü (~10ms)
+        try {
+            val cachedByUid = if (uid.isNotBlank()) {
+                withTimeoutOrNull(1200L) {
+                    db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get(Source.CACHE).await()
+                }?.documents?.firstOrNull()
+            } else null
+            val cachedByEmail = if (cachedByUid == null && allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
+                withTimeoutOrNull(1200L) {
+                    db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get(Source.CACHE).await()
+                }?.documents?.firstOrNull()
+            } else null
+            val cachedDoc = cachedByUid ?: cachedByEmail
+            if (cachedDoc != null && cachedDoc.exists()) {
+                val room = docToClassRoom(cachedDoc, uid, cleanEmail)
+                if (_registeredClasses.value.none { it.id == room.id }) {
+                    _registeredClasses.value = _registeredClasses.value + room
+                }
+                healTeacherUserAssignment(uid, room.id)
+                return room
+            }
+        } catch (_: Exception) {}
 
         if (!allowFullCollectionScan) {
             return null
         }
 
-        // 2. Fallback scan over all classrooms in Firestore
+        // 3. Yalnızca gerektiğinde kısa süreli genel tarama yedeği
         try {
-            val allClassrooms = withTimeoutOrNull(4500L) {
-                db.collection("classrooms").get(Source.SERVER).await()
-            } ?: withTimeoutOrNull(2500L) {
+            val allClassrooms = withTimeoutOrNull(3500L) {
                 db.collection("classrooms").get().await()
             }
             val matchedDoc = allClassrooms?.documents?.firstOrNull { doc ->
@@ -2963,107 +3174,143 @@ class ClassRegistryRepository(
             val uid = Firebase.auth.currentUser?.uid
             val cleanPreferredClassId = preferredClassId?.trim()?.takeIf { it.isNotBlank() && it != "default" }
             val cleanPreferredStudentIds = preferredStudentIds.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+            val ctx = appContext
+            val bearerToken = getQuickBearerToken()
 
-            // 3A. Hızlı Yol 1: Kullanıcının kayıtlı linkedClassroomId + linkedStudentIds bilgisiyle doğrudan 2-3 belge oku
+            // 3A. Hızlı Yol 1: Kullanıcının kayıtlı linkedClassroomId + linkedStudentIds bilgisiyle REST + SDK yarışlı doğrudan okuma
             if (cleanPreferredClassId != null) {
-                try {
-                    val classDoc = withTimeoutOrNull(3500L) {
-                        db.collection("classrooms").document(cleanPreferredClassId).get().await()
+                val fastClassMatches = raceFirstMatch<List<Pair<Student, ClassRoom>>>(
+                    {
+                        if (ctx == null) null
+                        else {
+                            val roomRes = com.example.util.FirestoreAuthRestHelper.fetchClassroomById(ctx, cleanPreferredClassId, bearerToken)
+                            val room = (roomRes as? com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found)?.data ?: return@raceFirstMatch null
+                            val stuRes = com.example.util.FirestoreAuthRestHelper.fetchStudentsInClassroom(ctx, cleanPreferredClassId, bearerToken)
+                            val studentsList = (stuRes as? com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found)?.data ?: return@raceFirstMatch null
+                            val matched = studentsList.filter { s ->
+                                s.parentEmail?.trim().equals(cleanEmail, ignoreCase = true) ||
+                                    s.allLinkedParents.any { it.email.trim().equals(cleanEmail, ignoreCase = true) }
+                            }.map { Pair(it, room) }
+                            matched.takeIf { it.isNotEmpty() }
+                        }
+                    },
+                    {
+                        try {
+                            val classDoc = withTimeoutOrNull(3000L) {
+                                db.collection("classrooms").document(cleanPreferredClassId).get().await()
+                            } ?: withTimeoutOrNull(1000L) {
+                                db.collection("classrooms").document(cleanPreferredClassId).get(Source.CACHE).await()
+                            }
+                            if (classDoc != null && classDoc.exists()) {
+                                if (cleanPreferredStudentIds.isNotEmpty()) {
+                                    val directMatches = coroutineScope {
+                                        cleanPreferredStudentIds.map { sId ->
+                                            async {
+                                                val sDoc = withTimeoutOrNull(2500L) {
+                                                    classDoc.reference.collection("students").document(sId).get().await()
+                                                } ?: withTimeoutOrNull(1000L) {
+                                                    classDoc.reference.collection("students").document(sId).get(Source.CACHE).await()
+                                                }
+                                                if (sDoc != null) parseStudentAndRoomPair(sDoc, classDoc, cleanEmail) else null
+                                            }
+                                        }.awaitAll().filterNotNull()
+                                    }
+                                    directMatches.takeIf { it.isNotEmpty() }
+                                } else {
+                                    val studentsSnap = withTimeoutOrNull(3000L) {
+                                        classDoc.reference.collection("students").get().await()
+                                    } ?: withTimeoutOrNull(1000L) {
+                                        classDoc.reference.collection("students").get(Source.CACHE).await()
+                                    }
+                                    studentsSnap?.documents?.mapNotNull { sDoc ->
+                                        parseStudentAndRoomPair(sDoc, classDoc, cleanEmail)
+                                    }?.takeIf { it.isNotEmpty() }
+                                }
+                            } else null
+                        } catch (_: Exception) { null }
                     }
-                    if (classDoc != null && classDoc.exists()) {
-                        if (cleanPreferredStudentIds.isNotEmpty()) {
-                            val directMatches = coroutineScope {
-                                cleanPreferredStudentIds.map { sId ->
-                                    async {
-                                        val sDoc = withTimeoutOrNull(3000L) {
-                                            classDoc.reference.collection("students").document(sId).get().await()
-                                        }
-                                        if (sDoc != null) parseStudentAndRoomPair(sDoc, classDoc, cleanEmail) else null
-                                    }
-                                }.awaitAll().filterNotNull()
-                            }
-                            if (directMatches.isNotEmpty()) {
-                                directMatches.forEach { pair ->
-                                    if (results.none { it.first.id == pair.first.id }) {
-                                        results.add(pair)
-                                    }
-                                }
-                                observeActiveClassroom(cleanPreferredClassId)
-                                return results
-                            }
-                        } else {
-                            // Yalnızca bu sınıfın öğrencilerini kontrol et (tüm okulları tarama)
-                            val studentsSnap = withTimeoutOrNull(3500L) {
-                                classDoc.reference.collection("students").get().await()
-                            }
-                            val classMatches = studentsSnap?.documents?.mapNotNull { sDoc ->
-                                parseStudentAndRoomPair(sDoc, classDoc, cleanEmail)
-                            }.orEmpty()
-                            if (classMatches.isNotEmpty()) {
-                                classMatches.forEach { pair ->
-                                    if (results.none { it.first.id == pair.first.id }) {
-                                        results.add(pair)
-                                    }
-                                }
-                                if (!uid.isNullOrBlank()) {
-                                    scope.launch {
-                                        saveParentLinkMetadataOnUserDoc(uid, cleanPreferredClassId, classMatches.map { it.first.id })
-                                    }
-                                }
-                                observeActiveClassroom(cleanPreferredClassId)
-                                return results
-                            }
+                )
+                if (!fastClassMatches.isNullOrEmpty()) {
+                    fastClassMatches.forEach { pair ->
+                        if (results.none { it.first.id == pair.first.id }) {
+                            results.add(pair)
                         }
                     }
-                } catch (_: Exception) {}
+                    if (!uid.isNullOrBlank()) {
+                        scope.launch {
+                            saveParentLinkMetadataOnUserDoc(uid, cleanPreferredClassId, fastClassMatches.map { it.first.id })
+                        }
+                    }
+                    observeActiveClassroom(cleanPreferredClassId)
+                    return results
+                }
             }
 
-            // 3B. Hızlı Yol 2: collectionGroup("students") sorgusu ile parentEmail üzerinden doğrudan bul
-            try {
-                val emailVariants = listOfNotNull(cleanEmail, lowerEmail.takeIf { it != cleanEmail }).distinct()
-                val matchedStudentDocs = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
-                for (emailVar in emailVariants) {
-                    val cgSnap = withTimeoutOrNull(3500L) {
-                        db.collectionGroup("students").whereEqualTo("parentEmail", emailVar).limit(10).get().await()
+            // 3B. Hızlı Yol 2: Direct HTTPS REST (:runQuery allDescendants) + Firestore SDK collectionGroup("students") yarışı
+            val cgPairs = raceFirstMatch<List<Pair<Student, ClassRoom>>>(
+                {
+                    if (ctx == null) null
+                    else when (
+                        val res = com.example.util.FirestoreAuthRestHelper.findStudentsLinkedToParentByEmail(
+                            context = ctx,
+                            userEmail = cleanEmail,
+                            bearerToken = bearerToken
+                        )
+                    ) {
+                        is com.example.util.FirestoreAuthRestHelper.RestFetchResult.Found ->
+                            res.data.takeIf { it.isNotEmpty() }
+                        else -> null
                     }
-                    cgSnap?.documents?.forEach { doc ->
-                        if (matchedStudentDocs.none { it.reference.path == doc.reference.path }) {
-                            matchedStudentDocs.add(doc)
-                        }
-                    }
-                }
-                if (matchedStudentDocs.isNotEmpty()) {
-                    val classCache = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot?>()
-                    val cgPairs = mutableListOf<Pair<Student, ClassRoom>>()
-                    for (sDoc in matchedStudentDocs) {
-                        val cRef = sDoc.reference.parent.parent ?: continue
-                        val cDoc = classCache.getOrPut(cRef.id) {
-                            withTimeoutOrNull(3000L) { cRef.get().await() }
-                        } ?: continue
-                        parseStudentAndRoomPair(sDoc, cDoc, cleanEmail)?.let { cgPairs.add(it) }
-                    }
-                    if (cgPairs.isNotEmpty()) {
-                        cgPairs.forEach { pair ->
-                            if (results.none { it.first.id == pair.first.id }) {
-                                results.add(pair)
+                },
+                {
+                    try {
+                        val emailVariants = listOfNotNull(cleanEmail, lowerEmail.takeIf { it != cleanEmail }).distinct()
+                        val matchedStudentDocs = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
+                        for (emailVar in emailVariants) {
+                            val cgSnap = withTimeoutOrNull(3000L) {
+                                db.collectionGroup("students").whereEqualTo("parentEmail", emailVar).limit(10).get().await()
+                            }
+                            cgSnap?.documents?.forEach { doc ->
+                                if (matchedStudentDocs.none { it.reference.path == doc.reference.path }) {
+                                    matchedStudentDocs.add(doc)
+                                }
                             }
                         }
-                        val firstCid = cgPairs.first().second.id
-                        if (!uid.isNullOrBlank()) {
-                            scope.launch {
-                                saveParentLinkMetadataOnUserDoc(uid, firstCid, cgPairs.map { it.first.id })
+                        if (matchedStudentDocs.isNotEmpty()) {
+                            val classCache = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot?>()
+                            val built = mutableListOf<Pair<Student, ClassRoom>>()
+                            for (sDoc in matchedStudentDocs) {
+                                val cRef = sDoc.reference.parent.parent ?: continue
+                                val cDoc = classCache.getOrPut(cRef.id) {
+                                    withTimeoutOrNull(2500L) { cRef.get().await() }
+                                } ?: continue
+                                parseStudentAndRoomPair(sDoc, cDoc, cleanEmail)?.let { built.add(it) }
                             }
-                        }
-                        observeActiveClassroom(firstCid)
-                        return results
+                            built.takeIf { it.isNotEmpty() }
+                        } else null
+                    } catch (_: Exception) { null }
+                }
+            )
+            if (!cgPairs.isNullOrEmpty()) {
+                cgPairs.forEach { pair ->
+                    if (results.none { it.first.id == pair.first.id }) {
+                        results.add(pair)
                     }
                 }
-            } catch (_: Exception) {}
+                val firstCid = cgPairs.first().second.id
+                if (!uid.isNullOrBlank()) {
+                    scope.launch {
+                        saveParentLinkMetadataOnUserDoc(uid, firstCid, cgPairs.map { it.first.id })
+                    }
+                }
+                observeActiveClassroom(firstCid)
+                return results
+            }
 
-            // 3C. Yedek Tarama: İkinci veli (linkedParents dizisi) veya indeks dışı ilk kurulumlar için
+            // 3C. Sınırlı Yedek Tarama: İkinci veli (linkedParents dizisi) veya indeks dışı ilk kurulumlar için (maks 4.5 sn)
             try {
-                withTimeoutOrNull(6500L) {
-                    val classSnap = withTimeoutOrNull(4000L) {
+                withTimeoutOrNull(4500L) {
+                    val classSnap = withTimeoutOrNull(2500L) {
                         db.collection("classrooms").get().await()
                     } ?: withTimeoutOrNull(1000L) {
                         db.collection("classrooms").get(Source.CACHE).await()
@@ -3073,7 +3320,7 @@ class ClassRegistryRepository(
                         classSnap.documents.map { cDoc ->
                             async {
                                 val classId = cDoc.id
-                                val studentsSnap = withTimeoutOrNull(3500L) {
+                                val studentsSnap = withTimeoutOrNull(2500L) {
                                     db.collection("classrooms").document(classId)
                                         .collection("students").get().await()
                                 } ?: return@async emptyList<Pair<Student, ClassRoom>>()

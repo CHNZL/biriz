@@ -1,17 +1,17 @@
 {
-  "title": "Kayıtlı Hesaplarda Doğrudan Panel Açılışı ve Rol Doğrulama İyileştirmesi",
+  "title": "Hızlı ve Kesintisiz Hesap Girişi İyileştirmesi",
   "items": [
     {
-      "title": "Kayıtlı Öğretmen ve Velilerde Rol Seçim Ekranının Atlanması",
-      "summary": "Rolü zaten tanımlı olan öğretmen ve veli hesapları uygulamayı açarken veya yeniden giriş yaparken artık Öğretmen/Veli rol seçim ekranını görmeden doğrudan kendi panellerine yönlendirilir."
+      "title": "Girişte Zaman Aşımı ve Rol Doğrulama Takılmasının Giderilmesi",
+      "summary": "Hesap profili ve sınıf bilgileri artık paralel ve çok kanallı bağlantı üzerinden saniyeler içinde doğrulanır; yavaş ağ veya sunucu gecikmesi nedeniyle giriş ekranında takılma ve hata uyarısı tamamen giderildi."
     },
     {
-      "title": "Bulut Rol ve Sınıf Kurtarma Güvencesi",
-      "summary": "Hesap profil kaydı geç güncellenmiş veya büyük/küçük harf farkı içeren aktif öğretmen ve veli hesapları, buluttaki sınıf ve bağlı öğrenci kayıtları üzerinden otomatik tanınarak doğru panele açılır."
+      "title": "Kayıtlı Öğretmen ve Velilerde Anında Doğrudan Panel Açılışı",
+      "summary": "Önceden rolü tanımlı öğretmen ve veli hesapları çıkış yapıp yeniden giriş yaptıklarında bile rol seçim ekranına düşmeden ve kilitlenmeden doğrudan kendi panellerine güvenli biçimde açılır."
     },
     {
-      "title": "Yavaş Bağlantıda Yanlış Rol Seçimine Düşme Engelleyici",
-      "summary": "Geçici ağ gecikmesi veya zaman aşımı durumunda aktif kullanıcılar rol seçim ekranına yönlendirilmez; doğrulama sürerken güvenli yükleme durumu gösterilir ve bağlantı hatasında yeniden deneme imkânı sunulur."
+      "title": "Tek Dokunuşla Oturuma Devam Etme",
+      "summary": "Geçici internet kesintisi yaşansa bile açık Google oturumuyla hesap seçiciyi baştan açmadan tek dokunuşla yeniden bağlanma kolaylığı eklendi."
     }
   ]
 }

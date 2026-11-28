@@ -93,6 +93,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1732,6 +1734,33 @@ class BirizViewModel(
                 .putString("key_classroom_teacher_name", activeClass.teacherName)
                 .putString("key_classroom_teacher_email", activeClass.teacherEmail)
                 .putString("key_classroom_invite_code", activeClass.inviteCode)
+        }
+        if ((state.currentRole == UserRole.TEACHER || state.currentRole == UserRole.PARENT) &&
+            activeClass != null &&
+            activeClass.id.isNotBlank() &&
+            activeClass.id != "default" &&
+            (activeUid.isNotBlank() || state.currentUser.email.isNotBlank())
+        ) {
+            val existingBookmarks = prefs.getString("key_account_bookmarks_json", "")
+            val updatedBookmarks = AuthSessionRoutingHelper.upsertBookmarkJson(
+                existingJson = existingBookmarks,
+                bookmark = AuthSessionRoutingHelper.AccountSessionBookmark(
+                    uid = activeUid,
+                    email = state.currentUser.email,
+                    roleCode = state.currentRole.code,
+                    classId = activeClass.id,
+                    cityName = activeClass.cityName,
+                    districtName = activeClass.districtName,
+                    schoolName = activeClass.schoolName,
+                    gradeLevel = activeClass.gradeLevel,
+                    section = activeClass.section,
+                    teacherName = activeClass.teacherName,
+                    teacherEmail = activeClass.teacherEmail,
+                    inviteCode = activeClass.inviteCode,
+                    linkedStudentIds = state.linkedParentStudentIds
+                )
+            )
+            editor.putString("key_account_bookmarks_json", updatedBookmarks)
         }
         editor.apply()
     }
@@ -4109,7 +4138,7 @@ class BirizViewModel(
         )
     }
 
-    fun refreshCurrentUser() {
+    fun refreshCurrentUser(forceRetry: Boolean = false) {
         if (_uiState.value.isDeleting) return
         if (_uiState.value.isTestMode && Firebase.auth.currentUser == null) {
             return
@@ -4117,11 +4146,14 @@ class BirizViewModel(
 
         val fbUser = Firebase.auth.currentUser
         if (fbUser != null) {
-            if (lastResolvedUid == fbUser.uid && _uiState.value.currentScreen != ScreenState.GOOGLE_SIGN_IN) {
+            if (!forceRetry && lastResolvedUid == fbUser.uid && _uiState.value.currentScreen != ScreenState.GOOGLE_SIGN_IN) {
                 return
             }
-            if (refreshUserJob?.isActive == true && activeResolvingUid == fbUser.uid) {
+            if (!forceRetry && refreshUserJob?.isActive == true && activeResolvingUid == fbUser.uid) {
                 return
+            }
+            if (forceRetry) {
+                lastResolvedUid = null
             }
             refreshUserJob?.cancel()
             activeResolvingUid = fbUser.uid
@@ -4159,7 +4191,7 @@ class BirizViewModel(
                 )
             )
 
-            // Yerel önbellekten yalnızca bu kullanıcıya (UID / e-posta) ait doğrulanmış oturum bilgisini oku
+            // Yerel önbellekten yalnızca bu kullanıcıya (UID / e-posta) ait doğrulanmış oturum bilgisini ve yer imini oku
             val localPrefs = appContext?.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
             val savedUidLocal = localPrefs?.getString("key_user_uid", "") ?: ""
             val savedEmailLocal = localPrefs?.getString("key_user_email", "") ?: ""
@@ -4177,6 +4209,27 @@ class BirizViewModel(
                 savedEmail = savedEmailLocal,
                 currentEmail = userEmail
             )
+            val matchedBookmark = AuthSessionRoutingHelper.findBookmarkFromJson(
+                existingJson = localPrefs?.getString("key_account_bookmarks_json", ""),
+                uid = fbUser.uid,
+                email = userEmail
+            )
+            val bookmarkClassRoom: ClassRoom? = matchedBookmark?.takeIf {
+                it.classId.isNotBlank() && it.classId != "default"
+            }?.let { bm ->
+                ClassRoom(
+                    id = bm.classId,
+                    cityName = bm.cityName,
+                    districtName = bm.districtName,
+                    schoolName = bm.schoolName,
+                    gradeLevel = bm.gradeLevel,
+                    section = bm.section,
+                    teacherName = bm.teacherName,
+                    teacherEmail = bm.teacherEmail,
+                    inviteCode = bm.inviteCode,
+                    isOccupied = true
+                )
+            }
             val localCachedClassRoom: ClassRoom? = if (localSessionMatchesUser && savedClassIdLocal != null) {
                 _uiState.value.activeClassRoom?.takeIf { it.id == savedClassIdLocal }
                     ?: localPrefs?.let { p ->
@@ -4193,15 +4246,32 @@ class BirizViewModel(
                             isOccupied = true
                         )
                     }
-            } else null
-            val hasMatchingLocalTeacherClass = localSessionMatchesUser &&
-                savedRoleLocal == UserRole.TEACHER.code &&
-                localCachedClassRoom != null
-            val hasMatchingLocalParentSession = localSessionMatchesUser && (
-                savedRoleLocal == UserRole.PARENT.code ||
-                    savedLinkedIdsLocal.isNotEmpty() ||
-                    (_uiState.value.currentRole == UserRole.PARENT && _uiState.value.linkedParentStudentIds.isNotEmpty())
-            )
+            } else {
+                bookmarkClassRoom
+            }
+            val hasMatchingLocalTeacherClass = (
+                localSessionMatchesUser &&
+                    savedRoleLocal == UserRole.TEACHER.code &&
+                    localCachedClassRoom != null
+                ) || (
+                matchedBookmark != null &&
+                    matchedBookmark.roleCode == UserRole.TEACHER.code &&
+                    bookmarkClassRoom != null
+                )
+            val hasMatchingLocalParentSession = (
+                localSessionMatchesUser && (
+                    savedRoleLocal == UserRole.PARENT.code ||
+                        savedLinkedIdsLocal.isNotEmpty() ||
+                        (_uiState.value.currentRole == UserRole.PARENT && _uiState.value.linkedParentStudentIds.isNotEmpty())
+                    )
+                ) || (
+                matchedBookmark != null && matchedBookmark.roleCode == UserRole.PARENT.code
+                )
+            val combinedLocalLinkedIds = (
+                (if (localSessionMatchesUser) savedLinkedIdsLocal else emptyList()) +
+                    matchedBookmark?.linkedStudentIds.orEmpty() +
+                    (if (localSessionMatchesUser) _uiState.value.linkedParentStudentIds else emptyList())
+                ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
 
             fun enterTeacherDashboard(room: ClassRoom, preserveCurrentSubPage: Boolean = false) {
                 lastResolvedUid = fbUser.uid
@@ -4293,8 +4363,7 @@ class BirizViewModel(
                         enterTeacherDashboard(localCachedClassRoom, preserveCurrentSubPage = true)
                     }
                     hasMatchingLocalParentSession && localCachedClassRoom != null -> {
-                        val fallbackIds = (savedLinkedIdsLocal + _uiState.value.linkedParentStudentIds).distinct()
-                        enterParentPortal(localCachedClassRoom, fallbackIds, shouldHealRoleInCloud = false)
+                        enterParentPortal(localCachedClassRoom, combinedLocalLinkedIds, shouldHealRoleInCloud = false)
                     }
                     _uiState.value.currentScreen == ScreenState.TEACHER_DASHBOARD ||
                         _uiState.value.currentScreen == ScreenState.PARENT_PORTAL -> {
@@ -4306,157 +4375,182 @@ class BirizViewModel(
                         _uiState.value = _uiState.value.copy(
                             currentScreen = ScreenState.GOOGLE_SIGN_IN,
                             isAuthResolving = false,
-                            snackbarMessage = "Sunucu yanıtı gecikti, rolünüz doğrulanamadı. Lütfen internet bağlantınızı kontrol edip tekrar giriş yapın."
+                            snackbarMessage = "Sunucu yanıtı gecikti, rolünüz doğrulanamadı. Bağlantınızı kontrol edip yeniden deneyebilirsiniz."
                         )
                     }
                 }
             }
 
-            refreshUserJob = viewModelScope.launch {
-                try {
-                    val completed = withTimeoutOrNull(18_000L) {
-                        withTimeoutOrNull(2000L) {
-                            try { fbUser.getIdToken(false).await() } catch (_: Exception) {}
+            suspend fun executeSingleCloudResolutionAttempt(): Boolean {
+                val completed = withTimeoutOrNull(14_000L) {
+                    withTimeoutOrNull(1500L) {
+                        try { fbUser.getIdToken(false).await() } catch (_: Exception) {}
+                    }
+
+                    val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
+
+                    // Eğer kullanıcı ilk kez kayıt oluyorsa veya hesabını sildikten sonra tekrar üye olduysa,
+                    // eski hiçbir sınıf/veli bilgisini geri getirme; doğrudan Rol ve KVKK ekranından sıfır başlat!
+                    if (profile.isFreshRegistration) {
+                        val cleanedBookmarks = AuthSessionRoutingHelper.removeBookmarkFromJson(
+                            existingJson = localPrefs?.getString("key_account_bookmarks_json", ""),
+                            uid = fbUser.uid,
+                            email = userEmail
+                        )
+                        localPrefs?.edit()
+                            ?.remove("key_user_uid")
+                            ?.remove("key_saved_role")
+                            ?.remove("key_linked_classroom_id")
+                            ?.remove("key_linked_student_ids")
+                            ?.remove("key_active_parent_student_id")
+                            ?.putString("key_account_bookmarks_json", cleanedBookmarks)
+                            ?.apply()
+                        lastResolvedUid = fbUser.uid
+                        _uiState.value = _uiState.value.copy(
+                            activeClassRoom = null,
+                            currentRole = UserRole.MEMBER,
+                            isKvkkAccepted = false,
+                            linkedParentStudentIds = emptyList(),
+                            activeParentStudentId = null,
+                            isAuthResolving = false,
+                            currentScreen = ScreenState.ROLE_AND_KVKK
+                        )
+                        return@withTimeoutOrNull true
+                    }
+
+                    val isProfileTeacher = AuthSessionRoutingHelper.isTeacherRole(profile.role)
+                    val isProfileParent = AuthSessionRoutingHelper.isParentRole(profile.role)
+                    val assignedClassId = profile.assignedClassId
+                        ?.takeIf { it.isNotBlank() && it != "default" }
+                        ?: if (isProfileTeacher) localCachedClassRoom?.id?.takeIf { it.isNotBlank() && it != "default" } else null
+
+                    // 1. Eğer profilde kesin assignedClassId varsa önce doğrudan o tek belgeyi (REST+SDK yarışıyla ~250ms) oku
+                    var resolvedClass: ClassRoom? = null
+                    if (!assignedClassId.isNullOrBlank()) {
+                        resolvedClass = repository.fetchClassroomById(assignedClassId)
+                    }
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
+
+                    val preferredClassId = profile.linkedClassroomId?.takeIf { it.isNotBlank() && it != "default" }
+                        ?: if (hasMatchingLocalParentSession) localCachedClassRoom?.id?.takeIf { it.isNotBlank() && it != "default" } else null
+                    val preferredStudentIds = (profile.linkedStudentIds + combinedLocalLinkedIds)
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+
+                    // 2. Doğrudan sınıf bulunamadıysa öğretmen sınıfı ve veli öğrencilerini PARALEL sorgula
+                    var parentLinkedMatches: List<Pair<Student, ClassRoom>> = emptyList()
+                    if (resolvedClass == null) {
+                        val (teacherFound, parentFound) = coroutineScope {
+                            val teacherDeferred = async {
+                                repository.findTeacherClassroom(
+                                    uid = fbUser.uid,
+                                    teacherEmail = userEmail,
+                                    allowEmailFallbackForDifferentUid = !profile.isFreshRegistration,
+                                    allowFullCollectionScan = isProfileTeacher
+                                )
+                            }
+                            val parentDeferred = async {
+                                if (isProfileTeacher && !hasMatchingLocalParentSession) {
+                                    emptyList()
+                                } else {
+                                    repository.findStudentsLinkedToParent(
+                                        userEmail = userEmail,
+                                        preferredClassId = preferredClassId,
+                                        preferredStudentIds = preferredStudentIds
+                                    )
+                                }
+                            }
+                            Pair(teacherDeferred.await(), parentDeferred.await())
                         }
+                        resolvedClass = teacherFound
+                        parentLinkedMatches = parentFound
+                    }
 
-                        val profile = repository.ensureUserProfile(fbUser.uid, name, userEmail)
-                        if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
+                    if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
 
-                        // Eğer kullanıcı ilk kez kayıt oluyorsa veya hesabını sildikten sonra tekrar üye olduysa,
-                        // eski hiçbir sınıf/veli bilgisini geri getirme; doğrudan Rol ve KVKK ekranından sıfır başlat!
-                        if (profile.isFreshRegistration) {
-                            localPrefs?.edit()
-                                ?.remove("key_user_uid")
-                                ?.remove("key_saved_role")
-                                ?.remove("key_linked_classroom_id")
-                                ?.remove("key_linked_student_ids")
-                                ?.remove("key_active_parent_student_id")
-                                ?.apply()
+                    val routeTarget = AuthSessionRoutingHelper.resolveAuthenticatedRoute(
+                        isFreshRegistration = profile.isFreshRegistration,
+                        profileLoadedFromCloud = profile.loadedFromCloud,
+                        profileRole = profile.role,
+                        hasResolvedTeacherClass = resolvedClass != null,
+                        hasCloudLinkedParentStudents = parentLinkedMatches.isNotEmpty(),
+                        hasMatchingLocalTeacherClass = hasMatchingLocalTeacherClass,
+                        hasMatchingLocalParentSession = hasMatchingLocalParentSession
+                    )
+
+                    when (routeTarget) {
+                        AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_DASHBOARD -> {
+                            val targetRoom = resolvedClass ?: localCachedClassRoom
+                            if (targetRoom != null) {
+                                enterTeacherDashboard(targetRoom, preserveCurrentSubPage = true)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        AuthSessionRoutingHelper.AuthenticatedRouteTarget.PARENT_PORTAL -> {
+                            val combinedLinkedStudentIds = if (parentLinkedMatches.isNotEmpty()) {
+                                parentLinkedMatches.map { it.first.id }.distinct()
+                            } else {
+                                preferredStudentIds.filter { id ->
+                                    val s = repository.students.value.find { it.id == id }
+                                    s == null || s.isParentLinked
+                                }
+                            }
+                            val parentClass = parentLinkedMatches.firstOrNull()?.second
+                                ?: localCachedClassRoom
+                                ?: _uiState.value.activeClassRoom
+                                ?: repository.defaultSampleClass
+                            enterParentPortal(
+                                parentClass = parentClass,
+                                combinedLinkedStudentIds = combinedLinkedStudentIds,
+                                shouldHealRoleInCloud = !isProfileParent
+                            )
+                            true
+                        }
+                        AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_SETUP -> {
+                            lastResolvedUid = fbUser.uid
+                            _uiState.value.selectedCity?.id?.let { cid ->
+                                repository.startSetupWizardObserving(cid)
+                            }
+                            _uiState.value = _uiState.value.copy(
+                                currentRole = UserRole.TEACHER,
+                                isKvkkAccepted = true,
+                                currentScreen = ScreenState.TEACHER_SETUP,
+                                isAuthResolving = false
+                            )
+                            saveParentSessionState()
+                            true
+                        }
+                        AuthSessionRoutingHelper.AuthenticatedRouteTarget.ROLE_AND_KVKK -> {
                             lastResolvedUid = fbUser.uid
                             _uiState.value = _uiState.value.copy(
-                                activeClassRoom = null,
                                 currentRole = UserRole.MEMBER,
-                                isKvkkAccepted = false,
-                                linkedParentStudentIds = emptyList(),
-                                activeParentStudentId = null,
+                                isKvkkAccepted = profile.kvkkAccepted,
                                 isAuthResolving = false,
                                 currentScreen = ScreenState.ROLE_AND_KVKK
                             )
-                            return@withTimeoutOrNull true
+                            true
                         }
-
-                        val isProfileTeacher = AuthSessionRoutingHelper.isTeacherRole(profile.role)
-                        val isProfileParent = AuthSessionRoutingHelper.isParentRole(profile.role)
-                        val assignedClassId = profile.assignedClassId
-
-                        // 1. Öğretmen sınıfı kontrolü (assignedClassId + UID bazlı hızlı Firestore sorgusu her zaman çalışır)
-                        var resolvedClass: ClassRoom? = null
-                        if (!assignedClassId.isNullOrBlank()) {
-                            resolvedClass = repository.fetchClassroomById(assignedClassId)
+                        AuthSessionRoutingHelper.AuthenticatedRouteTarget.RETRY_NETWORK_ERROR -> {
+                            false
                         }
-
-                        if (resolvedClass == null) {
-                            resolvedClass = repository.findTeacherClassroom(
-                                uid = fbUser.uid,
-                                teacherEmail = userEmail,
-                                allowEmailFallbackForDifferentUid = isProfileTeacher,
-                                allowFullCollectionScan = isProfileTeacher
-                            )
-                        }
-
-                        if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
-
-                        // 2. Öğretmen sınıfı bulunmadıysa, veli öğrenci bağlantılarını buluttan doğrula
-                        val preferredClassId = profile.linkedClassroomId?.takeIf { it.isNotBlank() && it != "default" }
-                            ?: if (localSessionMatchesUser) savedClassIdLocal else null
-                        val preferredStudentIds = (
-                            profile.linkedStudentIds +
-                                if (localSessionMatchesUser) (savedLinkedIdsLocal + _uiState.value.linkedParentStudentIds) else emptyList()
-                            )
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                            .distinct()
-
-                        val parentLinkedMatches = if (resolvedClass == null) {
-                            repository.findStudentsLinkedToParent(
-                                userEmail = userEmail,
-                                preferredClassId = preferredClassId,
-                                preferredStudentIds = preferredStudentIds
-                            )
-                        } else {
-                            emptyList()
-                        }
-                        if (Firebase.auth.currentUser?.uid != fbUser.uid || _uiState.value.isDeleting) return@withTimeoutOrNull true
-
-                        val routeTarget = AuthSessionRoutingHelper.resolveAuthenticatedRoute(
-                            isFreshRegistration = profile.isFreshRegistration,
-                            profileLoadedFromCloud = profile.loadedFromCloud,
-                            profileRole = profile.role,
-                            hasResolvedTeacherClass = resolvedClass != null,
-                            hasCloudLinkedParentStudents = parentLinkedMatches.isNotEmpty(),
-                            hasMatchingLocalTeacherClass = hasMatchingLocalTeacherClass,
-                            hasMatchingLocalParentSession = hasMatchingLocalParentSession
-                        )
-
-                        when (routeTarget) {
-                            AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_DASHBOARD -> {
-                                val targetRoom = resolvedClass ?: localCachedClassRoom
-                                if (targetRoom != null) {
-                                    enterTeacherDashboard(targetRoom, preserveCurrentSubPage = true)
-                                } else {
-                                    handleTransientNetworkFailure()
-                                }
-                            }
-                            AuthSessionRoutingHelper.AuthenticatedRouteTarget.PARENT_PORTAL -> {
-                                val combinedLinkedStudentIds = if (parentLinkedMatches.isNotEmpty()) {
-                                    parentLinkedMatches.map { it.first.id }.distinct()
-                                } else {
-                                    preferredStudentIds.filter { id ->
-                                        val s = repository.students.value.find { it.id == id }
-                                        s == null || s.isParentLinked
-                                    }
-                                }
-                                val parentClass = parentLinkedMatches.firstOrNull()?.second
-                                    ?: localCachedClassRoom
-                                    ?: _uiState.value.activeClassRoom
-                                    ?: repository.defaultSampleClass
-                                enterParentPortal(
-                                    parentClass = parentClass,
-                                    combinedLinkedStudentIds = combinedLinkedStudentIds,
-                                    shouldHealRoleInCloud = !isProfileParent
-                                )
-                            }
-                            AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_SETUP -> {
-                                lastResolvedUid = fbUser.uid
-                                _uiState.value.selectedCity?.id?.let { cid ->
-                                    repository.startSetupWizardObserving(cid)
-                                }
-                                _uiState.value = _uiState.value.copy(
-                                    currentRole = UserRole.TEACHER,
-                                    isKvkkAccepted = true,
-                                    currentScreen = ScreenState.TEACHER_SETUP,
-                                    isAuthResolving = false
-                                )
-                                saveParentSessionState()
-                            }
-                            AuthSessionRoutingHelper.AuthenticatedRouteTarget.ROLE_AND_KVKK -> {
-                                lastResolvedUid = fbUser.uid
-                                _uiState.value = _uiState.value.copy(
-                                    currentRole = UserRole.MEMBER,
-                                    isKvkkAccepted = profile.kvkkAccepted,
-                                    isAuthResolving = false,
-                                    currentScreen = ScreenState.ROLE_AND_KVKK
-                                )
-                            }
-                            AuthSessionRoutingHelper.AuthenticatedRouteTarget.RETRY_NETWORK_ERROR -> {
-                                handleTransientNetworkFailure()
-                            }
-                        }
-                        true
                     }
+                }
+                return completed == true
+            }
 
-                    // Zaman aşımı koruyucusu: Hesap çözümlemesi 18 sn içinde dönmezse yerel doğrulamaya düş veya tekrar denet
-                    if (completed == null) {
+            refreshUserJob = viewModelScope.launch {
+                try {
+                    var resolved = executeSingleCloudResolutionAttempt()
+                    if (!resolved && Firebase.auth.currentUser?.uid == fbUser.uid && !_uiState.value.isDeleting) {
+                        // Geçici ağ dalgalanmalarına karşı sessizce 1 kez daha otomatik dene
+                        kotlinx.coroutines.delay(900L)
+                        resolved = executeSingleCloudResolutionAttempt()
+                    }
+                    if (!resolved) {
                         handleTransientNetworkFailure()
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -6247,11 +6341,18 @@ class BirizViewModel(
             snackbarMessage = "Veli rolünüz ve bağlı tüm öğrenciler başarıyla silindi. Rol Seçimine dönüldü."
         )
         appContext?.let { ctx ->
-            ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE).edit()
+            val prefs = ctx.getSharedPreferences("biriz_app_settings", Context.MODE_PRIVATE)
+            val updatedBookmarks = AuthSessionRoutingHelper.removeBookmarkFromJson(
+                existingJson = prefs.getString("key_account_bookmarks_json", ""),
+                uid = uid,
+                email = email
+            )
+            prefs.edit()
                 .remove("key_saved_role")
                 .remove("key_linked_classroom_id")
                 .remove("key_linked_student_ids")
                 .remove("key_active_parent_student_id")
+                .putString("key_account_bookmarks_json", updatedBookmarks)
                 .apply()
         }
         viewModelScope.launch {
