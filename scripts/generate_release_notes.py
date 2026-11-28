@@ -211,6 +211,15 @@ SPECIFIC_DIFF_RULES = [
     ),
     # --- Hesap İşlemleri ---
     (
+        "auth_existing_role_direct_routing",
+        "auth",
+        False,
+        re.compile(r"(AuthSessionRoutingHelper|BirizViewModel|ClassRegistryRepository|MainActivity|FirestoreModels)", re.I),
+        re.compile(r"(AuthSessionRoutingHelper|resolveInitialLaunchDecision|resolveAuthenticatedRoute|loadedFromCloud|handleTransientNetworkFailure)", re.I),
+        "Kayıtlı Hesaplarda Doğrudan Panel Açılışı",
+        "Rolü önceden kayıtlı öğretmen ve veli hesaplarının açılışta veya girişte rol seçim ekranına düşmeden doğrudan kendi panellerine yönlendirilmesi sağlandı.",
+    ),
+    (
         "auth_account_switch",
         "auth",
         False,

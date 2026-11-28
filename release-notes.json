@@ -1,17 +1,17 @@
 {
-  "title": "Veli Mesajlaşma ve Bildirim Gizliliği Güçlendirmesi",
+  "title": "Kayıtlı Hesaplarda Doğrudan Panel Açılışı ve Rol Doğrulama İyileştirmesi",
   "items": [
     {
-      "title": "Öğrenci ve Veli Bazlı Kesin Mesaj İzolasyonu",
-      "summary": "Veli hesaplarında özel mesajlar, okunmamış sayaçlar ve mesaj tepki bildirimleri yalnızca o velinin bağlı olduğu öğrenci ve kendi özel sohbetiyle sınırlandırıldı; başka öğrencilerin mesaj veya tepki bildirimlerinin görünmesi tamamen engellendi."
+      "title": "Kayıtlı Öğretmen ve Velilerde Rol Seçim Ekranının Atlanması",
+      "summary": "Rolü zaten tanımlı olan öğretmen ve veli hesapları uygulamayı açarken veya yeniden giriş yaparken artık Öğretmen/Veli rol seçim ekranını görmeden doğrudan kendi panellerine yönlendirilir."
     },
     {
-      "title": "İlk Girişte Geçmiş Tepki Bildirimi Engelleme",
-      "summary": "Yeni bir veli koduyla giriş yapıldığında veya rol değiştirildiğinde dinleyiciler doğru öğrenci kapsamıyla başlatılır; geçmişte bırakılmış mesaj tepkileri yeni bildirim gibi tetiklenmez."
+      "title": "Bulut Rol ve Sınıf Kurtarma Güvencesi",
+      "summary": "Hesap profil kaydı geç güncellenmiş veya büyük/küçük harf farkı içeren aktif öğretmen ve veli hesapları, buluttaki sınıf ve bağlı öğrenci kayıtları üzerinden otomatik tanınarak doğru panele açılır."
     },
     {
-      "title": "Önbellekteki Yetkisiz Bildirimlerin Otomatik Temizlenmesi",
-      "summary": "Önceki oturumlardan cihaz önbelleğinde kalmış olabilecek başka öğrenciye ait bildirimler uygulama açılışında ve arka plan eşitlemesinde otomatik olarak temizlenir."
+      "title": "Yavaş Bağlantıda Yanlış Rol Seçimine Düşme Engelleyici",
+      "summary": "Geçici ağ gecikmesi veya zaman aşımı durumunda aktif kullanıcılar rol seçim ekranına yönlendirilmez; doğrulama sürerken güvenli yükleme durumu gösterilir ve bağlantı hatasında yeniden deneme imkânı sunulur."
     }
   ]
 }

@@ -4973,6 +4973,145 @@ class ExampleUnitTest {
       sanitized.map { it.id }
     )
   }
+
+  @Test
+  fun testAuthSessionRoutingNeverShowsRoleSelectionForExistingUsers() {
+    val helper = com.example.util.AuthSessionRoutingHelper
+
+    // 1. Açılışta oturumu açık ve yerel kaydı eşleşen ÖĞRETMEN doğrudan öğretmen paneline açılır (ROLE_AND_KVKK asla gösterilmez)
+    val teacherLaunch = helper.resolveInitialLaunchDecision(
+      hasFirebaseUser = true,
+      currentUid = "uid_teacher_1",
+      currentEmail = "ogretmen@okul.edu.tr",
+      savedUid = "uid_teacher_1",
+      savedEmail = "ogretmen@okul.edu.tr",
+      savedRoleCode = "OGRETMEN",
+      hasSavedClassroom = true
+    )
+    assertEquals(com.example.ui.viewmodel.ScreenState.TEACHER_DASHBOARD, teacherLaunch.screen)
+    assertEquals(com.example.data.model.UserRole.TEACHER, teacherLaunch.role)
+    assertFalse(teacherLaunch.isAuthResolving)
+    assertTrue(teacherLaunch.matchedSavedSession)
+
+    // 2. Açılışta oturumu açık ve yerel kaydı eşleşen VELİ doğrudan veli portalına açılır
+    val parentLaunch = helper.resolveInitialLaunchDecision(
+      hasFirebaseUser = true,
+      currentUid = "uid_parent_1",
+      currentEmail = "veli@example.com",
+      savedUid = "uid_parent_1",
+      savedEmail = "veli@example.com",
+      savedRoleCode = "VELI",
+      hasSavedClassroom = true
+    )
+    assertEquals(com.example.ui.viewmodel.ScreenState.PARENT_PORTAL, parentLaunch.screen)
+    assertEquals(com.example.data.model.UserRole.PARENT, parentLaunch.role)
+    assertFalse(parentLaunch.isAuthResolving)
+    assertTrue(parentLaunch.matchedSavedSession)
+
+    // 3. Oturum açık ancak yerel önbellek boş veya farklı kullanıcıya aitse ROLE_AND_KVKK yerine GOOGLE_SIGN_IN + isAuthResolving=true açılır
+    val coldSignInLaunch = helper.resolveInitialLaunchDecision(
+      hasFirebaseUser = true,
+      currentUid = "uid_teacher_new_device",
+      currentEmail = "ogretmen@okul.edu.tr",
+      savedUid = "uid_other_user",
+      savedEmail = "baska@example.com",
+      savedRoleCode = "VELI",
+      hasSavedClassroom = true
+    )
+    assertEquals(com.example.ui.viewmodel.ScreenState.GOOGLE_SIGN_IN, coldSignInLaunch.screen)
+    assertTrue(coldSignInLaunch.isAuthResolving)
+    assertFalse(coldSignInLaunch.matchedSavedSession)
+
+    // 4. Profil dokümanı eski/UYE veya küçük harfli kalsa bile bulutta öğretmene ait sınıf varsa TEACHER_DASHBOARD döner
+    val recoveredTeacherRoute = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = false,
+      profileLoadedFromCloud = true,
+      profileRole = "uye",
+      hasResolvedTeacherClass = true,
+      hasCloudLinkedParentStudents = false,
+      hasMatchingLocalTeacherClass = false,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_DASHBOARD,
+      recoveredTeacherRoute
+    )
+
+    // 5. Profil dokümanı UYE kalsa bile bulutta bağlı öğrenci varsa PARENT_PORTAL döner
+    val recoveredParentRoute = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = false,
+      profileLoadedFromCloud = true,
+      profileRole = "UYE",
+      hasResolvedTeacherClass = false,
+      hasCloudLinkedParentStudents = true,
+      hasMatchingLocalTeacherClass = false,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.PARENT_PORTAL,
+      recoveredParentRoute
+    )
+
+    // 6. Bulut okuma zaman aşımına uğrarsa (profileLoadedFromCloud=false) yerel eşleşen oturum varsa panele devam eder
+    val offlineTeacherFallback = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = false,
+      profileLoadedFromCloud = false,
+      profileRole = "UYE",
+      hasResolvedTeacherClass = false,
+      hasCloudLinkedParentStudents = false,
+      hasMatchingLocalTeacherClass = true,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.TEACHER_DASHBOARD,
+      offlineTeacherFallback
+    )
+
+    // 7. Bulut okuma zaman aşımına uğrar ve yerel kayıt da yoksa ASLA ROLE_AND_KVKK ekranına düşürmez, RETRY_NETWORK_ERROR döner
+    val offlineNoLocalRoute = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = false,
+      profileLoadedFromCloud = false,
+      profileRole = "UYE",
+      hasResolvedTeacherClass = false,
+      hasCloudLinkedParentStudents = false,
+      hasMatchingLocalTeacherClass = false,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.RETRY_NETWORK_ERROR,
+      offlineNoLocalRoute
+    )
+
+    // 8. Gerçekten buluttan doğrulanmış rolsüz yeni kullanıcı veya yeni kayıt -> ROLE_AND_KVKK
+    val genuinelyNewUserRoute = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = false,
+      profileLoadedFromCloud = true,
+      profileRole = "UYE",
+      hasResolvedTeacherClass = false,
+      hasCloudLinkedParentStudents = false,
+      hasMatchingLocalTeacherClass = false,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.ROLE_AND_KVKK,
+      genuinelyNewUserRoute
+    )
+
+    val freshRegistrationRoute = helper.resolveAuthenticatedRoute(
+      isFreshRegistration = true,
+      profileLoadedFromCloud = true,
+      profileRole = "TEACHER",
+      hasResolvedTeacherClass = true,
+      hasCloudLinkedParentStudents = false,
+      hasMatchingLocalTeacherClass = true,
+      hasMatchingLocalParentSession = false
+    )
+    assertEquals(
+      com.example.util.AuthSessionRoutingHelper.AuthenticatedRouteTarget.ROLE_AND_KVKK,
+      freshRegistrationRoute
+    )
+  }
 }
+
 
 

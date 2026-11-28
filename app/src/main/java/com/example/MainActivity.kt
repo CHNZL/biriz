@@ -46,6 +46,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -344,21 +345,41 @@ fun BirizApp(viewModel: BirizViewModel) {
                 }
 
                 ScreenState.ROLE_AND_KVKK -> {
-                    RoleSelectionScreen(
-                        currentRole = uiState.currentRole,
-                        isKvkkAccepted = uiState.isKvkkAccepted,
-                        isKvkkDialogVisible = uiState.isKvkkDialogVisible,
-                        onKvkkCheckedChanged = { viewModel.onKvkkCheckedChanged(it) },
-                        onOpenKvkkDialog = { viewModel.openKvkkDialog() },
-                        onCloseKvkkDialog = { viewModel.dismissKvkkDialog() },
-                        onSelectTeacher = { viewModel.selectTeacherRole() },
-                        onSelectParentAttempt = { viewModel.onParentRoleAttempt() },
-                        currentUser = uiState.currentUser,
-                        onLogout = { viewModel.signOut(context) },
-                        onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
-                        isDarkTheme = uiState.isDarkTheme,
-                        onToggleTheme = { viewModel.toggleTheme() }
-                    )
+                    if (uiState.isAuthResolving) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                CircularProgressIndicator()
+                                Text(
+                                    text = "Hesabınız ve rolünüz doğrulanıyor...",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    } else {
+                        RoleSelectionScreen(
+                            currentRole = uiState.currentRole,
+                            isKvkkAccepted = uiState.isKvkkAccepted,
+                            isKvkkDialogVisible = uiState.isKvkkDialogVisible,
+                            onKvkkCheckedChanged = { viewModel.onKvkkCheckedChanged(it) },
+                            onOpenKvkkDialog = { viewModel.openKvkkDialog() },
+                            onCloseKvkkDialog = { viewModel.dismissKvkkDialog() },
+                            onSelectTeacher = { viewModel.selectTeacherRole() },
+                            onSelectParentAttempt = { viewModel.onParentRoleAttempt() },
+                            currentUser = uiState.currentUser,
+                            onLogout = { viewModel.signOut(context) },
+                            onDeleteEntireAccount = { viewModel.deleteEntireAccount(context) },
+                            isDarkTheme = uiState.isDarkTheme,
+                            onToggleTheme = { viewModel.toggleTheme() }
+                        )
+                    }
                 }
 
                 ScreenState.TEACHER_SETUP -> {

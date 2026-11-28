@@ -2556,7 +2556,8 @@ class ClassRegistryRepository(
                 assignedSchoolId = snapshot.getString("assignedSchoolId"),
                 linkedClassroomId = snapshot.getString("linkedClassroomId"),
                 linkedStudentIds = rawLinkedStudentIds,
-                isFreshRegistration = false
+                isFreshRegistration = false,
+                loadedFromCloud = true
             )
         }
 
@@ -2567,7 +2568,8 @@ class ClassRegistryRepository(
             email = email,
             role = "UYE",
             kvkkAccepted = false,
-            isFreshRegistration = false
+            isFreshRegistration = false,
+            loadedFromCloud = false
         )
     }
 
@@ -2639,7 +2641,8 @@ class ClassRegistryRepository(
     suspend fun findTeacherClassroom(
         uid: String,
         teacherEmail: String,
-        allowEmailFallbackForDifferentUid: Boolean = false
+        allowEmailFallbackForDifferentUid: Boolean = false,
+        allowFullCollectionScan: Boolean = true
     ): ClassRoom? {
         if (Firebase.auth.currentUser == null) {
             return _registeredClasses.value.firstOrNull {
@@ -2654,7 +2657,7 @@ class ClassRegistryRepository(
         val parallelDoc = try {
             coroutineScope {
                 val byUidDeferred = async {
-                    withTimeoutOrNull(5000L) {
+                    withTimeoutOrNull(4500L) {
                         db.collection("classrooms").whereEqualTo("teacherId", uid).limit(1).get(Source.SERVER).await()
                     }?.documents?.firstOrNull()
                         ?: withTimeoutOrNull(2500L) {
@@ -2663,7 +2666,7 @@ class ClassRegistryRepository(
                 }
                 val byEmailDeferred = if (allowEmailFallbackForDifferentUid && cleanEmail.isNotBlank()) {
                     async {
-                        withTimeoutOrNull(5000L) {
+                        withTimeoutOrNull(4500L) {
                             db.collection("classrooms").whereEqualTo("teacherEmail", cleanEmail).limit(1).get(Source.SERVER).await()
                         }?.documents?.firstOrNull()
                     }
@@ -2681,9 +2684,13 @@ class ClassRegistryRepository(
             return room
         }
 
+        if (!allowFullCollectionScan) {
+            return null
+        }
+
         // 2. Fallback scan over all classrooms in Firestore
         try {
-            val allClassrooms = withTimeoutOrNull(5000L) {
+            val allClassrooms = withTimeoutOrNull(4500L) {
                 db.collection("classrooms").get(Source.SERVER).await()
             } ?: withTimeoutOrNull(2500L) {
                 db.collection("classrooms").get().await()

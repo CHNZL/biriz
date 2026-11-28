@@ -18,6 +18,7 @@ data class UserProfile(
     val linkedClassroomId: String? = null,
     val linkedStudentIds: List<String> = emptyList(),
     val isFreshRegistration: Boolean = false,
+    val loadedFromCloud: Boolean = true,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
